@@ -1,27 +1,44 @@
 #pragma once
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../PluginProcessor.h"
+#include "MetroContent.h"
 #include "MetroLookAndFeel.h"
+#include "MetroInspector.h"
+#include "MetroSidebar.h"
+#include "MetroTransportBar.h"
 
 class PadGridView;
 class FileBrowserPanel;
 class MixerPanel;
 
-namespace dysekt::metro {
-class MetroStandaloneEditor final : public juce::AudioProcessorEditor {
+namespace dysekt::metro
+{
+/** Standalone-only Metro shell. The shared processor and plugin editor stay UI-agnostic. */
+class MetroStandaloneEditor final : public juce::AudioProcessorEditor
+{
 public:
-    explicit MetroStandaloneEditor (DysektProcessor&); ~MetroStandaloneEditor() override;
-    void paint (juce::Graphics&) override; void resized() override;
+    explicit MetroStandaloneEditor (DysektProcessor&);
+    ~MetroStandaloneEditor() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
 private:
-    class TransportBar; class Sidebar; class ArrangementWorkspace; class Inspector;
-    enum class Content { arrange, pads, browser, mixer };
-    void showContent (Content);
-    DysektProcessor& processor; MetroLookAndFeel lookAndFeel;
-    std::unique_ptr<TransportBar> transportBar; std::unique_ptr<Sidebar> sidebar;
-    std::unique_ptr<ArrangementWorkspace> workspace; std::unique_ptr<Inspector> inspector;
+    class ArrangementWorkspace;
+
+    void showContent (MetroContent content);
+    static juce::String inspectorMessageFor (MetroContent content);
+
+    DysektProcessor& processor;
+    MetroLookAndFeel lookAndFeel;
+    MetroTransportBar transportBar;
+    MetroSidebar sidebar;
+    std::unique_ptr<ArrangementWorkspace> arrangementWorkspace;
+    MetroInspector inspector;
     std::unique_ptr<::PadGridView> padsView;
     std::unique_ptr<::FileBrowserPanel> browserView;
     std::unique_ptr<::MixerPanel> mixerView;
-    Content activeContent = Content::arrange;
+    MetroContent activeContent = MetroContent::arrange;
 };
-}
+} // namespace dysekt::metro

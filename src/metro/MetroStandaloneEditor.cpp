@@ -1,68 +1,132 @@
 #include "MetroStandaloneEditor.h"
+#include "MetroTheme.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../ui/FileBrowserPanel.h"
 #include "../ui/MixerPanel.h"
 #include "../ui/PadGridView.h"
-#include <functional>
-namespace dysekt::metro {
-class MetroStandaloneEditor::TransportBar final : public juce::Component, private juce::Timer {
-public:
-    explicit TransportBar (SequencerEngine& sequencer) : engine (sequencer) {
-        play.setButtonText ("Play"); stop.setButtonText ("Stop"); rewind.setButtonText ("Rewind"); record.setButtonText ("Record"); record.setClickingTogglesState (true);
-        for (auto* button : { &rewind, &play, &stop, &record }) addAndMakeVisible (*button);
-        rewind.onClick = [this] { engine.rewind(); }; play.onClick = [this] { engine.play(); }; stop.onClick = [this] { engine.stop(); }; record.onClick = [this] { engine.setRecording (record.getToggleState()); };
-        tempo.setEditable (true, true, false); tempo.setJustificationType (juce::Justification::centred); tempo.setFont (MetroTheme::bodyFont());
-        tempo.onTextChange = [this] { const auto bpm = tempo.getText().upToFirstOccurrenceOf (" ", false, false).getFloatValue(); if (bpm >= 20.0f && bpm <= 999.0f) engine.setBpm (bpm); };
-        addAndMakeVisible (tempo); startTimerHz (20);
-    }
-    void paint (juce::Graphics& graphics) override { graphics.fillAll (MetroTheme::Colours::panelBackground); graphics.setColour (MetroTheme::Colours::separator); graphics.fillRect (getLocalBounds().removeFromBottom (MetroTheme::Metrics::separatorThickness)); }
-    void resized() override { auto area = getLocalBounds().reduced (MetroTheme::Metrics::panelPadding, MetroTheme::Metrics::grid); tempo.setBounds (area.removeFromRight (MetroTheme::Metrics::grid * 14)); for (auto* button : { &rewind, &play, &stop, &record }) button->setBounds (area.removeFromLeft (MetroTheme::Metrics::grid * 10).reduced (MetroTheme::Metrics::separatorThickness)); }
-private:
-    void timerCallback() override { play.setToggleState (engine.isPlaying(), juce::dontSendNotification); record.setToggleState (engine.isRecording(), juce::dontSendNotification); if (! tempo.isBeingEdited()) tempo.setText (juce::String (engine.getBpm(), 1) + " BPM", juce::dontSendNotification); }
-    SequencerEngine& engine; juce::TextButton rewind, play, stop, record; juce::Label tempo;
-};
-class MetroStandaloneEditor::Sidebar final : public juce::Component {
-public:
-    std::function<void (int)> onSelection;
-    Sidebar() {
-        for (auto* button : { &arrange, &pads, &browser, &mixer }) { button->setClickingTogglesState (true); button->setRadioGroupId (1); addAndMakeVisible (*button); }
-        arrange.setButtonText ("Arrange"); pads.setButtonText ("Pads"); browser.setButtonText ("Browser"); mixer.setButtonText ("Mixer"); arrange.setToggleState (true, juce::dontSendNotification);
-        arrange.onClick = [this] { if (onSelection) onSelection (0); }; pads.onClick = [this] { if (onSelection) onSelection (1); }; browser.onClick = [this] { if (onSelection) onSelection (2); }; mixer.onClick = [this] { if (onSelection) onSelection (3); };
-    }
-    void paint (juce::Graphics& graphics) override { graphics.fillAll (MetroTheme::Colours::panelBackground); }
-    void resized() override { auto area = getLocalBounds().reduced (MetroTheme::Metrics::panelPadding); for (auto* button : { &arrange, &pads, &browser, &mixer }) button->setBounds (area.removeFromTop (MetroTheme::Metrics::controlHeight)); }
-private: juce::TextButton arrange, pads, browser, mixer;
-};
-class MetroStandaloneEditor::ArrangementWorkspace final : public juce::Component, private juce::Timer {
+
+namespace dysekt::metro
+{
+class MetroStandaloneEditor::ArrangementWorkspace final : public juce::Component,
+                                                           private juce::Timer
+{
 public:
     explicit ArrangementWorkspace (SequencerEngine& sequencer) : engine (sequencer) { startTimerHz (15); }
-    void paint (juce::Graphics& graphics) override {
-        const auto bounds = getLocalBounds(); graphics.fillAll (MetroTheme::Colours::windowBackground); graphics.setFont (MetroTheme::smallFont()); const int beatWidth = MetroTheme::Metrics::timelineBeatWidth;
-        for (int x = 0; x < bounds.getWidth(); x += beatWidth) { graphics.setColour (MetroTheme::Colours::separator.withAlpha (0.55f)); graphics.drawVerticalLine (x, 0.0f, static_cast<float> (bounds.getHeight())); graphics.setColour (MetroTheme::Colours::textDisabled); graphics.drawText (juce::String (x / beatWidth + 1), x + MetroTheme::Metrics::grid, 0, beatWidth, MetroTheme::Metrics::grid * 3, juce::Justification::centredLeft); }
-        for (int index = 0; index < engine.getNumTracks(); ++index) {
-            const int y = MetroTheme::Metrics::grid * 3 + index * MetroTheme::Metrics::trackHeight; auto row = juce::Rectangle<int> (0, y, bounds.getWidth(), MetroTheme::Metrics::trackHeight); graphics.setColour (MetroTheme::Colours::panelBackground.withAlpha (0.75f)); graphics.fillRect (row); graphics.setColour (MetroTheme::Colours::separator); graphics.drawHorizontalLine (row.getBottom() - 1, 0.0f, static_cast<float> (bounds.getWidth())); const auto track = engine.getTrackInfo (index); graphics.setColour (track.colour.brighter (0.2f)); graphics.fillRect (row.removeFromLeft (MetroTheme::Metrics::grid / 2)); graphics.setColour (MetroTheme::Colours::textPrimary); graphics.drawText (track.name, MetroTheme::Metrics::grid * 2, y, MetroTheme::Metrics::grid * 18, MetroTheme::Metrics::trackHeight, juce::Justification::centredLeft);
-            for (int clipIndex = 0; clipIndex < engine.getNumClips (index); ++clipIndex) { const auto clip = engine.getClipInfo (index, clipIndex); const int clipX = static_cast<int> (clip.startTick / 960) * beatWidth; const int clipWidth = juce::jmax (beatWidth, static_cast<int> (clip.lengthTicks / 960) * beatWidth); const auto clipBounds = juce::Rectangle<int> (clipX, y + MetroTheme::Metrics::grid, clipWidth, MetroTheme::Metrics::trackHeight - MetroTheme::Metrics::grid * 2); graphics.setColour (track.colour.withAlpha (0.78f)); graphics.fillRect (clipBounds); graphics.setColour (MetroTheme::Colours::textPrimary); graphics.drawText ("Clip " + juce::String (clipIndex + 1), clipBounds.reduced (MetroTheme::Metrics::grid), juce::Justification::centredLeft, true); }
+
+    void paint (juce::Graphics& graphics) override
+    {
+        const auto bounds = getLocalBounds();
+        const auto beatWidth = MetroTheme::Metrics::timelineBeatWidth;
+        graphics.fillAll (MetroTheme::Colours::windowBackground);
+        graphics.setFont (MetroTheme::smallFont());
+
+        for (int x = 0; x < bounds.getWidth(); x += beatWidth)
+        {
+            graphics.setColour (MetroTheme::Colours::separator.withAlpha (0.55f));
+            graphics.drawVerticalLine (x, 0.0f, static_cast<float> (bounds.getHeight()));
+            graphics.setColour (MetroTheme::Colours::textDisabled);
+            graphics.drawText (juce::String (x / beatWidth + 1), x + MetroTheme::Metrics::grid, 0,
+                               beatWidth, MetroTheme::Metrics::grid * 3,
+                               juce::Justification::centredLeft);
         }
-        graphics.setColour (MetroTheme::Colours::accent); graphics.drawVerticalLine (static_cast<int> (engine.getPlayheadBeats()) * beatWidth, 0.0f, static_cast<float> (bounds.getHeight()));
+
+        for (int index = 0; index < engine.getNumTracks(); ++index)
+        {
+            const auto y = MetroTheme::Metrics::grid * 3 + index * MetroTheme::Metrics::trackHeight;
+            auto row = juce::Rectangle<int> (0, y, bounds.getWidth(), MetroTheme::Metrics::trackHeight);
+            const auto track = engine.getTrackInfo (index);
+            graphics.setColour (MetroTheme::Colours::panelBackground.withAlpha (0.75f));
+            graphics.fillRect (row);
+            graphics.setColour (MetroTheme::Colours::separator);
+            graphics.drawHorizontalLine (row.getBottom() - 1, 0.0f, static_cast<float> (bounds.getWidth()));
+            graphics.setColour (track.colour.brighter (0.2f));
+            graphics.fillRect (row.removeFromLeft (MetroTheme::Metrics::grid / 2));
+            graphics.setColour (MetroTheme::Colours::textPrimary);
+            graphics.drawText (track.name, MetroTheme::Metrics::grid * 2, y,
+                               MetroTheme::Metrics::grid * 18, MetroTheme::Metrics::trackHeight,
+                               juce::Justification::centredLeft);
+
+            for (int clipIndex = 0; clipIndex < engine.getNumClips (index); ++clipIndex)
+            {
+                const auto clip = engine.getClipInfo (index, clipIndex);
+                const auto clipX = static_cast<int> (clip.startTick / 960) * beatWidth;
+                const auto clipWidth = juce::jmax (beatWidth, static_cast<int> (clip.lengthTicks / 960) * beatWidth);
+                const auto clipBounds = juce::Rectangle<int> (clipX, y + MetroTheme::Metrics::grid,
+                    clipWidth, MetroTheme::Metrics::trackHeight - MetroTheme::Metrics::grid * 2);
+                graphics.setColour (track.colour.withAlpha (0.78f));
+                graphics.fillRect (clipBounds);
+                graphics.setColour (MetroTheme::Colours::textPrimary);
+                graphics.drawText ("Clip " + juce::String (clipIndex + 1),
+                                   clipBounds.reduced (MetroTheme::Metrics::grid),
+                                   juce::Justification::centredLeft, true);
+            }
+        }
+
+        graphics.setColour (MetroTheme::Colours::accent);
+        graphics.drawVerticalLine (static_cast<int> (engine.getPlayheadBeats()) * beatWidth,
+                                   0.0f, static_cast<float> (bounds.getHeight()));
     }
-private: void timerCallback() override { repaint(); } SequencerEngine& engine;
+
+private:
+    void timerCallback() override { repaint(); }
+    SequencerEngine& engine;
 };
-class MetroStandaloneEditor::Inspector final : public juce::Component {
-public: void paint (juce::Graphics& graphics) override { graphics.fillAll (MetroTheme::Colours::panelBackground); graphics.setColour (MetroTheme::Colours::separator); graphics.fillRect (getLocalBounds().removeFromTop (MetroTheme::Metrics::separatorThickness)); graphics.setColour (MetroTheme::Colours::textSecondary); graphics.setFont (MetroTheme::smallFont()); graphics.drawText ("INSPECTOR  •  Select a clip, pad, or mixer channel", getLocalBounds().reduced (MetroTheme::Metrics::panelPadding), juce::Justification::centredLeft, true); }
-};
-MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit) : AudioProcessorEditor (processorToEdit), processor (processorToEdit) {
-    setLookAndFeel (&lookAndFeel); transportBar = std::make_unique<TransportBar> (processor.sequencer); sidebar = std::make_unique<Sidebar>(); workspace = std::make_unique<ArrangementWorkspace> (processor.sequencer); inspector = std::make_unique<Inspector>();
-    padsView = std::make_unique<PadGridView> (processor); browserView = std::make_unique<FileBrowserPanel> (processor); mixerView = std::make_unique<MixerPanel> (processor);
-    sidebar->onSelection = [this] (int selection) { showContent (static_cast<Content> (selection)); };
-    for (auto* component : { static_cast<juce::Component*> (transportBar.get()), static_cast<juce::Component*> (sidebar.get()), static_cast<juce::Component*> (workspace.get()), static_cast<juce::Component*> (inspector.get()), static_cast<juce::Component*> (padsView.get()), static_cast<juce::Component*> (browserView.get()), static_cast<juce::Component*> (mixerView.get()) }) addAndMakeVisible (*component);
-    showContent (Content::arrange); setResizable (true, true); setSize (MetroTheme::Metrics::grid * 150, MetroTheme::Metrics::grid * 100);
+
+MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
+    : AudioProcessorEditor (processorToEdit), processor (processorToEdit), transportBar (processor.sequencer)
+{
+    setLookAndFeel (&lookAndFeel);
+    arrangementWorkspace = std::make_unique<ArrangementWorkspace> (processor.sequencer);
+    padsView = std::make_unique<PadGridView> (processor);
+    browserView = std::make_unique<FileBrowserPanel> (processor);
+    mixerView = std::make_unique<MixerPanel> (processor);
+    sidebar.onSelectionChanged = [this] (MetroContent content) { showContent (content); };
+
+    for (auto* component : { static_cast<juce::Component*> (&transportBar), static_cast<juce::Component*> (&sidebar),
+                             static_cast<juce::Component*> (arrangementWorkspace.get()), static_cast<juce::Component*> (&inspector),
+                             static_cast<juce::Component*> (padsView.get()), static_cast<juce::Component*> (browserView.get()),
+                             static_cast<juce::Component*> (mixerView.get()) })
+        addAndMakeVisible (*component);
+
+    showContent (MetroContent::arrange);
+    setResizable (true, true);
+    setSize (MetroTheme::Metrics::grid * 150, MetroTheme::Metrics::grid * 100);
 }
+
 MetroStandaloneEditor::~MetroStandaloneEditor() { setLookAndFeel (nullptr); }
 void MetroStandaloneEditor::paint (juce::Graphics& graphics) { graphics.fillAll (MetroTheme::Colours::windowBackground); }
-void MetroStandaloneEditor::resized() { auto area = getLocalBounds(); transportBar->setBounds (area.removeFromTop (MetroTheme::Metrics::transportHeight)); inspector->setBounds (area.removeFromBottom (MetroTheme::Metrics::inspectorHeight)); sidebar->setBounds (area.removeFromLeft (MetroTheme::Metrics::sidebarWidth)); workspace->setBounds (area); padsView->setBounds (area); browserView->setBounds (area); mixerView->setBounds (area); }
-void MetroStandaloneEditor::showContent (Content content) {
+
+void MetroStandaloneEditor::resized()
+{
+    auto area = getLocalBounds();
+    transportBar.setBounds (area.removeFromTop (MetroTheme::Metrics::transportHeight));
+    inspector.setBounds (area.removeFromBottom (MetroTheme::Metrics::inspectorHeight));
+    sidebar.setBounds (area.removeFromLeft (MetroTheme::Metrics::sidebarWidth));
+    arrangementWorkspace->setBounds (area); padsView->setBounds (area);
+    browserView->setBounds (area); mixerView->setBounds (area);
+}
+
+void MetroStandaloneEditor::showContent (MetroContent content)
+{
     activeContent = content;
-    workspace->setVisible (content == Content::arrange); padsView->setVisible (content == Content::pads); browserView->setVisible (content == Content::browser); mixerView->setVisible (content == Content::mixer);
+    sidebar.setSelectedContent (content);
+    arrangementWorkspace->setVisible (content == MetroContent::arrange);
+    padsView->setVisible (content == MetroContent::pads);
+    browserView->setVisible (content == MetroContent::browser);
+    mixerView->setVisible (content == MetroContent::mixer);
+    inspector.setContextMessage (inspectorMessageFor (content));
     resized();
 }
+
+juce::String MetroStandaloneEditor::inspectorMessageFor (MetroContent content)
+{
+    switch (content)
+    {
+        case MetroContent::arrange: return "Select a clip or track to inspect its properties";
+        case MetroContent::pads: return "Select a pad to inspect its sample and playback settings";
+        case MetroContent::browser: return "Select an item to inspect its metadata";
+        case MetroContent::mixer: return "Select a channel to inspect its routing and levels";
+    }
+    return {};
 }
+} // namespace dysekt::metro
