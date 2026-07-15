@@ -20,7 +20,7 @@ void MetroInspector::paint (juce::Graphics& graphics)
     graphics.setColour (MetroTheme::Colours::separator);
     graphics.fillRect (getLocalBounds().removeFromTop (MetroTheme::Metrics::separatorThickness));
 
-    const auto content = getLocalBounds().reduced (MetroTheme::Metrics::panelPadding);
+    auto content = getLocalBounds().reduced (MetroTheme::Metrics::panelPadding);
     graphics.setColour (MetroTheme::Colours::textDisabled);
     graphics.setFont (MetroTheme::captionFont());
     graphics.drawText ("INSPECTOR", content.removeFromTop (MetroTheme::Metrics::grid * 3),
