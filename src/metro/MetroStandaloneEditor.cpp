@@ -7,83 +7,20 @@
 
 namespace dysekt::metro
 {
-class MetroStandaloneEditor::ArrangementWorkspace final : public juce::Component,
-                                                           private juce::Timer
-{
-public:
-    explicit ArrangementWorkspace (SequencerEngine& sequencer) : engine (sequencer) { startTimerHz (15); }
-
-    void paint (juce::Graphics& graphics) override
-    {
-        const auto bounds = getLocalBounds();
-        const auto beatWidth = MetroTheme::Metrics::timelineBeatWidth;
-        graphics.fillAll (MetroTheme::Colours::windowBackground);
-        graphics.setFont (MetroTheme::smallFont());
-
-        for (int x = 0; x < bounds.getWidth(); x += beatWidth)
-        {
-            graphics.setColour (MetroTheme::Colours::separator.withAlpha (0.55f));
-            graphics.drawVerticalLine (x, 0.0f, static_cast<float> (bounds.getHeight()));
-            graphics.setColour (MetroTheme::Colours::textDisabled);
-            graphics.drawText (juce::String (x / beatWidth + 1), x + MetroTheme::Metrics::grid, 0,
-                               beatWidth, MetroTheme::Metrics::grid * 3,
-                               juce::Justification::centredLeft);
-        }
-
-        for (int index = 0; index < engine.getNumTracks(); ++index)
-        {
-            const auto y = MetroTheme::Metrics::grid * 3 + index * MetroTheme::Metrics::trackHeight;
-            auto row = juce::Rectangle<int> (0, y, bounds.getWidth(), MetroTheme::Metrics::trackHeight);
-            const auto track = engine.getTrackInfo (index);
-            graphics.setColour (MetroTheme::Colours::panelBackground.withAlpha (0.75f));
-            graphics.fillRect (row);
-            graphics.setColour (MetroTheme::Colours::separator);
-            graphics.drawHorizontalLine (row.getBottom() - 1, 0.0f, static_cast<float> (bounds.getWidth()));
-            graphics.setColour (track.colour.brighter (0.2f));
-            graphics.fillRect (row.removeFromLeft (MetroTheme::Metrics::grid / 2));
-            graphics.setColour (MetroTheme::Colours::textPrimary);
-            graphics.drawText (track.name, MetroTheme::Metrics::grid * 2, y,
-                               MetroTheme::Metrics::grid * 18, MetroTheme::Metrics::trackHeight,
-                               juce::Justification::centredLeft);
-
-            for (int clipIndex = 0; clipIndex < engine.getNumClips (index); ++clipIndex)
-            {
-                const auto clip = engine.getClipInfo (index, clipIndex);
-                const auto clipX = static_cast<int> (clip.startTick / 960) * beatWidth;
-                const auto clipWidth = juce::jmax (beatWidth, static_cast<int> (clip.lengthTicks / 960) * beatWidth);
-                const auto clipBounds = juce::Rectangle<int> (clipX, y + MetroTheme::Metrics::grid,
-                    clipWidth, MetroTheme::Metrics::trackHeight - MetroTheme::Metrics::grid * 2);
-                graphics.setColour (track.colour.withAlpha (0.78f));
-                graphics.fillRect (clipBounds);
-                graphics.setColour (MetroTheme::Colours::textPrimary);
-                graphics.drawText ("Clip " + juce::String (clipIndex + 1),
-                                   clipBounds.reduced (MetroTheme::Metrics::grid),
-                                   juce::Justification::centredLeft, true);
-            }
-        }
-
-        graphics.setColour (MetroTheme::Colours::accent);
-        graphics.drawVerticalLine (static_cast<int> (engine.getPlayheadBeats()) * beatWidth,
-                                   0.0f, static_cast<float> (bounds.getHeight()));
-    }
-
-private:
-    void timerCallback() override { repaint(); }
-    SequencerEngine& engine;
-};
-
 MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
     : AudioProcessorEditor (processorToEdit), processor (processorToEdit), transportBar (processor.sequencer)
 {
     setLookAndFeel (&lookAndFeel);
-    arrangementWorkspace = std::make_unique<ArrangementWorkspace> (processor.sequencer);
+    arrangementView = std::make_unique<MetroArrangementView> (processor.sequencer);
+    arrangementView->setSelectionChangedCallback ([this] (const MetroSelection& selection)
+                                                  { onArrangementSelectionChanged (selection); });
     padsView = std::make_unique<PadGridView> (processor);
     browserView = std::make_unique<FileBrowserPanel> (processor);
     mixerView = std::make_unique<MixerPanel> (processor);
     sidebar.onSelectionChanged = [this] (MetroContent content) { showContent (content); };
 
     for (auto* component : { static_cast<juce::Component*> (&transportBar), static_cast<juce::Component*> (&sidebar),
-                             static_cast<juce::Component*> (arrangementWorkspace.get()), static_cast<juce::Component*> (&inspector),
+                             static_cast<juce::Component*> (arrangementView.get()), static_cast<juce::Component*> (&inspector),
                              static_cast<juce::Component*> (padsView.get()), static_cast<juce::Component*> (browserView.get()),
                              static_cast<juce::Component*> (mixerView.get()) })
         addAndMakeVisible (*component);
@@ -102,7 +39,7 @@ void MetroStandaloneEditor::resized()
     transportBar.setBounds (area.removeFromTop (MetroTheme::Metrics::transportHeight));
     inspector.setBounds (area.removeFromBottom (MetroTheme::Metrics::inspectorHeight));
     sidebar.setBounds (area.removeFromLeft (MetroTheme::Metrics::sidebarWidth));
-    arrangementWorkspace->setBounds (area); padsView->setBounds (area);
+    arrangementView->setBounds (area); padsView->setBounds (area);
     browserView->setBounds (area); mixerView->setBounds (area);
 }
 
@@ -110,12 +47,33 @@ void MetroStandaloneEditor::showContent (MetroContent content)
 {
     activeContent = content;
     sidebar.setSelectedContent (content);
-    arrangementWorkspace->setVisible (content == MetroContent::arrange);
+    arrangementView->setVisible (content == MetroContent::arrange);
     padsView->setVisible (content == MetroContent::pads);
     browserView->setVisible (content == MetroContent::browser);
     mixerView->setVisible (content == MetroContent::mixer);
-    inspector.setContextMessage (inspectorMessageFor (content));
+
+    // The arrangement tab drives the inspector through real selection objects
+    // (see onArrangementSelectionChanged); every other tab still uses the
+    // generic placeholder message until they grow their own selection models.
+    if (content == MetroContent::arrange)
+        onArrangementSelectionChanged (arrangementView->getSelection());
+    else
+        inspector.setContextMessage (inspectorMessageFor (content));
+
     resized();
+}
+
+void MetroStandaloneEditor::onArrangementSelectionChanged (const MetroSelection& selection)
+{
+    if (activeContent != MetroContent::arrange)
+        return;
+
+    if (selection.isClip())
+        inspector.showClip (selection.clipIndex, selection.track, selection.clip);
+    else if (selection.isTrack())
+        inspector.showTrack (selection.track);
+    else
+        inspector.setContextMessage (inspectorMessageFor (MetroContent::arrange));
 }
 
 juce::String MetroStandaloneEditor::inspectorMessageFor (MetroContent content)
