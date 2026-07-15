@@ -293,6 +293,7 @@ target_sources(DysektStandalone PRIVATE
     src/metro/MetroTransportBar.cpp
     src/metro/MetroSidebar.cpp
     src/metro/MetroInspector.cpp
+    src/metro/MetroArrangementView.cpp
     src/metro/MetroStandaloneEditor.cpp
     src/sequencer/SequencerEngine.cpp
     src/sequencer/MidiClip.cpp
