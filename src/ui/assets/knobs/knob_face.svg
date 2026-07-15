@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Brushed metal face with radial gradient -->
+  <defs>
+    <radialGradient id="metalGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#404050;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#202028;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+  <circle cx="64" cy="64" r="56" fill="url(#metalGrad)"/>
+  <!-- Concentric groove rings for depth.
+       stroke-width bumped 0.5 -> 3.5: this face renders at ~36px on screen
+       (see MixerPanel::drawKnobInRow, d = kKnobR*2.6), a ~0.284x scale from
+       this 128-unit viewBox. A 0.5-unit stroke became ~0.14 physical
+       pixels — sub-pixel geometry that anti-aliases as speckle/noise
+       rather than a clean line. 3.5 units survives that scale-down as a
+       ~1px line. Depth differentiation between the two rings is kept via
+       opacity, not stroke width, matching the original intent. -->
+  <circle cx="64" cy="64" r="48" fill="none" stroke="#101018" stroke-width="3.5" opacity="0.6"/>
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#303040" stroke-width="3.5" opacity="0.4"/>
+</svg>
