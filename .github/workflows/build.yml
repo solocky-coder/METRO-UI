@@ -18,6 +18,17 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      # The repository currently has JUCE configured in .gitmodules but no
+      # recorded submodule commit, and can leave an incomplete JUCE directory.
+      # Validate a required JUCE build file and replace an incomplete checkout.
+      - name: Fetch JUCE
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "JUCE/extras/Build/CMake/JUCEModuleSupport.cmake")) {
+            Remove-Item -Recurse -Force JUCE -ErrorAction SilentlyContinue
+            git clone --depth 1 https://github.com/juce-framework/JUCE.git JUCE
+          }
+
       - name: Fetch bungee
         shell: pwsh
         run: |
