@@ -1,5 +1,9 @@
 #include "MetroStandaloneEditor.h"
 #include "../sequencer/SequencerEngine.h"
+#include "../ui/FileBrowserPanel.h"
+#include "../ui/MixerPanel.h"
+#include "../ui/PadGridView.h"
+#include <functional>
 namespace dysekt::metro {
 class MetroStandaloneEditor::TransportBar final : public juce::Component, private juce::Timer {
 public:
@@ -19,7 +23,12 @@ private:
 };
 class MetroStandaloneEditor::Sidebar final : public juce::Component {
 public:
-    Sidebar() { for (auto* button : { &arrange, &pads, &browser, &mixer }) { button->setClickingTogglesState (true); addAndMakeVisible (*button); } arrange.setButtonText ("Arrange"); pads.setButtonText ("Pads"); browser.setButtonText ("Browser"); mixer.setButtonText ("Mixer"); arrange.setToggleState (true, juce::dontSendNotification); }
+    std::function<void (int)> onSelection;
+    Sidebar() {
+        for (auto* button : { &arrange, &pads, &browser, &mixer }) { button->setClickingTogglesState (true); button->setRadioGroupId (1); addAndMakeVisible (*button); }
+        arrange.setButtonText ("Arrange"); pads.setButtonText ("Pads"); browser.setButtonText ("Browser"); mixer.setButtonText ("Mixer"); arrange.setToggleState (true, juce::dontSendNotification);
+        arrange.onClick = [this] { if (onSelection) onSelection (0); }; pads.onClick = [this] { if (onSelection) onSelection (1); }; browser.onClick = [this] { if (onSelection) onSelection (2); }; mixer.onClick = [this] { if (onSelection) onSelection (3); };
+    }
     void paint (juce::Graphics& graphics) override { graphics.fillAll (MetroTheme::Colours::panelBackground); }
     void resized() override { auto area = getLocalBounds().reduced (MetroTheme::Metrics::panelPadding); for (auto* button : { &arrange, &pads, &browser, &mixer }) button->setBounds (area.removeFromTop (MetroTheme::Metrics::controlHeight)); }
 private: juce::TextButton arrange, pads, browser, mixer;
@@ -42,9 +51,18 @@ class MetroStandaloneEditor::Inspector final : public juce::Component {
 public: void paint (juce::Graphics& graphics) override { graphics.fillAll (MetroTheme::Colours::panelBackground); graphics.setColour (MetroTheme::Colours::separator); graphics.fillRect (getLocalBounds().removeFromTop (MetroTheme::Metrics::separatorThickness)); graphics.setColour (MetroTheme::Colours::textSecondary); graphics.setFont (MetroTheme::smallFont()); graphics.drawText ("INSPECTOR  •  Select a clip, pad, or mixer channel", getLocalBounds().reduced (MetroTheme::Metrics::panelPadding), juce::Justification::centredLeft, true); }
 };
 MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit) : AudioProcessorEditor (processorToEdit), processor (processorToEdit) {
-    setLookAndFeel (&lookAndFeel); transportBar = std::make_unique<TransportBar> (processor.sequencer); sidebar = std::make_unique<Sidebar>(); workspace = std::make_unique<ArrangementWorkspace> (processor.sequencer); inspector = std::make_unique<Inspector>(); for (auto* component : { static_cast<juce::Component*> (transportBar.get()), static_cast<juce::Component*> (sidebar.get()), static_cast<juce::Component*> (workspace.get()), static_cast<juce::Component*> (inspector.get()) }) addAndMakeVisible (*component); setResizable (true, true); setSize (MetroTheme::Metrics::grid * 150, MetroTheme::Metrics::grid * 100);
+    setLookAndFeel (&lookAndFeel); transportBar = std::make_unique<TransportBar> (processor.sequencer); sidebar = std::make_unique<Sidebar>(); workspace = std::make_unique<ArrangementWorkspace> (processor.sequencer); inspector = std::make_unique<Inspector>();
+    padsView = std::make_unique<PadGridView> (processor); browserView = std::make_unique<FileBrowserPanel> (processor); mixerView = std::make_unique<MixerPanel> (processor);
+    sidebar->onSelection = [this] (int selection) { showContent (static_cast<Content> (selection)); };
+    for (auto* component : { static_cast<juce::Component*> (transportBar.get()), static_cast<juce::Component*> (sidebar.get()), static_cast<juce::Component*> (workspace.get()), static_cast<juce::Component*> (inspector.get()), static_cast<juce::Component*> (padsView.get()), static_cast<juce::Component*> (browserView.get()), static_cast<juce::Component*> (mixerView.get()) }) addAndMakeVisible (*component);
+    showContent (Content::arrange); setResizable (true, true); setSize (MetroTheme::Metrics::grid * 150, MetroTheme::Metrics::grid * 100);
 }
 MetroStandaloneEditor::~MetroStandaloneEditor() { setLookAndFeel (nullptr); }
 void MetroStandaloneEditor::paint (juce::Graphics& graphics) { graphics.fillAll (MetroTheme::Colours::windowBackground); }
-void MetroStandaloneEditor::resized() { auto area = getLocalBounds(); transportBar->setBounds (area.removeFromTop (MetroTheme::Metrics::transportHeight)); inspector->setBounds (area.removeFromBottom (MetroTheme::Metrics::inspectorHeight)); sidebar->setBounds (area.removeFromLeft (MetroTheme::Metrics::sidebarWidth)); workspace->setBounds (area); }
+void MetroStandaloneEditor::resized() { auto area = getLocalBounds(); transportBar->setBounds (area.removeFromTop (MetroTheme::Metrics::transportHeight)); inspector->setBounds (area.removeFromBottom (MetroTheme::Metrics::inspectorHeight)); sidebar->setBounds (area.removeFromLeft (MetroTheme::Metrics::sidebarWidth)); workspace->setBounds (area); padsView->setBounds (area); browserView->setBounds (area); mixerView->setBounds (area); }
+void MetroStandaloneEditor::showContent (Content content) {
+    activeContent = content;
+    workspace->setVisible (content == Content::arrange); padsView->setVisible (content == Content::pads); browserView->setVisible (content == Content::browser); mixerView->setVisible (content == Content::mixer);
+    resized();
+}
 }
