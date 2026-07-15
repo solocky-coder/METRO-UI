@@ -1,0 +1,15 @@
+[submodule "JUCE"]
+	path = JUCE
+	url = https://github.com/juce-framework/JUCE.git
+[submodule "signalsmith-stretch"]
+	path = signalsmith-stretch
+	url = https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+[submodule "bungee"]
+	path = bungee
+	url = https://github.com/bungee-audio-stretch/bungee.git
+[submodule "signalsmith-linear"]
+	path = signalsmith-linear
+	url = https://github.com/Signalsmith-Audio/linear.git
+[submodule "sfizz"]
+	path = sfizz
+	url = https://github.com/sfztools/sfizz.git

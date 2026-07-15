@@ -1,0 +1,117 @@
+╔══════════════════════════════════════════════════════════════════╗
+║           DYSEKT-SF — Complete Update Package                      ║
+║           Installation Guide (Windows / GitHub Desktop)         ║
+╚══════════════════════════════════════════════════════════════════╝
+
+────────────────────────────────────────────────────────────────────
+STEP 1 — Extract this zip
+────────────────────────────────────────────────────────────────────
+Right-click the zip file → Extract All → choose any location,
+e.g. your Desktop. You will get a folder called DYSEKT-SF_COMPLETE
+containing a src\ folder.
+
+────────────────────────────────────────────────────────────────────
+STEP 2 — Find your local repo folder
+────────────────────────────────────────────────────────────────────
+Open GitHub Desktop.
+In the top-left, make sure DYSEKT-SF is the selected repository.
+Click Repository → Show in Explorer.
+A Windows Explorer window will open at the root of your repo.
+
+────────────────────────────────────────────────────────────────────
+STEP 3 — Copy files into the repo
+────────────────────────────────────────────────────────────────────
+From the extracted DYSEKT-SF_COMPLETE folder, copy the entire src\
+folder and paste it into your repo root, choosing
+"Replace the files in the destination" when prompted.
+
+The final file locations inside your repo should be:
+
+  src\params\ParamIds.h               ← modified
+  src\params\ParamLayout.cpp          ← modified
+  src\PluginProcessor.h               ← modified
+  src\PluginProcessor.cpp             ← modified
+  src\PluginEditor.h                  ← modified
+  src\PluginEditor.cpp                ← modified
+  src\ui\ActionPanel.h                ← modified
+  src\ui\ActionPanel.cpp              ← modified
+  src\ui\HeaderBar.h                  ← modified
+  src\ui\HeaderBar.cpp                ← modified
+  src\ui\SliceControlBar.h            ← modified
+  src\ui\SliceControlBar.cpp          ← modified
+  src\ui\WaveformView.cpp             ← modified
+  src\ui\LogoBar.h                    ← NEW
+  src\ui\LogoBar.cpp                  ← NEW
+  src\ui\KeysPanel.h                  ← NEW
+  src\ui\KeysPanel.cpp                ← NEW
+  src\ui\FileBrowserPanel.h           ← NEW
+  src\ui\FileBrowserPanel.cpp         ← NEW
+
+────────────────────────────────────────────────────────────────────
+STEP 4 — Update CMakeLists.txt
+────────────────────────────────────────────────────────────────────
+The 3 new .cpp files must be registered in CMake or they will not
+compile.
+
+Open CMakeLists.txt (in your repo root) in any text editor,
+e.g. Notepad, VS Code, or Notepad++.
+
+Search for:   src/ui/ActionPanel.cpp
+(or any other src/ui/*.cpp line — they'll all be nearby)
+
+Add these 3 lines alongside the others in the same block:
+
+    src/ui/LogoBar.cpp
+    src/ui/KeysPanel.cpp
+    src/ui/FileBrowserPanel.cpp
+
+Save and close CMakeLists.txt.
+
+────────────────────────────────────────────────────────────────────
+STEP 5 — Commit in GitHub Desktop
+────────────────────────────────────────────────────────────────────
+Switch back to GitHub Desktop.
+You will see all changed files listed on the left under Changes.
+
+At the bottom-left, enter a commit summary, for example:
+    "GUI panels, gesture fix, slice start/end params"
+
+Click "Commit to main" (or your branch name).
+
+Then click "Push origin" at the top to upload to GitHub.
+
+────────────────────────────────────────────────────────────────────
+STEP 6 — Build
+────────────────────────────────────────────────────────────────────
+Open your build environment (Visual Studio or CMake GUI) and
+do a full rebuild. Because CMakeLists.txt was changed, CMake must
+re-run before the compiler starts — most IDEs do this automatically
+when they detect the file has changed.
+
+────────────────────────────────────────────────────────────────────
+SUMMARY OF ALL CHANGES IN THIS PACKAGE
+────────────────────────────────────────────────────────────────────
+
+GUI:
+  • Logo moved to its own bar above the controls bar (LogoBar)
+  • KEYS button in ActionPanel toggles a 2-octave piano keyboard
+      - Transpose < > buttons shift the displayed octave (C0–C8)
+      - Keys assigned to slices are outlined in the theme accent colour
+  • FILES button in ActionPanel toggles an embedded file browser
+      - Double-click any .wav/.aif/.ogg/.flac/.mp3 to load it
+  • SLICES and ROOT knobs on SliceControlBar are now always visible
+    on the right — never overlapped by slice parameters
+
+Stability:
+  • Slices can no longer be dragged to overlap each other
+  • MIDI Learn context menu now appears at the mouse cursor position
+
+DAW integration (Cubase Quick Controls / MIDI Learn):
+  • All HeaderBar knobs (BPM, Pitch, Attack, Decay, etc.) now fire
+    beginChangeGesture / endChangeGesture so hosts can detect touch
+  • SliceControlBar knobs do the same for all APVTS-backed parameters
+  • "Slice Start" and "Slice End" are now registered as full APVTS
+    parameters (normalised 0–1 position within the loaded sample),
+    appearing in the DAW's parameter list and fully automatable
+  • When DAW automation is played back for Slice Start or Slice End,
+    it is applied live to the currently selected slice

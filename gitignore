@@ -1,0 +1,45 @@
+# Build
+build/
+cmake-build-*/
+out/
+_codeql_build_dir/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code
+.claude/
+CLAUDE.md
+AGENTS.md
+plan.md
+review.md
+
+# Compiled objects
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+*.exe
+*.vst3
+*.component
+
+# Exception: FluidSynth prebuilt binaries must be committed to the repo
+!fluidsynth-prebuilt/
+!fluidsynth-prebuilt/**
+
+# Misc
+nul
+info/
