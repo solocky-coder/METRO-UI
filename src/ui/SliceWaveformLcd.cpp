@@ -629,47 +629,20 @@ void SliceWaveformLcd::drawBackground (juce::Graphics& g)
 {
  auto b = getLocalBounds();
 
- if (getTheme().name == "metro")
- {
-     g.setColour (getTheme().waveformBg);
-     g.fillRoundedRectangle (b.toFloat(), 0.0f);
-     g.setColour (getTheme().separator);
-     g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
-     return;
- }
+ g.setColour (getTheme().waveformBg);
+ g.fillRoundedRectangle (b.toFloat(), 0.0f);
+ g.setColour (getTheme().separator);
+ g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
- // ── Outer chassis frame — unchanged dark plastic surround ──────────────
- auto bgTop = getTheme().darkBar.darker (0.45f);
- auto bgBot = getTheme().darkBar.darker (0.65f);
- juce::ColourGradient outerGrad (bgTop, 0, 0, bgBot, 0, (float) b.getHeight(), false);
- g.setGradientFill (outerGrad);
- g.fillRoundedRectangle (b.toFloat(), 4.0f);
- g.setColour (SliceWaveformLcd::kBezel);
- g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.5f);
-
- // ── Outer backlight glow — faint ink-coloured spill onto the chassis ───
- g.setColour (juce::Colour (0x304A95FF));      // tight, low opacity
- g.drawRoundedRectangle (b.toFloat().expanded (1.0f), 5.0f, 3.0f);
- g.setColour (juce::Colour (0x184A95FF));      // wide, lower opacity
- g.drawRoundedRectangle (b.toFloat().expanded (4.0f), 7.0f, 6.0f);
-
- // ── Inner screen — solid near-black fill with a subtle top glow ─────────
+ // ── Inner screen — solid near-black fill, no gradient, no glow ──────────
  auto screen = b.reduced (4);
  g.setColour (kLcd2BgMid);
- g.fillRoundedRectangle (screen.toFloat(), 2.0f);
-
- juce::ColourGradient glow (lcd2Phosphor().withAlpha (0.07f), 0, (float) screen.getY(),
-                             juce::Colours::transparentBlack, 0, (float) (screen.getY() + 18), false);
- g.setGradientFill (glow);
- g.fillRoundedRectangle (screen.toFloat(), 2.0f);
+ g.fillRoundedRectangle (screen.toFloat(), 0.0f);
 
  // ── Scanline texture — subtle physical-screen feel ──────────────────────
  g.setColour (juce::Colour (0xFF000000).withAlpha ((uint8_t) kScanlineAlpha));
  for (int y = screen.getY(); y < screen.getBottom(); y += 2)
  g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
-
- g.setColour (SliceWaveformLcd::kBezel.withAlpha (0.5f));
- g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 2.0f, 1.0f);
 }
 
 void SliceWaveformLcd::drawWaveform (juce::Graphics& g, const juce::Rectangle<float>& area)
@@ -722,17 +695,12 @@ void SliceWaveformLcd::drawWaveform (juce::Graphics& g, const juce::Rectangle<fl
 
  switch (waveformMode)
  {
- // ── Mode 0 : Hard — original glow+sharp double-stroke look ────────────
+ // ── Mode 0 : Hard — flat fill + sharp single stroke, no glow pass ──────
  default:
  case 0:
  {
  g.setColour (sliceCol.withAlpha (0.12f));
  g.fillPath (fill);
-
- juce::PathStrokeType glow (2.5f);
- g.setColour (sliceCol.withAlpha (0.22f));
- g.strokePath (lineTop, glow);
- g.strokePath (lineBot, glow);
 
  juce::PathStrokeType sharp (1.1f);
  g.setColour (sliceCol.withAlpha (0.85f));
@@ -924,11 +892,6 @@ void SliceWaveformLcd::drawEnvelope (juce::Graphics& g, const juce::Rectangle<fl
  envLine.lineTo (px (env.rx),    py (env.sy));
  envLine.lineTo (px (1.0f),      py (1.0f));
 
- // Glow pass
- juce::PathStrokeType glowStroke (2.5f);
- g.setColour (juce::Colours::white.withAlpha (0.07f));
- g.strokePath (envLine, glowStroke);
-
  // Main line (dashed via path flattening)
  juce::Path dashedLine;
  {
@@ -996,12 +959,7 @@ void SliceWaveformLcd::drawNodes (juce::Graphics& g, const juce::Rectangle<float
 
  if (locked)
  {
- // ── LOCKED: solid filled ring + glow + padlock pip ────────────────
- // Outer glow
- g.setColour (node.colour.withAlpha (hov ? 0.40f : 0.20f));
- g.drawEllipse (cx - r - 3.0f, cy - r - 3.0f,
- (r + 3.0f) * 2.0f, (r + 3.0f) * 2.0f, 1.0f);
-
+ // ── LOCKED: solid filled ring + padlock pip, no glow ──────────────
  // Filled ring
  g.setColour (node.colour.withAlpha (hov ? 0.90f : 0.70f));
  g.fillEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f);
@@ -1120,11 +1078,6 @@ void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<fl
  xn = juce::jlimit (0.0f, 1.0f, xn);
 
  const float x = area.getX() + xn * area.getWidth();
-
- // Soft glow halo
- g.setColour (lcd2Phosphor().withAlpha (0.12f));
- g.drawLine (x - 1.5f, area.getY(), x - 1.5f, area.getBottom(), 1.0f);
- g.drawLine (x + 1.5f, area.getY(), x + 1.5f, area.getBottom(), 1.0f);
 
  // Main playhead line
  g.setColour (lcd2Phosphor().withAlpha (0.85f));

@@ -395,43 +395,20 @@ void SfzWaveformLcd::mouseWheelMove (const juce::MouseEvent& e,
 
 void SfzWaveformLcd::drawBackground (juce::Graphics& g)
 {
-    const auto ac = getTheme().accent;
     const auto b  = getLocalBounds();
 
-    if (getTheme().name == "metro")
-    {
-        g.setColour (getTheme().waveformBg);
-        g.fillRoundedRectangle (b.toFloat(), 0.0f);
-        g.setColour (getTheme().separator);
-        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
-        return;
-    }
-
-    const auto bgTop = getTheme().darkBar.darker (0.45f);
-    const auto bgBot = getTheme().darkBar.darker (0.65f);
-    juce::ColourGradient outerGrad (bgTop, 0, 0, bgBot, 0, (float) b.getHeight(), false);
-    g.setGradientFill (outerGrad);
-    g.fillRoundedRectangle (b.toFloat(), 4.0f);
-    g.setColour (ac.withAlpha (0.18f));
-    g.drawRoundedRectangle (b.toFloat().expanded (1.0f), 5.0f, 1.0f);
-    g.setColour (ac.withAlpha (0.60f));
-    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.5f);
+    g.setColour (getTheme().waveformBg);
+    g.fillRoundedRectangle (b.toFloat(), 0.0f);
+    g.setColour (getTheme().separator);
+    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
     const auto screen = b.reduced (4);
     g.setColour (sfzLcd2Bg());
-    g.fillRoundedRectangle (screen.toFloat(), 2.0f);
-
-    juce::ColourGradient glow (sfzLcd2Phosphor().withAlpha (0.07f), 0, (float) screen.getY(),
-                                juce::Colours::transparentBlack, 0, (float) (screen.getY() + 18), false);
-    g.setGradientFill (glow);
-    g.fillRoundedRectangle (screen.toFloat(), 2.0f);
+    g.fillRoundedRectangle (screen.toFloat(), 0.0f);
 
     g.setColour (juce::Colour (0xFF000000).withAlpha ((uint8_t) kScanlineAlpha));
     for (int y = screen.getY(); y < screen.getBottom(); y += 2)
         g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
-
-    g.setColour (ac.withAlpha (0.30f));
-    g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 2.0f, 1.0f);
 }
 
 void SfzWaveformLcd::drawSegmentLabel (juce::Graphics& g,

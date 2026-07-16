@@ -152,43 +152,13 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto& theme = getTheme();
-        const auto ac = theme.accent;
         auto b = getLocalBounds();
 
-        // ── LCD-style frame — identical recipe to MixerPanel ─────────────────
-        if (theme.name == "metro")
-        {
-            g.setColour (theme.waveformBg);
-            g.fillRoundedRectangle (b.toFloat(), 0.0f);
-            g.setColour (theme.separator);
-            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
-        }
-        else
-        {
-            juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
-                                             juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
-            g.setGradientFill (outerGrad);
-            g.fillRoundedRectangle (b.toFloat(), 4.0f);
-
-            g.setColour (ac.withAlpha (0.65f));
-            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
-
-            auto screen = b.reduced (4);
-            g.setColour (theme.darkBar.darker (0.55f));
-            g.fillRoundedRectangle (screen.toFloat(), 2.0f);
-
-            g.setColour (juce::Colours::black.withAlpha (0.18f));
-            for (int y = screen.getY(); y < screen.getBottom(); y += 2)
-                g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
-
-            juce::ColourGradient glow (ac.withAlpha (0.06f), 0, (float) screen.getY(),
-                                        juce::Colours::transparentBlack, 0, (float) (screen.getY() + 20), false);
-            g.setGradientFill (glow);
-            g.fillRoundedRectangle (screen.toFloat(), 2.0f);
-
-            g.setColour (ac.withAlpha (0.12f));
-            g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 2.0f, 1.0f);
-        }
+        // ── LCD-style frame — flat, square-cornered, no gradient, no glow ────
+        g.setColour (theme.waveformBg);
+        g.fillRoundedRectangle (b.toFloat(), 0.0f);
+        g.setColour (theme.separator);
+        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
         // Clip all track content to the inner screen rect
         g.saveState();
@@ -1046,39 +1016,27 @@ private:
             ? info.colour.withSaturation (0.08f).withBrightness (0.22f)
             : info.colour;
 
-        // Fill gradient
-        if (getTheme().name == "metro")
-        {
-            g.setColour (base.withAlpha (0.30f));
-            g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f);
-        }
-        else
-        {
-            juce::ColourGradient grad (
-                base.withAlpha (0.38f), (float)clipR.getX(), (float)clipR.getY(),
-                base.withAlpha (0.18f), (float)clipR.getX(), (float)clipR.getBottom(),
-                false);
-            g.setGradientFill (grad);
-            g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 4.f);
-        }
+        // Flat fill — no gradient, square corners
+        g.setColour (base.withAlpha (0.30f));
+        g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f);
 
         // Border — brighter when selected
         if (isSel)
         {
             g.setColour (base.brighter (0.7f).withAlpha (0.95f));
-            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 4.f, 1.5f);
+            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 1.5f);
         }
         else
         {
             g.setColour (base.withAlpha (muted ? 0.28f : 0.6f));
-            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 4.f, 1.f);
+            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 1.f);
         }
 
         // Mute hatch
         if (muted)
         {
             g.setColour (juce::Colours::black.withAlpha (0.38f));
-            g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 4.f);
+            g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f);
         }
 
         // Colour header strip along top

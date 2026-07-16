@@ -1098,9 +1098,6 @@ void KeysPanel::paint (juce::Graphics& g)
         g.setColour (juce::Colours::black.withAlpha (0.10f));
         for (int y = (int) screen.getY(); y < (int) screen.getBottom(); y += 2)
             g.drawHorizontalLine (y, screen.getX(), screen.getRight());
-
-        g.setColour (accent.withAlpha (0.10f));
-        g.drawRoundedRectangle (screen.expanded (0.5f), 0.0f, 1.0f);
     }
 
     // ── Keyboard ──────────────────────────────────────────────────────────────

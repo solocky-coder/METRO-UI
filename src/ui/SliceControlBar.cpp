@@ -31,23 +31,13 @@ static juce::Colour adsrTintForField (int fieldId)
  return {}; // invalid = use theme default
 }
 
-// ── Glass badge fill — subtle vertical gradient + soft top glow, so small
-// flat badges (FINE / CHRO / LGTO) read as part of the same LCD-glass
-// aesthetic as the panel background in paint() rather than flat vector fills.
+// ── Flat badge fill — single flat colour, square corners. Was a vertical
+// gradient + soft top glow; now matches the rest of the flat shape language.
 static void fillGlassBadge (juce::Graphics& g, juce::Rectangle<float> bounds,
-                             juce::Colour fillColour, float radius)
+                             juce::Colour fillColour, float /*radius*/)
 {
-    juce::ColourGradient grad (fillColour.brighter (0.15f), bounds.getX(), bounds.getY(),
-                                fillColour.darker (0.20f), bounds.getX(), bounds.getBottom(), false);
-    g.setGradientFill (grad);
-    g.fillRoundedRectangle (bounds, radius);
-
-    juce::ColourGradient glow (juce::Colours::white.withAlpha (fillColour.getFloatAlpha() * 0.20f),
-                                bounds.getX(), bounds.getY(),
-                                juce::Colours::transparentWhite,
-                                bounds.getX(), bounds.getY() + bounds.getHeight() * 0.7f, false);
-    g.setGradientFill (glow);
-    g.fillRoundedRectangle (bounds, radius);
+    g.setColour (fillColour);
+    g.fillRoundedRectangle (bounds, 0.0f);
 }
 
 namespace
@@ -762,14 +752,14 @@ void SliceControlBar::drawMidiLearnCell (juce::Graphics& g, int x, int y,
  if (armed)
  {
  g.setColour (getTheme().accent.withAlpha (0.2f));
- g.fillRoundedRectangle ((float) x, (float) y, (float) cellW, (float) cellH, 3.f);
+ g.fillRoundedRectangle ((float) x, (float) y, (float) cellW, (float) cellH, 0.0f);
  }
 
  g.setColour (armed ? getTheme().accent
  : mapped ? getTheme().accent.withAlpha (0.48f)
  : getTheme().foreground.withAlpha (0.18f));
  g.drawRoundedRectangle ((float) x + 0.5f, (float) y + 0.5f,
- (float) cellW - 1.f, (float) cellH - 1.f, 3.f, 1.f);
+ (float) cellW - 1.f, (float) cellH - 1.f, 0.0f, 1.f);
 
  g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf));
  g.setColour (armed ? getTheme().accent
@@ -840,29 +830,19 @@ void SliceControlBar::paint (juce::Graphics& g)
  const auto ac = getTheme().accent;
  auto b = getLocalBounds();
 
- juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
- juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
- g.setGradientFill (outerGrad);
- g.fillRoundedRectangle (b.toFloat(), 4.0f);
+ g.setColour (juce::Colour (0xFF0F0F0F));
+ g.fillRoundedRectangle (b.toFloat(), 0.0f);
 
  g.setColour (ac.withAlpha (0.65f));
- g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+ g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
  auto screen = b.reduced (4);
  g.setColour (getTheme().darkBar.darker (0.55f));
- g.fillRoundedRectangle (screen.toFloat(), 2.0f);
+ g.fillRoundedRectangle (screen.toFloat(), 0.0f);
 
  g.setColour (juce::Colours::black.withAlpha (0.18f));
  for (int y = screen.getY(); y < screen.getBottom(); y += 2)
  g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
-
- juce::ColourGradient glow (ac.withAlpha (0.06f), 0, (float) screen.getY(),
- juce::Colours::transparentBlack, 0, (float) (screen.getY() + 20), false);
- g.setGradientFill (glow);
- g.fillRoundedRectangle (screen.toFloat(), 2.0f);
-
- g.setColour (ac.withAlpha (0.12f));
- g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 2.0f, 1.0f);
  }
 
  cells.clear();
@@ -1344,7 +1324,7 @@ void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
          // PADS/WAVE reads as the same "button" everywhere else in the UI: sprite
          // base layer first, flat tint only as a fallback if the sprite is missing.
          juce::Rectangle<float> rf = area.toFloat().reduced (0.5f);
-         const float r = 4.0f;
+         const float r = 0.0f;   // flat, square corners
          const auto accent  = getTheme().accent;
          auto baseBg  = getTheme().button;
          auto fillCol = active ? baseBg.interpolatedWith (accent, 0.18f) : baseBg;
@@ -1401,7 +1381,7 @@ void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
      auto drawZoneBtn = [&] (const juce::Rectangle<int>& area, const juce::String& label, bool active)
      {
          juce::Rectangle<float> rf = area.toFloat().reduced (0.5f);
-         const float r = 4.0f;
+         const float r = 0.0f;   // flat, square corners
          const auto accent  = getTheme().accent;
          auto baseBg  = getTheme().button;
          auto fillCol = active ? baseBg.interpolatedWith (accent, 0.18f) : baseBg;
@@ -2163,11 +2143,11 @@ void SliceControlBar::drawChroBadgeCell (juce::Graphics& g, int x, int y,
     fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
                     active ? (locked ? theme.lockActive.withAlpha (0.15f)
                                      : theme.accent.withAlpha (0.15f))
-                           : theme.separator.withAlpha (0.25f), 2.5f);
+                           : theme.separator.withAlpha (0.25f), 0.0f);
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : (locked ? theme.lockActive.withAlpha (0.5f)
                                   : theme.foreground.withAlpha (0.22f)));
-    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 2.5f, 0.8f);
+    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
 
     g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
@@ -2208,9 +2188,9 @@ void SliceControlBar::drawLegatoToggleCell (juce::Graphics& g, int x, int y,
                                : (locked ? theme.lockActive.withAlpha (0.4f)
                                          : theme.foreground.withAlpha (0.18f));
     fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
-                    col.withAlpha (on ? 0.15f : 0.08f), 2.5f);
+                    col.withAlpha (on ? 0.15f : 0.08f), 0.0f);
     g.setColour (col);
-    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 2.5f, 0.8f);
+    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
 
     g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
     g.setColour (col);

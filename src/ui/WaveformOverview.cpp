@@ -363,9 +363,6 @@ void WaveformOverview::paint (juce::Graphics& g)
     for (int y = screen.getY(); y < screen.getBottom(); y += 2)
         g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
 
-    // Screen border
-    g.setColour (ac.withAlpha (0.12f));
-    g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 0.0f, 1.0f);
     // ── End frame ─────────────────────────────────────────────────────────────
 
     const float W = (float) screen.getWidth();

@@ -404,23 +404,14 @@ void MixerPanel::drawChroBadge (juce::Graphics& g, int cx, int cy, int channel, 
 
     const bool active = (channel > 0);
 
-    // Glow halo — mirrors the mute badge treatment so the two badge types
-    // read as one lit family in the row.
-    if (active)
-    {
-        const auto glowCol = locked ? theme.lockActive : theme.accent;
-        g.setColour (glowCol.withAlpha (0.14f));
-        g.fillRoundedRectangle (r.expanded (2.5f), 4.0f);
-        g.setColour (glowCol.withAlpha (0.08f));
-        g.fillRoundedRectangle (r.expanded (4.5f), 5.0f);
-    }
-
+    // Flat, square-cornered badge — no expanding glow halo, matching the
+    // already-flattened drawMuteBadge treatment.
     g.setColour (active ? (locked ? theme.lockActive.withAlpha (0.15f) : theme.accent.withAlpha (0.15f))
                         : theme.separator.withAlpha (0.3f));
-    g.fillRoundedRectangle (r, 2.5f);
+    g.fillRect (r);
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : (locked ? theme.lockActive.withAlpha (0.5f) : theme.foreground.withAlpha (0.25f)));
-    g.drawRoundedRectangle (r, 2.5f, 0.8f);
+    g.drawRect (r, 0.8f);
 
     g.setFont (DysektLookAndFeel::makeFont (11.0f));
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
@@ -490,36 +481,18 @@ void MixerPanel::drawMeter (juce::Graphics& g,
         g.setColour (juce::Colour (0xFF1E1E1E));
         g.drawRect (x, barY, w, barH);
 
-        // Gradient fill — drawn as a single gradient rect for performance
+        // Flat fill — single accent colour, no gradient
         if (litW > 0)
         {
-            juce::ColourGradient grad (phosphorCol (0.0f,  pk), (float) x,           (float) barY,
-                                       phosphorCol (fill,  pk), (float)(x + litW),   (float) barY,
-                                       false);
-            // add midpoint anchors for accurate colour mapping
-            grad.addColour (0.70 / (double) juce::jmax (fill, 0.01f),
-                            phosphorCol (0.70f * fill, pk));
-            grad.addColour (juce::jlimit (0.0, 1.0, 0.85 / (double) juce::jmax (fill, 0.01f)),
-                            phosphorCol (0.85f * fill, pk));
-            g.setGradientFill (grad);
+            g.setColour (phosphorCol (fill, pk));
             g.fillRect (x + 1, barY + 1, litW, barH - 2);
-
-            // Soft glow at the leading edge of the lit fill — matches the
-            // brightness of the glowing fader/knob look elsewhere in the strip.
-            const int glowX = x + 1 + juce::jmax (0, litW - 3);
-            g.setColour (phosphorCol (fill, pk).withAlpha (0.35f));
-            g.fillRect (glowX, barY + 1, 3, barH - 2);
         }
 
-        // Hold marker — bright hairline with soft glow
+        // Hold marker — bright hairline, no glow
         const float hFill = toFill (hold);
         const int   hx    = x + 1 + juce::roundToInt (hFill * (float)(w - holdW - 2));
         if (hFill > 0.01f && hx < x + w - 1)
         {
-            // Outer glow
-            g.setColour (phosphorCol (hFill, hold).withAlpha (0.25f));
-            g.fillRect  (hx - 1, barY + 1, holdW + 2, barH - 2);
-            // Core bright line
             g.setColour (phosphorCol (hFill, hold).withAlpha (0.95f));
             g.fillRect  (hx, barY + 1, holdW, barH - 2);
         }
@@ -680,10 +653,10 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         g.drawText (fmtPan (pan), x, kcy - 20, kKnobColW, 16,
                     juce::Justification::centred);
 
-        // Track bg — pill-shaped, matching the glowing-pill motif
+        // Track bg — flat, square corners
         g.setColour (theme.darkBar.darker (0.3f));
         g.fillRoundedRectangle ((float)sliderX, (float)sliderY,
-                                 (float)sliderW, (float)sliderH, sliderH * 0.5f);
+                                 (float)sliderW, (float)sliderH, 0.0f);
 
         // Centre tick
         g.setColour (theme.foreground.withAlpha (0.18f));
@@ -697,18 +670,14 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
             if (fillW > 0)
             {
                 g.setColour (fillCol.withAlpha (panLocked ? 0.55f : 0.35f));
-                g.fillRoundedRectangle ((float)fillX, (float)(sliderY + 1), (float)fillW, (float)(sliderH - 2), (sliderH - 2) * 0.5f);
+                g.fillRoundedRectangle ((float)fillX, (float)(sliderY + 1), (float)fillW, (float)(sliderH - 2), 0.0f);
             }
         }
 
-        // Glowing thumb — soft halo behind a notched pill, echoing the
-        // bright glowing-fader thumb from the reference.
-        g.setColour (fillCol.withAlpha (panLocked ? 0.35f : 0.22f));
-        g.fillRoundedRectangle ((float)(thumbX - 5), (float)(sliderY - 4),
-                                 10.f, (float)(sliderH + 8), 4.f);
+        // Flat thumb — no glow halo
         g.setColour (fillCol.withAlpha (panLocked ? 1.0f : 0.85f));
         g.fillRoundedRectangle ((float)(thumbX - 2), (float)(sliderY - 1),
-                                 4.f, (float)(sliderH + 2), 1.5f);
+                                 4.f, (float)(sliderH + 2), 0.0f);
         g.setColour (theme.darkBar.darker (0.5f).withAlpha (0.6f));
         g.drawVerticalLine (thumbX, (float)(sliderY - 1), (float)(sliderY + sliderH + 1));
     }
@@ -1070,17 +1039,10 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
         const int cx = x + kKnobColW / 2;
         const juce::Rectangle<float> r ((float)(cx - 12), (float)(kcy - 8), 24.f, 16.f);
         const bool muted = strip.muted;
-        if (muted)
-        {
-            g.setColour (theme.accent.withAlpha (0.14f));
-            g.fillRoundedRectangle (r.expanded (2.5f), 4.5f);
-            g.setColour (theme.accent.withAlpha (0.08f));
-            g.fillRoundedRectangle (r.expanded (4.5f), 5.5f);
-        }
         g.setColour (muted ? theme.accent.withAlpha (0.25f) : theme.separator.withAlpha (0.2f));
-        g.fillRoundedRectangle (r, 3.f);
+        g.fillRect (r);
         g.setColour (muted ? theme.accent : theme.foreground.withAlpha (0.30f));
-        g.drawRoundedRectangle (r, 3.f, 0.8f);
+        g.drawRect (r, 0.8f);
         g.setFont (DysektLookAndFeel::makeFont (10.0f));
         g.setColour (muted ? theme.accent : theme.foreground.withAlpha (0.30f));
         g.drawText ("M", r.toNearestInt(), juce::Justification::centred);
@@ -1120,44 +1082,22 @@ void MixerPanel::paint (juce::Graphics& g)
     const auto& theme = getTheme();
     const auto& snap  = processor.getUiSliceSnapshot();
 
-    // ── LCD-style frame — matches waveform + LCD screen aesthetic ────────────
+    // ── LCD-style frame — flat, square-cornered, no gradient, no glow ───────
     {
-        const auto ac = theme.accent;
         auto b = getLocalBounds();
 
-        if (theme.name == "metro")
-        {
-            g.setColour (theme.waveformBg);
-            g.fillRoundedRectangle (b.toFloat(), 0.0f);
-            g.setColour (theme.separator);
-            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
-        }
-        else
-        {
-        juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
-                                         juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
-        g.setGradientFill (outerGrad);
-        g.fillRoundedRectangle (b.toFloat(), 4.0f);
-
-        g.setColour (ac.withAlpha (0.65f));
-        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+        g.setColour (theme.waveformBg);
+        g.fillRoundedRectangle (b.toFloat(), 0.0f);
+        g.setColour (theme.separator);
+        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
         auto screen = b.reduced (4);
         g.setColour (theme.darkBar.darker (0.55f));
-        g.fillRoundedRectangle (screen.toFloat(), 2.0f);
+        g.fillRoundedRectangle (screen.toFloat(), 0.0f);
 
         g.setColour (juce::Colours::black.withAlpha (0.18f));
         for (int y = screen.getY(); y < screen.getBottom(); y += 2)
             g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
-
-        juce::ColourGradient glow (ac.withAlpha (0.06f), 0, (float) screen.getY(),
-                                    juce::Colours::transparentBlack, 0, (float) (screen.getY() + 20), false);
-        g.setGradientFill (glow);
-        g.fillRoundedRectangle (screen.toFloat(), 2.0f);
-
-        g.setColour (ac.withAlpha (0.12f));
-        g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 2.0f, 1.0f);
-        }
     }
 
     // Clip ALL content to inner screen rect so the frame border is never overwritten
