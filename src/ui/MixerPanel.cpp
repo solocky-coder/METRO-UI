@@ -1163,9 +1163,9 @@ void MixerPanel::paint (juce::Graphics& g)
         if (theme.name == "metro")
         {
             g.setColour (theme.waveformBg);
-            g.fillRoundedRectangle (b.toFloat(), 4.0f);
+            g.fillRoundedRectangle (b.toFloat(), 0.0f);
             g.setColour (theme.separator);
-            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
         }
         else
         {

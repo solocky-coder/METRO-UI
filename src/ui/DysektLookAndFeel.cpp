@@ -92,10 +92,10 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
 
     const bool toggled = button.getToggleState();
 
-    // ── Metro — flat surface, 4px radius, no sprite/gradient, accent-only ──
+    // ── Metro — flat surface, square corners, no sprite/gradient, accent-only ──
     if (getTheme().name == "metro")
     {
-        const float mr = 4.0f;
+        const float mr = 0.0f;   // manual: flat, square corners — no radius
         auto metroFill = isDown        ? getTheme().accent
                        : toggled       ? getTheme().accent
                        : isHighlighted ? getTheme().buttonHover
@@ -181,7 +181,7 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
 // ── Popup menus ───────────────────────────────────────────────────────────────
 void DysektLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
-    const float r = getTheme().name == "metro" ? 4.0f : 3.0f;   // tighter radius — Midnight direction
+    const float r = getTheme().name == "metro" ? 0.0f : 3.0f;   // Metro: square corners, no rounded cards
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
     const auto bgColour = getTheme().darkBar.brighter (0.06f);
 
@@ -670,7 +670,7 @@ void DysektLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, 
 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     g.setColour (bg);
-    g.fillRoundedRectangle (bounds, getTheme().name == "metro" ? 4.0f : 2.0f);
+    g.fillRoundedRectangle (bounds, getTheme().name == "metro" ? 0.0f : 2.0f);
 }
 
 void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
@@ -680,7 +680,7 @@ void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int
 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     const bool focused = te.hasKeyboardFocus (true);
-    const float radius = getTheme().name == "metro" ? 4.0f : 2.0f;
+    const float radius = getTheme().name == "metro" ? 0.0f : 2.0f;
     g.setColour (focused ? getTheme().accent
                           : getTheme().separator.withAlpha (0.60f));
     g.drawRoundedRectangle (bounds, radius, focused ? 1.4f : 1.0f);

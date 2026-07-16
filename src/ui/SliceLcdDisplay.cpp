@@ -573,7 +573,8 @@ void SliceLcdDisplay::paint (juce::Graphics& g)
     // Clip to rounded LCD boundary.
     {
         juce::Path clipPath;
-        clipPath.addRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
+        const float clipRadius = getTheme().name == "metro" ? 0.0f : 4.0f;
+        clipPath.addRoundedRectangle (getLocalBounds().toFloat(), clipRadius);
         g.reduceClipRegion (clipPath);
     }
     buildDisplayData();

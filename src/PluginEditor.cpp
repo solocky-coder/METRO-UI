@@ -878,7 +878,7 @@ void DysektEditor::paint (juce::Graphics& g)
  if (getTheme().name == "metro")
  {
      g.setColour (getTheme().waveformBg);
-     g.fillRoundedRectangle (outerF, 4.0f);
+     g.fillRoundedRectangle (outerF, 0.0f);
  }
  else
  {
@@ -926,7 +926,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
-     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.0f * sf);
+     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
  }
  else
  {
@@ -964,7 +964,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
-     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.0f * sf);
+     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
  }
  else
  {
@@ -1013,7 +1013,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
-     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.0f * sf);
+     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
  }
  else
  {
@@ -1043,7 +1043,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
-     g.drawRoundedRectangle (logoF.reduced (0.5f * sf), 4.0f * sf, 1.0f * sf);
+     g.drawRoundedRectangle (logoF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
  }
  else
  {
@@ -1063,7 +1063,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
-     g.drawRoundedRectangle (win.reduced (2.0f * sf), 2.5f * sf, 1.0f * sf);
+     g.drawRoundedRectangle (win.reduced (2.0f * sf), 0.0f, 1.0f * sf);
  }
  else
  {

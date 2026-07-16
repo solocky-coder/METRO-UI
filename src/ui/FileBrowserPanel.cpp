@@ -416,9 +416,9 @@ void FileBrowserPanel::paint (juce::Graphics& g)
         if (T.name == "metro")
         {
             g.setColour (T.waveformBg);
-            g.fillRoundedRectangle (b.toFloat(), 4.0f);
+            g.fillRoundedRectangle (b.toFloat(), 0.0f);
             g.setColour (T.separator);
-            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
             return b.reduced (4);
         }
 

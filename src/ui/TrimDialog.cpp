@@ -33,13 +33,15 @@ void TrimDialog::drawTrimKnob (juce::Graphics& g,
                                 bool invertFill)
 {
     const auto& T = getTheme();
+    const bool  metro = (T.name == "metro");
     const float sf = (float) getHeight() / 34.0f;   // scale relative to nominal 34px bar height
+    const float cellRadius = metro ? 0.0f : 3.0f;
 
-    // Background + border
+    // Background + border — Metro: square corners, flat 1px border, no glow.
     g.setColour (T.darkBar);
-    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
-    g.setColour (T.accent.withAlpha (0.55f));
-    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.0f);
+    g.fillRoundedRectangle (cell.toFloat(), cellRadius);
+    g.setColour (metro ? T.accent : T.accent.withAlpha (0.55f));
+    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), cellRadius, 1.0f);
 
     // Progress bar — inset inside frame, does NOT mutate cell.
     // Both knobs represent "how much audio remains once this trim point is
@@ -110,13 +112,15 @@ void TrimDialog::paint (juce::Graphics& g)
     if (! labelArea.isEmpty())
     {
         const auto& T = getTheme();
+        const bool  metro = (T.name == "metro");
         const auto  r = labelArea.toFloat();
+        const float radius = metro ? 0.0f : 3.0f;
 
-        // Background + accent border
+        // Background + accent border — Metro: square corners, flat 1px border.
         g.setColour (T.darkBar);
-        g.fillRoundedRectangle (r, 3.0f);
-        g.setColour (T.accent.withAlpha (0.60f));
-        g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f);
+        g.fillRoundedRectangle (r, radius);
+        g.setColour (metro ? T.accent : T.accent.withAlpha (0.60f));
+        g.drawRoundedRectangle (r.reduced (0.5f), radius, 1.0f);
 
         // Title text — single line: "TRIM SAMPLE" centred
         const float sf = (float) getHeight() / 34.0f;

@@ -401,9 +401,9 @@ void SfzWaveformLcd::drawBackground (juce::Graphics& g)
     if (getTheme().name == "metro")
     {
         g.setColour (getTheme().waveformBg);
-        g.fillRoundedRectangle (b.toFloat(), 4.0f);
+        g.fillRoundedRectangle (b.toFloat(), 0.0f);
         g.setColour (getTheme().separator);
-        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
         return;
     }
 

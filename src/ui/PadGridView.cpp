@@ -127,9 +127,9 @@ void PadGridView::drawPad (juce::Graphics& g,
         if (th.name == "metro")
         {
             g.setColour (th.button);
-            g.fillRoundedRectangle (bounds.toFloat(), 4.0f);
+            g.fillRoundedRectangle (bounds.toFloat(), 0.0f);
             g.setColour (th.separator);
-            g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 0.0f, 1.0f);
             return;
         }
         {
@@ -157,9 +157,9 @@ void PadGridView::drawPad (juce::Graphics& g,
     {
         // Flat single-colour tile, no gradient — Metro tile language.
         g.setColour (padBg);
-        g.fillRoundedRectangle (bounds.toFloat(), 4.0f);
+        g.fillRoundedRectangle (bounds.toFloat(), 0.0f);
         g.setColour (sel ? th.accent : th.separator);
-        g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 4.0f, sel ? 1.5f : 1.0f);
+        g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 0.0f, sel ? 1.5f : 1.0f);
     }
     else
     {

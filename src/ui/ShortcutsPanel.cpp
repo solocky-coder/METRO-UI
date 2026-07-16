@@ -301,10 +301,12 @@ void ShortcutsPanel::paint (juce::Graphics& g)
     g.fillAll (juce::Colours::black.withAlpha (0.55f));
 
     auto panel = getLocalBounds().reduced (40, 30);
+    const bool metro = (getTheme().name == "metro");
+    const float panelRadius = metro ? 0.0f : 8.0f;
     g.setColour (getTheme().header);
-    g.fillRoundedRectangle (panel.toFloat(), 8.0f);
-    g.setColour (getTheme().accent.withAlpha (0.5f));
-    g.drawRoundedRectangle (panel.toFloat().reduced (0.5f), 8.0f, 1.0f);
+    g.fillRoundedRectangle (panel.toFloat(), panelRadius);
+    g.setColour (metro ? getTheme().separator : getTheme().accent.withAlpha (0.5f));
+    g.drawRoundedRectangle (panel.toFloat().reduced (0.5f), panelRadius, 1.0f);
 
     // ── Settings content ──────────────────────────────────────────────────────
     auto content = panel.reduced (14, 6);
@@ -365,7 +367,7 @@ void ShortcutsPanel::paint (juce::Graphics& g)
             auto row     = col.removeFromTop (rowH);
             auto keyRect = row.removeFromLeft (keysW);
             g.setColour (getTheme().button.withAlpha (0.9f));
-            g.fillRoundedRectangle (keyRect.reduced (0, 2).toFloat(), 3.0f);
+            g.fillRoundedRectangle (keyRect.reduced (0, 2).toFloat(), getTheme().name == "metro" ? 0.0f : 3.0f);
             g.setFont (keyFont);
             g.setColour (getTheme().accent);
             g.drawText (entry.keys, keyRect, juce::Justification::centred);

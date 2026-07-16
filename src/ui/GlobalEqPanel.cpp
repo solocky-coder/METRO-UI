@@ -58,18 +58,28 @@ void GlobalEqPanel::paint (juce::Graphics& g)
 
     // ── Theme-aware frame: gradient background + accent border ────────────────
     {
-        auto bgTop = theme.darkBar.darker (0.45f);
-        auto bgBot = theme.darkBar.darker (0.65f);
-        juce::ColourGradient grad (bgTop, 0, 0, bgBot, 0, bounds.getHeight(), false);
-        g.setGradientFill (grad);
-        g.fillRoundedRectangle (bounds, 4.f);
+        if (theme.name == "metro")
+        {
+            g.setColour (theme.waveformBg);
+            g.fillRoundedRectangle (bounds, 0.0f);
+            g.setColour (theme.separator);
+            g.drawRoundedRectangle (bounds.reduced (0.5f), 0.0f, 1.0f);
+        }
+        else
+        {
+            auto bgTop = theme.darkBar.darker (0.45f);
+            auto bgBot = theme.darkBar.darker (0.65f);
+            juce::ColourGradient grad (bgTop, 0, 0, bgBot, 0, bounds.getHeight(), false);
+            g.setGradientFill (grad);
+            g.fillRoundedRectangle (bounds, 4.f);
 
-        // Outer glow ring
-        g.setColour (theme.accent.withAlpha (0.18f));
-        g.drawRoundedRectangle (bounds.expanded (1.0f), 5.f, 1.0f);
-        // Main accent border
-        g.setColour (theme.accent.withAlpha (0.60f));
-        g.drawRoundedRectangle (bounds.reduced (0.5f), 4.f, 1.5f);
+            // Outer glow ring
+            g.setColour (theme.accent.withAlpha (0.18f));
+            g.drawRoundedRectangle (bounds.expanded (1.0f), 5.f, 1.0f);
+            // Main accent border
+            g.setColour (theme.accent.withAlpha (0.60f));
+            g.drawRoundedRectangle (bounds.reduced (0.5f), 4.f, 1.5f);
+        }
     }
 
     // ── Title ─────────────────────────────────────────────────────────────────

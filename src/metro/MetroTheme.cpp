@@ -13,26 +13,33 @@ namespace MetroTheme
     const juce::Colour kSuccess       (0xFF16C60C);
     const juce::Colour kWarning       (0xFFFFB900);
     const juce::Colour kDanger        (0xFFE81123);
-    const juce::Colour kSecondaryText (0xFFB0B0B0);
+    const juce::Colour kSecondaryText (0xFFC8C8C8);   // Secondary (Engineering Manual v1)
 
     ThemeData build()
     {
         ThemeData t;
         t.name             = "metro";
-        t.background       = juce::Colour (0xFF202124);   // Background
-        t.waveformBg       = juce::Colour (0xFF1A1B1E);   // dark card behind waveform
-        t.darkBar          = juce::Colour (0xFF1A1B1E);   // header / bar strip
+        // Anchors are the Engineering Manual v1's authoritative values:
+        // Background #1E1E1E, Surface #252526, Text #FFFFFF, Accent #0078D7,
+        // Secondary #C8C8C8. The manual has no "Raised" tier, so hover/grid/
+        // separator/waveformBg are re-derived here from those anchors using
+        // the same relative-brightness ratios as the previous (pre-manual)
+        // palette: hover/grid ≈ Surface brightened ~4%, separator ≈ Surface
+        // brightened ~7%, waveformBg/darkBar ≈ Background darkened ~19%.
+        t.background       = juce::Colour (0xFF1E1E1E);   // Background
+        t.waveformBg       = juce::Colour (0xFF181818);   // Background, darkened ~19%
+        t.darkBar          = juce::Colour (0xFF181818);   // Background, darkened ~19%
         t.foreground       = juce::Colour (0xFFFFFFFF);   // Text
-        t.header           = juce::Colour (0xFF202124);   // top bar
+        t.header           = juce::Colour (0xFF1E1E1E);   // top bar == Background
         t.waveform         = juce::Colour (0xFF0078D7);   // Accent waveform
         t.selectionOverlay = juce::Colour (0xFF0078D7).withAlpha (0.22f);
         t.lockActive       = juce::Colour (0xFF0078D7);   // Accent
-        t.lockInactive     = juce::Colour (0xFF4A4A4A);   // muted secondary
-        t.gridLine         = juce::Colour (0xFF333333);   // Raised — subtle grid
+        t.lockInactive     = juce::Colour (0xFF4A4A4A);   // muted secondary — not manual-anchored
+        t.gridLine         = juce::Colour (0xFF2E2E2F);   // Surface, brightened ~4%
         t.accent           = juce::Colour (0xFF0078D7);   // Accent
-        t.button           = juce::Colour (0xFF2B2B2B);   // Panel / Surface
-        t.buttonHover      = juce::Colour (0xFF333333);   // Raised
-        t.separator        = juce::Colour (0xFF3A3A3A);   // thin separator line
+        t.button           = juce::Colour (0xFF252526);   // Surface
+        t.buttonHover      = juce::Colour (0xFF2E2E2F);   // Surface, brightened ~4%
+        t.separator        = juce::Colour (0xFF343435);   // Surface, brightened ~7%
 
         // Windows/Metro tile colour set — flat, single-hue swatches, no neon —
         // used for slice colours across the pad grid / mixer / waveform.

@@ -403,10 +403,19 @@ void SfzDropdownPanel::paint (juce::Graphics& g)
     // Full background
     {
         const auto bounds = getLocalBounds().toFloat();
-        juce::ColourGradient bg (theme.darkBar.darker (0.35f), 0.f, 0.f,
-                                  theme.darkBar.darker (0.10f), 0.f, (float) h, false);
-        g.setGradientFill (bg);
-        g.fillRoundedRectangle (bounds, 4.0f);
+        if (theme.name == "metro")
+        {
+            // Flat, square, no gradient — manual forbids gloss/glow/gradient.
+            g.setColour (theme.darkBar);
+            g.fillRoundedRectangle (bounds, 0.0f);
+        }
+        else
+        {
+            juce::ColourGradient bg (theme.darkBar.darker (0.35f), 0.f, 0.f,
+                                      theme.darkBar.darker (0.10f), 0.f, (float) h, false);
+            g.setGradientFill (bg);
+            g.fillRoundedRectangle (bounds, 4.0f);
+        }
 
         const int sepY = kStripH;
         g.setColour (theme.accent.withAlpha (0.18f));
@@ -459,8 +468,9 @@ void SfzDropdownPanel::drawSf2ChStrip (juce::Graphics& g) const
     {
         // Subtle button backgrounds
         g.setColour ((disabled ? dim : accent).withAlpha (0.18f));
-        g.fillRoundedRectangle (decR.toFloat(), 3.f);
-        g.fillRoundedRectangle (incR.toFloat(), 3.f);
+        const float spinnerR = (theme.name == "metro") ? 0.0f : 3.f;
+        g.fillRoundedRectangle (decR.toFloat(), spinnerR);
+        g.fillRoundedRectangle (incR.toFloat(), spinnerR);
 
         // Arrows (plain ASCII so MSVC code page 1252 never chokes)
         g.setColour (disabled ? dim : accent);
@@ -624,19 +634,32 @@ void SfzDropdownPanel::drawMeter (juce::Graphics& g) const
     auto leftBar  = juce::Rectangle<int> (area.getX(),              area.getY(), barW, barH);
     auto rightBar = juce::Rectangle<int> (area.getX() + barW + 4,  area.getY(), barW, barH);
 
+    const bool metroMeter = (theme.name == "metro");
+    const float meterR = metroMeter ? 0.0f : 2.0f;
+
     g.setColour (theme.darkBar.darker (0.2f));
-    g.fillRoundedRectangle (leftBar.toFloat(),  2.0f);
-    g.fillRoundedRectangle (rightBar.toFloat(), 2.0f);
+    g.fillRoundedRectangle (leftBar.toFloat(),  meterR);
+    g.fillRoundedRectangle (rightBar.toFloat(), meterR);
 
     auto drawBar = [&] (juce::Rectangle<int> bar, float peak, float hold)
     {
         const int fillH = juce::roundToInt ((float) bar.getHeight() * juce::jlimit (0.f, 1.f, peak));
         if (fillH > 0)
         {
-            juce::ColourGradient grad (theme.accent.withAlpha (0.85f), 0.f, (float) bar.getBottom(),
-                                        theme.accent.brighter (0.5f),  0.f, (float) bar.getY(), false);
-            g.setGradientFill (grad);
-            g.fillRoundedRectangle (bar.withTrimmedTop (bar.getHeight() - fillH).toFloat(), 2.0f);
+            auto fillArea = bar.withTrimmedTop (bar.getHeight() - fillH).toFloat();
+            if (metroMeter)
+            {
+                // Flat single colour — manual forbids gradient fills.
+                g.setColour (theme.accent);
+                g.fillRoundedRectangle (fillArea, 0.0f);
+            }
+            else
+            {
+                juce::ColourGradient grad (theme.accent.withAlpha (0.85f), 0.f, (float) bar.getBottom(),
+                                            theme.accent.brighter (0.5f),  0.f, (float) bar.getY(), false);
+                g.setGradientFill (grad);
+                g.fillRoundedRectangle (fillArea, 2.0f);
+            }
         }
         const int holdY = bar.getBottom() - juce::roundToInt ((float) bar.getHeight()
                            * juce::jlimit (0.f, 1.f, hold));

@@ -15,7 +15,7 @@ void MetroLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& bu
         return;
 
     const bool toggled = button.getToggleState();
-    const float r = 4.0f;
+    const float r = 0.0f; // manual: flat, square corners — no radius
 
     auto fill = isDown        ? getTheme().accent
               : toggled       ? getTheme().accent
@@ -33,7 +33,7 @@ void MetroLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, b
 {
     const auto& t = getTheme();
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
-    const float r = 4.0f;
+    const float r = 0.0f; // manual: flat, square corners — no radius
 
     g.setColour (isButtonDown ? t.buttonHover : t.button);
     g.fillRoundedRectangle (bounds, r);
@@ -53,15 +53,15 @@ void MetroLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, b
 }
 
 // ── Popup menus ──────────────────────────────────────────────────────────────
-// Flat card, 4px radius per spec's corner-radius rule (base class uses 3px).
+// Flat card, square corners per manual's corner-radius rule (base class uses 3px).
 void MetroLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
     const auto& t = getTheme();
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     g.setColour (t.button);
-    g.fillRoundedRectangle (bounds, 4.0f);
+    g.fillRoundedRectangle (bounds, 0.0f);
     g.setColour (t.separator);
-    g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
+    g.drawRoundedRectangle (bounds, 0.0f, 1.0f);
 }
 
 // ── Sliders ──────────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ void MetroLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, i
 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     g.setColour (bg);
-    g.fillRoundedRectangle (bounds, 4.0f);
+    g.fillRoundedRectangle (bounds, 0.0f);
 }
 
 void MetroLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
@@ -148,5 +148,5 @@ void MetroLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     const bool focused = te.hasKeyboardFocus (true);
     g.setColour (focused ? getTheme().accent : getTheme().separator.withAlpha (0.60f));
-    g.drawRoundedRectangle (bounds, 4.0f, focused ? 1.4f : 1.0f);
+    g.drawRoundedRectangle (bounds, 0.0f, focused ? 1.4f : 1.0f);
 }

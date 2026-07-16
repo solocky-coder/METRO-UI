@@ -193,6 +193,9 @@ void Sf2ProgramGrid::resized()
 void Sf2ProgramGrid::paint (juce::Graphics& g)
 {
     const auto& theme = gridTheme();
+    const bool  metro = (theme.name == "metro");
+    const float r     = metro ? 0.0f : 3.0f;    // cell/background corner radius
+    const float rBadge = metro ? 0.0f : 2.0f;   // channel-badge corner radius
     const int   availW = getWidth() - (scrollBar.isVisible() ? kScrollW : 0);
     const int   cellW  = availW / kCols;           // fills full width, no kPad gap
     const int   w      = cellW * kCols;            // actual grid width (≤ availW by integer division)
@@ -201,7 +204,7 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
     // Simple background — the CRT frame is drawn by SfzDropdownPanel::paintOverChildren
     // over this component's bounds, so it's not clipped.
     g.setColour (theme.darkBar.darker (0.55f));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 3.0f);
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), r);
 
     // Clip to grid area
     g.saveState();
@@ -259,9 +262,9 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                     // Use the theme accent colour directly — same family as selected,
                     // but brighter fill so it reads as "active/auditing".
                     g.setColour (theme.accent.withAlpha (0.35f));
-                    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                    g.fillRoundedRectangle (cell.toFloat(), r);
                     g.setColour (theme.accent.withAlpha (0.90f));
-                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.5f);
+                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), r, 1.5f);
 
                     // Small "live" dot in top-right corner
                     const auto dot = juce::Rectangle<float> (
@@ -273,24 +276,24 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                 {
                     // Assigned + currently selected for per-channel FX editing: bright solid border
                     g.setColour (theme.accent.withAlpha (0.25f));
-                    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                    g.fillRoundedRectangle (cell.toFloat(), r);
                     g.setColour (theme.accent.withAlpha (1.0f));
-                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.5f);
+                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), r, 1.5f);
                 }
                 else if (isAssigned)
                 {
                     // Assigned but not currently editing: subtle tinted fill + accent border
                     g.setColour (theme.accent.withAlpha (0.12f));
-                    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                    g.fillRoundedRectangle (cell.toFloat(), r);
                     g.setColour (theme.accent.withAlpha (0.50f));
-                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.0f);
+                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), r, 1.0f);
                 }
                 else if (isSelected)
                 {
                     g.setColour (theme.accent.withAlpha (0.30f));
-                    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                    g.fillRoundedRectangle (cell.toFloat(), r);
                     g.setColour (theme.accent.withAlpha (0.70f));
-                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.0f);
+                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), r, 1.0f);
                 }
                 else if (isHovered)
                 {
@@ -306,19 +309,19 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                     else
                     {
                         g.setColour (theme.button.brighter (0.10f));
-                        g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                        g.fillRoundedRectangle (cell.toFloat(), r);
                     }
 
                     // Family tint wash + left accent stripe, kept subtle so
                     // hover state still reads as the dominant treatment.
                     const juce::Colour famColHover = gmFamilyColour (info.preset);
                     g.setColour (famColHover.withAlpha (0.08f));
-                    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                    g.fillRoundedRectangle (cell.toFloat(), r);
                     g.setColour (famColHover.withAlpha (0.7f));
                     g.fillRect (cell.getX(), cell.getY(), 3, cell.getHeight());
 
                     g.setColour (theme.separator.brighter (0.30f));
-                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.0f);
+                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), r, 1.0f);
                 }
                 else
                 {
@@ -333,7 +336,7 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                     else
                     {
                         g.setColour (theme.button);
-                        g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                        g.fillRoundedRectangle (cell.toFloat(), r);
                     }
 
                     // Family tint wash + left accent stripe — same visual
@@ -343,12 +346,12 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                     // a wall of identical grey tiles.
                     const juce::Colour famCol = gmFamilyColour (info.preset);
                     g.setColour (famCol.withAlpha (0.10f));
-                    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                    g.fillRoundedRectangle (cell.toFloat(), r);
                     g.setColour (famCol.withAlpha (0.7f));
                     g.fillRect (cell.getX(), cell.getY(), 3, cell.getHeight());
 
                     g.setColour (theme.separator.withAlpha (0.60f));
-                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.0f);
+                    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), r, 1.0f);
                 }
 
                 // Preset number badge (top-left)
@@ -373,7 +376,7 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                     const auto badgeR = juce::Rectangle<int> (
                         cell.getRight() - bw - 2, cell.getBottom() - bh - 2, bw, bh);
                     g.setColour (isEditing ? theme.accent : theme.accent.withAlpha (0.85f));
-                    g.fillRoundedRectangle (badgeR.toFloat(), 2.f);
+                    g.fillRoundedRectangle (badgeR.toFloat(), rBadge);
                     g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
                     g.setColour (theme.darkBar);
                     g.drawText (chLabel, badgeR, juce::Justification::centred, false);
