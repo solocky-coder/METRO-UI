@@ -228,13 +228,18 @@ inline void styleSecondaryPopupButton (juce::TextButton& b, const ThemeData& T)
     b.setColour (juce::TextButton::textColourOnId,  T.foreground);
 }
 
-// Shared "modern" popup dialog chrome, used by every overlay (ConfirmOverlay,
-// RenameOverlay, AddZoneOverlay, ArchiveUrlOverlay, SaveSfzOverlay). Replaces
-// the old flat/sharp-cornered dialog look (5px radius, no elevation, hard
-// divider rule under the title) with a softer rounded box, a real drop
-// shadow for elevation, and a darker backdrop so the dialog reads as
-// floating above the plugin UI rather than pasted flat on top of it.
-static constexpr float kPopupCornerRadius = 12.0f;
+// Shared popup dialog chrome, used by every overlay (ConfirmOverlay,
+// RenameOverlay, AddZoneOverlay, ArchiveUrlOverlay, SaveSfzOverlay,
+// MessageOverlay). Flat, square-cornered box, no drop shadow, no glow —
+// was unconditionally rendering a 12px rounded corner, a 22px-blur black
+// drop shadow, and a 0.7-alpha accent-coloured glow border regardless of
+// theme (see the removed comment this replaced: "softer rounded box, a
+// real drop shadow for elevation..."). That made every popup in the app
+// round-cornered and glowing no matter which theme was active, since none
+// of this file's helpers were ever gated on theme.name. Square corners and
+// a plain hairline border now match drawAlertBox/drawButtonBackground/
+// drawComboBox's flat shape language.
+static constexpr float kPopupCornerRadius = 0.0f;
 
 inline void drawPopupBackdrop (juce::Graphics& g, juce::Rectangle<int> bounds)
 {
@@ -244,16 +249,10 @@ inline void drawPopupBackdrop (juce::Graphics& g, juce::Rectangle<int> bounds)
 
 inline void drawPopupBox (juce::Graphics& g, juce::Rectangle<int> box, const ThemeData& T)
 {
-    // Soft elevation shadow so the box reads as floating above the UI.
-    juce::DropShadow shadow (juce::Colours::black.withAlpha (0.5f), 22, { 0, 6 });
-    juce::Path shadowPath;
-    shadowPath.addRoundedRectangle (box.toFloat(), kPopupCornerRadius);
-    shadow.drawForPath (g, shadowPath);
-
     g.setColour (T.header);
     g.fillRoundedRectangle (box.toFloat(), kPopupCornerRadius);
-    g.setColour (T.accent.withAlpha (0.7f));
-    g.drawRoundedRectangle (box.toFloat().reduced (0.5f), kPopupCornerRadius, 1.5f);
+    g.setColour (T.separator);
+    g.drawRoundedRectangle (box.toFloat().reduced (0.5f), kPopupCornerRadius, 1.0f);
 }
 
 // Computes a new parameter value from a vertical drag gesture.
