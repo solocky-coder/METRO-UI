@@ -629,6 +629,15 @@ void SliceWaveformLcd::drawBackground (juce::Graphics& g)
 {
  auto b = getLocalBounds();
 
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().waveformBg);
+     g.fillRoundedRectangle (b.toFloat(), 4.0f);
+     g.setColour (getTheme().separator);
+     g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+     return;
+ }
+
  // ── Outer chassis frame — unchanged dark plastic surround ──────────────
  auto bgTop = getTheme().darkBar.darker (0.45f);
  auto bgBot = getTheme().darkBar.darker (0.65f);

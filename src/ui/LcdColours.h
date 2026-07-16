@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_graphics/juce_graphics.h>
+#include "DysektLookAndFeel.h"
 
 // ── Fixed black STN-LCD palette ──────────────────────────────────────────────
 // This panel simulates a physical black-tinted STN LCD readout (classic Roland
@@ -21,6 +22,15 @@ namespace LcdColours
     static const juce::Colour kInk      { 0xFF6BFF4A };
     static const juce::Colour kOutline  { 0xFF1C3A12 };
     static const juce::Colour kGlow     { 0xFF6BFF4A };   // used with alpha for glow layers
+
+    // ── Metro override helpers ───────────────────────────────────────────────
+    // The fixed green-phosphor palette above intentionally never follows the
+    // app theme (a real LCD doesn't relight when the host skins itself) — but
+    // Metro explicitly asks for flat cards with no hardware simulation, so the
+    // chassis (not the phosphor text/segments) breaks that rule for Metro only.
+    static inline bool currentThemeIsMetro() { return getTheme().name == "metro"; }
+    static inline juce::Colour metroWaveformBg() { return getTheme().waveformBg; }
+    static inline juce::Colour metroSeparator()  { return getTheme().separator; }
 
     struct Palette
     {
@@ -64,6 +74,15 @@ namespace LcdColours
                                               int scanlineAlpha = 28)
     {
         const auto pal = fromTheme();
+
+        if (currentThemeIsMetro())
+        {
+            g.setColour (metroWaveformBg());
+            g.fillRoundedRectangle (b.toFloat(), 4.0f);
+            g.setColour (metroSeparator());
+            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            return;
+        }
 
         // ── Outer chassis frame — dark plastic surround ─────────────────────
         juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,

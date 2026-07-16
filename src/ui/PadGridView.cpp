@@ -124,6 +124,14 @@ void PadGridView::drawPad (juce::Graphics& g,
     // ── Background: full pad filled with the slice color ─────────────────────
     if (isEmpty)
     {
+        if (th.name == "metro")
+        {
+            g.setColour (th.button);
+            g.fillRoundedRectangle (bounds.toFloat(), 4.0f);
+            g.setColour (th.separator);
+            g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            return;
+        }
         {
             auto bgTop = th.darkBar.darker (0.45f);
             auto bgBot = th.darkBar.darker (0.65f);
@@ -145,18 +153,29 @@ void PadGridView::drawPad (juce::Graphics& g,
     juce::Colour padBg = sliceCol.darker (sel ? 0.38f : 0.58f);
     if (hov) padBg = padBg.brighter (0.12f);
 
+    if (th.name == "metro")
     {
-        juce::ColourGradient grad (padBg.brighter (0.08f), 0, (float) bounds.getY(),
-                                   padBg.darker  (0.12f), 0, (float) bounds.getBottom(), false);
-        g.setGradientFill (grad);
+        // Flat single-colour tile, no gradient — Metro tile language.
+        g.setColour (padBg);
         g.fillRoundedRectangle (bounds.toFloat(), 4.0f);
+        g.setColour (sel ? th.accent : th.separator);
+        g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 4.0f, sel ? 1.5f : 1.0f);
     }
+    else
+    {
+        {
+            juce::ColourGradient grad (padBg.brighter (0.08f), 0, (float) bounds.getY(),
+                                       padBg.darker  (0.12f), 0, (float) bounds.getBottom(), false);
+            g.setGradientFill (grad);
+            g.fillRoundedRectangle (bounds.toFloat(), 4.0f);
+        }
 
-    g.setColour (th.accent.withAlpha (sel ? 0.28f : 0.14f));
-    g.drawRoundedRectangle (bounds.toFloat().expanded (1.0f), 5.0f, 1.0f);
+        g.setColour (th.accent.withAlpha (sel ? 0.28f : 0.14f));
+        g.drawRoundedRectangle (bounds.toFloat().expanded (1.0f), 5.0f, 1.0f);
 
-    g.setColour (th.accent.withAlpha (sel ? 0.90f : (hov ? 0.55f : 0.35f)));
-    g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 4.0f, sel ? 1.5f : 1.0f);
+        g.setColour (th.accent.withAlpha (sel ? 0.90f : (hov ? 0.55f : 0.35f)));
+        g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 4.0f, sel ? 1.5f : 1.0f);
+    }
 
     // ── Inner layout ──────────────────────────────────────────────────────────
     auto inner  = bounds.reduced (3, 3);

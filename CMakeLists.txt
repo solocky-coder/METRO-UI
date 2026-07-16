@@ -288,13 +288,6 @@ target_sources(DysektStandalone PRIVATE
     src/ui/WaveformOverview.cpp
     src/ui/ArchiveIntegration.cpp
     src/ui/GlobalEqPanel.cpp
-    src/metro/MetroTheme.cpp
-    src/metro/MetroLookAndFeel.cpp
-    src/metro/MetroTransportBar.cpp
-    src/metro/MetroSidebar.cpp
-    src/metro/MetroInspector.cpp
-    src/metro/MetroArrangementView.cpp
-    src/metro/MetroStandaloneEditor.cpp
     src/sequencer/SequencerEngine.cpp
     src/sequencer/MidiClip.cpp
     src/standalone/Main.cpp

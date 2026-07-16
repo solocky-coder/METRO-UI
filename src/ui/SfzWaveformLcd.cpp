@@ -398,6 +398,15 @@ void SfzWaveformLcd::drawBackground (juce::Graphics& g)
     const auto ac = getTheme().accent;
     const auto b  = getLocalBounds();
 
+    if (getTheme().name == "metro")
+    {
+        g.setColour (getTheme().waveformBg);
+        g.fillRoundedRectangle (b.toFloat(), 4.0f);
+        g.setColour (getTheme().separator);
+        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+        return;
+    }
+
     const auto bgTop = getTheme().darkBar.darker (0.45f);
     const auto bgBot = getTheme().darkBar.darker (0.65f);
     juce::ColourGradient outerGrad (bgTop, 0, 0, bgBot, 0, (float) b.getHeight(), false);

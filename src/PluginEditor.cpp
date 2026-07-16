@@ -1876,6 +1876,7 @@ void DysektEditor::ensureDefaultThemes()
  write ("cr8",     ThemeData::cr8Theme());
  write ("dysekt",  ThemeData::dysektTheme());
  write ("serum",   ThemeData::serumTheme());
+ write ("metro",   ThemeData::metroTheme());
 }
 
 juce::StringArray DysektEditor::getAvailableThemes()
@@ -1914,6 +1915,7 @@ void DysektEditor::applyTheme (const juce::String& themeName)
  else if (themeName == "cr8")      setTheme (ThemeData::cr8Theme());
  else if (themeName == "dysekt")   setTheme (ThemeData::dysektTheme());
  else if (themeName == "serum")    setTheme (ThemeData::serumTheme());
+ else if (themeName == "metro")    setTheme (ThemeData::metroTheme());
  else setTheme (ThemeData::darkTheme());
  processor.sliceManager.setSlicePalette (getTheme().slicePalette);
  saveUserSettings (themeName);

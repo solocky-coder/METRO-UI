@@ -156,6 +156,14 @@ public:
         auto b = getLocalBounds();
 
         // ── LCD-style frame — identical recipe to MixerPanel ─────────────────
+        if (theme.name == "metro")
+        {
+            g.setColour (theme.waveformBg);
+            g.fillRoundedRectangle (b.toFloat(), 4.0f);
+            g.setColour (theme.separator);
+            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+        }
+        else
         {
             juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
                                              juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
@@ -1039,6 +1047,12 @@ private:
             : info.colour;
 
         // Fill gradient
+        if (getTheme().name == "metro")
+        {
+            g.setColour (base.withAlpha (0.30f));
+            g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 4.f);
+        }
+        else
         {
             juce::ColourGradient grad (
                 base.withAlpha (0.38f), (float)clipR.getX(), (float)clipR.getY(),

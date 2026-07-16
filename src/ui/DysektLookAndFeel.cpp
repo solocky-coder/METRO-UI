@@ -79,6 +79,19 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
 
     const bool toggled = button.getToggleState();
 
+    // ── Metro — flat surface, 4px radius, no sprite/gradient, accent-only ──
+    if (getTheme().name == "metro")
+    {
+        const float mr = 4.0f;
+        auto metroFill = isDown        ? getTheme().accent
+                       : toggled       ? getTheme().accent
+                       : isHighlighted ? getTheme().buttonHover
+                                       : getTheme().button;
+        g.setColour (metroFill);
+        g.fillRoundedRectangle (bounds, mr);
+        return;
+    }
+
     // ── Modern asset base layer ────────────────────────────────────────────
     // Draw the idle/hover/active sprite from IconManager as the button base.
     // NOTE: these ship as flat concept art without per-theme tinting yet —
@@ -155,7 +168,7 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
 // ── Popup menus ───────────────────────────────────────────────────────────────
 void DysektLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
-    const float r = 3.0f;   // tighter radius — Midnight direction
+    const float r = getTheme().name == "metro" ? 4.0f : 3.0f;   // tighter radius — Midnight direction
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
     const auto bgColour = getTheme().darkBar.brighter (0.06f);
 
@@ -259,8 +272,29 @@ void DysektLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
                                       int /*buttonW*/, int /*buttonH*/, juce::ComboBox& box)
 {
     const auto& t = getTheme();
-    const float cbR = 2.0f;   // Midnight — tight radius
     auto cbBounds = juce::Rectangle<float> (0, 0, (float)width, (float)height).reduced (0.5f);
+
+    if (t.name == "metro")
+    {
+        const float mr = 4.0f;
+        g.setColour (isButtonDown ? t.buttonHover : t.button);
+        g.fillRoundedRectangle (cbBounds, mr);
+        const bool metroFocused = box.hasKeyboardFocus (false);
+        g.setColour (metroFocused ? t.accent : t.separator);
+        g.drawRoundedRectangle (cbBounds, mr, 1.0f);
+
+        const int arrowCX2 = buttonX + (width - buttonX) / 2;
+        const int arrowCY2 = height / 2;
+        const int arrowHalf2 = 4;
+        g.setColour (t.foreground.withAlpha (0.85f));
+        g.drawLine ((float)(arrowCX2 - arrowHalf2), (float)(arrowCY2 - 2),
+                    (float)(arrowCX2),               (float)(arrowCY2 + 2), 1.5f);
+        g.drawLine ((float)(arrowCX2),               (float)(arrowCY2 + 2),
+                    (float)(arrowCX2 + arrowHalf2),  (float)(arrowCY2 - 2), 1.5f);
+        return;
+    }
+
+    const float cbR = 2.0f;   // Midnight — tight radius
 
     // ── Gradient body — subtle vertical bevel instead of a flat fill ──────
     // Lighter top edge fading to the base colour then a faint lift near the
@@ -448,6 +482,28 @@ void DysektLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w
         return;
     }
 
+    if (t.name == "metro")
+    {
+        const float mTrackH = 3.0f;   // thin Metro track
+        auto mTrack = bounds.withSizeKeepingCentre (bounds.getWidth(), mTrackH);
+        g.setColour (t.gridLine);
+        g.fillRect (mTrack);
+
+        const float mFillLeft  = mTrack.getX();
+        const float mFillRight = juce::jlimit (mFillLeft, mTrack.getRight(), sliderPos);
+        if (mFillRight > mFillLeft)
+        {
+            g.setColour (t.accent);
+            g.fillRect (juce::Rectangle<float> (mFillLeft, mTrack.getY(), mFillRight - mFillLeft, mTrack.getHeight()));
+        }
+
+        const float mThumbD = juce::jmin (bounds.getHeight(), 14.0f);
+        auto mThumb = juce::Rectangle<float> (mThumbD, mThumbD).withCentre ({ sliderPos, bounds.getCentreY() });
+        g.setColour (t.accent);
+        g.fillEllipse (mThumb);
+        return;
+    }
+
     const float trackH = juce::jmin (6.0f, bounds.getHeight() * 0.5f);
     auto track = bounds.withSizeKeepingCentre (bounds.getWidth(), trackH);
     const float trackR = trackH * 0.5f;
@@ -523,6 +579,28 @@ void DysektLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
     const float lineW = juce::jmin (4.0f, radius * 0.22f);
     const float arcR  = radius - lineW * 0.5f;
 
+    if (t.name == "metro")
+    {
+        juce::Path mTrack;
+        mTrack.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+        g.setColour (t.gridLine);
+        g.strokePath (mTrack, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        if (angle > rotaryStartAngle)
+        {
+            juce::Path mFill;
+            mFill.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, angle, true);
+            g.setColour (t.accent);
+            g.strokePath (mFill, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+
+        // Simple indicator line from centre toward the pointer tip, Metro-flat
+        juce::Point<float> mTip (centre.x + std::sin (angle) * radius, centre.y - std::cos (angle) * radius);
+        g.setColour (t.accent);
+        g.drawLine (centre.x, centre.y, mTip.x, mTip.y, 2.0f);
+        return;
+    }
+
     // ── Recessed track arc — same dark-to-slightly-lighter gradient as the track
     juce::Path track;
     track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
@@ -579,7 +657,7 @@ void DysektLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, 
 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     g.setColour (bg);
-    g.fillRoundedRectangle (bounds, 2.0f);
+    g.fillRoundedRectangle (bounds, getTheme().name == "metro" ? 4.0f : 2.0f);
 }
 
 void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
@@ -589,9 +667,10 @@ void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int
 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     const bool focused = te.hasKeyboardFocus (true);
-    g.setColour (focused ? getTheme().accent.withAlpha (0.70f)
+    const float radius = getTheme().name == "metro" ? 4.0f : 2.0f;
+    g.setColour (focused ? getTheme().accent
                           : getTheme().separator.withAlpha (0.60f));
-    g.drawRoundedRectangle (bounds, 2.0f, focused ? 1.4f : 1.0f);
+    g.drawRoundedRectangle (bounds, radius, focused ? 1.4f : 1.0f);
 }
 
 //==============================================================================

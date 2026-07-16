@@ -1160,6 +1160,15 @@ void MixerPanel::paint (juce::Graphics& g)
         const auto ac = theme.accent;
         auto b = getLocalBounds();
 
+        if (theme.name == "metro")
+        {
+            g.setColour (theme.waveformBg);
+            g.fillRoundedRectangle (b.toFloat(), 4.0f);
+            g.setColour (theme.separator);
+            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+        }
+        else
+        {
         juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
                                          juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
         g.setGradientFill (outerGrad);
@@ -1183,6 +1192,7 @@ void MixerPanel::paint (juce::Graphics& g)
 
         g.setColour (ac.withAlpha (0.12f));
         g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 2.0f, 1.0f);
+        }
     }
 
     // Clip ALL content to inner screen rect so the frame border is never overwritten

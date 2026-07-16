@@ -1,5 +1,6 @@
 #include "IconManager.h"
 #include "BinaryData.h"
+#include "DysektLookAndFeel.h"
 
 namespace IconManager
 {
@@ -59,20 +60,29 @@ namespace IconManager
     }
 
     // ── Button state getters ────────────────────────────────────────────────────
+    // Metro theme: no sprite art — every call site below already falls back to a
+    // flat, theme-coloured rounded rect when this returns null, which is exactly
+    // the "flat surfaces, no skeuomorphic frames" look the Metro spec calls for.
     std::unique_ptr<juce::Drawable> getButtonIdle()
     {
+        if (getTheme().name == "metro")
+            return nullptr;
         return loadDrawableFromBinary (
             BinaryData::button_idle_svg, BinaryData::button_idle_svgSize, "button_idle");
     }
 
     std::unique_ptr<juce::Drawable> getButtonHover()
     {
+        if (getTheme().name == "metro")
+            return nullptr;
         return loadDrawableFromBinary (
             BinaryData::button_hover_svg, BinaryData::button_hover_svgSize, "button_hover");
     }
 
     std::unique_ptr<juce::Drawable> getButtonActive()
     {
+        if (getTheme().name == "metro")
+            return nullptr;
         return loadDrawableFromBinary (
             BinaryData::button_active_svg, BinaryData::button_active_svgSize, "button_active");
     }

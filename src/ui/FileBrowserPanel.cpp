@@ -411,36 +411,49 @@ void FileBrowserPanel::paint (juce::Graphics& g)
     const auto  b  = getLocalBounds();
 
     // ── Outer rounded shell ───────────────────────────────────────────────────
-    juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
-                                    juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
-    g.setGradientFill (outerGrad);
-    g.fillRoundedRectangle (b.toFloat(), 4.0f);
+    const auto screen = [&]
+    {
+        if (T.name == "metro")
+        {
+            g.setColour (T.waveformBg);
+            g.fillRoundedRectangle (b.toFloat(), 4.0f);
+            g.setColour (T.separator);
+            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            return b.reduced (4);
+        }
 
-    // Cheap win: soft glow behind the border, drawn before the hairline
-    // stroke, so the border reads as lit from within rather than just
-    // outlined.
-    UIHelpers::drawPanelGlow (g, b.toFloat(), ac, 4.0f);
+        juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
+                                        juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
+        g.setGradientFill (outerGrad);
+        g.fillRoundedRectangle (b.toFloat(), 4.0f);
 
-    g.setColour (ac.withAlpha (0.65f));
-    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+        // Cheap win: soft glow behind the border, drawn before the hairline
+        // stroke, so the border reads as lit from within rather than just
+        // outlined.
+        UIHelpers::drawPanelGlow (g, b.toFloat(), ac, 4.0f);
 
-    // ── Inner screen area (inset 4 px all around) ────────────────────────────
-    const auto screen = b.reduced (4);
+        g.setColour (ac.withAlpha (0.65f));
+        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
 
-    // Faint graph-paper grid rather than noise/scanlines, so the texture
-    // doesn't fight with row scanning while browsing files.
-    UIHelpers::drawTexturedPanel (g, screen.toFloat(), T.darkBar.darker (0.55f),
-                                   UIHelpers::PanelZone::FileBrowser, 2.0f);
+        // ── Inner screen area (inset 4 px all around) ────────────────────────────
+        const auto innerScreen = b.reduced (4);
 
-    // Top glow
-    juce::ColourGradient glow (ac.withAlpha (0.06f), 0, (float) screen.getY(),
-                                juce::Colours::transparentBlack, 0,
-                                (float)(screen.getY() + 20), false);
-    g.setGradientFill (glow);
-    g.fillRoundedRectangle (screen.toFloat(), 2.0f);
+        // Faint graph-paper grid rather than noise/scanlines, so the texture
+        // doesn't fight with row scanning while browsing files.
+        UIHelpers::drawTexturedPanel (g, innerScreen.toFloat(), T.darkBar.darker (0.55f),
+                                       UIHelpers::PanelZone::FileBrowser, 2.0f);
 
-    g.setColour (ac.withAlpha (0.12f));
-    g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 2.0f, 1.0f);
+        // Top glow
+        juce::ColourGradient glow (ac.withAlpha (0.06f), 0, (float) innerScreen.getY(),
+                                    juce::Colours::transparentBlack, 0,
+                                    (float)(innerScreen.getY() + 20), false);
+        g.setGradientFill (glow);
+        g.fillRoundedRectangle (innerScreen.toFloat(), 2.0f);
+
+        g.setColour (ac.withAlpha (0.12f));
+        g.drawRoundedRectangle (innerScreen.toFloat().expanded (0.5f), 2.0f, 1.0f);
+        return innerScreen;
+    }();
 
     // ── Preview bar (bottom, inside frame) ────────────────────────────────────
     if (previewVisible)
@@ -457,10 +470,18 @@ void FileBrowserPanel::paint (juce::Graphics& g)
     // ── Bookmark bar row 1 background ────────────────────────────────────────
     {
         const auto bmRect = b.reduced (4).withHeight (kBmH).toFloat();
-        juce::ColourGradient bmGrad (T.darkBar.darker (0.5f), 0, bmRect.getY(),
-                                     T.darkBar.darker (0.3f), 0, bmRect.getBottom(), false);
-        g.setGradientFill (bmGrad);
-        g.fillRect (bmRect);
+        if (T.name == "metro")
+        {
+            g.setColour (T.darkBar);
+            g.fillRect (bmRect);
+        }
+        else
+        {
+            juce::ColourGradient bmGrad (T.darkBar.darker (0.5f), 0, bmRect.getY(),
+                                         T.darkBar.darker (0.3f), 0, bmRect.getBottom(), false);
+            g.setGradientFill (bmGrad);
+            g.fillRect (bmRect);
+        }
         g.setColour (T.accent.withAlpha (0.20f));
         g.drawLine (bmRect.getX(), bmRect.getBottom(),
                     bmRect.getRight(), bmRect.getBottom(), 1.0f);
@@ -470,10 +491,18 @@ void FileBrowserPanel::paint (juce::Graphics& g)
     {
         const auto archRect = b.reduced (4).withTop (b.getY() + 4 + kBmH)
                                            .withHeight (kBmH).toFloat();
-        juce::ColourGradient bmGrad (T.darkBar.darker (0.45f), 0, archRect.getY(),
-                                     T.darkBar.darker (0.25f), 0, archRect.getBottom(), false);
-        g.setGradientFill (bmGrad);
-        g.fillRect (archRect);
+        if (T.name == "metro")
+        {
+            g.setColour (T.darkBar);
+            g.fillRect (archRect);
+        }
+        else
+        {
+            juce::ColourGradient bmGrad (T.darkBar.darker (0.45f), 0, archRect.getY(),
+                                         T.darkBar.darker (0.25f), 0, archRect.getBottom(), false);
+            g.setGradientFill (bmGrad);
+            g.fillRect (archRect);
+        }
         g.setColour (T.accent.withAlpha (0.15f));
         g.drawLine (archRect.getX(), archRect.getBottom(),
                     archRect.getRight(), archRect.getBottom(), 1.0f);
