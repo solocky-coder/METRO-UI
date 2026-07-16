@@ -159,6 +159,9 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
 
 // =============================================================================
 // drawKnob — small rotary arc
+// Already flat: thin arc track, single accent fill arc, plain indicator line,
+// no gradient, no rounded rect, no glow — matches Metro's rotary-slider style
+// (see DysektLookAndFeel::drawRotarySlider) as-is. No change needed here.
 // =============================================================================
 void SliceControlBar::drawKnob (juce::Graphics& g,
  int cx, int cy, int r,
@@ -278,12 +281,13 @@ void SliceControlBar::drawKnobCell (juce::Graphics& g, int x, int y,
 
  if (armed)
  {
+     // Flat, square-cornered — was a 2.f rounded highlight regardless of theme.
      const float pulse = 0.5f + 0.5f * std::sin (pulsePhase * juce::MathConstants<float>::twoPi);
      g.setColour (getTheme().accent.withAlpha (0.08f + 0.10f * pulse));
-     g.fillRoundedRectangle ((float) x, (float) y, (float) cellW, (float) cellH, 2.f);
+     g.fillRect ((float) x, (float) y, (float) cellW, (float) cellH);
      g.setColour (getTheme().accent.withAlpha (0.55f + 0.45f * pulse));
-     g.drawRoundedRectangle ((float) x + 0.5f, (float) y + 0.5f,
-                             (float) cellW - 1.f, (float) cellH - 1.f, 2.f,
+     g.drawRect (juce::Rectangle<float> ((float) x + 0.5f, (float) y + 0.5f,
+                             (float) cellW - 1.f, (float) cellH - 1.f),
                              1.0f + 1.0f * pulse);
  }
 
@@ -380,12 +384,12 @@ void SliceControlBar::drawKnobCell (juce::Graphics& g, int x, int y,
      const int lx = x + cellW - kLockW - juce::roundToInt (1.0f * paintSf);
      const int ly = y + juce::roundToInt (2.0f * paintSf);
 
-     // Padlock body
+     // Padlock body — flat, square corners (was a 1.0f rounded rect regardless of theme)
      if (locked)
      {
          g.setColour (getTheme().lockActive.withAlpha (0.90f));
-         g.fillRoundedRectangle ((float) lx + paintSf, (float) ly + 4.0f * paintSf,
-                                 (float) kLockW - 2.0f * paintSf, (float) kLockH - 4.0f * paintSf, 1.0f);
+         g.fillRect ((float) lx + paintSf, (float) ly + 4.0f * paintSf,
+                     (float) kLockW - 2.0f * paintSf, (float) kLockH - 4.0f * paintSf);
          g.setColour (getTheme().lockActive);
          juce::Path shackle;
          shackle.addCentredArc ((float) lx + kLockW * 0.5f, (float) ly + 4.5f * paintSf,
@@ -396,8 +400,8 @@ void SliceControlBar::drawKnobCell (juce::Graphics& g, int x, int y,
      else
      {
          g.setColour (getTheme().lockInactive.withAlpha (0.45f));
-         g.drawRoundedRectangle ((float) lx + paintSf, (float) ly + 4.0f * paintSf,
-                                 (float) kLockW - 2.0f * paintSf, (float) kLockH - 4.0f * paintSf, 1.0f, 1.0f);
+         g.drawRect (juce::Rectangle<float> ((float) lx + paintSf, (float) ly + 4.0f * paintSf,
+                                 (float) kLockW - 2.0f * paintSf, (float) kLockH - 4.0f * paintSf), 1.0f);
          juce::Path shackle;
          shackle.addCentredArc ((float) lx + kLockW * 0.5f, (float) ly + 4.0f * paintSf,
                                 2.5f * paintSf, 2.5f * paintSf, 0.f,
@@ -432,12 +436,13 @@ void SliceControlBar::drawPanSliderCell (juce::Graphics& g, int x, int y,
 
  if (armed)
  {
+     // Flat, square-cornered — was a 2.f rounded highlight regardless of theme.
      const float pulse = 0.5f + 0.5f * std::sin (pulsePhase * juce::MathConstants<float>::twoPi);
      g.setColour (ac.withAlpha (0.08f + 0.10f * pulse));
-     g.fillRoundedRectangle ((float) x, (float) y, (float) cellW, (float) cellH, 2.f);
+     g.fillRect ((float) x, (float) y, (float) cellW, (float) cellH);
      g.setColour (ac.withAlpha (0.55f + 0.45f * pulse));
-     g.drawRoundedRectangle ((float) x + 0.5f, (float) y + 0.5f,
-                             (float) cellW - 1.f, (float) cellH - 1.f, 2.f,
+     g.drawRect (juce::Rectangle<float> ((float) x + 0.5f, (float) y + 0.5f,
+                             (float) cellW - 1.f, (float) cellH - 1.f),
                              1.0f + 1.0f * pulse);
  }
 
@@ -471,10 +476,9 @@ void SliceControlBar::drawPanSliderCell (juce::Graphics& g, int x, int y,
  g.setColour (locked ? theme.foreground : theme.foreground.withAlpha (0.75f));
  g.drawText (panStr, trackX, trackY - juce::roundToInt (11.0f * paintSf), trackW, juce::roundToInt (10.0f * paintSf), juce::Justification::centred);
 
- // Track background
+ // Track background — flat, square corners (was a 2.f radius regardless of theme)
  g.setColour (theme.darkBar.darker (0.3f));
- g.fillRoundedRectangle ((float) trackX, (float) trackY,
- (float) trackW, (float) trackH, 2.f);
+ g.fillRect ((float) trackX, (float) trackY, (float) trackW, (float) trackH);
 
  // Centre line
  const int centreX = trackX + trackW / 2;
@@ -497,10 +501,10 @@ void SliceControlBar::drawPanSliderCell (juce::Graphics& g, int x, int y,
  }
  }
 
- // Thumb
+ // Thumb — flat, square corners (was a 1.5f radius regardless of theme)
  g.setColour (locked ? theme.lockActive : (armed ? ac.brighter (0.4f) : ac));
- g.fillRoundedRectangle ((float) (thumbX - juce::roundToInt (2.0f * paintSf)), (float) (trackY - juce::roundToInt (1.0f * paintSf)),
- 4.0f * paintSf, (float) (trackH + juce::roundToInt (2.0f * paintSf)), 1.5f);
+ g.fillRect ((float) (thumbX - juce::roundToInt (2.0f * paintSf)), (float) (trackY - juce::roundToInt (1.0f * paintSf)),
+ 4.0f * paintSf, (float) (trackH + juce::roundToInt (2.0f * paintSf)));
 
  // ── Register cell ──────────────────────────────────────────────────────
  outWidth = cellW;
@@ -529,21 +533,22 @@ void SliceControlBar::drawMarkerSliderCell (juce::Graphics& g, int x, int y,
     auto cell = juce::Rectangle<int> (x, y, cellW, cellH);
     const bool armed = (processor.midiLearn.getArmedSlot() == DysektProcessor::FieldSliceStart);
 
-    // Background + border — pulses when MIDI learn is armed
+    // Background + border — pulses when MIDI learn is armed.
+    // Flat, square corners (was a 3.0f radius regardless of theme).
     g.setColour (T.darkBar);
-    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+    g.fillRect (cell.toFloat());
     if (armed)
     {
         const float pulse = 0.5f + 0.5f * std::sin (pulsePhase * juce::MathConstants<float>::twoPi);
         g.setColour (T.accent.withAlpha (0.08f + 0.10f * pulse));
-        g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+        g.fillRect (cell.toFloat());
         g.setColour (T.accent.withAlpha (0.55f + 0.45f * pulse));
-        g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.0f + 1.0f * pulse);
+        g.drawRect (cell.toFloat().reduced (0.5f), 1.0f + 1.0f * pulse);
     }
     else
     {
         g.setColour (T.accent.withAlpha (0.55f));
-        g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, 1.0f);
+        g.drawRect (cell.toFloat().reduced (0.5f), 1.0f);
     }
 
     // Progress bar along bottom edge (shows marker position in file)
@@ -640,14 +645,9 @@ void SliceControlBar::drawMarkerSliderCell (juce::Graphics& g, int x, int y,
             (float) barH);
 
         g.saveState();
-        // Use a rounded-rect path that exactly matches the visible frame border
-        // so content drawn near the corners is clipped to the rounded shape
-        // rather than a plain rectangle (which leaks past the corners at higher scales).
-        {
-            juce::Path roundedClip;
-            roundedClip.addRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f);
-            g.reduceClipRegion (roundedClip);
-        }
+        // The frame is now flat/square, so a plain rectangle clip matches it
+        // exactly — no rounded-rect path needed to avoid leaking past corners.
+        g.reduceClipRegion (cell.reduced (0));
 
         g.setColour (T.separator);
         g.fillRect (bar);
@@ -687,8 +687,10 @@ void SliceControlBar::drawMarkerSliderCell (juce::Graphics& g, int x, int y,
         const int by = cell.getY() + juce::roundToInt (2.0f * paintSf);
         markerFineModeToggleArea = juce::Rectangle<int> (bx, by, bw, bh);
 
-        fillGlassBadge (g, markerFineModeToggleArea.toFloat(),
-                        fineOn ? T.accent.withAlpha (0.85f) : T.foreground.withAlpha (0.18f), 2.0f);
+        // Flat, square-cornered fill — was fillGlassBadge's gradient + top glow,
+        // which is the same rounded/glossy language the rest of the file dropped.
+        g.setColour (fineOn ? T.accent.withAlpha (0.85f) : T.foreground.withAlpha (0.18f));
+        g.fillRect (markerFineModeToggleArea.toFloat());
         g.setFont (DysektLookAndFeel::makeFont (7.5f * paintSf));
         g.setColour (fineOn ? T.darkBar : T.foreground.withAlpha (0.45f));
         g.drawText ("FINE", markerFineModeToggleArea, juce::Justification::centred, false);

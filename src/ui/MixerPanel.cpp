@@ -235,6 +235,12 @@ float MixerPanel::fromNormFcut (float n) const
 static constexpr int kKnobR = 14;  // knob radius (px) — bumped from 13 now that
                                     // kRowH gives each row more vertical room
 
+// Flattened — was a vector knob-face asset (baked shading/gradient) underneath
+// a 3-pass glow arc (wide dim strokes layered under a solid stroke) for both
+// the gain-centred and hard-left-stop sweep cases. Now a plain guide ring +
+// single accent-coloured fill arc, no image, no gradient, no glow — matching
+// SliceControlBar::drawKnob / DysektLookAndFeel::drawRotarySlider's flat
+// rotary language, still reading each theme's own colours.
 void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
                                  float norm, bool locked, bool isMaster,
                                  bool isGain) const
@@ -242,26 +248,6 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
     const auto& theme = getTheme();
     const float r = (float) kKnobR;
     const float normC0 = juce::jlimit (0.f, 1.f, norm);
-
-    // ── Modern knob face — draw the vector face asset underneath the
-    //    existing procedural progress arc. Vector art stays crisp at this
-    //    knob's small on-screen size, unlike the bitmap sprite sheet (which
-    //    needed ~40px+ to show any frame detail and just looked like noise
-    //    at the ~17px this control renders at). Falls back silently to the
-    //    plain arc-only look if the asset isn't available.
-    //
-    //    NOTE: the rotated pointer asset that used to be drawn here was
-    //    dropped. At r=9 it had no arc fill to give it context at idle
-    //    values (0 dB / 0%), so it read as a stray diagonal or vertical
-    //    line rather than "a knob" — see the fixed-size rim dot below for
-    //    its replacement, which stays legible at any value including idle.
-    {
-        const float d = r * 2.6f; // face diameter — slightly larger than the arc radius
-        juce::Rectangle<float> imgBounds ((float)cx - d * 0.5f, (float)cy - d * 0.5f, d, d);
-
-        if (auto face = IconManager::getKnobFace())
-            face->drawWithin (g, imgBounds, juce::RectanglePlacement::centred, 1.0f);
-    }
 
     // Guide ring behind the track — always visible (not just a faint hint)
     // so a knob at idle (no fill arc drawn) still reads clearly as a dial
@@ -299,13 +285,6 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
                 fill.addCentredArc ((float)cx, (float)cy, r, r, 0.f,
                                     startA + arcLen * normC, zeroAngle, true);
 
-            // Soft glow pass behind the fill arc — the wider, dimmer stroke
-            // underneath gives the lit-ring look from the reference.
-            g.setColour (fillCol.withAlpha (0.30f));
-            g.strokePath (fill, juce::PathStrokeType (4.0f));
-            g.setColour (fillCol.withAlpha (0.16f));
-            g.strokePath (fill, juce::PathStrokeType (6.5f));
-
             g.setColour (fillCol);
             g.strokePath (fill, juce::PathStrokeType (1.5f));
         }
@@ -326,13 +305,6 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
             const float endAngle = startA + arcLen * normC;
             juce::Path fill;
             fill.addCentredArc ((float)cx, (float)cy, r, r, 0.f, startA, endAngle, true);
-
-            // Matching glow pass so every knob in the row reads as the same
-            // glowing-dial family, not just the gain knobs.
-            g.setColour (fillCol.withAlpha (0.30f));
-            g.strokePath (fill, juce::PathStrokeType (4.0f));
-            g.setColour (fillCol.withAlpha (0.16f));
-            g.strokePath (fill, juce::PathStrokeType (6.5f));
 
             g.setColour (fillCol);
             g.strokePath (fill, juce::PathStrokeType (1.5f));
@@ -356,6 +328,10 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
     g.fillEllipse ((float)cx - 2.f, (float)cy - 2.f, 4.f, 4.f);
 }
 
+// Flattened — was a rounded badge (2.5f corners) with a two-pass expanding
+// glow halo behind it when active. Now a flat, square-cornered badge with a
+// single flat fill/border, no glow — matching the rest of the shape language,
+// still reading each theme's own colours.
 void MixerPanel::drawMuteBadge (juce::Graphics& g, int cx, int cy,
                                   int muteGroup, bool locked, bool dimmed) const
 {
@@ -367,9 +343,9 @@ void MixerPanel::drawMuteBadge (juce::Graphics& g, int cx, int cy,
     if (dimmed)
     {
         g.setColour (theme.separator.withAlpha (0.18f));
-        g.fillRoundedRectangle (r, 2.5f);
+        g.fillRect (r);
         g.setColour (theme.foreground.withAlpha (0.15f));
-        g.drawRoundedRectangle (r, 2.5f, 0.8f);
+        g.drawRect (r, 0.8f);
         g.setFont (DysektLookAndFeel::makeFont (11.0f));
         g.setColour (theme.foreground.withAlpha (0.15f));
         g.drawText (juce::String (muteGroup), r.toNearestInt(), juce::Justification::centred);
@@ -377,26 +353,15 @@ void MixerPanel::drawMuteBadge (juce::Graphics& g, int cx, int cy,
     }
 
     const bool active = (muteGroup > 0);
-    const auto glowCol = locked ? theme.lockActive : theme.accent;
-
-    // Glow halo behind the badge when active — same lit-family treatment as
-    // the knob rings, so mute groups read as part of the glowing dial set.
-    if (active)
-    {
-        g.setColour (glowCol.withAlpha (0.14f));
-        g.fillRoundedRectangle (r.expanded (2.5f), 4.0f);
-        g.setColour (glowCol.withAlpha (0.08f));
-        g.fillRoundedRectangle (r.expanded (4.5f), 5.0f);
-    }
 
     g.setColour (active ? (locked ? theme.lockActive.withAlpha (0.15f)
                                   : theme.accent.withAlpha (0.10f))
                         : theme.separator.withAlpha (0.3f));
-    g.fillRoundedRectangle (r, 2.5f);
+    g.fillRect (r);
 
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : theme.foreground.withAlpha (0.25f));
-    g.drawRoundedRectangle (r, 2.5f, 0.8f);
+    g.drawRect (r, 0.8f);
 
     g.setFont (DysektLookAndFeel::makeFont (11.0f));
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)

@@ -37,13 +37,11 @@ DysektLookAndFeel::DysektLookAndFeel()
 
 juce::Font DysektLookAndFeel::makeFont (float pointSize, bool bold)
 {
+    // Font selection is unrelated to the flat/square shape-language collapse —
+    // Metro still asks for native Segoe UI chrome; every other theme still
+    // uses the embedded Barlow Condensed faces. Left exactly as it was.
     if (getTheme().name == "metro")
     {
-        // Spec calls for Segoe UI — the real Windows system font, not an
-        // embedded lookalike, since Metro is explicitly impersonating native
-        // Windows chrome. JUCE resolves this by name at the OS font layer;
-        // on a non-Windows build machine it degrades gracefully to whatever
-        // default sans the OS substitutes, same as any missing font name.
         auto opts = juce::FontOptions().withName ("Segoe UI").withHeight (pointSize);
         if (bold)
             opts = opts.withStyle ("Semibold");
@@ -76,13 +74,16 @@ juce::Typeface::Ptr DysektLookAndFeel::getTypefaceForFont (const juce::Font& f)
 }
 
 // ── Buttons ───────────────────────────────────────────────────────────────────
-// Direction D — Midnight: 2px radius · no glow · flat fill · crisp 1px border
+// COLLAPSED: this used to branch metro (flat/square/accent-only) vs. every
+// other theme (asset sprite base + serum metallic gradient + rounded border).
+// The else branch is gone — every theme now renders the flat/square shape,
+// still reading its own getTheme() colours.
 void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
                                                const juce::Colour& /*bgColour*/,
                                                bool isHighlighted, bool isDown)
 {
     auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
-    const float r = 2.0f;   // sharp — Midnight direction
+    const float r = 0.0f;   // flat, square corners — was Metro-only, now universal
 
     auto btnCol = button.findColour (juce::TextButton::buttonColourId);
     auto baseBg = (btnCol != juce::Colour()) ? btnCol : getTheme().button;
@@ -92,63 +93,12 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
 
     const bool toggled = button.getToggleState();
 
-    // ── Metro — flat surface, square corners, no sprite/gradient, accent-only ──
-    if (getTheme().name == "metro")
-    {
-        const float mr = 0.0f;   // manual: flat, square corners — no radius
-        auto metroFill = isDown        ? getTheme().accent
-                       : toggled       ? getTheme().accent
-                       : isHighlighted ? getTheme().buttonHover
-                                       : getTheme().button;
-        g.setColour (metroFill);
-        g.fillRoundedRectangle (bounds, mr);
-        return;
-    }
-
-    // ── Modern asset base layer ────────────────────────────────────────────
-    // Draw the idle/hover/active sprite from IconManager as the button base.
-    // NOTE: these ship as flat concept art without per-theme tinting yet —
-    // see PRODUCTION_READINESS.md ("Theme tinting strategy") for the follow-up
-    // work needed to recolour them per active ThemeData. For now they render
-    // as-is and we still draw the theme-coloured border/text on top so
-    // toggled/locked state remains legible in every theme.
-    auto fillCol = isDown        ? baseBg.brighter (0.20f)
-                 : isHighlighted ? baseBg.brighter (0.10f)
-                 : toggled       ? baseBg.interpolatedWith (getTheme().accent, 0.18f)
-                                 : baseBg;
-
-    auto stateDrawable = isDown        ? IconManager::getButtonActive()
-                       : isHighlighted ? IconManager::getButtonHover()
-                                       : IconManager::getButtonIdle();
-
-    if (stateDrawable != nullptr)
-    {
-        stateDrawable->drawWithin (g, bounds, juce::RectanglePlacement::stretchToFit, 1.0f);
-    }
-    else if (getTheme().name == "serum")
-    {
-        // Metallic steel gradient — lighter top edge, darker mid, slight lift at bottom
-        auto top    = fillCol.brighter (0.18f);
-        auto mid    = fillCol.darker   (0.08f);
-        auto bot    = fillCol.brighter (0.06f);
-        juce::ColourGradient grad (top, bounds.getX(), bounds.getY(),
-                                   mid, bounds.getX(), bounds.getBottom(), false);
-        grad.addColour (0.60, bot);
-        g.setGradientFill (grad);
-        g.fillRoundedRectangle (bounds, r);
-    }
-    else
-    {
-        g.setColour (fillCol);
-        g.fillRoundedRectangle (bounds, r);
-    }
-
-    // ── Border — accent on active, subtle otherwise ───────────────────────────
-    auto borderCol = toggled      ? getTheme().accent.withAlpha (0.70f)
-                   : isHighlighted ? getTheme().separator.brighter (0.30f)
-                                   : getTheme().separator.withAlpha (0.60f);
-    g.setColour (borderCol);
-    g.drawRoundedRectangle (bounds, r, 1.0f);
+    auto fill = isDown        ? getTheme().accent
+              : toggled       ? getTheme().accent
+              : isHighlighted ? getTheme().buttonHover
+                              : getTheme().button;
+    g.setColour (fill);
+    g.fillRoundedRectangle (bounds, r);
 }
 
 void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
@@ -181,25 +131,16 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
 // ── Popup menus ───────────────────────────────────────────────────────────────
 void DysektLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
-    const float r = getTheme().name == "metro" ? 0.0f : 3.0f;   // Metro: square corners, no rounded cards
+    const float r = 0.0f;   // flat, square corners — was Metro-only, now universal
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
     const auto bgColour = getTheme().darkBar.brighter (0.06f);
 
     // Fill entire rect first — eliminates white OS window corners behind rounded shape
     g.fillAll (bgColour);
 
-    // Flat panel for most themes; metallic gradient for serum
-    if (getTheme().name == "serum")
-    {
-        juce::ColourGradient grad (bgColour.brighter (0.15f), 0, 0,
-                                   bgColour.darker   (0.08f), 0, (float) height, false);
-        grad.addColour (0.55, bgColour);
-        g.setGradientFill (grad);
-    }
-    else
-    {
-        g.setColour (bgColour);
-    }
+    // Flat panel fill for every theme — the serum metallic-gradient special
+    // case is gone, this reads plainly from getTheme() now.
+    g.setColour (bgColour);
     g.fillRoundedRectangle (bounds, r);
 
     // Outer border — accent tint, full opacity
@@ -230,9 +171,10 @@ void DysektLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectan
 
     if (isHighlighted && isActive)
     {
-        // Flat highlight — no gradient, just a crisp fill
+        // Flat highlight — square corners now (was fixed 2.0f radius regardless
+        // of theme; flattened to match the rest of the shape language).
         g.setColour (getTheme().buttonHover);
-        g.fillRoundedRectangle (area.reduced (3, 1).toFloat(), 2.0f);
+        g.fillRoundedRectangle (area.reduced (3, 1).toFloat(), 0.0f);
 
         // Accent left edge — 2px solid bar
         g.setColour (getTheme().accent);
@@ -280,6 +222,10 @@ juce::Font DysektLookAndFeel::getPopupMenuFont()
 }
 
 // ── ComboBox ──────────────────────────────────────────────────────────────────
+// COLLAPSED: this used to branch metro (flat fill + chevron) vs. every other
+// theme (bevel gradient body + glow-on-focus + chevron). The else branch is
+// gone — every theme now renders the flat Metro-style combo box, still
+// reading its own getTheme() colours.
 void DysektLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
                                       bool isButtonDown, int buttonX, int /*buttonY*/,
                                       int /*buttonW*/, int /*buttonH*/, juce::ComboBox& box)
@@ -287,60 +233,14 @@ void DysektLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     const auto& t = getTheme();
     auto cbBounds = juce::Rectangle<float> (0, 0, (float)width, (float)height).reduced (0.5f);
 
-    if (t.name == "metro")
-    {
-        const float mr = 4.0f;
-        g.setColour (isButtonDown ? t.buttonHover : t.button);
-        g.fillRoundedRectangle (cbBounds, mr);
-        const bool metroFocused = box.hasKeyboardFocus (false);
-        g.setColour (metroFocused ? t.accent : t.separator);
-        g.drawRoundedRectangle (cbBounds, mr, 1.0f);
+    const float r = 4.0f;   // Metro combo-box radius — kept as-is, now universal
+    g.setColour (isButtonDown ? t.buttonHover : t.button);
+    g.fillRoundedRectangle (cbBounds, r);
 
-        const int arrowCX2 = buttonX + (width - buttonX) / 2;
-        const int arrowCY2 = height / 2;
-        const int arrowHalf2 = 4;
-        g.setColour (t.foreground.withAlpha (0.85f));
-        g.drawLine ((float)(arrowCX2 - arrowHalf2), (float)(arrowCY2 - 2),
-                    (float)(arrowCX2),               (float)(arrowCY2 + 2), 1.5f);
-        g.drawLine ((float)(arrowCX2),               (float)(arrowCY2 + 2),
-                    (float)(arrowCX2 + arrowHalf2),  (float)(arrowCY2 - 2), 1.5f);
-        return;
-    }
-
-    const float cbR = 2.0f;   // Midnight — tight radius
-
-    // ── Gradient body — subtle vertical bevel instead of a flat fill ──────
-    // Lighter top edge fading to the base colour then a faint lift near the
-    // bottom, matching the button/knob art's raised-surface language.
-    auto baseCol = isButtonDown ? t.button.darker (0.10f) : t.button;
-    auto topCol  = baseCol.brighter (0.14f);
-    auto midCol  = baseCol.darker   (0.05f);
-    auto botCol  = baseCol.brighter (0.04f);
-
-    juce::ColourGradient grad (topCol, cbBounds.getX(), cbBounds.getY(),
-                               midCol, cbBounds.getX(), cbBounds.getBottom(), false);
-    grad.addColour (0.65, botCol);
-    g.setGradientFill (grad);
-    g.fillRoundedRectangle (cbBounds, cbR);
-
-    // Inner top highlight — thin 1px sheen just inside the top edge
-    g.setColour (juce::Colours::white.withAlpha (0.06f));
-    g.drawLine (cbBounds.getX() + cbR, cbBounds.getY() + 1.0f,
-                cbBounds.getRight() - cbR, cbBounds.getY() + 1.0f, 1.0f);
-
-    // Border — accent when focused, separator otherwise
     const bool focused = box.hasKeyboardFocus (false);
     g.setColour (focused ? t.accent : t.separator);
-    g.drawRoundedRectangle (cbBounds, cbR, 1.0f);
+    g.drawRoundedRectangle (cbBounds, r, 1.0f);
 
-    if (focused)
-    {
-        // Soft accent glow around the focused border
-        g.setColour (t.accent.withAlpha (0.18f));
-        g.drawRoundedRectangle (cbBounds.expanded (0.75f), cbR + 0.75f, 1.5f);
-    }
-
-    // Dropdown arrow — clean chevron
     const int arrowCX = buttonX + (width - buttonX) / 2;
     const int arrowCY = height / 2;
     const int arrowHalf = 4;
@@ -383,14 +283,14 @@ void DysektLookAndFeel::drawPopupMenuUpDownArrow (juce::Graphics& g, int width, 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 void DysektLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
 {
-    const float r = 2.0f;   // Midnight — tight
+    // Flattened — was a fixed 2.0f radius regardless of theme; now square
+    // corners everywhere, in line with the rest of the shape language.
+    const float r = 0.0f;
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
 
-    // Solid flat background
     g.setColour (getTheme().darkBar.brighter (0.10f));
     g.fillRoundedRectangle (bounds, r);
 
-    // 1px border — accent tint
     g.setColour (getTheme().accent.withAlpha (0.55f));
     g.drawRoundedRectangle (bounds.reduced (0.5f), r, 1.0f);
 
@@ -417,6 +317,9 @@ juce::Rectangle<int> DysektLookAndFeel::getTooltipBounds (const juce::String& te
 }
 
 // ── Scrollbar ─────────────────────────────────────────────────────────────────
+// Flattened — was always a rounded "pill" thumb with a gradient fill and a
+// hover/drag glow regardless of theme. Now a flat square-cornered accent bar,
+// no gradient, no glow, matching the rest of the shape language.
 void DysektLookAndFeel::drawScrollbar (juce::Graphics& g,
                                        juce::ScrollBar& /*scrollbar*/,
                                        int x, int y, int width, int height,
@@ -442,43 +345,22 @@ void DysektLookAndFeel::drawScrollbar (juce::Graphics& g,
         else
             thumb = { x + thumbStartPosition, y + 1, thumbSize, height - 2 };
 
-        // Pill thumb — layered gradient so it reads as a raised control,
-        // matching the button/knob/slider bevel language, with a brighter
-        // fill + glow when hovered/dragged.
         auto thumbF = thumb.toFloat().reduced (1.0f);
-        const float thumbR = isScrollbarVertical ? (float)(thumb.getWidth() - 2) * 0.5f
-                                                 : (float)(thumb.getHeight() - 2) * 0.5f;
-
         const float baseAlpha = isMouseDown ? 0.85f : isMouseOver ? 0.70f : 0.55f;
-        auto accentBase = t.accent.withAlpha (baseAlpha);
 
-        if (isMouseOver || isMouseDown)
-        {
-            // Subtle glow behind the thumb on interaction
-            g.setColour (t.accent.withAlpha (isMouseDown ? 0.22f : 0.14f));
-            g.fillRoundedRectangle (thumbF.expanded (1.5f), thumbR + 1.5f);
-        }
-
-        juce::ColourGradient thumbGrad (accentBase.brighter (0.25f),
-                                        thumbF.getX(), thumbF.getY(),
-                                        accentBase.darker (0.10f),
-                                        isScrollbarVertical ? thumbF.getX() + thumbF.getWidth()
-                                                             : thumbF.getX(),
-                                        isScrollbarVertical ? thumbF.getY()
-                                                             : thumbF.getY() + thumbF.getHeight(),
-                                        false);
-        g.setGradientFill (thumbGrad);
-        g.fillRoundedRectangle (thumbF, thumbR);
+        g.setColour (t.accent.withAlpha (baseAlpha));
+        g.fillRect (thumbF);
 
         g.setColour (t.accent.withAlpha (0.40f));
-        g.drawRoundedRectangle (thumbF, thumbR, 1.0f);
+        g.drawRect (thumbF, 1.0f);
     }
 }
 
 // ── Linear slider ─────────────────────────────────────────────────────────────
-// Used by the file-browser preview volume slider (LinearHorizontal). Gives it
-// the same recessed-track / raised-thumb bevel language as the buttons and
-// knob art rather than falling back to stock LookAndFeel_V4 styling.
+// COLLAPSED: this used to branch metro (thin track + accent fill + round
+// dot thumb) vs. every other theme (recessed gradient track + glow fill +
+// glassy beveled thumb). The else branch is gone — every theme now renders
+// the flat Metro-style slider, still reading its own getTheme() colours.
 void DysektLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                                           float sliderPos, float minSliderPos, float maxSliderPos,
                                           const juce::Slider::SliderStyle style, juce::Slider& slider)
@@ -495,91 +377,30 @@ void DysektLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w
         return;
     }
 
-    if (t.name == "metro")
-    {
-        const float mTrackH = 3.0f;   // thin Metro track
-        auto mTrack = bounds.withSizeKeepingCentre (bounds.getWidth(), mTrackH);
-        g.setColour (t.gridLine);
-        g.fillRect (mTrack);
-
-        const float mFillLeft  = mTrack.getX();
-        const float mFillRight = juce::jlimit (mFillLeft, mTrack.getRight(), sliderPos);
-        if (mFillRight > mFillLeft)
-        {
-            g.setColour (t.accent);
-            g.fillRect (juce::Rectangle<float> (mFillLeft, mTrack.getY(), mFillRight - mFillLeft, mTrack.getHeight()));
-        }
-
-        const float mThumbD = juce::jmin (bounds.getHeight(), 14.0f);
-        auto mThumb = juce::Rectangle<float> (mThumbD, mThumbD).withCentre ({ sliderPos, bounds.getCentreY() });
-        g.setColour (t.accent);
-        g.fillEllipse (mThumb);
-        return;
-    }
-
-    const float trackH = juce::jmin (6.0f, bounds.getHeight() * 0.5f);
+    const float trackH = 3.0f;   // thin flat track — was Metro-only, now universal
     auto track = bounds.withSizeKeepingCentre (bounds.getWidth(), trackH);
-    const float trackR = trackH * 0.5f;
+    g.setColour (t.gridLine);
+    g.fillRect (track);
 
-    // ── Recessed track — inner shadow via a dark-to-slightly-lighter gradient
-    auto trackTop = t.darkBar.darker (0.35f);
-    auto trackBot = t.darkBar.brighter (0.04f);
-    juce::ColourGradient trackGrad (trackTop, track.getX(), track.getY(),
-                                    trackBot, track.getX(), track.getBottom(), false);
-    g.setGradientFill (trackGrad);
-    g.fillRoundedRectangle (track, trackR);
-    g.setColour (t.separator.withAlpha (0.7f));
-    g.drawRoundedRectangle (track, trackR, 1.0f);
-
-    // ── Filled portion — accent gradient with a soft glow, from the track's
-    // left edge up to the thumb position (matches bipolar/unipolar feel used
-    // elsewhere in the plugin's LCD-style sliders).
-    const float fillLeft  = track.getX() + trackR;
-    const float fillRight = juce::jlimit (fillLeft, track.getRight() - trackR, sliderPos);
+    const float fillLeft  = track.getX();
+    const float fillRight = juce::jlimit (fillLeft, track.getRight(), sliderPos);
     if (fillRight > fillLeft)
     {
-        auto fillArea = juce::Rectangle<float> (fillLeft, track.getY(), fillRight - fillLeft, track.getHeight());
-
-        g.setColour (t.accent.withAlpha (0.20f));
-        g.fillRoundedRectangle (fillArea.expanded (0.0f, 1.5f), trackR);
-
-        juce::ColourGradient fillGrad (t.accent.brighter (0.20f), fillArea.getX(), fillArea.getY(),
-                                       t.accent.darker (0.10f), fillArea.getX(), fillArea.getBottom(), false);
-        g.setGradientFill (fillGrad);
-        g.fillRoundedRectangle (fillArea, trackR);
+        g.setColour (t.accent);
+        g.fillRect (juce::Rectangle<float> (fillLeft, track.getY(), fillRight - fillLeft, track.getHeight()));
     }
 
-    // ── Thumb — raised bevel knob, brighter when dragged/hovered ──────────
-    const float thumbD = juce::jmin (bounds.getHeight(), 16.0f);
+    const float thumbD = juce::jmin (bounds.getHeight(), 14.0f);
     auto thumb = juce::Rectangle<float> (thumbD, thumbD).withCentre ({ sliderPos, bounds.getCentreY() });
-
-    const bool isDown  = slider.isMouseButtonDown();
-    const bool isOver  = slider.isMouseOverOrDragging();
-    auto thumbBase = t.button.brighter (isDown ? 0.30f : isOver ? 0.18f : 0.10f);
-
-    if (isOver || isDown)
-    {
-        g.setColour (t.accent.withAlpha (isDown ? 0.30f : 0.18f));
-        g.fillEllipse (thumb.expanded (2.0f));
-    }
-
-    juce::ColourGradient thumbGrad (thumbBase.brighter (0.25f), thumb.getX(), thumb.getY(),
-                                    thumbBase.darker (0.15f), thumb.getX(), thumb.getBottom(), false);
-    g.setGradientFill (thumbGrad);
+    g.setColour (t.accent);
     g.fillEllipse (thumb);
-
-    g.setColour (t.accent.withAlpha (0.75f));
-    g.drawEllipse (thumb, 1.2f);
-
-    // Tiny top-left specular highlight for a glassy, raised feel
-    g.setColour (juce::Colours::white.withAlpha (0.18f));
-    g.fillEllipse (thumb.reduced (thumb.getWidth() * 0.32f).translated (-thumb.getWidth() * 0.10f, -thumb.getHeight() * 0.12f));
 }
 
 // ── Rotary slider ─────────────────────────────────────────────────────────────
-// Only reached if a real rotary juce::Slider is ever instantiated — current
-// knob strips in SliceControlBar are hand-painted cells. Mirrors drawLinearSlider:
-// recessed track arc, accent fill arc with soft glow, glassy raised thumb dot.
+// COLLAPSED: this used to branch metro (thin arc track + accent fill arc +
+// indicator line) vs. every other theme (recessed gradient arc + glow fill
+// arc + glassy beveled thumb dot). The else branch is gone — every theme now
+// renders the flat Metro-style rotary, still reading its own getTheme() colours.
 void DysektLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                                           float sliderPosProportional, float rotaryStartAngle,
                                           float rotaryEndAngle, juce::Slider& slider)
@@ -592,76 +413,27 @@ void DysektLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
     const float lineW = juce::jmin (4.0f, radius * 0.22f);
     const float arcR  = radius - lineW * 0.5f;
 
-    if (t.name == "metro")
-    {
-        juce::Path mTrack;
-        mTrack.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour (t.gridLine);
-        g.strokePath (mTrack, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-        if (angle > rotaryStartAngle)
-        {
-            juce::Path mFill;
-            mFill.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, angle, true);
-            g.setColour (t.accent);
-            g.strokePath (mFill, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        }
-
-        // Simple indicator line from centre toward the pointer tip, Metro-flat
-        juce::Point<float> mTip (centre.x + std::sin (angle) * radius, centre.y - std::cos (angle) * radius);
-        g.setColour (t.accent);
-        g.drawLine (centre.x, centre.y, mTip.x, mTip.y, 2.0f);
-        return;
-    }
-
-    // ── Recessed track arc — same dark-to-slightly-lighter gradient as the track
     juce::Path track;
     track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour (t.darkBar.darker (0.35f));
+    g.setColour (t.gridLine);
     g.strokePath (track, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour (t.separator.withAlpha (0.5f));
-    g.strokePath (track, juce::PathStrokeType (1.0f));
 
-    // ── Filled arc — accent, with the same soft glow used by the linear slider's fill
     if (angle > rotaryStartAngle)
     {
         juce::Path fill;
         fill.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, angle, true);
-
-        g.setColour (t.accent.withAlpha (0.20f));
-        g.strokePath (fill, juce::PathStrokeType (lineW + 3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
         g.setColour (t.accent);
         g.strokePath (fill, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
-    // ── Glassy raised thumb dot at the pointer tip ─────────────────────────
-    const bool isDown = slider.isMouseButtonDown();
-    const bool isOver = slider.isMouseOverOrDragging();
-    auto thumbBase = t.button.brighter (isDown ? 0.30f : isOver ? 0.18f : 0.10f);
-    const float thumbD = juce::jmin (14.0f, radius * 0.5f);
-    juce::Point<float> tip (centre.x + std::sin (angle) * arcR, centre.y - std::cos (angle) * arcR);
-    auto thumb = juce::Rectangle<float> (thumbD, thumbD).withCentre (tip);
-
-    if (isOver || isDown)
-    {
-        g.setColour (t.accent.withAlpha (isDown ? 0.30f : 0.18f));
-        g.fillEllipse (thumb.expanded (2.0f));
-    }
-
-    juce::ColourGradient thumbGrad (thumbBase.brighter (0.25f), thumb.getX(), thumb.getY(),
-                                    thumbBase.darker (0.15f), thumb.getX(), thumb.getBottom(), false);
-    g.setGradientFill (thumbGrad);
-    g.fillEllipse (thumb);
-    g.setColour (t.accent.withAlpha (0.75f));
-    g.drawEllipse (thumb, 1.2f);
-    g.setColour (juce::Colours::white.withAlpha (0.18f));
-    g.fillEllipse (thumb.reduced (thumb.getWidth() * 0.32f).translated (-thumb.getWidth() * 0.10f, -thumb.getHeight() * 0.12f));
+    // Simple indicator line from centre toward the pointer tip — flat, no glow
+    juce::Point<float> tip (centre.x + std::sin (angle) * radius, centre.y - std::cos (angle) * radius);
+    g.setColour (t.accent);
+    g.drawLine (centre.x, centre.y, tip.x, tip.y, 2.0f);
 }
 
 // ── TextEditor ────────────────────────────────────────────────────────────────
-// Flat fill + 2px-radius outline, matching drawButtonBackground's "Midnight"
-// direction, instead of LookAndFeel_V4's default inset chrome.
+// Flat fill + flat outline, matching drawButtonBackground's shape language.
 void DysektLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, int height, juce::TextEditor& te)
 {
     auto bg = te.findColour (juce::TextEditor::backgroundColourId);
@@ -670,7 +442,7 @@ void DysektLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, 
 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     g.setColour (bg);
-    g.fillRoundedRectangle (bounds, getTheme().name == "metro" ? 0.0f : 2.0f);
+    g.fillRoundedRectangle (bounds, 0.0f);
 }
 
 void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
@@ -680,10 +452,9 @@ void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int
 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     const bool focused = te.hasKeyboardFocus (true);
-    const float radius = getTheme().name == "metro" ? 0.0f : 2.0f;
     g.setColour (focused ? getTheme().accent
                           : getTheme().separator.withAlpha (0.60f));
-    g.drawRoundedRectangle (bounds, radius, focused ? 1.4f : 1.0f);
+    g.drawRoundedRectangle (bounds, 0.0f, focused ? 1.4f : 1.0f);
 }
 
 //==============================================================================
@@ -709,19 +480,20 @@ void DysektLookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& aler
                                       juce::TextLayout& textLayout)
 {
     const auto& t = getTheme();
+    const float r = 0.0f;   // flattened — was a fixed 4.0f radius regardless of theme
 
     // Background
     g.setColour (t.darkBar);
-    g.fillRoundedRectangle (alert.getLocalBounds().toFloat(), 4.0f);
+    g.fillRoundedRectangle (alert.getLocalBounds().toFloat(), r);
 
     // Accent border
     g.setColour (t.accent.withAlpha (0.6f));
-    g.drawRoundedRectangle (alert.getLocalBounds().toFloat().reduced (0.5f), 4.0f, 1.0f);
+    g.drawRoundedRectangle (alert.getLocalBounds().toFloat().reduced (0.5f), r, 1.0f);
 
     // Title strip
     const auto titleArea = juce::Rectangle<int> (0, 0, alert.getWidth(), textArea.getY());
     g.setColour (t.accent.withAlpha (0.15f));
-    g.fillRoundedRectangle (titleArea.toFloat(), 4.0f);
+    g.fillRoundedRectangle (titleArea.toFloat(), r);
 
     g.setColour (t.foreground);
     g.setFont (getAlertWindowTitleFont());
@@ -778,6 +550,7 @@ namespace
         {
             const auto& t = getTheme();
             const auto  b = getLocalBounds().toFloat().reduced (2.f);
+            const float r = 0.0f;   // flattened — was a fixed 3.f radius regardless of theme
 
             // Hover / press fill
             if (isDown)
@@ -789,25 +562,25 @@ namespace
             else
                 g.setColour (juce::Colours::transparentBlack);
 
-            g.fillRoundedRectangle (b, 3.f);
+            g.fillRoundedRectangle (b, r);
 
             // Icon
             g.setColour (isHighlighted ? t.foreground : t.foreground.withAlpha (0.6f));
             const float cx = b.getCentreX(), cy = b.getCentreY();
-            const float r  = b.getHeight() * 0.22f;
+            const float rad  = b.getHeight() * 0.22f;
 
             if (kind == Kind::Close)
             {
-                g.drawLine (cx - r, cy - r, cx + r, cy + r, 1.5f);
-                g.drawLine (cx + r, cy - r, cx - r, cy + r, 1.5f);
+                g.drawLine (cx - rad, cy - rad, cx + rad, cy + rad, 1.5f);
+                g.drawLine (cx + rad, cy - rad, cx - rad, cy + rad, 1.5f);
             }
             else if (kind == Kind::Minimise)
             {
-                g.drawLine (cx - r, cy, cx + r, cy, 1.5f);
+                g.drawLine (cx - rad, cy, cx + rad, cy, 1.5f);
             }
             else  // Maximise
             {
-                g.drawRect (juce::Rectangle<float> (cx - r, cy - r, r * 2.f, r * 2.f), 1.5f);
+                g.drawRect (juce::Rectangle<float> (cx - rad, cy - rad, rad * 2.f, rad * 2.f), 1.5f);
             }
         }
 
