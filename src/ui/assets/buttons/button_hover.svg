@@ -1,21 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">
-  <defs>
-    <linearGradient id="hoverBody" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"  stop-color="#4c5768"/>
-      <stop offset="12%" stop-color="#38414f"/>
-      <stop offset="60%" stop-color="#232a35"/>
-      <stop offset="100%" stop-color="#161b23"/>
-    </linearGradient>
-    <linearGradient id="hoverShadow" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"  stop-color="#000000" stop-opacity="0"/>
-      <stop offset="82%" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.30"/>
-    </linearGradient>
-  </defs>
-  <rect x="0.5" y="0.5" width="119" height="39" rx="4" fill="url(#hoverBody)"/>
-  <!-- brighter top bevel highlight -->
-  <rect x="1.5" y="1.5" width="117" height="7" rx="3" fill="#ffffff" opacity="0.16"/>
-  <rect x="0.5" y="0.5" width="119" height="39" rx="4" fill="url(#hoverShadow)"/>
-  <!-- soft accent-tinted outer edge to signal interactivity -->
-  <rect x="0.5" y="0.5" width="119" height="39" rx="4" fill="none" stroke="#5fd9e8" stroke-width="1" opacity="0.55"/>
+  <!--
+    Metro spec: flat fill, square corners, borders 1px only, no gloss/glow.
+    Replaces the old gradient+bevel hover sprite (which had a soft cyan
+    glow stroke). Hover state now differs from idle only by a slightly
+    lighter flat fill — no accent glow.
+  -->
+  <rect x="0.5" y="0.5" width="119" height="39" rx="0" fill="#232a35"/>
+  <rect x="0.5" y="0.5" width="119" height="39" rx="0" fill="none" stroke="#05060a" stroke-width="1"/>
 </svg>

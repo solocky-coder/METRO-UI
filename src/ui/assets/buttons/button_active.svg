@@ -1,21 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">
-  <defs>
-    <!-- inverted gradient: darker at top, so the button reads as physically pressed in -->
-    <linearGradient id="activeBody" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"  stop-color="#0d1014"/>
-      <stop offset="40%" stop-color="#16232a"/>
-      <stop offset="100%" stop-color="#1c333a"/>
-    </linearGradient>
-    <linearGradient id="activeGlow" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%"  stop-color="#00ffe0" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#00ffe0" stop-opacity="0.22"/>
-    </linearGradient>
-  </defs>
-  <rect x="0.5" y="0.5" width="119" height="39" rx="4" fill="url(#activeBody)"/>
-  <!-- top inset shadow (pressed-in look) -->
-  <rect x="1.5" y="1.5" width="117" height="6" rx="3" fill="#000000" opacity="0.35"/>
-  <!-- glowing accent wash rising from the bottom -->
-  <rect x="0.5" y="0.5" width="119" height="39" rx="4" fill="url(#activeGlow)"/>
-  <!-- crisp accent edge -->
-  <rect x="0.5" y="0.5" width="119" height="39" rx="4" fill="none" stroke="#00ffe0" stroke-width="1.2" opacity="0.85"/>
+  <!--
+    Metro spec: flat fill, square corners, borders 1px only, no gloss/glow.
+    Replaces the old inverted-gradient + rising cyan-glow-wash + glow-edge
+    active sprite. The calling code (SliceControlBar::drawViewToggleButtons,
+    DualLcdControlFrame::drawTab, Sf2ProgramGrid) already draws its own
+    accent-coloured border on top of this sprite for the active state, so
+    this sprite only needs to provide a flat, slightly darker base fill —
+    no border or glow baked in here to avoid a doubled/mismatched edge.
+  -->
+  <rect x="0.5" y="0.5" width="119" height="39" rx="0" fill="#16232a"/>
 </svg>

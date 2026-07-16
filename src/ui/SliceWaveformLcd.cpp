@@ -1098,11 +1098,14 @@ void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<fl
 
 void SliceWaveformLcd::paint (juce::Graphics& g)
 {
- // Clip to rounded LCD boundary — stops accent glow artefacts showing as
- // black corner notches against the plugin background.
+ // Clip to LCD boundary — flat, square corners (was an unconditional 4.0f
+ // radius regardless of theme; drawBackground() below already fills/borders
+ // this panel with r = 0.0f, so the clip mask was the one place still
+ // rounding this component's silhouette). No "accent glow artefacts" rely
+ // on rounding here — a square clip removes the same off-panel overdraw.
  {
   juce::Path clipPath;
-  clipPath.addRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
+  clipPath.addRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
   g.reduceClipRegion (clipPath);
  }
  buildDisplayData();

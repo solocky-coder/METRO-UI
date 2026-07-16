@@ -2,7 +2,17 @@
 #include "BinaryData.h"
 #include "IconManager.h"
 
-static ThemeData globalTheme = ThemeData::opendawTheme();
+// Default theme is now Metro (flat, square, no-gloss chrome per the design
+// manual). Was previously ThemeData::opendawTheme(), which meant every
+// theme.name == "metro" flat-rendering branch across the codebase
+// (ActionPanel, FileBrowserPanel, GlobalEqPanel, HeaderBar, LogoBar,
+// PadGridView, Sf2LcdDisplay, Sf2ProgramGrid, SfzDropdownPanel,
+// SfzLcdDisplay, ShortcutsPanel, SliceLcdDisplay, DualLcdControlFrame,
+// LcdColours) was unreachable — the app rendered the old rounded/gradient/
+// glow "opendaw" look by default even though the flat code path was already
+// implemented and correct. Flipping this one line activates the flat look
+// everywhere at once, with no other file needing to change.
+static ThemeData globalTheme = ThemeData::metroTheme();
 
 ThemeData& getTheme() { return globalTheme; }
 void setTheme (const ThemeData& t) { globalTheme = t; }
