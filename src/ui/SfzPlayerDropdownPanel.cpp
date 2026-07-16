@@ -85,7 +85,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
 
     // Background
     g.setColour (theme.darkBar.darker (0.45f));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
 
     // Breadcrumb bar background
     g.setColour (theme.darkBar.darker (0.20f));
@@ -98,7 +98,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
         if (upHover)
         {
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle (upBtnZone.toFloat(), 2.0f);
+            g.fillRoundedRectangle (upBtnZone.toFloat(), 0.0f);
         }
         g.setFont (DysektLookAndFeel::makeFont (14.0f * sf));
         g.setColour (canGoUp ? theme.accent.withAlpha (0.90f)
@@ -370,7 +370,7 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
             const auto badgeRect = juce::Rectangle<int> (w - badgeW - juce::roundToInt (4 * sf),
                                                           (h - badgeH) / 2, badgeW, badgeH);
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle (badgeRect.toFloat(), 2.0f * sf);
+            g.fillRoundedRectangle (badgeRect.toFloat(), 0.0f);
             g.setFont (DysektLookAndFeel::makeFont (10.0f * sf));
             g.setColour (theme.accent.withAlpha (0.80f));
             g.drawText (ext, badgeRect, juce::Justification::centred, false);
@@ -684,10 +684,8 @@ void SfzPlayerDropdownPanel::paint (juce::Graphics& g)
     // Full background
     {
         const auto bounds = getLocalBounds().toFloat();
-        juce::ColourGradient bg (theme.darkBar.darker (0.35f), 0.f, 0.f,
-                                  theme.darkBar.darker (0.10f), 0.f, (float) h, false);
-        g.setGradientFill (bg);
-        g.fillRoundedRectangle (bounds, 4.0f);
+        g.setColour (theme.darkBar.darker (0.2f));
+        g.fillRoundedRectangle (bounds, 0.0f);
 
         const int sepY = kStripH;
         g.setColour (theme.accent.withAlpha (0.18f));
@@ -817,10 +815,10 @@ void SfzPlayerDropdownPanel::drawPresetPicker (juce::Graphics& g) const
         const bool anyOpen = browserOpen;
         g.setColour (anyOpen ? theme.accent.withAlpha (0.10f)
                              : theme.darkBar.darker (0.12f));
-        g.fillRoundedRectangle (bg, 3.0f);
+        g.fillRoundedRectangle (bg, 0.0f);
         g.setColour (anyOpen ? theme.accent.withAlpha (0.55f)
                              : theme.accent.withAlpha (0.20f));
-        g.drawRoundedRectangle (bg.reduced (0.5f), 3.0f, 1.0f);
+        g.drawRoundedRectangle (bg.reduced (0.5f), 0.0f, 1.0f);
     }
 
     // Folder icon (always visible — this is the open/close toggle)
@@ -840,7 +838,7 @@ void SfzPlayerDropdownPanel::drawPresetPicker (juce::Graphics& g) const
         const bool active = isLoaded && ! presetList.empty() && ! browserOpen;
         const bool hover  = zone.contains (getMouseXYRelative()) && active;
         g.setColour (hover ? theme.accent.withAlpha (0.30f) : juce::Colours::transparentBlack);
-        g.fillRoundedRectangle (zone.toFloat(), 2.0f);
+        g.fillRoundedRectangle (zone.toFloat(), 0.0f);
         g.setFont (DysektLookAndFeel::makeFont (13.0f));
         g.setColour (active ? theme.accent.withAlpha (0.75f)
                             : theme.foreground.withAlpha (0.20f));
@@ -963,18 +961,16 @@ void SfzPlayerDropdownPanel::drawMeter (juce::Graphics& g) const
     auto rightBar = juce::Rectangle<int> (area.getX() + barW + 4,  area.getY(), barW, barH);
 
     g.setColour (theme.darkBar.darker (0.2f));
-    g.fillRoundedRectangle (leftBar.toFloat(),  2.0f);
-    g.fillRoundedRectangle (rightBar.toFloat(), 2.0f);
+    g.fillRoundedRectangle (leftBar.toFloat(), 0.0f);
+    g.fillRoundedRectangle (rightBar.toFloat(), 0.0f);
 
     auto drawBar = [&] (juce::Rectangle<int> bar, float peak, float hold)
     {
         const int fillH = juce::roundToInt ((float) bar.getHeight() * juce::jlimit (0.f, 1.f, peak));
         if (fillH > 0)
         {
-            juce::ColourGradient grad (theme.accent.withAlpha (0.85f), 0.f, (float) bar.getBottom(),
-                                        theme.accent.brighter (0.5f),  0.f, (float) bar.getY(), false);
-            g.setGradientFill (grad);
-            g.fillRoundedRectangle (bar.withTrimmedTop (bar.getHeight() - fillH).toFloat(), 2.0f);
+            g.setColour (theme.accent);
+            g.fillRoundedRectangle (bar.withTrimmedTop (bar.getHeight() - fillH).toFloat(), 0.0f);
         }
         const int holdY = bar.getBottom() - juce::roundToInt ((float) bar.getHeight()
                            * juce::jlimit (0.f, 1.f, hold));

@@ -191,9 +191,7 @@ void WaveformOverview::drawMiniWaveform (juce::Graphics& g,
             rectPath.lineTo (px2x (0), baseline);
             rectPath.closeSubPath();
 
-            juce::ColourGradient grad (waveCol.withAlpha (0.60f), 0.0f, (float) oy,
-                                       waveCol.withAlpha (0.05f), 0.0f, (float) (oy + H), false);
-            g.setGradientFill (grad);
+            g.setColour (waveCol.withAlpha (0.32f));
             g.fillPath (rectPath);
 
             juce::Path topLine;
@@ -263,13 +261,7 @@ void WaveformOverview::drawMiniWaveform (juce::Graphics& g,
                 rmsPath.lineTo (px2x (px), cy + peaks[(size_t) px] * scale);
             rmsPath.closeSubPath();
 
-            juce::ColourGradient grad (
-                waveCol.withAlpha (0.0f), 0.0f, 0.0f,
-                waveCol.withAlpha (0.0f), 0.0f, (float) (oy + H), false);
-            grad.addColour (0.35, waveCol.withAlpha (0.22f));
-            grad.addColour (0.5,  waveCol.withAlpha (0.36f));
-            grad.addColour (0.65, waveCol.withAlpha (0.22f));
-            g.setGradientFill (grad);
+            g.setColour (waveCol.withAlpha (0.27f));
             g.fillPath (rmsPath);
 
             juce::Path rmsLine;
@@ -355,36 +347,25 @@ void WaveformOverview::paint (juce::Graphics& g)
     const auto ac = getTheme().accent;
     auto b = getLocalBounds();
 
-    juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
-                                    juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
-    g.setGradientFill (outerGrad);
-    g.fillRoundedRectangle (b.toFloat(), 4.0f);
+    g.setColour (juce::Colour (0xFF0F0F0F));
+    g.fillRoundedRectangle (b.toFloat(), 0.0f);
 
-    // Outer glow halo
-    g.setColour (ac.withAlpha (0.18f));
-    g.drawRoundedRectangle (b.toFloat().expanded (1.0f), 5.0f, 1.0f);
     // Border
     g.setColour (ac.withAlpha (0.65f));
-    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
     auto screen = b.reduced (4);
     g.setColour (getTheme().darkBar.darker (0.55f));
-    g.fillRoundedRectangle (screen.toFloat(), 2.0f);
+    g.fillRoundedRectangle (screen.toFloat(), 0.0f);
 
     // Scanline texture
     g.setColour (juce::Colours::black.withAlpha (0.18f));
     for (int y = screen.getY(); y < screen.getBottom(); y += 2)
         g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
 
-    // Top glow
-    juce::ColourGradient glow (ac.withAlpha (0.06f), 0.f, (float) screen.getY(),
-                                juce::Colours::transparentBlack, 0.f, (float) (screen.getY() + 18), false);
-    g.setGradientFill (glow);
-    g.fillRoundedRectangle (screen.toFloat(), 2.0f);
-
     // Screen border
     g.setColour (ac.withAlpha (0.12f));
-    g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 2.0f, 1.0f);
+    g.drawRoundedRectangle (screen.toFloat().expanded (0.5f), 0.0f, 1.0f);
     // ── End frame ─────────────────────────────────────────────────────────────
 
     const float W = (float) screen.getWidth();

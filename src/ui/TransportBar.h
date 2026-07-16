@@ -22,18 +22,17 @@ public:
                                bool isHighlighted, bool isDown) override
     {
         auto bounds = btn.getLocalBounds().toFloat().reduced (1.0f);
-        const float r = 4.f;
 
         // Flat dark tile — slightly lighter on hover/press
         const juce::Colour tile = isDown        ? juce::Colour (0xff2a2a2a)
                                 : isHighlighted ? juce::Colour (0xff222222)
                                                 : juce::Colour (0xff181818);
         g.setColour (tile);
-        g.fillRoundedRectangle (bounds, r);
+        g.fillRoundedRectangle (bounds, 0.0f);
 
         // Hairline border — just enough to separate from the background
         g.setColour (juce::Colours::white.withAlpha (0.07f));
-        g.drawRoundedRectangle (bounds, r, 0.5f);
+        g.drawRoundedRectangle (bounds, 0.0f, 0.5f);
 
         // Indicator dot — top-right corner, only when the button is on
         const bool on = btn.getToggleState();

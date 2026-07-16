@@ -1154,9 +1154,9 @@ private:
                 g.fillRect (getLocalBounds());
                 const auto box = dialogBox();
                 g.setColour (juce::Colour (0xFF1A2030));
-                g.fillRoundedRectangle (box.toFloat(), 5.0f);
+                g.fillRoundedRectangle (box.toFloat(), 0.0f);
                 g.setColour (juce::Colour (0xFF3A8FCC).withAlpha (0.7f));
-                g.drawRoundedRectangle (box.toFloat().reduced (0.5f), 5.0f, 1.5f);
+                g.drawRoundedRectangle (box.toFloat().reduced (0.5f), 0.0f, 1.5f);
                 g.setFont (14.0f);
                 g.setColour (juce::Colours::white);
                 g.drawText ("Set Velocity", box.getX() + 16, box.getY() + 12,
@@ -1430,23 +1430,22 @@ private:
 
             // Note body
             g.setColour (baseCol);
-            g.fillRoundedRectangle (x, y, w, h, juce::jmin (2.f, h * 0.35f));
+            g.fillRoundedRectangle (x, y, w, h, 0.0f);
 
             // Velocity shading overlay
             const float velAlpha = (1.f - n.velocity / 127.f) * 0.38f;
             g.setColour (juce::Colour::fromFloatRGBA (0.f, 0.f, 0.f, velAlpha));
-            g.fillRoundedRectangle (x, y, w, h, juce::jmin (2.f, h * 0.35f));
+            g.fillRoundedRectangle (x, y, w, h, 0.0f);
 
             // Border
             g.setColour (sel ? baseCol.brighter (0.4f) : baseCol.brighter (0.2f).withAlpha (0.7f));
-            g.drawRoundedRectangle (x + 0.5f, y + 0.5f, w - 1.f, h - 1.f,
-                                    juce::jmin (2.f, h * 0.35f), 0.75f);
+            g.drawRoundedRectangle (x + 0.5f, y + 0.5f, w - 1.f, h - 1.f, 0.0f, 0.75f);
 
             // Resize handle on right edge
             const float handleW = juce::jmin (4.f, w * 0.2f);
             g.setColour (baseCol.brighter (0.6f).withAlpha (0.7f));
             g.fillRoundedRectangle (x + w - handleW - 0.5f, y + 1.f,
-                                    handleW, h - 2.f, 1.f);
+                                    handleW, h - 2.f, 0.0f);
 
             // Note label (when rows are tall enough)
             if (noteRowH >= 11 && w > 18)

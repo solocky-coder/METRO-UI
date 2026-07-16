@@ -132,9 +132,9 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
             const juce::Rectangle<int> btnRect (bx, by, kBtnW, kBtnH);
 
             g.setColour (theme.accent.withAlpha (0.22f));
-            g.fillRoundedRectangle (btnRect.toFloat(), 2.5f);
+            g.fillRoundedRectangle (btnRect.toFloat(), 0.0f);
             g.setColour (theme.accent);
-            g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), 2.5f, 0.8f);
+            g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), 0.0f, 0.8f);
             g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
             g.setColour (theme.accent);
             g.drawText ("+ ZONE", btnRect, juce::Justification::centred, false);
@@ -203,7 +203,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
                 // Badge background
                 g.setColour (theme.accent.withAlpha (0.75f));
                 g.fillRoundedRectangle ((float) badgeX, (float) badgeY,
-                                        (float) badgeW, (float) badgeH, 3.0f);
+                                        (float) badgeW, (float) badgeH, 0.0f);
                 // Badge text
                 g.setFont (badgeFont);
                 g.setColour (juce::Colours::white.withAlpha (0.92f));
@@ -303,10 +303,10 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
         const juce::Rectangle<int> btnRect (bx, by, kBtnW, kBtnH);
 
         g.setColour (theme.accent.withAlpha (0.20f));
-        g.fillRoundedRectangle (btnRect.toFloat(), 3.0f);
+        g.fillRoundedRectangle (btnRect.toFloat(), 0.0f);
 
         g.setColour (theme.accent.withAlpha (0.65f));
-        g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), 3.0f, 0.75f);
+        g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), 0.0f, 0.75f);
 
         g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
         g.setColour (theme.accent.brighter (0.5f));
@@ -1078,38 +1078,29 @@ void KeysPanel::paint (juce::Graphics& g)
     const auto  accent = theme.accent;
 
     g.setColour (theme.darkBar.darker (0.35f));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 3.0f);
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
 
     // ── LCD-style frame around zone viewport ─────────────────────────────────
     if (kZoneViewH > 0)
     {
         const juce::Rectangle<float> frameRect (0.f, 0.f, (float) getWidth(), (float) kZoneViewH);
 
-        juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0.f, 0.f,
-                                        juce::Colour (0xFF0E0E0E), 0.f,
-                                        (float) kZoneViewH, false);
-        g.setGradientFill (outerGrad);
-        g.fillRoundedRectangle (frameRect, 2.0f);
+        g.setColour (juce::Colour (0xFF0F0F0F));
+        g.fillRoundedRectangle (frameRect, 0.0f);
 
         g.setColour (accent.withAlpha (0.35f));
-        g.drawRoundedRectangle (frameRect.reduced (0.5f), 2.0f, 1.0f);
+        g.drawRoundedRectangle (frameRect.reduced (0.5f), 0.0f, 1.0f);
 
         const auto screen = frameRect.reduced (2.f);
         g.setColour (theme.darkBar.darker (0.55f));
-        g.fillRoundedRectangle (screen, 1.5f);
+        g.fillRoundedRectangle (screen, 0.0f);
 
         g.setColour (juce::Colours::black.withAlpha (0.10f));
         for (int y = (int) screen.getY(); y < (int) screen.getBottom(); y += 2)
             g.drawHorizontalLine (y, screen.getX(), screen.getRight());
 
-        juce::ColourGradient glow (accent.withAlpha (0.05f), 0.f, screen.getY(),
-                                   juce::Colours::transparentBlack, 0.f,
-                                   screen.getY() + 16.f, false);
-        g.setGradientFill (glow);
-        g.fillRoundedRectangle (screen, 1.5f);
-
         g.setColour (accent.withAlpha (0.10f));
-        g.drawRoundedRectangle (screen.expanded (0.5f), 1.5f, 1.0f);
+        g.drawRoundedRectangle (screen.expanded (0.5f), 0.0f, 1.0f);
     }
 
     // ── Keyboard ──────────────────────────────────────────────────────────────
@@ -1182,16 +1173,12 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
 
     if (! kr.isBlack)
     {
-        const juce::Colour topCol = active  ? accent.withBrightness (0.92f).withAlpha (0.9f)
-                                   : hovered ? juce::Colour (0xFFF4F4F4)
-                                             : juce::Colour (0xFFECECEC);
-        const juce::Colour botCol = active  ? accent.withBrightness (0.75f).withAlpha (0.7f)
-                                   : hovered ? juce::Colour (0xFFDCDCDC)
-                                             : juce::Colour (0xFFD0D0D0);
+        const juce::Colour fillCol = active  ? accent.withBrightness (0.92f).withAlpha (0.9f)
+                                    : hovered ? juce::Colour (0xFFF4F4F4)
+                                              : juce::Colour (0xFFECECEC);
 
-        juce::ColourGradient grad (topCol, 0.f, b.getY(), botCol, 0.f, b.getBottom(), false);
-        g.setGradientFill (grad);
-        g.fillRoundedRectangle (b.reduced (0.5f, 0.f).withTrimmedBottom (-4.f), 2.0f);
+        g.setColour (fillCol);
+        g.fillRoundedRectangle (b.reduced (0.5f, 0.f).withTrimmedBottom (-4.f), 0.0f);
 
         g.setColour (juce::Colour (0xFF707070).withAlpha (0.40f));
         g.fillRect  (b.getRight() - 1.0f, b.getY() + 2.0f, 1.0f, b.getHeight() - 4.0f);
@@ -1209,34 +1196,30 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
         if (hasSlice)
         {
             g.setColour (accent.withAlpha (0.80f));
-            g.drawRoundedRectangle (b.reduced (0.8f, 0.5f), 2.0f, 1.0f);
+            g.drawRoundedRectangle (b.reduced (0.8f, 0.5f), 0.0f, 1.0f);
         }
     }
     else
     {
-        const juce::Colour topCol = active  ? accent.darker (0.1f)
-                                   : hovered ? juce::Colour (0xFF383838)
-                                             : juce::Colour (0xFF222222);
-        const juce::Colour botCol = active  ? accent.darker (0.5f)
-                                   : hovered ? juce::Colour (0xFF181818)
-                                             : juce::Colour (0xFF0A0A0A);
+        const juce::Colour fillCol = active  ? accent.darker (0.1f)
+                                    : hovered ? juce::Colour (0xFF383838)
+                                              : juce::Colour (0xFF222222);
 
-        juce::ColourGradient grad (topCol, 0.f, b.getY(), botCol, 0.f, b.getBottom(), false);
-        g.setGradientFill (grad);
-        g.fillRoundedRectangle (b, 1.5f);
+        g.setColour (fillCol);
+        g.fillRoundedRectangle (b, 0.0f);
 
         g.setColour (juce::Colours::white.withAlpha (active ? 0.22f : 0.09f));
         g.fillRoundedRectangle (b.getX() + 1.0f, b.getY() + 1.0f,
-                                b.getWidth() - 2.0f, 3.5f, 1.0f);
+                                b.getWidth() - 2.0f, 3.5f, 0.0f);
 
         if (hasSlice)
         {
             g.setColour (accent.withAlpha (0.85f));
-            g.drawRoundedRectangle (b.reduced (0.6f), 1.5f, 0.8f);
+            g.drawRoundedRectangle (b.reduced (0.6f), 0.0f, 0.8f);
         }
 
         g.setColour (juce::Colours::black.withAlpha (0.60f));
-        g.drawRoundedRectangle (b.expanded (0.4f), 2.0f, 0.7f);
+        g.drawRoundedRectangle (b.expanded (0.4f), 0.0f, 0.7f);
     }
 }
 

@@ -424,14 +424,7 @@ void WaveformView::drawWaveform (juce::Graphics& g)
  }
  else
  {
- juce::ColourGradient grad (
- waveCol.withAlpha (0.0f), 0.0f, 0.0f,
- waveCol.withAlpha (0.0f), 0.0f, (float) h,
- false);
- grad.addColour (0.35, waveCol.withAlpha (0.18f));
- grad.addColour (0.5, waveCol.withAlpha (0.28f));
- grad.addColour (0.65, waveCol.withAlpha (0.18f));
- g.setGradientFill (grad);
+ g.setColour (waveCol.withAlpha (0.22f));
  g.fillPath (fillPath);
 
  juce::Path topPath;
@@ -519,9 +512,7 @@ void WaveformView::drawWaveform (juce::Graphics& g)
  rectPath.lineTo (0.0f, baseline);
  rectPath.closeSubPath();
 
- juce::ColourGradient grad (waveCol.withAlpha (0.65f), 0.0f, 0.0f,
- waveCol.withAlpha (0.05f), 0.0f, (float) h, false);
- g.setGradientFill (grad);
+ g.setColour (waveCol.withAlpha (0.35f));
  g.fillPath (rectPath);
 
  juce::Path topLine;
@@ -618,13 +609,7 @@ void WaveformView::drawWaveform (juce::Graphics& g)
  }
  rmsPath.closeSubPath();
 
- juce::ColourGradient grad (
- waveCol.withAlpha (0.0f), 0.0f, 0.0f,
- waveCol.withAlpha (0.0f), 0.0f, (float) h, false);
- grad.addColour (0.35, waveCol.withAlpha (0.22f));
- grad.addColour (0.5, waveCol.withAlpha (0.38f));
- grad.addColour (0.65, waveCol.withAlpha (0.22f));
- g.setGradientFill (grad);
+ g.setColour (waveCol.withAlpha (0.28f));
  g.fillPath (rmsPath);
 
  // Bright outline on top edge

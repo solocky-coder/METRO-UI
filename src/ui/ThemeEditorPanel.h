@@ -183,17 +183,17 @@ public:
 
         // Dialog background
         g.setColour (T.header);
-        g.fillRoundedRectangle (dialogBounds.toFloat(), 6.0f);
+        g.fillRoundedRectangle (dialogBounds.toFloat(), 0.0f);
 
         // Title bar background
         auto titleBar = dialogBounds.withHeight (36);
         g.setColour (T.darkBar.darker (0.4f));
-        g.fillRoundedRectangle (titleBar.toFloat(), 6.0f);
+        g.fillRoundedRectangle (titleBar.toFloat(), 0.0f);
         g.fillRect             (titleBar.withTrimmedTop (6));
 
         // Border
         g.setColour (T.accent.withAlpha (0.55f));
-        g.drawRoundedRectangle (dialogBounds.toFloat().reduced (0.5f), 6.0f, 1.5f);
+        g.drawRoundedRectangle (dialogBounds.toFloat().reduced (0.5f), 0.0f, 1.5f);
 
         // Section dividers
         g.setColour (T.separator.withAlpha (0.5f));
@@ -277,7 +277,7 @@ private:
         {
             const auto& T = getTheme();
             g.setColour (T.button.withAlpha (0.4f));
-            g.fillRoundedRectangle (getLocalBounds().toFloat(), 2.0f);
+            g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
         }
 
     private:
@@ -511,9 +511,9 @@ private:
         // Background swatch
         auto bgSwatch = strip.removeFromLeft (48);
         g.setColour (working.background);
-        g.fillRoundedRectangle (bgSwatch.toFloat(), 3.0f);
+        g.fillRoundedRectangle (bgSwatch.toFloat(), 0.0f);
         g.setColour (working.accent.withAlpha (0.5f));
-        g.drawRoundedRectangle (bgSwatch.toFloat().reduced (0.5f), 3.0f, 1.0f);
+        g.drawRoundedRectangle (bgSwatch.toFloat().reduced (0.5f), 0.0f, 1.0f);
         g.setFont (DysektLookAndFeel::makeFont (8.0f));
         g.setColour (working.foreground.withAlpha (0.7f));
         g.drawText ("BG", bgSwatch, juce::Justification::centred, false);
@@ -523,7 +523,7 @@ private:
         // Accent bar
         auto accentBar = strip.removeFromLeft (48);
         g.setColour (working.accent);
-        g.fillRoundedRectangle (accentBar.toFloat(), 3.0f);
+        g.fillRoundedRectangle (accentBar.toFloat(), 0.0f);
         g.setColour (juce::Colours::black.withAlpha (0.3f));
         g.setFont (DysektLookAndFeel::makeFont (8.0f));
         g.drawText ("ACCENT", accentBar, juce::Justification::centred, false);
@@ -538,7 +538,7 @@ private:
         {
             juce::Rectangle<float> r (x, (float) strip.getY(), sw - 2.0f, (float) strip.getHeight());
             g.setColour (working.slicePalette[i]);
-            g.fillRoundedRectangle (r, 2.0f);
+            g.fillRoundedRectangle (r, 0.0f);
             x += sw;
         }
     }
