@@ -875,6 +875,13 @@ void DysektEditor::paint (juce::Graphics& g)
  const auto& frameSrc = wvVisible ? waveformView.getBounds() : padGridView.getBounds();
  const auto outerF = waveformFrameRect (*this, frameSrc, trimDialog != nullptr);
 
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().waveformBg);
+     g.fillRoundedRectangle (outerF, 4.0f);
+ }
+ else
+ {
  juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0.f, outerF.getY(),
  juce::Colour (0xFF0E0E0E), 0.f, outerF.getBottom(), false);
  g.setGradientFill (outerGrad);
@@ -889,6 +896,7 @@ void DysektEditor::paint (juce::Graphics& g)
  juce::Colours::transparentBlack, 0.f, screenF.getY() + 20.f, false);
  g.setGradientFill (glow);
  g.fillRoundedRectangle (screenF, 2.0f);
+ }
  }
 }
 
@@ -915,6 +923,13 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  const auto outerF = waveformFrameRect (*this, frameSrc, trimDialog != nullptr);
  const auto ac = getTheme().accent;
 
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().separator);
+     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.0f * sf);
+ }
+ else
+ {
  // Clip to outerF so the expanded outer-glow border cannot bleed into the
  // margin columns or below the SCB boundary, which would produce thin
  // accent-coloured hairlines at the pad-grid edges in pad view.
@@ -932,6 +947,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  g.setColour (ac.withAlpha (0.30f));
  g.drawRoundedRectangle (screenF.expanded (0.5f * sf), 2.0f * sf, 1.0f * sf);
  }
+ }
 
  // SFZ player frame border — identical recipe and width as the waveform frame
  const bool sfzVisible = (sfzDropdown.isVisible() && sfzDropdown.getHeight() > 0)
@@ -945,6 +961,14 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  const auto outerF = waveformFrameRect (*this, sfzActiveBounds, false);
  const auto ac = getTheme().accent;
 
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().separator);
+     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.0f * sf);
+ }
+ else
+ {
+
  {
      juce::Graphics::ScopedSaveState clip (g);
      g.reduceClipRegion (outerF.expanded (1.0f * sf).toNearestInt());
@@ -957,6 +981,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
 
  g.setColour (ac.withAlpha (0.30f));
  g.drawRoundedRectangle (outerF.reduced (4.0f * sf), 2.0f * sf, 1.0f * sf);
+ }
  }
 
  // Slot-panel frame border (Browser / Mixer / EQ / Sequencer) — same recipe
@@ -985,6 +1010,14 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  const auto outerF = waveformFrameRect (*this, slotBounds, false);
  const auto ac = getTheme().accent;
 
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().separator);
+     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.0f * sf);
+ }
+ else
+ {
+
  {
      juce::Graphics::ScopedSaveState clip (g);
      g.reduceClipRegion (outerF.expanded (1.0f * sf).toNearestInt());
@@ -999,6 +1032,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  g.drawRoundedRectangle (outerF.reduced (4.0f * sf), 2.0f * sf, 1.0f * sf);
  }
  }
+ }
 
  // Logo frame border
  if (logoBar.isVisible() && logoBar.getHeight() > 0)
@@ -1006,6 +1040,13 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  const auto ac = getTheme().accent;
  const juce::Rectangle<float> logoF (logoBar.getBounds().toFloat()
  .withTrimmedTop (4.0f * sf));
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().separator);
+     g.drawRoundedRectangle (logoF.reduced (0.5f * sf), 4.0f * sf, 1.0f * sf);
+ }
+ else
+ {
  g.setColour (ac.withAlpha (0.18f));
  g.drawRoundedRectangle (logoF.expanded (1.0f * sf), 5.0f * sf, 1.0f * sf);
  g.setColour (ac.withAlpha (0.72f));
@@ -1013,15 +1054,24 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  g.setColour (ac.withAlpha (0.18f));
  g.drawRoundedRectangle (logoF.reduced (2.0f * sf), 3.5f * sf, 1.0f * sf);
  }
+ }
 
  // Full-window accent frame
  {
  const auto ac = getTheme().accent;
  const juce::Rectangle<float> win (getLocalBounds().toFloat());
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().separator);
+     g.drawRoundedRectangle (win.reduced (2.0f * sf), 2.5f * sf, 1.0f * sf);
+ }
+ else
+ {
  g.setColour (ac.withAlpha (0.60f));
  g.drawRoundedRectangle (win.reduced (2.0f * sf), 2.5f * sf, 1.5f * sf);
  g.setColour (ac.withAlpha (0.14f));
  g.drawRoundedRectangle (win.reduced (4.0f * sf), 2.0f * sf, 1.0f * sf);
+ }
  }
 }
 
@@ -1899,6 +1949,7 @@ void DysektEditor::applyTheme (const juce::String& themeName)
  if (t.name == themeName)
  {
  setTheme (t);
+ setLookAndFeel (t.name == "metro" ? (juce::LookAndFeel*) &metroLnf : (juce::LookAndFeel*) &lnf);
  processor.sliceManager.setSlicePalette (getTheme().slicePalette);
  saveUserSettings (themeName);
  applyWindowIcon (this);
@@ -1917,6 +1968,7 @@ void DysektEditor::applyTheme (const juce::String& themeName)
  else if (themeName == "serum")    setTheme (ThemeData::serumTheme());
  else if (themeName == "metro")    setTheme (ThemeData::metroTheme());
  else setTheme (ThemeData::darkTheme());
+ setLookAndFeel (getTheme().name == "metro" ? (juce::LookAndFeel*) &metroLnf : (juce::LookAndFeel*) &lnf);
  processor.sliceManager.setSlicePalette (getTheme().slicePalette);
  saveUserSettings (themeName);
  applyWindowIcon (this);

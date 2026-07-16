@@ -4,6 +4,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "PluginProcessor.h"
+#include "metro/MetroLookAndFeel.h"
 #include "ui/LogoBar.h"
 #include "ui/HeaderBar.h"
 #include "params/ParamIds.h"
@@ -205,6 +206,7 @@ private:
     std::unique_ptr<ThemeEditorPanel>  themeEditorPanel;
 
     DysektLookAndFeel lnf;
+    MetroLookAndFeel  metroLnf;   // swapped in via setLookAndFeel() only while theme == "metro"
 
     LogoBar         logoBar;
     HeaderBar       headerBar;

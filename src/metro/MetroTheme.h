@@ -1,50 +1,28 @@
-/*
-    DYSEKT 2
-    Metro UI
-
-    MetroTheme.h
-
-    Central Metro theme facade. Components should obtain shared palette and
-    typography through this header instead of declaring local design values.
-*/
 #pragma once
+#include <juce_graphics/juce_graphics.h>
 
-#include <juce_gui_basics/juce_gui_basics.h>
-#include "MetroMetrics.h"
-#include "MetroTypography.h"
+// Forward-declared only — this header must not pull in ThemeData.h, since
+// ThemeData.h itself calls MetroTheme::build() from ThemeData::metroTheme()
+// to register Metro with the app's existing theme system (ThemeData is the
+// single data model every panel already reads via getTheme(); Metro needs to
+// go through that same channel to reach every hand-painted component, not
+// just the standard JUCE widgets a LookAndFeel subclass can reach).
+struct ThemeData;
 
-namespace dysekt::metro
+// Windows Metro / Fluent palette — DYSEKT-SF Metro UI Developer Specification
+// (Technical) v2, THEME section, plus the fuller palette from v1's COLOR
+// PALETTE section (Success/Warning/Danger, secondary text, slice colours).
+namespace MetroTheme
 {
-struct MetroTheme final
-{
-    /** Semantic colours used by the Metro shell and its components. */
-    struct Colours final
-    {
-        static const juce::Colour windowBackground;
-        static const juce::Colour panelBackground;
-        static const juce::Colour raisedPanel;
-        static const juce::Colour separator;
-        static const juce::Colour accent;
-        static const juce::Colour accentMuted;
-        static const juce::Colour textPrimary;
-        static const juce::Colour textSecondary;
-        static const juce::Colour textDisabled;
-        static const juce::Colour hoverOverlay;
-        static const juce::Colour pressedOverlay;
-        static const juce::Colour focusRing;
-    };
+    ThemeData build();
 
-    using Metrics = MetroMetrics;
-
-    static juce::Font displayFont();
-    static juce::Font titleFont();
-    static juce::Font sectionTitleFont();
-    static juce::Font bodyFont();
-    static juce::Font labelFont();
-    static juce::Font smallFont();
-    static juce::Font captionFont();
-    static juce::Font buttonFont();
-    static juce::Font numericFont();
-};
-
-} // namespace dysekt::metro
+    // Semantic status colours from the spec's COLOR PALETTE section — not
+    // part of ThemeData's shared schema (see MetroTheme.cpp), but declared
+    // here as the canonical values for any Metro-specific code that needs
+    // success/warning/danger/secondary-text colours (e.g. a future meter
+    // or status readout done in the Metro idiom).
+    extern const juce::Colour kSuccess;
+    extern const juce::Colour kWarning;
+    extern const juce::Colour kDanger;
+    extern const juce::Colour kSecondaryText;
+}

@@ -37,6 +37,19 @@ DysektLookAndFeel::DysektLookAndFeel()
 
 juce::Font DysektLookAndFeel::makeFont (float pointSize, bool bold)
 {
+    if (getTheme().name == "metro")
+    {
+        // Spec calls for Segoe UI — the real Windows system font, not an
+        // embedded lookalike, since Metro is explicitly impersonating native
+        // Windows chrome. JUCE resolves this by name at the OS font layer;
+        // on a non-Windows build machine it degrades gracefully to whatever
+        // default sans the OS substitutes, same as any missing font name.
+        auto opts = juce::FontOptions().withName ("Segoe UI").withHeight (pointSize);
+        if (bold)
+            opts = opts.withStyle ("Semibold");
+        return juce::Font (opts);
+    }
+
     auto tf = bold ? sBoldTypeface : sRegularTypeface;
     if (tf != nullptr)
         return juce::Font (juce::FontOptions().withTypeface (tf).withPointHeight (pointSize));

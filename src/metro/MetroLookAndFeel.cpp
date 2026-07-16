@@ -1,111 +1,152 @@
-/*
-    DYSEKT 2
-    Metro UI
-
-    MetroLookAndFeel.cpp
-*/
 #include "MetroLookAndFeel.h"
 
-namespace dysekt::metro
+// ── Buttons ──────────────────────────────────────────────────────────────────
+// Flat buttons. Hover: lighter panel. Pressed: accent fill. Disabled: reduced
+// opacity (handled upstream by JUCE's normal alpha-on-disabled behaviour).
+void MetroLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
+                                              const juce::Colour& /*bgColour*/,
+                                              bool isHighlighted, bool isDown)
 {
-MetroLookAndFeel::MetroLookAndFeel()
-{
-    setColour (juce::TextButton::buttonColourId,       MetroTheme::Colours::raisedPanel);
-    setColour (juce::TextButton::textColourOffId,      MetroTheme::Colours::textPrimary);
-    setColour (juce::TextButton::textColourOnId,       MetroTheme::Colours::textPrimary);
-    setColour (juce::ToggleButton::textColourId,       MetroTheme::Colours::textPrimary);
-    setColour (juce::Label::textColourId,              MetroTheme::Colours::textPrimary);
-    setColour (juce::Label::backgroundColourId,        juce::Colours::transparentBlack);
-    setColour (juce::TextEditor::textColourId,         MetroTheme::Colours::textPrimary);
-    setColour (juce::TextEditor::backgroundColourId,   MetroTheme::Colours::raisedPanel);
-    setColour (juce::TextEditor::highlightColourId,    MetroTheme::Colours::accentMuted);
-    setColour (juce::TextEditor::highlightedTextColourId, MetroTheme::Colours::textPrimary);
-    setColour (juce::TextEditor::outlineColourId,      MetroTheme::Colours::separator);
-    setColour (juce::TextEditor::focusedOutlineColourId, MetroTheme::Colours::focusRing);
+    auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
+
+    auto btnCol = button.findColour (juce::TextButton::buttonColourId);
+    auto baseBg = (btnCol != juce::Colour()) ? btnCol : getTheme().button;
+    if (baseBg.isTransparent())
+        return;
+
+    const bool toggled = button.getToggleState();
+    const float r = 4.0f;
+
+    auto fill = isDown        ? getTheme().accent
+              : toggled       ? getTheme().accent
+              : isHighlighted ? getTheme().buttonHover
+                              : getTheme().button;
+    g.setColour (fill);
+    g.fillRoundedRectangle (bounds, r);
 }
 
-void MetroLookAndFeel::drawButtonBackground (juce::Graphics& graphics,
-                                             juce::Button& button,
-                                             const juce::Colour& backgroundColour,
-                                             bool highlighted,
-                                             bool down)
+// ── Combo boxes ──────────────────────────────────────────────────────────────
+// Flat fill, thin border, accent only when focused — no bevel/glow.
+void MetroLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, bool isButtonDown,
+                                      int buttonX, int /*buttonY*/, int /*buttonW*/, int /*buttonH*/,
+                                      juce::ComboBox& box)
 {
-    auto colour = button.getToggleState() ? MetroTheme::Colours::accentMuted
-                                          : backgroundColour;
+    const auto& t = getTheme();
+    auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
+    const float r = 4.0f;
 
-    if (highlighted)
-        colour = colour.interpolatedWith (juce::Colours::white, 0.08f);
-    if (down)
-        colour = colour.interpolatedWith (juce::Colours::black, 0.16f);
+    g.setColour (isButtonDown ? t.buttonHover : t.button);
+    g.fillRoundedRectangle (bounds, r);
 
-    const auto bounds = button.getLocalBounds().toFloat();
-    graphics.setColour (colour);
-    graphics.fillRoundedRectangle (bounds, MetroTheme::Metrics::controlCornerRadius);
+    const bool focused = box.hasKeyboardFocus (false);
+    g.setColour (focused ? t.accent : t.separator);
+    g.drawRoundedRectangle (bounds, r, 1.0f);
 
-    graphics.setColour (MetroTheme::Colours::separator);
-    graphics.drawRoundedRectangle (bounds.reduced (0.5f), MetroTheme::Metrics::controlCornerRadius, 1.0f);
+    const int arrowCX = buttonX + (width - buttonX) / 2;
+    const int arrowCY = height / 2;
+    const int arrowHalf = 4;
+    g.setColour (t.foreground.withAlpha (0.85f));
+    g.drawLine ((float) (arrowCX - arrowHalf), (float) (arrowCY - 2),
+                (float) arrowCX,               (float) (arrowCY + 2), 1.5f);
+    g.drawLine ((float) arrowCX,               (float) (arrowCY + 2),
+                (float) (arrowCX + arrowHalf), (float) (arrowCY - 2), 1.5f);
 }
 
-void MetroLookAndFeel::drawButtonText (juce::Graphics& graphics,
-                                       juce::TextButton& button,
-                                       bool, bool)
+// ── Popup menus ──────────────────────────────────────────────────────────────
+// Flat card, 4px radius per spec's corner-radius rule (base class uses 3px).
+void MetroLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
-    graphics.setColour (button.isEnabled() ? MetroTheme::Colours::textPrimary
-                                           : MetroTheme::Colours::textDisabled);
-    graphics.setFont (MetroTheme::buttonFont());
-    graphics.drawFittedText (button.getButtonText(), button.getLocalBounds().reduced (MetroTheme::Metrics::compactPadding, 0),
-                             juce::Justification::centred, 1);
+    const auto& t = getTheme();
+    auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
+    g.setColour (t.button);
+    g.fillRoundedRectangle (bounds, 4.0f);
+    g.setColour (t.separator);
+    g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
 }
 
-void MetroLookAndFeel::drawToggleButton (juce::Graphics& graphics,
-                                         juce::ToggleButton& button,
-                                         bool highlighted, bool down)
+// ── Sliders ──────────────────────────────────────────────────────────────────
+// Thin tracks. Accent-colored value. Flat round thumb, no glow.
+void MetroLookAndFeel::drawLinearSlider (juce::Graphics& g, int /*x*/, int /*y*/, int width, int height,
+                                          float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
+                                          const juce::Slider::SliderStyle /*style*/, juce::Slider& slider)
 {
-    const auto bounds = button.getLocalBounds();
-    const auto boxSize = juce::jmin (bounds.getHeight() - MetroTheme::Metrics::quarterGrid,
-                                     MetroTheme::Metrics::iconButtonSize - MetroTheme::Metrics::quarterGrid);
-    auto box = bounds.withSizeKeepingCentre (boxSize, boxSize)
-                     .withX (bounds.getX() + MetroTheme::Metrics::halfGrid)
-                     .toFloat();
+    const auto& t = getTheme();
+    auto bounds = slider.getLocalBounds().toFloat();
 
-    auto fill = button.getToggleState() ? MetroTheme::Colours::accent : MetroTheme::Colours::raisedPanel;
-    if (highlighted) fill = fill.brighter (0.08f);
-    if (down) fill = fill.darker (0.12f);
-    graphics.setColour (fill);
-    graphics.fillRoundedRectangle (box, MetroTheme::Metrics::controlCornerRadius);
-    graphics.setColour (MetroTheme::Colours::separator);
-    graphics.drawRoundedRectangle (box.reduced (0.5f), MetroTheme::Metrics::controlCornerRadius, 1.0f);
+    const float trackH = 3.0f;
+    auto track = bounds.withSizeKeepingCentre ((float) width, trackH);
+    g.setColour (t.gridLine);
+    g.fillRect (track);
 
-    if (button.getToggleState())
+    const float fillLeft  = track.getX();
+    const float fillRight = juce::jlimit (fillLeft, track.getRight(), sliderPos);
+    if (fillRight > fillLeft)
     {
-        graphics.setColour (MetroTheme::Colours::textPrimary);
-        graphics.setFont (MetroTheme::buttonFont());
-        graphics.drawText (juce::String (juce::CharPointer_UTF8 ("✓")), box.toNearestInt(), juce::Justification::centred);
+        g.setColour (t.accent);
+        g.fillRect (juce::Rectangle<float> (fillLeft, track.getY(), fillRight - fillLeft, track.getHeight()));
     }
 
-    graphics.setColour (button.isEnabled() ? MetroTheme::Colours::textPrimary : MetroTheme::Colours::textDisabled);
-    graphics.setFont (MetroTheme::labelFont());
-    graphics.drawFittedText (button.getButtonText(), bounds.withTrimmedLeft (box.getRight() + MetroTheme::Metrics::compactPadding),
-                             juce::Justification::centredLeft, 1);
+    const float thumbD = juce::jmin ((float) height, 14.0f);
+    auto thumb = juce::Rectangle<float> (thumbD, thumbD).withCentre ({ sliderPos, bounds.getCentreY() });
+    g.setColour (t.accent);
+    g.fillEllipse (thumb);
 }
 
-void MetroLookAndFeel::drawLabel (juce::Graphics& graphics, juce::Label& label)
+// ── Knobs ────────────────────────────────────────────────────────────────────
+// Circular Metro knobs with a simple indicator line. No metallic textures.
+// (Only reached if a real rotary juce::Slider is instantiated — DYSEKT's
+// visible knob strips are hand-painted cells in SliceControlBar, themed
+// separately via getTheme() there.)
+void MetroLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                                          float sliderPosProportional, float rotaryStartAngle,
+                                          float rotaryEndAngle, juce::Slider& /*slider*/)
 {
-    graphics.fillAll (label.findColour (juce::Label::backgroundColourId));
-    graphics.setColour (label.findColour (juce::Label::textColourId));
-    graphics.setFont (label.getFont().getHeight() > 0.0f ? label.getFont() : MetroTheme::labelFont());
-    graphics.drawFittedText (label.getText(), label.getLocalBounds().reduced (MetroTheme::Metrics::halfGrid, 0),
-                             label.getJustificationType(), 1);
+    const auto& t = getTheme();
+    auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (2.0f);
+    const auto centre = bounds.getCentre();
+    const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+    const float angle  = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+    const float lineW = juce::jmin (4.0f, radius * 0.22f);
+    const float arcR  = radius - lineW * 0.5f;
+
+    juce::Path trackArc;
+    trackArc.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour (t.gridLine);
+    g.strokePath (trackArc, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    if (angle > rotaryStartAngle)
+    {
+        juce::Path fillArc;
+        fillArc.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, angle, true);
+        g.setColour (t.accent);
+        g.strokePath (fillArc, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    juce::Point<float> tip (centre.x + std::sin (angle) * radius, centre.y - std::cos (angle) * radius);
+    g.setColour (t.accent);
+    g.drawLine (centre.x, centre.y, tip.x, tip.y, 2.0f);
 }
 
-void MetroLookAndFeel::drawTextEditorOutline (juce::Graphics& graphics, int width, int height,
-                                              juce::TextEditor& editor)
+// ── LCD / text-editor panels ─────────────────────────────────────────────────
+// Dark cards with subtle border. No glowing effects.
+void MetroLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, int height, juce::TextEditor& te)
 {
-    const auto colour = editor.hasKeyboardFocus (true) ? MetroTheme::Colours::focusRing
-                                                        : MetroTheme::Colours::separator;
-    graphics.setColour (colour);
-    graphics.drawRoundedRectangle (juce::Rectangle<float> (static_cast<float> (width), static_cast<float> (height)).reduced (0.5f),
-                                   MetroTheme::Metrics::controlCornerRadius, MetroTheme::Metrics::focusRingThickness);
+    auto bg = te.findColour (juce::TextEditor::backgroundColourId);
+    if (bg.isTransparent())
+        bg = getTheme().waveformBg;
+
+    auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
+    g.setColour (bg);
+    g.fillRoundedRectangle (bounds, 4.0f);
 }
 
-} // namespace dysekt::metro
+void MetroLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
+{
+    if (te.isReadOnly())
+        return;
+
+    auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
+    const bool focused = te.hasKeyboardFocus (true);
+    g.setColour (focused ? getTheme().accent : getTheme().separator.withAlpha (0.60f));
+    g.drawRoundedRectangle (bounds, 4.0f, focused ? 1.4f : 1.0f);
+}

@@ -401,6 +401,14 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
     auto sf1 = [sf](float v) -> float { return v * sf; };
 
     // ── Background + border ───────────────────────────────────────────────────
+    if (getTheme().name == "metro")
+    {
+        g.setColour (getTheme().button);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
+        g.setColour (getTheme().separator);
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 4.0f, 1.0f);
+    }
+    else
     {
         auto bgTop = getTheme().darkBar.darker (0.45f);
         auto bgBot = getTheme().darkBar.darker (0.65f);
