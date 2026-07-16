@@ -344,14 +344,13 @@ void WaveformOverview::paint (juce::Graphics& g)
     }
 
     // ── LCD-style frame — identical to SliceControlBar::paint() ─────────────
-    const auto ac = getTheme().accent;
     auto b = getLocalBounds();
 
     g.setColour (juce::Colour (0xFF0F0F0F));
     g.fillRoundedRectangle (b.toFloat(), 0.0f);
 
     // Border
-    g.setColour (ac.withAlpha (0.65f));
+    g.setColour (getTheme().separator);
     g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
     auto screen = b.reduced (4);
@@ -368,6 +367,7 @@ void WaveformOverview::paint (juce::Graphics& g)
     const float W = (float) screen.getWidth();
     const float H = (float) screen.getHeight();
     const auto  vr = viewportRect (screen);
+    const auto  ac = getTheme().accent;
 
     if (hasSample && ! peaks.empty())
     {

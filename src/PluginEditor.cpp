@@ -1427,8 +1427,18 @@ void DysektEditor::resized()
     padGridView.setVisible (showPads1);
     padGridView.setBounds (showPads1 ? juce::Rectangle<int> (screenX, y, screenW, waveH)
                                      : juce::Rectangle<int>());
+    // zoneBuilderKeysPanel draws its own complete LCD-style frame internally
+    // (see KeysPanel::paint()), unlike waveformView/padGridView which rely on
+    // PluginEditor's paintOverChildren() to draw an external bezel that
+    // expands their inset content bounds back out to the full kFrameX/
+    // kFrameW width. Since nothing does that expansion for KeysPanel, giving
+    // it the same bezel-inset screenX/screenW bounds as the other views left
+    // its self-drawn frame visibly narrower than the SCB/LCD row above it —
+    // so it gets the full, un-inset frame bounds directly instead.
+    const int zbTop    = frameTop;
+    const int zbHeight = juce::jmax (si (80), (frameBot - trimH) - frameTop);
     zoneBuilderKeysPanel.setVisible (showZones1);
-    zoneBuilderKeysPanel.setBounds (showZones1 ? juce::Rectangle<int> (screenX, y, screenW, waveH)
+    zoneBuilderKeysPanel.setBounds (showZones1 ? juce::Rectangle<int> (kFrameX, zbTop, kFrameW, zbHeight)
                                                : juce::Rectangle<int>());
     sfzDropdown.setVisible (false);
     sfzDropdown.setBounds ({});

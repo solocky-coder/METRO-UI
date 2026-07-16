@@ -827,13 +827,12 @@ void SliceControlBar::paint (juce::Graphics& g)
                               == static_cast<int> (DysektProcessor::MidiRouteMode::SfzPlayer2));
  // ── LCD-style frame — matches waveform + LCD screen aesthetic ────────────
  {
- const auto ac = getTheme().accent;
  auto b = getLocalBounds();
 
  g.setColour (juce::Colour (0xFF0F0F0F));
  g.fillRoundedRectangle (b.toFloat(), 0.0f);
 
- g.setColour (ac.withAlpha (0.65f));
+ g.setColour (getTheme().separator);
  g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
  auto screen = b.reduced (4);
