@@ -548,6 +548,14 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     if (bpm >= 20.f && bpm != impl->lastAppliedBpm)
         impl->lastAppliedBpm = bpm;
 
+    // The track selected for live input is also the visual MIDI destination.
+    // Mark it on *incoming* events even when transport is stopped: previously
+    // activity was set only while adding sequencer playback events, so the
+    // track LEDs misleadingly showed output/recorded MIDI but never a keyboard.
+    const int inputTi = impl->recordingTrackIndex.load (std::memory_order_relaxed);
+    if (! inMidi.isEmpty() && juce::isPositiveAndBelow (inputTi, kActivityFlagCount))
+        impl->midiActivityFlags[inputTi].store (true, std::memory_order_relaxed);
+
     if (impl->pendingStop.exchange (false, std::memory_order_relaxed))
     {
         if (impl->playing.load (std::memory_order_relaxed))

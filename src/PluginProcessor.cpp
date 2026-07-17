@@ -3059,6 +3059,11 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
 
 #if DYSEKT_STANDALONE
+    // MIDI from a selected SF2 sequencer track must bypass the slicer's
+    // live-input re-stamping below.  Keep an untouched copy for the SF2 player;
+    // its live-input mask fans controller channel 1 out to that track's channel.
+    juce::MidiBuffer standaloneSfLiveInput;
+
     // ── Sequencer MIDI injection ──────────────────────────────────────────────
     {
         juce::MidiBuffer seqEvents;
@@ -3106,7 +3111,9 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         else
         {
             // SF-player track selected (or nothing selected): VoicePool only sees
-            // slicer sequencer events — live notes go to sfzPlayer only.
+            // slicer sequencer events. Preserve live input for the SF2 player
+            // before clearing this shared buffer.
+            standaloneSfLiveInput = midi;
             midi.clear();
             midi.addEvents (slicerSeqEvents, 0, buffer.getNumSamples(), 0);
         }
@@ -3416,6 +3423,13 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     }
                 }
             }
+
+           #if DYSEKT_STANDALONE
+            // `midi` has been cleared for an SF2-selected sequencer track so
+            // it cannot trigger the slicer. Add its original live input here;
+            // SfzPlayer performs the channel-1-to-selected-track fan-out.
+            sfzMidiBuf.addEvents (standaloneSfLiveInput, 0, numSamples, 0);
+           #endif
         }
 
         // (Second "TEMP diagnostic" — same audio-thread String-build +
