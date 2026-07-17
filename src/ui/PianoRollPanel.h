@@ -2,7 +2,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "TransportBar.h"
 #include "PianoRollComponent.h"
-#include "TrackHeaderStrip.h"
 #include "../sequencer/SequencerEngine.h"
 
 //==============================================================================
@@ -11,12 +10,13 @@
 //  Layout:
 //    ┌─────────────────────────────────────────────────────┐
 //    │  TransportBar                                        │
-//    ├──────────────┬──────────────────────────────────────┤
-//    │  Track       │   PianoRollComponent                 │
-//    │  Header      │   (edits active track's clip)        │
-//    │  Strip       │                                       │
-//    │  (160px)     │                                       │
-//    └──────────────┴──────────────────────────────────────┘
+//    ├───────────────────────────────────────────────────────┤
+//    │  PianoRollComponent — draws its own black/white       │
+//    │  keyboard gutter; edits the active track's clip       │
+//    └─────────────────────────────────────────────────────┘
+//
+//  Track selection happens in ArrangeView; this window always opens already
+//  scoped to a track/clip via openFor(), so it doesn't duplicate a track list.
 //
 //  Hosted inside PianoRollWindow (a DocumentWindow) so the OS supplies
 //  the real title bar with a native X / close button.
@@ -25,46 +25,26 @@ class PianoRollPanel : public juce::Component
 {
 public:
     static constexpr int kTransportH  = 38;
-    static constexpr int kTrackStripW = 184;
 
     PianoRollPanel (SequencerEngine& seq, AbletonLink* link = nullptr)
-        : engine (seq), transport (seq, link), pianoRoll (seq), trackStrip (seq)
+        : engine (seq), transport (seq, link), pianoRoll (seq)
     {
         addAndMakeVisible (transport);
-        addAndMakeVisible (trackStrip);
         addAndMakeVisible (pianoRoll);
 
         engine.addMainTrack();
-
-        trackStrip.onTrackSelected = [this] (int idx)
-        {
-            pianoRoll.setActiveTrack (idx, 0);
-        };
-
-        trackStrip.onSfTrackChannelChanged = [this] (int trackIndex, int ch1Based)
-        {
-            if (onSfTrackChannelChanged)
-                onSfTrackChannelChanged (trackIndex, ch1Based);
-        };
     }
 
     void resized() override
     {
         auto r = getLocalBounds();
         transport.setBounds  (r.removeFromTop  (kTransportH));
-        trackStrip.setBounds (r.removeFromLeft (kTrackStripW));
         pianoRoll.setBounds  (r);
     }
 
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xFF080A0D));
-
-        // Separate the track context from the note editor without a heavy frame.
-        g.setColour (juce::Colour (0xFF171C22));
-        g.fillRect (0, kTransportH, kTrackStripW, getHeight() - kTransportH);
-        g.setColour (juce::Colour (0xFF303B45));
-        g.fillRect (kTrackStripW - 1, kTransportH, 1, getHeight() - kTransportH);
     }
 
     void syncSnap()
@@ -76,7 +56,6 @@ public:
 
     void setActiveTrackPublic (int trackIndex, int clipIndex = 0)
     {
-        trackStrip.setSelectedTrack (trackIndex);
         pianoRoll.setActiveTrack (trackIndex, clipIndex);
     }
 
@@ -90,38 +69,36 @@ public:
             engine.addChromaticTrack (sliceIdx, chromaticChannel, name, colour);
         else
             engine.removeChromaticTrack (sliceIdx);
-        trackStrip.repaint();
     }
 
     void onSf2Loaded (const std::vector<Sf2PresetInfo>& presets,
                       const juce::Colour* palette, int paletteSize)
     {
         engine.rebuildSfTracks (presets, palette, paletteSize);
-        trackStrip.repaint();
     }
 
     void addOrUpdateSfPresetTrack (const Sf2PresetInfo& preset, int midiChannel1Based,
                                    juce::Colour colour)
     {
         engine.addOrUpdateSfTrackOnChannel (preset, midiChannel1Based - 1, colour);
-        trackStrip.repaint();
     }
 
     void addSfzInstrumentTrack (const juce::String& name, juce::Colour colour)
     {
         engine.addSfzTrack (name, 15, colour);
-        trackStrip.repaint();
     }
 
     SequencerTrackInfo getTrackInfo (int i) const { return engine.getTrackInfo (i); }
 
+    /** Kept for API compatibility with PluginEditor's wiring — no longer fired
+     *  internally since the piano roll no longer hosts its own track list
+     *  (channel reassignment happens via ArrangeView's TrackHeaderStrip). */
     std::function<void(int trackIndex, int midiChannel1Based)> onSfTrackChannelChanged;
 
 private:
     SequencerEngine&   engine;
     TransportBar       transport;
     PianoRollComponent pianoRoll;
-    TrackHeaderStrip   trackStrip;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PianoRollPanel)
 };

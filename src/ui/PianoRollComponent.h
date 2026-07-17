@@ -1300,33 +1300,51 @@ private:
 
     void drawKeyboard (juce::Graphics& g)
     {
-        g.setColour (juce::Colour (0xFF151923));
+        // White-key base — the whole gutter starts white; black keys are
+        // painted on top as shorter, true-black bars (standard DAW piano-roll
+        // convention: one row per semitone, black keys drawn narrower).
+        g.setColour (juce::Colour (0xFFF0F0EC));
         g.fillRect (keysBounds);
 
         const int top = yToNote (kRulerH + kToolbarH);
         const int bot = yToNote (gridBounds.getBottom());
+        const float blackKeyW = (float) keysBounds.getWidth() * 0.62f;
+
+        // Hairline separators between adjacent white keys.
         for (int note = bot; note <= top; ++note)
         {
+            if (isBlackKey (note)) continue;
             const float y = noteToY (note);
-            if (isBlackKey (note))
+            g.setColour (juce::Colour (0xFFC8C8C4));
+            g.fillRect ((float) keysBounds.getX(), y, (float) keysBounds.getWidth(), 0.75f);
+        }
+
+        // Black keys — solid black, shorter than the white keys so the
+        // white keys they sit between still read as continuous strips.
+        for (int note = bot; note <= top; ++note)
+        {
+            if (! isBlackKey (note)) continue;
+            const float y = noteToY (note);
+            g.setColour (juce::Colours::black);
+            g.fillRect ((float) keysBounds.getX(), y, blackKeyW, (float) noteRowH - 0.5f);
+        }
+
+        // Octave (C) markers + labels, coloured for contrast against the
+        // white-key background.
+        for (int note = bot; note <= top; ++note)
+        {
+            if ((note % 12) != 0) continue;
+            const float y = noteToY (note);
+            g.setColour (juce::Colour (0xFF8A8A86));
+            g.fillRect ((float) keysBounds.getX(), y, (float) keysBounds.getWidth(), 1.0f);
+            if (noteRowH >= 8)
             {
-                g.setColour (juce::Colour (0xFF090B10));
-                g.fillRect ((float)keysBounds.getX(), y,
-                            (float)keysBounds.getWidth() * 0.62f, (float)noteRowH - 0.5f);
-            }
-            if ((note % 12) == 0)   // C marker
-            {
-                g.setColour (juce::Colour (0xFF4A5868));
-                g.fillRect ((float)keysBounds.getX(), y, (float)keysBounds.getWidth(), 0.75f);
-                if (noteRowH >= 8)
-                {
-                    g.setFont (DysektLookAndFeel::makeMonoFont (8.f));
-                    g.setColour (juce::Colour (0xFF9AB4C8));
-                    g.drawText ("C" + juce::String (note / 12 - 1),
-                                keysBounds.getX(), (int)y,
-                                keysBounds.getWidth() - 2, noteRowH,
-                                juce::Justification::centredRight, false);
-                }
+                g.setFont (DysektLookAndFeel::makeMonoFont (8.f));
+                g.setColour (juce::Colour (0xFF404040));
+                g.drawText ("C" + juce::String (note / 12 - 1),
+                            keysBounds.getX(), (int) y,
+                            keysBounds.getWidth() - 4, noteRowH,
+                            juce::Justification::centredRight, false);
             }
         }
 
