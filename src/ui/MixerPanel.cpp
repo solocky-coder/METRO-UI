@@ -897,7 +897,7 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
         {
             const int fillX = (pan < 0.f) ? thumbX : centreX;
             const int fillW = std::abs (thumbX - centreX);
-            if (fillW > 0) { g.setColour (fillCol.withAlpha (0.35f)); g.fillRoundedRectangle ((float)fillX, (float)(sliderY + 1), (float)fillW, (float)(sliderH - 2), 0.0f);   // flat, square corners }
+            if (fillW > 0) { g.setColour (fillCol.withAlpha (0.35f)); g.fillRoundedRectangle ((float)fillX, (float)(sliderY + 1), (float)fillW, (float)(sliderH - 2), 0.0f); }   // flat, square corners
         }
         g.setColour (fillCol.withAlpha (0.22f));
         g.fillRoundedRectangle((float)(thumbX - 5), (float)(sliderY - 4), 10.f, (float)(sliderH + 8), 0.0f);
