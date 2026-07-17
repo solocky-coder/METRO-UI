@@ -57,6 +57,29 @@ HeaderBar::HeaderBar (DysektProcessor& p)
     // Note: controlFrame is NOT added as a visible child here —
     // PluginEditor::resized() calls addAndMakeVisible(*headerBar.getControlFrame())
     // and positions it between the two LCD panels.
+
+    startTimerHz (10);   // polls processor.globalMidiActivity for the LED
+}
+
+void HeaderBar::timerCallback()
+{
+    const int cur = processor.globalMidiActivity.load (std::memory_order_relaxed);
+    bool needsRepaint = false;
+
+    if (cur != lastGlobalMidiActivity)
+    {
+        lastGlobalMidiActivity = cur;
+        midiHoldCounter = kMidiHoldTicks;
+        needsRepaint = true;
+    }
+    else if (midiHoldCounter > 0)
+    {
+        --midiHoldCounter;
+        needsRepaint = true;
+    }
+
+    if (needsRepaint)
+        repaint (midiActivityDotBounds);
 }
 
 // ── State sync ────────────────────────────────────────────────────────────────
@@ -81,15 +104,21 @@ void HeaderBar::resized()
     const int   pad   = juce::roundToInt (3 * sf);  // inset from the rounded frame border
     const int   gap   = juce::roundToInt (2 * sf);
 
+    // Reserve a small strip for the global MIDI activity LED, left of UNDO —
+    // lit briefly on any incoming note from any engine, not just SF2/SFZ.
+    const int dotW = juce::roundToInt (14 * sf);
+    midiActivityDotBounds = { pad, pad, dotW, h - pad * 2 };
+
     // Four equal-width buttons in a single horizontal row:
     // UNDO | REDO | PANIC | ⚙
-    const int innerW = w - pad * 2;
+    const int btnX0  = pad + dotW + gap;
+    const int innerW = w - btnX0 - pad;
     const int btnW   = innerW / 4;
 
-    undoBtn     .setBounds (pad,               pad, btnW - gap, h - pad * 2);
-    redoBtn     .setBounds (pad + btnW,        pad, btnW - gap, h - pad * 2);
-    panicBtn    .setBounds (pad + btnW * 2,    pad, btnW - gap, h - pad * 2);
-    shortcutsBtn.setBounds (pad + btnW * 3,    pad, w - pad - btnW * 3 - gap, h - pad * 2);
+    undoBtn     .setBounds (btnX0,               pad, btnW - gap, h - pad * 2);
+    redoBtn     .setBounds (btnX0 + btnW,        pad, btnW - gap, h - pad * 2);
+    panicBtn    .setBounds (btnX0 + btnW * 2,    pad, btnW - gap, h - pad * 2);
+    shortcutsBtn.setBounds (btnX0 + btnW * 3,    pad, w - (btnX0 + btnW * 3) - gap, h - pad * 2);
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────────
@@ -106,6 +135,20 @@ void HeaderBar::paint (juce::Graphics& g)
 
     const auto accent = getTheme().accent;
     auto b = getLocalBounds();
+
+    // Global MIDI activity LED — lit briefly on any incoming note, from any
+    // engine (MAIN/Slicer, SF2-Player, SFZ-Player). Drawn before the
+    // theme-specific branches below so it appears consistently everywhere.
+    if (! midiActivityDotBounds.isEmpty())
+    {
+        const bool lit = midiHoldCounter > 0;
+        g.setColour (lit ? juce::Colour (0xFF00FF88) : getTheme().separator.withAlpha (0.6f));
+        const auto db = midiActivityDotBounds.toFloat();
+        const float dotSize = juce::jmin (db.getWidth(), db.getHeight()) * 0.55f;
+        g.fillEllipse (db.getCentreX() - dotSize * 0.5f, db.getCentreY() - dotSize * 0.5f,
+                        dotSize, dotSize);
+    }
+
 
     // Dark rounded background — metallic gradient for serum, flat for all others
     const auto& theme = getTheme();

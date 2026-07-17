@@ -4,10 +4,12 @@
 
 class DysektProcessor;
 
-class HeaderBar : public juce::Component
+class HeaderBar : public juce::Component,
+                  private juce::Timer
 {
 public:
     explicit HeaderBar (DysektProcessor& p);
+    ~HeaderBar() override { stopTimer(); }
     void paint            (juce::Graphics& g) override;
     void resized          () override;
     void mouseDown        (const juce::MouseEvent& e) override;
@@ -54,6 +56,7 @@ public:
 
 private:
     void openRelinkBrowser();
+    void timerCallback() override;
 
     DysektProcessor& processor;
 
@@ -65,6 +68,14 @@ private:
     juce::Rectangle<int> sampleInfoBounds;
     juce::Rectangle<int> rootNoteArea;
     juce::Rectangle<int> slicesInfoArea;
+
+    // Global MIDI activity LED — lit briefly on any incoming note from any
+    // engine (MAIN/Slicer, SF2-Player, SFZ-Player), unlike the per-engine
+    // LEDs which only reflect their own tab.
+    juce::Rectangle<int> midiActivityDotBounds;
+    static constexpr int kMidiHoldTicks = 3;   // matches TrackHeaderStrip's hold pattern
+    int midiHoldCounter = 0;
+    int lastGlobalMidiActivity = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HeaderBar)
 };

@@ -524,6 +524,13 @@ public:
     std::atomic<float> sfz2PeakL { 0.0f };
     std::atomic<float> sfz2PeakR { 0.0f };
     std::atomic<int>   sfz2MidiActivity { 0 };
+
+    // Global MIDI activity: +1 on NoteOn, -1 on NoteOff (clamped >= 0), counted
+    // once per incoming message in processMidi() BEFORE per-engine channel
+    // routing/exclusion — unlike sfzMidiActivity/sfz2MidiActivity, this fires
+    // for MAIN/Slicer note triggers too, so it reflects ALL MIDI activity
+    // regardless of which engine or channel a message ends up routed to.
+    std::atomic<int>   globalMidiActivity { 0 };
     // Live drag bounds (UI -> audio thread, bypasses FIFO for low latency)
     std::atomic<int> liveDragBoundsStart { 0 };
     std::atomic<int> liveDragBoundsEnd   { 0 };
