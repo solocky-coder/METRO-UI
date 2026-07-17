@@ -183,6 +183,13 @@ public:
         const int64_t tick    = xToTick (e.x);
         const int     noteNum = yToNote (e.y);
 
+        if (e.mods.isRightButtonDown())
+        {
+            mouseRightClick (e);
+            repaint(); velocityLane.repaint();
+            return;
+        }
+
         switch (currentTool)
         {
             case Tool::Draw:   handleDrawDown   (e, clip, tick, noteNum); break;
@@ -441,6 +448,16 @@ public:
                               ? hitTestAny (clip, tick, noteNum) : -1;
 
         juce::PopupMenu m;
+
+        juce::PopupMenu toolMenu;
+        toolMenu.addItem (20, "Select (S)", true, currentTool == Tool::Select);
+        toolMenu.addItem (21, "Draw (D)",   true, currentTool == Tool::Draw);
+        toolMenu.addItem (22, "Erase (E)",  true, currentTool == Tool::Erase);
+        toolMenu.addItem (23, "Split (K)",  true, currentTool == Tool::Split);
+        toolMenu.addItem (24, "Glue (G)",   true, currentTool == Tool::Glue);
+        m.addSubMenu ("Tool", toolMenu);
+        m.addSeparator();
+
         if (noteIdx >= 0)
         {
             m.addItem (1, "Delete note");
@@ -466,15 +483,20 @@ public:
             {
                 switch (result)
                 {
-                    case 1: pushUndo(clip); clip->removeNote(noteIdx); selectedNotes.clear(); break;
-                    case 2: pushUndo(clip); splitNote(clip, noteIdx, tick); break;
-                    case 3: showNotePropertiesDialog(clip, noteIdx); break;
-                    case 4: selectAll(clip); break;
-                    case 5: selectedNotes.clear(); velocityLane.setSelectedNote(-1); break;
-                    case 6: pushUndo(clip); quantiseSelected(clip); break;
-                    case 7: showSetVelocityDialog(clip); break;
-                    case 8: deleteSelected(clip); break;
-                    case 9: zoomToFit(clip); break;
+                    case 1:  pushUndo(clip); clip->removeNote(noteIdx); selectedNotes.clear(); break;
+                    case 2:  pushUndo(clip); splitNote(clip, noteIdx, tick); break;
+                    case 3:  showNotePropertiesDialog(clip, noteIdx); break;
+                    case 4:  selectAll(clip); break;
+                    case 5:  selectedNotes.clear(); velocityLane.setSelectedNote(-1); break;
+                    case 6:  pushUndo(clip); quantiseSelected(clip); break;
+                    case 7:  showSetVelocityDialog(clip); break;
+                    case 8:  deleteSelected(clip); break;
+                    case 9:  zoomToFit(clip); break;
+                    case 20: setActiveTool (Tool::Select); break;
+                    case 21: setActiveTool (Tool::Draw);   break;
+                    case 22: setActiveTool (Tool::Erase);  break;
+                    case 23: setActiveTool (Tool::Split);  break;
+                    case 24: setActiveTool (Tool::Glue);   break;
                     default: break;
                 }
                 repaint(); velocityLane.repaint();
@@ -529,8 +551,109 @@ private:
     std::vector<juce::Array<MidiNote>> redoStack;
 
     //── Toolbar buttons ─────────────────────────────────────────────────────────
-    juce::TextButton btnSelect, btnDraw, btnErase, btnSplit, btnGlue;
+    //  Tool buttons render a procedural vector glyph instead of a letter — see
+    //  drawToolIcon()/ToolIconButton below (same "no external assets" approach
+    //  LogoBar.cpp uses for its waveform icon).
+    struct ToolIconButton : public juce::TextButton
+    {
+        Tool tool = Tool::Select;
+
+        void paintButton (juce::Graphics& g, bool isHighlighted, bool isDown) override
+        {
+            getLookAndFeel().drawButtonBackground (g, *this,
+                findColour (juce::TextButton::buttonColourId), isHighlighted, isDown);
+
+            const auto colourId = getToggleState() ? juce::TextButton::textColourOnId
+                                                     : juce::TextButton::textColourOffId;
+            drawToolIcon (g, tool, getLocalBounds().toFloat().reduced (6.0f), findColour (colourId));
+        }
+    };
+
+    ToolIconButton   btnSelect, btnDraw, btnErase, btnSplit, btnGlue;
     juce::TextButton btnUndo, btnRedo, btnZoomFit;
+
+    /** Procedural glyph for each note-editing tool — arrow cursor (Select),
+     *  pencil (Draw), eraser block (Erase), scissors (Split), glue drop (Glue).
+     *  Shared by the toolbar buttons and the right-click tool submenu so both
+     *  stay visually identical without needing bundled icon assets. */
+    static void drawToolIcon (juce::Graphics& g, Tool tool, juce::Rectangle<float> b, juce::Colour colour)
+    {
+        const float cx = b.getCentreX();
+        const float cy = b.getCentreY();
+        const float s  = juce::jmin (b.getWidth(), b.getHeight());
+        g.setColour (colour);
+
+        switch (tool)
+        {
+            case Tool::Select:
+            {
+                // Classic arrow-cursor pointer.
+                const float x = b.getX() + s * 0.20f;
+                const float y = b.getY() + s * 0.08f;
+                juce::Path p;
+                p.startNewSubPath (x, y);
+                p.lineTo (x, y + s * 0.66f);
+                p.lineTo (x + s * 0.17f, y + s * 0.50f);
+                p.lineTo (x + s * 0.29f, y + s * 0.76f);
+                p.lineTo (x + s * 0.40f, y + s * 0.70f);
+                p.lineTo (x + s * 0.28f, y + s * 0.44f);
+                p.lineTo (x + s * 0.47f, y + s * 0.42f);
+                p.closeSubPath();
+                g.fillPath (p);
+                break;
+            }
+            case Tool::Draw:
+            {
+                // Pencil, tilted, tip pointing down-left.
+                juce::Path p;
+                p.addRoundedRectangle (-s * 0.09f, -s * 0.40f, s * 0.18f, s * 0.60f, s * 0.03f);
+                p.addTriangle (-s * 0.09f, s * 0.20f, s * 0.09f, s * 0.20f, 0.0f, s * 0.40f);
+                p.applyTransform (juce::AffineTransform::rotation (juce::MathConstants<float>::pi * 0.78f)
+                                       .translated (cx, cy));
+                g.fillPath (p);
+                break;
+            }
+            case Tool::Erase:
+            {
+                // Rotated eraser block with a two-tone divider line.
+                const auto t = juce::AffineTransform::rotation (-juce::MathConstants<float>::pi * 0.2f)
+                                    .translated (cx, cy);
+                juce::Path body;
+                body.addRoundedRectangle (-s * 0.28f, -s * 0.17f, s * 0.56f, s * 0.34f, s * 0.06f);
+                body.applyTransform (t);
+                g.fillPath (body);
+
+                juce::Path divider;
+                divider.addLineSegment ({ -s * 0.05f, -s * 0.17f, -s * 0.05f, s * 0.17f }, s * 0.025f);
+                divider.applyTransform (t);
+                g.setColour (colour.contrasting (0.5f).withAlpha (0.6f));
+                g.fillPath (divider);
+                break;
+            }
+            case Tool::Split:
+            {
+                // Scissors — crossing blades over two ring handles.
+                juce::Path blades;
+                blades.addLineSegment ({ cx - s * 0.16f, cy - s * 0.32f, cx + s * 0.16f, cy + s * 0.20f }, s * 0.05f);
+                blades.addLineSegment ({ cx + s * 0.16f, cy - s * 0.32f, cx - s * 0.16f, cy + s * 0.20f }, s * 0.05f);
+                g.fillPath (blades);
+                g.drawEllipse (cx - s * 0.22f, cy + s * 0.14f, s * 0.14f, s * 0.14f, s * 0.035f);
+                g.drawEllipse (cx + s * 0.08f, cy + s * 0.14f, s * 0.14f, s * 0.14f, s * 0.035f);
+                break;
+            }
+            case Tool::Glue:
+            {
+                // Glue drop.
+                juce::Path p;
+                p.startNewSubPath (cx, cy - s * 0.34f);
+                p.cubicTo (cx + s * 0.27f, cy - s * 0.02f, cx + s * 0.20f, cy + s * 0.34f, cx, cy + s * 0.34f);
+                p.cubicTo (cx - s * 0.20f, cy + s * 0.34f, cx - s * 0.27f, cy - s * 0.02f, cx, cy - s * 0.34f);
+                p.closeSubPath();
+                g.fillPath (p);
+                break;
+            }
+        }
+    }
 
     //── Overlays ────────────────────────────────────────────────────────────────
     std::unique_ptr<juce::Component> velOverlay;
@@ -830,12 +953,6 @@ private:
     //==========================================================================
     void handleDrawDown (const juce::MouseEvent& e, MidiClip* clip, int64_t tick, int noteNum)
     {
-        if (e.mods.isRightButtonDown())
-        {
-            int idx = hitTestAny (clip, tick, noteNum);
-            if (idx >= 0) { pushUndo(clip); clip->removeNote(idx); selectedNotes.clear(); }
-            return;
-        }
         int idx = hitTestAny (clip, tick, noteNum);
         if (idx >= 0 && isNearRightEdge (clip, e.x, idx))
         {
@@ -878,12 +995,6 @@ private:
 
     void handleSelectDown (const juce::MouseEvent& e, MidiClip* clip, int64_t tick, int noteNum)
     {
-        if (e.mods.isRightButtonDown())
-        {
-            mouseRightClick (e);
-            return;
-        }
-
         int idx = hitTestAny (clip, tick, noteNum);
 
         if (idx >= 0)
@@ -1037,14 +1148,20 @@ private:
             addAndMakeVisible (b);
         };
 
-        setupBtn (btnSelect,  "S",        "Select tool (S)\nClick/rubber-band to select notes. Drag to move.");
-        setupBtn (btnDraw,    "D",        "Draw tool (D)\nClick/drag to create notes.");
-        setupBtn (btnErase,   "E",        "Erase tool (E)\nClick notes to delete.");
-        setupBtn (btnSplit,   "K",        "Split tool (K)\nClick a note to split at cursor.");
-        setupBtn (btnGlue,    "G",        "Glue tool (G)\nClick a note to merge with the next note on same pitch.");
+        setupBtn (btnSelect,  "",        "Select tool (S)\nClick/rubber-band to select notes. Drag to move.\nRight-click for tool + edit menu.");
+        setupBtn (btnDraw,    "",        "Draw tool (D)\nClick/drag to create notes.\nRight-click for tool + edit menu.");
+        setupBtn (btnErase,   "",        "Erase tool (E)\nClick notes to delete.\nRight-click for tool + edit menu.");
+        setupBtn (btnSplit,   "",        "Split tool (K)\nClick a note to split at cursor.\nRight-click for tool + edit menu.");
+        setupBtn (btnGlue,    "",        "Glue tool (G)\nClick a note to merge with the next note on same pitch.\nRight-click for tool + edit menu.");
         setupBtn (btnUndo,    "↩",        "Undo (Ctrl+Z)");
         setupBtn (btnRedo,    "↪",        "Redo (Ctrl+Y)");
         setupBtn (btnZoomFit, "⊡",        "Zoom to fit (Ctrl+0)");
+
+        btnSelect.tool = Tool::Select;
+        btnDraw.tool   = Tool::Draw;
+        btnErase.tool  = Tool::Erase;
+        btnSplit.tool  = Tool::Split;
+        btnGlue.tool   = Tool::Glue;
 
         btnSelect.onClick  = [this]{ setActiveTool(Tool::Select);  };
         btnDraw.onClick    = [this]{ setActiveTool(Tool::Draw);    };
