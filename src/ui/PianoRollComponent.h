@@ -450,11 +450,21 @@ public:
         juce::PopupMenu m;
 
         juce::PopupMenu toolMenu;
-        toolMenu.addItem (20, "Select (S)", true, currentTool == Tool::Select);
-        toolMenu.addItem (21, "Draw (D)",   true, currentTool == Tool::Draw);
-        toolMenu.addItem (22, "Erase (E)",  true, currentTool == Tool::Erase);
-        toolMenu.addItem (23, "Split (K)",  true, currentTool == Tool::Split);
-        toolMenu.addItem (24, "Glue (G)",   true, currentTool == Tool::Glue);
+        const auto toolIconColour = findColour (juce::TextButton::textColourOffId);
+        auto addToolItem = [&] (int itemId, const juce::String& text, Tool tool)
+        {
+            juce::PopupMenu::Item item;
+            item.itemID  = itemId;
+            item.text    = text;
+            item.isTicked = (currentTool == tool);
+            item.setImage (makeToolMenuIcon (tool, toolIconColour));
+            toolMenu.addItem (item);
+        };
+        addToolItem (20, "Select (S)", Tool::Select);
+        addToolItem (21, "Draw (D)",   Tool::Draw);
+        addToolItem (22, "Erase (E)",  Tool::Erase);
+        addToolItem (23, "Split (K)",  Tool::Split);
+        addToolItem (24, "Glue (G)",   Tool::Glue);
         m.addSubMenu ("Tool", toolMenu);
         m.addSeparator();
 
@@ -478,7 +488,8 @@ public:
             m.addItem (9,  "Zoom to fit");
         }
 
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+        m.showMenuAsync (juce::PopupMenu::Options()
+                             .withTargetScreenArea (juce::Rectangle<int> (e.getScreenX(), e.getScreenY(), 1, 1)),
             [this, clip, noteIdx, tick, noteNum](int result)
             {
                 switch (result)
@@ -653,6 +664,21 @@ private:
                 break;
             }
         }
+    }
+
+    /** Rasterises drawToolIcon() into a small Drawable, for use as the leading
+     *  icon on the right-click tool submenu items (same glyphs as the toolbar
+     *  buttons, so the two stay visually consistent). */
+    static std::unique_ptr<juce::Drawable> makeToolMenuIcon (Tool tool, juce::Colour colour)
+    {
+        constexpr int size = 18;
+        juce::Image img (juce::Image::ARGB, size, size, true);
+        juce::Graphics g (img);
+        drawToolIcon (g, tool, juce::Rectangle<float> (0.0f, 0.0f, (float) size, (float) size).reduced (1.0f), colour);
+
+        auto d = std::make_unique<juce::DrawableImage>();
+        d->setImage (img);
+        return d;
     }
 
     //── Overlays ────────────────────────────────────────────────────────────────
