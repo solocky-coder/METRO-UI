@@ -40,7 +40,7 @@ public:
             const auto rowR  = getRowBounds (i);
             const bool sel   = (i == selectedTrack);
 
-            g.setColour (sel ? theme.accent.withAlpha (0.16f) : theme.header);
+            g.setColour (sel ? theme.accent.withAlpha (0.14f) : theme.header.withAlpha (0.92f));
             g.fillRect (rowR);
 
             // Flat left accent bar on the selected row — same visual language
@@ -75,7 +75,7 @@ public:
                            (float)(dotR * 2), (float)(dotR * 2));
 
             // Track name
-            g.setFont (juce::Font (juce::jlimit (18.0f, 26.0f, (float)trackH * 0.34f), juce::Font::bold));
+            g.setFont (juce::Font (juce::jlimit (12.0f, 16.0f, (float)trackH * 0.25f), juce::Font::bold));
             g.setColour (sel ? info.colour : theme.foreground);
             g.drawText (info.name, rowR.getX() + 14, rowR.getY(),
                         rowR.getWidth() - muteW - 22, trackH,
@@ -91,7 +91,7 @@ public:
                     case TrackType::ChromaticSlice: badge = "CH"; break;
                     case TrackType::SfPlayer:       badge = "SF"; break;
                 }
-                g.setFont (juce::Font (juce::jlimit (13.0f, 18.0f, (float)trackH * 0.20f)));
+                g.setFont (juce::Font (juce::jlimit (9.0f, 11.0f, (float)trackH * 0.17f)));
                 g.setColour (info.colour.withAlpha (0.6f));
                 g.drawText (badge, rowR.getX() + 14, rowR.getCentreY(), 26, trackH / 2,
                             juce::Justification::centredLeft, false);
@@ -191,7 +191,7 @@ private:
 
     SequencerEngine& engine;
     int selectedTrack = 0;
-    int trackH        = 54;
+    int trackH        = 64;
 
     static constexpr int kMaxTracks = SequencerEngine::kActivityFlagCount;
     static constexpr int kHoldTicks = 3;

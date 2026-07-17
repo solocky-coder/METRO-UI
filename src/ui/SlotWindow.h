@@ -78,7 +78,7 @@ class SlotWindow : public juce::DocumentWindow
 public:
     SlotWindow (MixerPanel& mixer, GlobalEqPanel& eq, ArrangeView& arrange,
                 juce::LookAndFeel& lnf)
-        : juce::DocumentWindow ("Mixer",
+        : juce::DocumentWindow ("MIXER",
                                 juce::Colour (0xFF0D0D14),
                                 juce::DocumentWindow::closeButton |
                                 juce::DocumentWindow::minimiseButton |
@@ -89,7 +89,7 @@ public:
         setLookAndFeel (&lnf);
         setResizable (true, true);
         setContentNonOwned (&content, true);
-        setSize (1000, 560);
+        setSize (1180, 680);
         centreWithSize (getWidth(), getHeight());
     }
 
@@ -101,21 +101,21 @@ public:
     //==========================================================================
     void showMixer()
     {
-        setName ("Mixer");
+        setName ("MIXER");
         content.show (SlotWindowContent::Content::Mixer);
         showWindow();
     }
 
     void showEq()
     {
-        setName ("EQ");
+        setName ("EQ  •  GLOBAL");
         content.show (SlotWindowContent::Content::Eq);
         showWindow();
     }
 
     void showArrange()
     {
-        setName ("Arrange");
+        setName ("ARRANGE  •  TRACKS");
         content.show (SlotWindowContent::Content::Arrange);
         showWindow();
     }

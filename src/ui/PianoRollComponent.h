@@ -45,11 +45,11 @@ public:
     //==========================================================================
     //  Constants
     //==========================================================================
-    static constexpr int kKeysW     = 56;
-    static constexpr int kRulerH    = 24;
-    static constexpr int kVelocityH = 64;
-    static constexpr int kScrollH   = 14;
-    static constexpr int kToolbarH  = 28;
+    static constexpr int kKeysW     = 68;  // wide enough for readable octave labels
+    static constexpr int kRulerH    = 28;
+    static constexpr int kVelocityH = 82;  // a real editable lane, not a footer
+    static constexpr int kScrollH   = 10;
+    static constexpr int kToolbarH  = 34;
     static constexpr int kNumNotes  = 128;
     static constexpr int kResizeZone = 7;   // px from note right edge = resize handle
 
@@ -68,14 +68,14 @@ public:
         hScroll.setRangeLimits (0.0, 1.0);
         hScroll.setCurrentRange (0.0, 0.3);
         hScroll.setAutoHide (false);
-        hScroll.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xFF2A3848));
+        hScroll.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xFF263342));
         hScroll.addListener (this);
         addAndMakeVisible (hScroll);
 
         vScroll.setRangeLimits (0.0, 1.0);
         vScroll.setCurrentRange (0.3, 0.7);
         vScroll.setAutoHide (false);
-        vScroll.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xFF2A3848));
+        vScroll.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xFF263342));
         vScroll.addListener (this);
         addAndMakeVisible (vScroll);
 
@@ -1063,7 +1063,7 @@ private:
 
     void layoutToolbar()
     {
-        auto r = toolbarBounds.reduced (3, 2);
+        auto r = toolbarBounds.reduced (4, 4).withTrimmedLeft (104);
         const int bw = 26, gap = 2;
 
         btnSelect.setBounds  (r.removeFromLeft (bw)); r.removeFromLeft(gap);
@@ -1236,10 +1236,19 @@ private:
     //==========================================================================
     void drawToolbar (juce::Graphics& g)
     {
-        g.setColour (juce::Colour (0xFF0C0C14));
+        g.setColour (juce::Colour (0xFF10131A));
         g.fillRect (toolbarBounds);
-        g.setColour (juce::Colour (0xFF1C2028));
+        g.setColour (juce::Colour (0xFF26303B));
         g.fillRect (toolbarBounds.withTrimmedTop (toolbarBounds.getHeight() - 1));
+
+        // Editor identity stays visible even when this is detached from Arrange.
+        g.setFont (DysektLookAndFeel::makeMonoFont (10.f));
+        g.setColour (juce::Colour (0xFF75D7D1));
+        g.drawText ("PIANO ROLL", toolbarBounds.getX() + 9, toolbarBounds.getY(),
+                    84, toolbarBounds.getHeight(), juce::Justification::centredLeft, false);
+        g.setColour (juce::Colour (0xFF2A3440));
+        g.drawVerticalLine (96, (float) toolbarBounds.getY() + 7.f,
+                            (float) toolbarBounds.getBottom() - 7.f);
     }
 
     void drawRuler (juce::Graphics& g)
@@ -1291,7 +1300,7 @@ private:
 
     void drawKeyboard (juce::Graphics& g)
     {
-        g.setColour (juce::Colour (0xFF0D0D14));
+        g.setColour (juce::Colour (0xFF151923));
         g.fillRect (keysBounds);
 
         const int top = yToNote (kRulerH + kToolbarH);
@@ -1301,18 +1310,18 @@ private:
             const float y = noteToY (note);
             if (isBlackKey (note))
             {
-                g.setColour (juce::Colour (0xFF181820));
+                g.setColour (juce::Colour (0xFF090B10));
                 g.fillRect ((float)keysBounds.getX(), y,
                             (float)keysBounds.getWidth() * 0.62f, (float)noteRowH - 0.5f);
             }
             if ((note % 12) == 0)   // C marker
             {
-                g.setColour (juce::Colour (0xFF3A4050));
+                g.setColour (juce::Colour (0xFF4A5868));
                 g.fillRect ((float)keysBounds.getX(), y, (float)keysBounds.getWidth(), 0.75f);
                 if (noteRowH >= 8)
                 {
                     g.setFont (DysektLookAndFeel::makeMonoFont (8.f));
-                    g.setColour (juce::Colour (0xFF6080A0));
+                    g.setColour (juce::Colour (0xFF9AB4C8));
                     g.drawText ("C" + juce::String (note / 12 - 1),
                                 keysBounds.getX(), (int)y,
                                 keysBounds.getWidth() - 2, noteRowH,
@@ -1329,7 +1338,7 @@ private:
 
     void drawGrid (juce::Graphics& g)
     {
-        g.setColour (juce::Colour (0xFF060608));
+        g.setColour (juce::Colour (0xFF0B0E14));
         g.fillRect (gridBounds);
 
         const int top = yToNote (kRulerH + kToolbarH);
@@ -1341,12 +1350,12 @@ private:
             const float y = noteToY (note);
             if (isBlackKey (note))
             {
-                g.setColour (juce::Colour (0xFF090912));
+                g.setColour (juce::Colour (0xFF0E121A));
                 g.fillRect ((float)gridBounds.getX(), y, (float)gridBounds.getWidth(), (float)noteRowH);
             }
             if ((note % 12) == 0)
             {
-                g.setColour (juce::Colour::fromFloatRGBA (0.14f, 0.14f, 0.22f, 0.5f));
+                g.setColour (juce::Colour::fromFloatRGBA (0.22f, 0.28f, 0.36f, 0.42f));
                 g.fillRect ((float)gridBounds.getX(), y, (float)gridBounds.getWidth(), 0.75f);
             }
         }
@@ -1360,14 +1369,14 @@ private:
             const float x = tickToX (beat * (int64_t) tpb);
             if (x < gridBounds.getX()) continue;
             const bool isBar = (beat % 4 == 0);
-            g.setColour (isBar ? juce::Colour (0xFF1C2030) : juce::Colour (0xFF111320));
+            g.setColour (isBar ? juce::Colour (0xFF354252) : juce::Colour (0xFF1B2330));
             g.drawVerticalLine ((int)x, (float)gridBounds.getY(), (float)gridBounds.getBottom());
         }
 
         // Sub-beat grid (snap grid)
         if (snapTicks > 0 && pixelsPerTick * snapTicks > 4.0)
         {
-            g.setColour (juce::Colour::fromFloatRGBA (0.08f, 0.08f, 0.16f, 0.5f));
+            g.setColour (juce::Colour::fromFloatRGBA (0.20f, 0.25f, 0.34f, 0.28f));
             const int64_t startSnap = (int64_t)(scrollX / (pixelsPerTick * snapTicks)) * snapTicks;
             for (int64_t t = startSnap; tickToX(t) < gridBounds.getRight(); t += snapTicks)
             {

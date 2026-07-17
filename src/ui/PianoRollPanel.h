@@ -24,8 +24,8 @@
 class PianoRollPanel : public juce::Component
 {
 public:
-    static constexpr int kTransportH  = 34;
-    static constexpr int kTrackStripW = 160;
+    static constexpr int kTransportH  = 38;
+    static constexpr int kTrackStripW = 184;
 
     PianoRollPanel (SequencerEngine& seq, AbletonLink* link = nullptr)
         : engine (seq), transport (seq, link), pianoRoll (seq), trackStrip (seq)
@@ -58,7 +58,13 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xFF060608));
+        g.fillAll (juce::Colour (0xFF080A0D));
+
+        // Separate the track context from the note editor without a heavy frame.
+        g.setColour (juce::Colour (0xFF171C22));
+        g.fillRect (0, kTransportH, kTrackStripW, getHeight() - kTransportH);
+        g.setColour (juce::Colour (0xFF303B45));
+        g.fillRect (kTrackStripW - 1, kTransportH, 1, getHeight() - kTransportH);
     }
 
     void syncSnap()
@@ -131,7 +137,7 @@ class PianoRollWindow : public juce::DocumentWindow
 {
 public:
     PianoRollWindow (SequencerEngine& seq, juce::LookAndFeel& lnf, AbletonLink* link = nullptr)
-        : juce::DocumentWindow ("Piano Roll",
+        : juce::DocumentWindow ("PIANO ROLL  •  MIDI EDITOR",
                                 juce::Colour (0xFF0D0D14),
                                 juce::DocumentWindow::closeButton |
                                 juce::DocumentWindow::minimiseButton |
@@ -142,7 +148,7 @@ public:
         setLookAndFeel (&lnf);
         setResizable (true, true);
         setContentNonOwned (&panel, true);
-        setSize (1100, 600);
+        setSize (1180, 680);
         centreWithSize (getWidth(), getHeight());
         wireCallbacks();
     }

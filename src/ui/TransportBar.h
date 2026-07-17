@@ -29,12 +29,12 @@ public:
         const juce::Colour semantic = colours.count (&btn) ? colours.at (&btn)
                                                             : juce::Colours::white;
         const bool on = btn.getToggleState();
-        const float tint = isDown ? 0.58f : (on ? 0.46f : (isHighlighted ? 0.34f : 0.24f));
+        const float tint = isDown ? 0.46f : (on ? 0.34f : (isHighlighted ? 0.20f : 0.10f));
         g.setColour (theme.button.interpolatedWith (semantic, tint));
         g.fillRoundedRectangle (bounds, 0.0f);
 
         // Hairline border — just enough to separate the square Metro tiles.
-        g.setColour (semantic.withAlpha (on ? 0.85f : 0.48f));
+        g.setColour (semantic.withAlpha (on ? 0.72f : 0.28f));
         g.drawRoundedRectangle (bounds, 0.0f, 0.5f);
     }
 
@@ -50,7 +50,7 @@ public:
                                    : isDown ? juce::Colours::white.withAlpha (0.94f)
                                            : base.brighter (0.22f).withAlpha (0.94f);
         g.setColour (textCol);
-        g.setFont (juce::Font (11.5f, juce::Font::bold));
+        g.setFont (juce::Font (10.5f, juce::Font::bold));
         g.drawText (btn.getButtonText(), btn.getLocalBounds(),
                     juce::Justification::centred, false);
     }
@@ -89,10 +89,10 @@ public:
         };
 
         // Text-label transport buttons (flat, no icons)
-        addBtn (rewindBtn, "REWIND",  cRewind);        // one-shot action
+        addBtn (rewindBtn, "BACK",    cRewind);        // one-shot action
         addBtn (playBtn,   "PLAY",    cPlay,  true);   // toggle — syncs to engine.isPlaying()
         addBtn (stopBtn,   "STOP",    cStop);
-        addBtn (recBtn,    "RECORD",  cRec,   true);
+        addBtn (recBtn,    "REC",     cRec,   true);
         addBtn (loopBtn,   "LOOP",    cLoop,  true);
 
         loopBtn.setToggleState (true, juce::dontSendNotification);
@@ -197,12 +197,12 @@ public:
         b.setY (contentY);
         b.setHeight (contentH);
         const int btnH = contentH;
-        const int btnW  = 76;              // wide enough for "REWIND"/"RECORD" text labels
-        const int bpmW  = 82;
-        const int snapW = 58;
-        const int posW  = 90;
+        const int btnW  = 58;              // compact editor transport tiles
+        const int bpmW  = 76;
+        const int snapW = 66;
+        const int posW  = 84;
         const int linkW = 54;
-        const int gap   = 5;
+        const int gap   = 4;
 
         // ── Right side: LINK → pos → snap → BPM ──────────────────────────
         if (linkPtr != nullptr)
@@ -230,8 +230,12 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.setColour (getTheme().darkBar);
+        g.setColour (getTheme().darkBar.darker (0.08f));
         g.fillRect (getLocalBounds());
+
+        // A quiet top highlight gives this a toolbar identity rather than a second title bar.
+        g.setColour (juce::Colour (0xFF2A3540));
+        g.fillRect (getLocalBounds().removeFromTop (1));
         g.setColour (getTheme().separator);
         g.fillRect (getLocalBounds().removeFromBottom (1));
     }
