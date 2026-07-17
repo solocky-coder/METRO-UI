@@ -3060,9 +3060,18 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
 #if DYSEKT_STANDALONE
     // MIDI from a selected SF2 sequencer track must bypass the slicer's
-    // live-input re-stamping below.  Keep an untouched copy for the SF2 player;
-    // its live-input mask fans controller channel 1 out to that track's channel.
-    juce::MidiBuffer standaloneSfLiveInput;
+    // live-input re-stamping below.  Keep an untouched copy for the SF2/SFZ
+    // players; their own channel masks (sfPlayerChannelMask / liveInputChannelMask /
+    // sfzPlayer2ChannelMask) are independent of whichever sequencer track is
+    // currently selected, so this MUST be captured unconditionally, before
+    // either branch below re-stamps or clears `midi` for the slicer — not
+    // only in the "no slicer track selected" branch. Previously this was
+    // only assigned when liveCh == 0, which meant the SF2/SFZ players got
+    // no live MIDI at all whenever a MainSlice/ChromaticSlice track was the
+    // selected track (the common/default case), since `midi` itself was
+    // being fully re-stamped to that track's channel with no untouched copy
+    // kept anywhere.
+    const juce::MidiBuffer standaloneSfLiveInput (midi);
 
     // ── Sequencer MIDI injection ──────────────────────────────────────────────
     {
@@ -3111,9 +3120,8 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         else
         {
             // SF-player track selected (or nothing selected): VoicePool only sees
-            // slicer sequencer events. Preserve live input for the SF2 player
-            // before clearing this shared buffer.
-            standaloneSfLiveInput = midi;
+            // slicer sequencer events. standaloneSfLiveInput (captured above,
+            // before this block ran) already holds the untouched live input.
             midi.clear();
             midi.addEvents (slicerSeqEvents, 0, buffer.getNumSamples(), 0);
         }
@@ -3121,7 +3129,21 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 #endif
 
     processMidi (midi);
+
+#if DYSEKT_STANDALONE
+    // processMidi2() drives the SFZ-PLAYER tab (sliceManager2/voicePool2),
+    // which — like sfzPlayer/sfPlayerChannelMask below — listens on its own
+    // dedicated channel(s) via sfzPlayer2ChannelMask regardless of which
+    // sequencer track is selected. Feed it the untouched live input (merged
+    // with whatever's left in `midi`, e.g. slicer-bound sequencer events) so
+    // it isn't starved the way it was when only the re-stamped/cleared
+    // `midi` reached it.
+    juce::MidiBuffer midiForPlayer2 (midi);
+    midiForPlayer2.addEvents (standaloneSfLiveInput, 0, buffer.getNumSamples(), 0);
+    processMidi2 (midiForPlayer2);
+#else
     processMidi2 (midi);
+#endif
 
     // ── Step CC smoothers ─────────────────────────────────────────────────────
     // Each active smoother advances toward its target over ~20 ms.
