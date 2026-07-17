@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "TransportBar.h"
 #include "TrackHeaderStrip.h"
+#include "TrackInspector.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
 
@@ -45,7 +46,9 @@ class ArrangeView : public juce::Component,
 {
 public:
     static constexpr int kTransportH   = 32;
+    static constexpr int kInspectorW   = 216;
     static constexpr int kStripW       = 196;
+    static constexpr int kLeftW        = kInspectorW + kStripW;
     static constexpr int kRulerH       = 32;
     static constexpr int kScrollH      = 10;
     static constexpr int kScrollW      = 10;
@@ -81,9 +84,11 @@ public:
     ArrangeView (SequencerEngine& seq, AbletonLink* link = nullptr)
         : engine (seq),
           transport (seq, link),
-          trackStrip (seq)
+          trackStrip (seq),
+          inspector (seq)
     {
         addAndMakeVisible (transport);
+        addAndMakeVisible (inspector);
         addAndMakeVisible (trackStrip);
 
         // ── Horizontal scrollbar ──────────────────────────────────────────────
@@ -134,8 +139,12 @@ public:
         auto hScrollR = r.removeFromBottom (kScrollH).withTrimmedRight (kScrollW);
         auto vScrollR = r.removeFromRight  (kScrollW);
 
-        hScroll.setBounds (hScrollR.withTrimmedLeft (kStripW));
+        hScroll.setBounds (hScrollR.withTrimmedLeft (kLeftW));
         vScroll.setBounds (vScrollR);
+
+        auto inspectorCol = r.removeFromLeft (kInspectorW);
+        inspectorCol.removeFromTop (kRulerH);
+        inspector.setBounds (inspectorCol);
 
         auto leftCol = r.removeFromLeft (kStripW);
         leftCol.removeFromTop (kRulerH);
@@ -171,7 +180,7 @@ public:
         paintPlayhead (g);
 
         // Corner fill between scrollbars
-        if (getWidth() > kStripW + 8 && getHeight() > kTransportH + kScrollH + 8)
+        if (getWidth() > kLeftW + 8 && getHeight() > kTransportH + kScrollH + 8)
         {
             g.setColour (theme.waveformBg);
             g.fillRect (getWidth() - kScrollW - 4,
@@ -472,6 +481,7 @@ private:
     //==========================================================================
     SequencerEngine&      engine;
     TransportBar          transport;
+    TrackInspector        inspector;
     TrackHeaderStrip      trackStrip;
     juce::ScrollBar       hScroll { false };
     juce::ScrollBar       vScroll { true  };
@@ -623,6 +633,7 @@ private:
     void selectTrack (int idx)
     {
         selectedTrack = idx;
+        inspector.setSelectedTrack (idx);
 
         uint16_t mask = 0;
         TrackType type = TrackType::MainSlice;
@@ -833,7 +844,7 @@ private:
     void paintArrangeHeader (juce::Graphics& g) const
     {
         const auto& theme = getTheme();
-        const juce::Rectangle<int> header (3, kTransportH + 3, kStripW, kRulerH);
+        const juce::Rectangle<int> header (3, kTransportH + 3, kLeftW, kRulerH);
         g.setColour (theme.header);
         g.fillRect (header);
         g.setColour (theme.accent.withAlpha (0.8f));

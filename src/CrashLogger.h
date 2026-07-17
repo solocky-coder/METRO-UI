@@ -25,6 +25,8 @@
 #else
   #include <signal.h>
   #include <execinfo.h>   // backtrace / backtrace_symbols (glibc / macOS)
+  #include <fcntl.h>      // open / O_WRONLY / O_CREAT / O_APPEND
+  #include <unistd.h>     // write / close
 #endif
 
 /**
