@@ -66,10 +66,12 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  addAndMakeVisible (sliceControlBar);
   browserPanel.setVisible (false);
  addChildComponent (browserPanel);
+ #if ! DYSEKT_STANDALONE
  mixerPanel.setVisible (false);
  addChildComponent (mixerPanel);
  eqPanel.setVisible (false);
  addChildComponent (eqPanel);
+#endif
 
  sfzDropdown.setVisible (false);
  addChildComponent (sfzDropdown);
@@ -215,14 +217,21 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  shortcutsPanel.setVisible (false);
  addChildComponent (shortcutsPanel);
 #if DYSEKT_STANDALONE
-    addChildComponent (pianoRollPanel);
-    addChildComponent (arrangeView);
-
-    // Wire ArrangeView double-click → show PianoRollPanel as overlay
+    // Both windows are genuine top-level windows. Arrange clips open the
+    // piano roll independently rather than overlaying the main editor.
     arrangeView.onClipDoubleClicked = [this] (int trackIndex, int clipIndex)
     {
         pianoRollPanel.openFor (trackIndex, clipIndex);
-        resized();
+    };
+
+    slotWindow.onCloseRequested = [this]
+    {
+        activeSlot = SlotContent::None;
+        headerBar.setBodeActive (false);
+        headerBar.setEqActive (false);
+        headerBar.setSeqActive (false);
+        syncMidiRouteMode();
+        repaint();
     };
 
     // Route live MIDI to the right engine based on which track type is selected.
@@ -635,19 +644,27 @@ void DysektEditor::toggleBrowserPanel()
         if (activeSlot == SlotContent::Mixer)
         {
             activeSlot = SlotContent::None;
+#if DYSEKT_STANDALONE
+            slotWindow.closeWindow();
+#else
             mixerPanel.setVisible (false);
+#endif
             headerBar.setBodeActive (false);
         }
         else if (activeSlot == SlotContent::Eq)
         {
+#if DYSEKT_STANDALONE
+            slotWindow.closeWindow();
+#else
             eqPanel.setVisible (false);
+#endif
             headerBar.setEqActive (false);
         }
         else if (activeSlot == SlotContent::Seq)
         {
 #if DYSEKT_STANDALONE
-            pianoRollPanel.setVisible (false);
-            arrangeView.setVisible (false);
+            pianoRollPanel.closeWindow();
+            slotWindow.closeWindow();
 #endif
             headerBar.setSeqActive (false);
         }
@@ -768,47 +785,59 @@ void DysektEditor::toggleShortcutsPanel()
 
 void DysektEditor::toggleSeqPanel()
 {
-    if (activeSlot == SlotContent::Seq) {
+    if (activeSlot == SlotContent::Seq)
+    {
         activeSlot = SlotContent::None;
 #if DYSEKT_STANDALONE
-        arrangeView.setVisible (false);
-        pianoRollPanel.setVisible (false);
-#endif
-        headerBar.setSeqActive (false);
-        // Sequencer closed — return live MIDI to whichever front-end is showing.
-        syncMidiRouteMode();
-#if DYSEKT_STANDALONE
-        // Clear sequencer live-input and recording state so a closed sequencer
-        // doesn't keep recording into a track or routing notes to a stale channel.
+        pianoRollPanel.closeWindow();
+        slotWindow.closeWindow();
         processor.sequencer.setSelectedLiveChannel (0);
         processor.sequencer.setSelectedSfLiveChannels (0);
         processor.sequencer.setRecordingTrack (-1);
 #endif
-    } else {
-        // Close any currently open slot
-        if (activeSlot == SlotContent::Mixer) {
-            mixerPanel.setVisible (false);
-            headerBar.setBodeActive (false);
-        } else if (activeSlot == SlotContent::Browser) {
+        headerBar.setSeqActive (false);
+        syncMidiRouteMode();
+    }
+    else
+    {
+        if (activeSlot == SlotContent::Browser)
+        {
             browserPanel.setVisible (false);
             headerBar.setBrowserActive (false);
-        } else if (activeSlot == SlotContent::Eq) {
+        }
+#if DYSEKT_STANDALONE
+        else if (activeSlot == SlotContent::Mixer)
+        {
+            slotWindow.closeWindow();
+            headerBar.setBodeActive (false);
+        }
+        else if (activeSlot == SlotContent::Eq)
+        {
+            slotWindow.closeWindow();
+            headerBar.setEqActive (false);
+        }
+#else
+        else if (activeSlot == SlotContent::Mixer)
+        {
+            mixerPanel.setVisible (false);
+            headerBar.setBodeActive (false);
+        }
+        else if (activeSlot == SlotContent::Eq)
+        {
             eqPanel.setVisible (false);
             headerBar.setEqActive (false);
         }
+#endif
         activeSlot = SlotContent::Seq;
 #if DYSEKT_STANDALONE
-        arrangeView.setVisible (true);
-        pianoRollPanel.setVisible (false);  // opens only on clip double-click
+        slotWindow.showArrange();
+        arrangeView.notifyCurrentTrack();
 #endif
         headerBar.setSeqActive (true);
-        // Sequencer opened — apply route mode for whichever track is currently selected.
-        syncMidiRouteMode();            // sets Sequencer as default
-#if DYSEKT_STANDALONE
-        arrangeView.notifyCurrentTrack(); // overrides to Slicer if a slicer track is active
-#endif
+        syncMidiRouteMode();
     }
-    resized(); repaint(); resized(); repaint();
+    resized();
+    repaint();
 }
 
 void DysektEditor::toggleThemeEditor()
@@ -996,13 +1025,11 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
 
  if (browserPanel.isVisible() && browserPanel.getHeight() > 0)
  { slotBounds = browserPanel.getBounds(); slotPanelVisible = true; }
+#if ! DYSEKT_STANDALONE
  else if (mixerPanel.isVisible() && mixerPanel.getHeight() > 0)
  { slotBounds = mixerPanel.getBounds(); slotPanelVisible = true; }
  else if (eqPanel.isVisible() && eqPanel.getHeight() > 0)
  { slotBounds = eqPanel.getBounds(); slotPanelVisible = true; }
-#if DYSEKT_STANDALONE
- else if (arrangeView.isVisible() && arrangeView.getHeight() > 0)
- { slotBounds = arrangeView.getBounds(); slotPanelVisible = true; }
 #endif
 
  if (slotPanelVisible)
@@ -1194,13 +1221,18 @@ void DysektEditor::resized()
  // initBrowserOpen uses the waveform frame area instead — no slot needed.
  // At scale > 1.0 (host inflates bounds) we clamp to avoid overlap: the
  // scaled slot must never exceed what the remaining height can accommodate.
+ #if DYSEKT_STANDALONE
+ const bool hasActiveSlot = (activeSlot == SlotContent::Browser && ! initBrowserOpen);
+#else
  const bool hasActiveSlot = (activeSlot != SlotContent::None && ! initBrowserOpen);
+#endif
  const int wantedSlotH = hasActiveSlot ? si (kPanelSlotH) : 0;
  const int slotH = juce::jmin (wantedSlotH, juce::jmax (0, area.getHeight() - si (80)));
  auto slot = area.removeFromBottom (slotH);
  if (hasActiveSlot) area.removeFromBottom (si (kMargin));
 
  if (activeSlot == SlotContent::Mixer) {
+#if ! DYSEKT_STANDALONE
  // Expand mixer to fill ALL available area (waveformView space + slot).
  const int mixTop = actionArea.getY();
  const int mixBot = slot.getBottom();
@@ -1211,6 +1243,7 @@ void DysektEditor::resized()
 #if DYSEKT_STANDALONE
  pianoRollPanel.setBounds ({});
  arrangeView.setBounds ({});
+#endif
 #endif
  }
  else if (activeSlot == SlotContent::Browser && ! initBrowserOpen) {
@@ -1226,6 +1259,7 @@ void DysektEditor::resized()
 #endif
  }
  else if (activeSlot == SlotContent::Eq) {
+#if ! DYSEKT_STANDALONE
      const int eqTop = actionArea.getY();
      const int eqBot = slot.getBottom();
      eqPanel.setBounds (kFX, eqTop, kFW, eqBot - eqTop);
@@ -1235,8 +1269,10 @@ void DysektEditor::resized()
      pianoRollPanel.setBounds ({});
      arrangeView.setBounds ({});
 #endif
+#endif
  }
  else if (activeSlot == SlotContent::Seq) {
+#if ! DYSEKT_STANDALONE
      const int seqTop = actionArea.getY();
      const int seqBot = slot.getBottom();
      const int seqH   = seqBot - seqTop;
@@ -1262,12 +1298,15 @@ void DysektEditor::resized()
      mixerPanel.setBounds ({});
      browserPanel.setBounds ({});
      eqPanel.setBounds ({});
+#endif
  } else {
+#if ! DYSEKT_STANDALONE
  mixerPanel.setBounds ({});
  eqPanel.setBounds ({});
 #if DYSEKT_STANDALONE
  pianoRollPanel.setBounds ({});
  arrangeView.setBounds ({});
+#endif
 #endif
  if (! initBrowserOpen)
  browserPanel.setBounds ({});
@@ -1299,6 +1338,11 @@ void DysektEditor::resized()
        && ! sampleSnap->filePath.containsIgnoreCase ("DYSEKT_default.wav"));
 
  const bool normalBrowserOpen = (activeSlot == SlotContent::Browser && ! initBrowserOpen);
+#if DYSEKT_STANDALONE
+ const bool inlineMixerOpen = false;
+#else
+ const bool inlineMixerOpen = (activeSlot == SlotContent::Mixer);
+#endif
 
  if (trimDialog != nullptr) {
  sliceControlBar.setBounds ({});
@@ -1319,7 +1363,7 @@ void DysektEditor::resized()
  // showZoneBuilder is never reset on tab switch (see setUiMode), so
  // including it here let a stale showZoneBuilder=true from a prior
  // SFZ-PLAYER session keep the SCB visible after switching to Slicer.
- if ((hasRealSample || uiMode == 1) && (uiMode == 0 || uiMode == 1) && activeSlot != SlotContent::Mixer && !normalBrowserOpen)
+ if ((hasRealSample || uiMode == 1) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);
@@ -1333,7 +1377,7 @@ void DysektEditor::resized()
  }
 
  // Overview row: allocate space and show only when waveform view is active.
- if ((uiMode == 0 || uiMode == 1) && activeSlot != SlotContent::Mixer && !normalBrowserOpen && hasRealSample && !showPadGrid && !showZoneBuilder)
+ if ((uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample && !showPadGrid && !showZoneBuilder)
  {
      auto overviewRow = area.removeFromBottom (kOverviewRowH);
      const int overviewY = overviewRow.getY() + kInterGap;
@@ -1366,7 +1410,11 @@ void DysektEditor::resized()
  int trimH = (trimDialog != nullptr) ? si (kTrimBarH) : 0;
  int h = juce::jmax (si (80), screenBot - trimH - y);
 
+ #if DYSEKT_STANDALONE
+ const bool slotCoveringFrame = normalBrowserOpen;
+#else
  const bool slotCoveringFrame = (activeSlot != SlotContent::None && ! initBrowserOpen);
+#endif
  const int  waveH      = juce::jmax (si (80), h);
 
  // ── Route the main content area to the active view ────────────────────────
@@ -1463,7 +1511,7 @@ void DysektEditor::resized()
   // ── Trim bar: hide behind browser or mixer, restore when they close ───────
  if (trimDialog != nullptr)
  {
- if (normalBrowserOpen || activeSlot == SlotContent::Mixer)
+ if (normalBrowserOpen || inlineMixerOpen)
  trimDialog->setBounds ({}); // hide trim bar — browser/mixer is covering the workspace
  else
  trimDialog->setBounds (screenX, y + h, screenW, si (kTrimBarH));
@@ -1488,58 +1536,110 @@ void DysektEditor::resized()
 
 void DysektEditor::toggleMixerPanel()
 {
- if (activeSlot == SlotContent::Mixer) {
- activeSlot = SlotContent::None;
- mixerPanel.setVisible (false);
- headerBar.setBodeActive (false);
- } else {
- if (activeSlot == SlotContent::Browser) {
- activeSlot = SlotContent::None;
- browserPanel.setVisible (false);
- headerBar.setBrowserActive (false);
- } else if (activeSlot == SlotContent::Eq) {
- eqPanel.setVisible (false);
- headerBar.setEqActive (false);
- } else if (activeSlot == SlotContent::Seq) {
+    if (activeSlot == SlotContent::Mixer)
+    {
+        activeSlot = SlotContent::None;
 #if DYSEKT_STANDALONE
- pianoRollPanel.setVisible (false);
- arrangeView.setVisible (false);
+        slotWindow.closeWindow();
+#else
+        mixerPanel.setVisible (false);
 #endif
- headerBar.setSeqActive (false);
- }
- activeSlot = SlotContent::Mixer;
- mixerPanel.setVisible (true);
- headerBar.setBodeActive (true);
- }
- resized(); repaint(); resized(); repaint();
+        headerBar.setBodeActive (false);
+    }
+    else
+    {
+        if (activeSlot == SlotContent::Browser)
+        {
+            browserPanel.setVisible (false);
+            headerBar.setBrowserActive (false);
+        }
+#if DYSEKT_STANDALONE
+        else if (activeSlot == SlotContent::Seq)
+        {
+            slotWindow.closeWindow();
+            headerBar.setSeqActive (false);
+        }
+        else if (activeSlot == SlotContent::Eq)
+        {
+            slotWindow.closeWindow();
+            headerBar.setEqActive (false);
+        }
+#else
+        else if (activeSlot == SlotContent::Eq)
+        {
+            eqPanel.setVisible (false);
+            headerBar.setEqActive (false);
+        }
+        else if (activeSlot == SlotContent::Seq)
+        {
+            headerBar.setSeqActive (false);
+        }
+#endif
+        activeSlot = SlotContent::Mixer;
+#if DYSEKT_STANDALONE
+        slotWindow.showMixer();
+#else
+        mixerPanel.setVisible (true);
+#endif
+        headerBar.setBodeActive (true);
+    }
+    syncMidiRouteMode();
+    resized();
+    repaint();
 }
 
 void DysektEditor::toggleEqPanel()
 {
-    if (activeSlot == SlotContent::Eq) {
+    if (activeSlot == SlotContent::Eq)
+    {
         activeSlot = SlotContent::None;
+#if DYSEKT_STANDALONE
+        slotWindow.closeWindow();
+#else
         eqPanel.setVisible (false);
+#endif
         headerBar.setEqActive (false);
-    } else {
-        // Close any currently open slot
-        if (activeSlot == SlotContent::Mixer) {
-            mixerPanel.setVisible (false);
-            headerBar.setBodeActive (false);
-        } else if (activeSlot == SlotContent::Browser) {
+    }
+    else
+    {
+        if (activeSlot == SlotContent::Browser)
+        {
             browserPanel.setVisible (false);
             headerBar.setBrowserActive (false);
-        } else if (activeSlot == SlotContent::Seq) {
+        }
 #if DYSEKT_STANDALONE
-            pianoRollPanel.setVisible (false);
-            arrangeView.setVisible (false);
-#endif
+        else if (activeSlot == SlotContent::Seq)
+        {
+            slotWindow.closeWindow();
             headerBar.setSeqActive (false);
         }
+        else if (activeSlot == SlotContent::Mixer)
+        {
+            slotWindow.closeWindow();
+            headerBar.setBodeActive (false);
+        }
+#else
+        else if (activeSlot == SlotContent::Mixer)
+        {
+            mixerPanel.setVisible (false);
+            headerBar.setBodeActive (false);
+        }
+        else if (activeSlot == SlotContent::Seq)
+        {
+            headerBar.setSeqActive (false);
+        }
+#endif
         activeSlot = SlotContent::Eq;
+#if DYSEKT_STANDALONE
+        slotWindow.showEq();
+#else
         eqPanel.setVisible (true);
+#endif
         headerBar.setEqActive (true);
     }
-    resized(); repaint(); resized(); repaint();
+    syncMidiRouteMode();
+    resized();
+    repaint();
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
@@ -1564,8 +1664,8 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
      activeSlot == SlotContent::Seq &&
      pianoRollPanel.isVisible())
  {
-     pianoRollPanel.setVisible (false);
-     resized(); repaint();
+     pianoRollPanel.closeWindow();
+     repaint();
      return true;
  }
 #endif

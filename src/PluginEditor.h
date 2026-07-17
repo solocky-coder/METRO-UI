@@ -36,6 +36,7 @@
 #if DYSEKT_STANDALONE
 #include "ui/PianoRollPanel.h"
 #include "ui/ArrangeView.h"
+#include "ui/SlotWindow.h"
 #endif
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -230,8 +231,9 @@ private:
     ShortcutsPanel   shortcutsPanel { processor };
     GlobalEqPanel    eqPanel;
 #if DYSEKT_STANDALONE
-    PianoRollWindow  pianoRollPanel { processor.sequencer, lnf, &processor.abletonLink };
     ArrangeView      arrangeView    { processor.sequencer, &processor.abletonLink };
+    SlotWindow       slotWindow     { mixerPanel, eqPanel, arrangeView, lnf };
+    PianoRollWindow  pianoRollPanel { processor.sequencer, lnf, &processor.abletonLink };
 #endif
 
     juce::TooltipWindow tooltipWindow { this, 500 };
