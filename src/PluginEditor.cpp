@@ -209,7 +209,33 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  {
      const auto info = pianoRollPanel.getTrackInfo (trackIndex);
      if (info.type == TrackType::SfPlayer)
+     {
          pianoRollPanel.addOrUpdateSfPresetTrack (info.preset, midiChannel1Based, info.colour);
+
+         // The grid's presetChannels map is the actual source of truth that
+         // MixerPanel reads from — update it here too, or the mixer strip
+         // goes stale until something unrelated happens to refresh it.
+         auto& grid = sfzDropdown.getProgramGrid();
+         const auto& presets = grid.getPresets();
+         for (int i = 0; i < (int) presets.size(); ++i)
+         {
+             if (presets[(size_t) i].bank   == info.preset.bank
+                 && presets[(size_t) i].preset == info.preset.preset)
+             {
+                 auto channels = grid.getPresetChannels();
+                 channels[i] = midiChannel1Based;
+                 grid.setPresetChannels (channels);
+
+                 // Mirror the same side effects onPresetChannelAssigned
+                 // performs for the opposite direction (grid → sequencer):
+                 // keep the inline channel-FX combo in sync too.
+                 sfzDropdown.notifyPresetChannelChanged (info.preset.name, midiChannel1Based);
+                 break;
+             }
+         }
+
+         mixerPanel.setActiveChannels (grid.getPresets(), grid.getPresetChannels());
+     }
  };
 #endif
  shortcutsPanel.setVisible (false);
