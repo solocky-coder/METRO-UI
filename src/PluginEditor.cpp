@@ -1998,7 +1998,7 @@ void DysektEditor::saveUserSettings (const juce::String& themeName)
 
 void DysektEditor::loadUserSettings()
 {
- juce::String themeName = "dark";
+ juce::String themeName = "metro";
  auto file = getUserSettingsFile();
  if (file.existsAsFile())
  {
