@@ -1575,20 +1575,6 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
     {
         const auto msg = metadata.getMessage();
 
-        // Global MIDI activity: counted here, before the channel-exclusion
-        // check below, so it reflects every incoming message regardless of
-        // which engine (MAIN/Slicer, SF2-Player, or SFZ-Player) it belongs to.
-        if (msg.isNoteOn (true))
-            globalMidiActivity.fetch_add (1, std::memory_order_relaxed);
-        else if (msg.isNoteOff (true))
-        {
-            int prevG = globalMidiActivity.load (std::memory_order_relaxed);
-            while (prevG > 0 &&
-                   !globalMidiActivity.compare_exchange_weak (prevG, prevG - 1,
-                       std::memory_order_relaxed, std::memory_order_relaxed))
-            {}
-        }
-
         // Skip messages on SF-player- or SFZ-player-owned channels — they
         // belong to one of the DY-SFP engines, not the slicer.
         if (sfMask != 0 || sfz2Mask != 0)

@@ -77,12 +77,6 @@ public:
     /** Direct access to the SF2 program grid (read-only) for PluginEditor. */
     const Sf2ProgramGrid& getProgramGrid() const noexcept { return programGrid; }
 
-    /** Mutable access, needed when an external source (e.g. the sequencer's
-     *  track-header channel picker) changes a preset's channel and the grid's
-     *  own presetChannels map — the actual source of truth read by
-     *  MixerPanel — must be updated to match. */
-    Sf2ProgramGrid& getProgramGrid() noexcept { return programGrid; }
-
 private:
     // ── Header-strip drawing ──────────────────────────────────────────────────
     void drawHeaderStrip (juce::Graphics& g) const;

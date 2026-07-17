@@ -4,6 +4,7 @@
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
 #include "../sequencer/MidiClip.h"
+#include "MidiRouter.h"
 
 //==============================================================================
 //  MainWindow
@@ -58,13 +59,17 @@ public:
         player.setProcessor (processor.get());
         deviceManager.addAudioCallback (&player);
 
+        // ── MIDI router ───────────────────────────────────────────────────
+        midiRouter = std::make_unique<MidiRouter> (deviceManager);
+
         // ── MIDI input ────────────────────────────────────────────────────
-        // Enable every available device and wire it to the player.
-        // Track IDs for cleanup in destructor.
+        // Enable every available device and wire it to the player AND the
+        // MidiRouter thru handler.  Track IDs for cleanup in destructor.
         for (const auto& input : juce::MidiInput::getAvailableDevices())
         {
             deviceManager.setMidiInputDeviceEnabled (input.identifier, true);
             deviceManager.addMidiInputDeviceCallback (input.identifier, &player);
+            deviceManager.addMidiInputDeviceCallback (input.identifier, midiRouter.get());
             registeredMidiInputIds.add (input.identifier);
         }
 
@@ -121,9 +126,13 @@ public:
         setMenuBar (nullptr);
         deviceManager.removeAudioCallback (&player);
 
-        // Remove every MIDI callback BEFORE player is destroyed.
+        // Remove every MIDI callback BEFORE player/router are destroyed.
         for (const auto& id : registeredMidiInputIds)
+        {
             deviceManager.removeMidiInputDeviceCallback (id, &player);
+            if (midiRouter != nullptr)
+                deviceManager.removeMidiInputDeviceCallback (id, midiRouter.get());
+        }
 
         deviceManager.removeChangeListener (this);
         player.setProcessor (nullptr);
@@ -156,6 +165,8 @@ public:
         {
             menu.addItem (10, "Audio Settings...");
             menu.addItem (11, "MIDI Settings...");
+            menu.addSeparator();
+            menu.addItem (12, "MIDI Routing...");
         }
         else  // Help
         {
@@ -177,6 +188,7 @@ public:
             case 6:  juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case 10: showAudioSettings();    break;
             case 11: showMidiSettings();     break;
+            case 12: showMidiRouting();      break;
             case 20: showAbout();            break;
             default: break;
         }
@@ -462,6 +474,27 @@ private:
         opts.launchAsync();
     }
 
+    void showMidiRouting()
+    {
+        if (midiRouter == nullptr) return;
+
+        // Build track name list from the sequencer
+        juce::StringArray trackNames;
+        for (int i = 0; i < processor->sequencer.getNumTracks(); ++i)
+            trackNames.add (processor->sequencer.getTrackInfo(i).name);
+
+        auto* dlg = new MidiRoutingDialog (*midiRouter, trackNames);
+
+        juce::DialogWindow::LaunchOptions opts;
+        opts.content.setOwned (dlg);
+        opts.dialogTitle             = "MIDI Routing";
+        opts.dialogBackgroundColour  = juce::Colour (0xFF0D0D14);
+        opts.escapeKeyTriggersCloseButton = true;
+        opts.useNativeTitleBar       = true;
+        opts.resizable               = true;
+        opts.launchAsync();
+    }
+
     void showAbout()
     {
         juce::AlertWindow::showMessageBoxAsync (
@@ -473,14 +506,17 @@ private:
     //==========================================================================
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
-        // No-op: nothing currently needs to react to audio/MIDI device
-        // changes here. Kept as a ChangeListener hook for future use.
+        // Audio device changed — refresh router device list
+        if (midiRouter != nullptr)
+            midiRouter->refresh();
     }
 
     //==========================================================================
     juce::AudioDeviceManager            deviceManager;
     juce::AudioProcessorPlayer          player;
     juce::StringArray                   registeredMidiInputIds;  // tracks devices with active callbacks
+
+    std::unique_ptr<MidiRouter>         midiRouter;
     std::unique_ptr<DysektProcessor>    processor;
     std::unique_ptr<DysektEditor>       editor;
     std::unique_ptr<juce::MenuBarComponent> menuBar;

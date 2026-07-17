@@ -172,7 +172,7 @@ public:
         // Corner fill between scrollbars
         if (getWidth() > kStripW + 8 && getHeight() > kTransportH + kScrollH + 8)
         {
-            g.setColour (juce::Colour (0xFF0A0A14));
+            g.setColour (theme.waveformBg);
             g.fillRect (getWidth() - kScrollW - 4,
                         getHeight() - kScrollH - 4,
                         kScrollW, kScrollH);
@@ -659,9 +659,10 @@ private:
 
     static void styleScrollBar (juce::ScrollBar& sb)
     {
-        sb.setColour (juce::ScrollBar::backgroundColourId, juce::Colour (0xFF0A0A14));
-        sb.setColour (juce::ScrollBar::thumbColourId,      juce::Colour (0xFF2A3848));
-        sb.setColour (juce::ScrollBar::trackColourId,      juce::Colour (0xFF111820));
+        const auto& theme = getTheme();
+        sb.setColour (juce::ScrollBar::backgroundColourId, theme.waveformBg);
+        sb.setColour (juce::ScrollBar::thumbColourId,      theme.buttonHover);
+        sb.setColour (juce::ScrollBar::trackColourId,      theme.button);
     }
 
     void updateScrollRanges()
@@ -830,16 +831,18 @@ private:
     //==========================================================================
     void paintRuler (juce::Graphics& g) const
     {
+        const auto& theme = getTheme();
+
         // Background
-        g.setColour (juce::Colour (0xFF0C0C1A));
+        g.setColour (theme.header);
         g.fillRect (rulerBounds);
 
         // Left-strip region
-        g.setColour (juce::Colour (0xFF090912));
+        g.setColour (theme.waveformBg);
         g.fillRect (rulerBounds.withWidth (kStripW));
 
         // Bottom border
-        g.setColour (juce::Colour (0xFF1E2436));
+        g.setColour (theme.separator);
         g.fillRect (rulerBounds.getX(), rulerBounds.getBottom() - 1,
                     rulerBounds.getWidth(), 1);
 
@@ -848,7 +851,7 @@ private:
         {
             const float lx = tickToX (loopStart);
             const float rx = tickToX (loopEnd);
-            g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.22f));
+            g.setColour (theme.accent.withAlpha (0.22f));
             g.fillRect (lx, (float)rulerBounds.getY(), rx - lx,
                         (float)rulerBounds.getHeight());
         }
@@ -874,7 +877,7 @@ private:
                 const int x = gx + (int)((b * ppq) * pixelsPerTick - scrollX);
                 if (x < gx || x > gx + gw) continue;
                 const bool isBar = (b % 4 == 0);
-                g.setColour (isBar ? juce::Colour (0xFF2E3C52) : juce::Colour (0xFF1A2030));
+                g.setColour (isBar ? theme.separator : theme.gridLine);
                 g.fillRect (x, rulerBounds.getY(),
                             1, isBar ? rulerBounds.getHeight()
                                      : rulerBounds.getHeight() / 2);
@@ -889,7 +892,7 @@ private:
         {
             const int x = gx + (int)((bar * barLen) * pixelsPerTick - scrollX);
             if (x < gx || x > gx + gw) continue;
-            g.setColour (juce::Colour (0xFF7080A0));
+            g.setColour (theme.foreground.withAlpha (0.65f));
             g.drawText (juce::String (bar + 1),
                         x + 3, rulerBounds.getY(),
                         48, rulerBounds.getHeight(),
@@ -902,7 +905,7 @@ private:
             const float lx = tickToX (loopStart);
             const float rx = tickToX (loopEnd);
             g.setFont (juce::Font (9.f, juce::Font::bold));
-            g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.95f, 0.95f, 0.95f));
+            g.setColour (getTheme().accent.brighter (0.2f));
             g.drawText ("L", (int)lx + 2, rulerBounds.getY(),
                         14, rulerBounds.getHeight(), juce::Justification::centredLeft);
             g.drawText ("R", (int)rx - 16, rulerBounds.getY(),
@@ -931,11 +934,11 @@ private:
         const float lx = tickToX (loopStart);
         const float rx = tickToX (loopEnd);
         // Tinted band across all track rows
-        g.setColour (juce::Colour::fromFloatRGBA (0.2f, 0.8f, 0.8f, 0.06f));
+        g.setColour (getTheme().accent.withAlpha (0.06f));
         g.fillRect (lx, (float)clipGridBounds.getY(),
                     rx - lx, (float)clipGridBounds.getHeight());
         // Side lines
-        g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.45f));
+        g.setColour (getTheme().accent.withAlpha (0.45f));
         g.drawVerticalLine ((int)lx,
                             (float)clipGridBounds.getY(),
                             (float)clipGridBounds.getBottom());
@@ -961,13 +964,14 @@ private:
         g.reduceClipRegion (clipGridBounds);
 
         // Row background — alternating shades, selected highlight
-        g.setColour (isSel ? juce::Colour (0xFF0F1828)
-                           : (i % 2 == 0 ? juce::Colour (0xFF09090F)
-                                         : juce::Colour (0xFF0B0B14)));
+        const auto& theme = getTheme();
+        g.setColour (isSel ? theme.accent.withAlpha (0.12f)
+                           : (i % 2 == 0 ? theme.waveformBg
+                                         : theme.waveformBg.brighter (0.03f)));
         g.fillRect (rowR);
 
         // Separator
-        g.setColour (juce::Colour (0xFF16202E));
+        g.setColour (theme.separator);
         g.fillRect (rowR.getX(), rowR.getBottom() - 1, rowR.getWidth(), 1);
 
         // Vertical grid lines
@@ -1000,7 +1004,8 @@ private:
             if (x < rowR.getX() || x > rowR.getRight()) continue;
             const bool isBar = (b % 4 == 0);
             if (!showBeats && !isBar) continue;
-            g.setColour (isBar ? juce::Colour (0xFF141C2A) : juce::Colour (0xFF0E1420));
+            const auto& theme = getTheme();
+            g.setColour (isBar ? theme.separator.withAlpha (0.6f) : theme.gridLine);
             g.fillRect (x, rowR.getY(), 1, rowR.getHeight() - 1);
         }
     }
@@ -1054,7 +1059,7 @@ private:
         if (trackH >= 20)
         {
             g.setFont (juce::Font (juce::jmin (11.f, (float)trackH * 0.22f), juce::Font::bold));
-            g.setColour (muted ? juce::Colour (0xFF3A4A5A)
+            g.setColour (muted ? getTheme().foreground.withAlpha (0.35f)
                                : juce::Colours::white.withAlpha (0.88f));
             g.drawText (info.name,
                         clipR.getX() + 5, clipR.getY() + (int)headerH,

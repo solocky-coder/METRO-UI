@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
+#include "DysektLookAndFeel.h"
 
 //==============================================================================
 //  TrackHeaderStrip — vertical list of track headers.
@@ -30,7 +31,8 @@ public:
     //==========================================================================
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xFF0A0A10));
+        const auto& theme = getTheme();
+        g.fillAll (theme.waveformBg);
         const int n = engine.getNumTracks();
         for (int i = 0; i < n; ++i)
         {
@@ -38,13 +40,13 @@ public:
             const auto rowR  = getRowBounds (i);
             const bool sel   = (i == selectedTrack);
 
-            g.setColour (sel ? juce::Colour (0xFF182030) : juce::Colour (0xFF0D0D16));
+            g.setColour (sel ? theme.accent.withAlpha (0.18f) : theme.header);
             g.fillRect (rowR);
 
             g.setColour (info.colour);
             g.fillRect (rowR.withTrimmedRight (rowR.getWidth() - 4).toFloat());
 
-            // Mute button
+            // Mute button — semantic state colour, kept consistent across themes.
             const int muteW  = juce::jlimit (20, 28, trackH - 8);
             const int muteH  = juce::jlimit (12, 18, trackH - 8);
             const auto muteR = rowR.withTrimmedLeft (rowR.getWidth() - muteW - 4)
@@ -55,17 +57,18 @@ public:
             g.setFont (juce::Font (juce::jlimit (10.5f, 16.5f, (float)trackH * 0.22f), juce::Font::bold));
             g.drawText (info.enabled ? "M" : "m", muteR, juce::Justification::centred, false);
 
-            // MIDI RX dot
+            // MIDI RX dot — bright green when active is a fixed status colour
+            // used everywhere else in the app (see HeaderBar's global LED).
             const bool rxActive  = (i < kMaxTracks && midiHoldCounters[i] > 0);
             const int  dotR      = juce::jlimit (4, 7, trackH / 8);
             const auto dotCentre = juce::Point<int> (muteR.getX() - dotR - 4, rowR.getCentreY());
-            g.setColour (rxActive ? juce::Colour (0xFF00FF88) : juce::Colour (0xFF223030));
+            g.setColour (rxActive ? juce::Colour (0xFF00FF88) : theme.separator);
             g.fillEllipse ((float)(dotCentre.x - dotR), (float)(dotCentre.y - dotR),
                            (float)(dotR * 2), (float)(dotR * 2));
 
             // Track name
             g.setFont (juce::Font (juce::jlimit (16.5f, 22.5f, (float)trackH * 0.30f), juce::Font::bold));
-            g.setColour (sel ? info.colour : juce::Colour (0xFFCCD0D8));
+            g.setColour (sel ? info.colour : theme.foreground);
             g.drawText (info.name, rowR.getX() + 6, rowR.getY(),
                         rowR.getWidth() - muteW - 12, trackH,
                         juce::Justification::centredLeft, true);
@@ -94,7 +97,7 @@ public:
                 }
             }
 
-            g.setColour (juce::Colour (0xFF1C2028));
+            g.setColour (theme.separator);
             g.fillRect (0, rowR.getBottom() - 1, getWidth(), 1);
         }
     }

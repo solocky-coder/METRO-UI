@@ -283,14 +283,11 @@ void SequencerEngine::addSfTrack (const Sf2PresetInfo& preset, juce::Colour colo
 
     // Assign the next available FluidSynth channel (0-15) to this track.
     // Count existing SfPlayer tracks to determine the channel index.
-    // Start at 1 (MIDI channel 2) — index 0 (MIDI channel 1) is reserved
-    // for the MAIN slicer track (see midiChannelForTrack()) and must never
-    // be silently handed to an SF2 track.
-    int sfCh = 1;
+    int sfCh = 0;
     for (auto* t : impl->tracks)
         if (t->type == TrackType::SfPlayer)
             sfCh = juce::jmax (sfCh, t->midiChannel + 1);
-    sfCh = juce::jlimit (1, 15, sfCh);
+    sfCh = juce::jmin (sfCh, 15);
 
     auto track = SequencerTrack::makeSfPlayer (preset, colour);
     track.midiChannel = sfCh;
@@ -321,14 +318,13 @@ void SequencerEngine::rebuildSfTracks (const std::vector<Sf2PresetInfo>& presets
         const juce::Colour col = paletteSize > 0
             ? palette[i % paletteSize] : juce::Colour (0xFF406080);
         auto track = SequencerTrack::makeSfPlayer (presets[i], col);
-        // Sequential FluidSynth channels starting at index 1 (MIDI channel 2)
-        // — index 0 (MIDI channel 1) is reserved for MAIN, see addSfTrack().
-        const int ch = juce::jlimit (1, 15, i + 1);
-        track.midiChannel = ch;
+        track.midiChannel = juce::jmin (i, 15);   // sequential FluidSynth channels
         impl->tracks.add (new SequencerTrack (std::move (track)));
 
         if (impl->sfzPlayer != nullptr)
-            impl->sfzPlayer->setPresetOnChannel (ch, presets[i].bank, presets[i].preset);
+            impl->sfzPlayer->setPresetOnChannel (juce::jmin (i, 15),
+                                                  presets[i].bank,
+                                                  presets[i].preset);
     }
 }
 
