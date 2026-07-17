@@ -48,7 +48,7 @@ void FileBrowserPanel::ArchiveListModel::paintListBoxItem (int row, juce::Graphi
             auto badgeW = 40;
             auto badgeRect = juce::Rectangle<int> (w - badgeW - 60, (h - 13) / 2, badgeW, 13);
             g.setColour (T.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle (badgeRect.toFloat(), 2.0f);
+            g.fillRoundedRectangle(badgeRect.toFloat(), 0.0f);
             g.setColour (T.accent.withAlpha (0.85f));
             g.setFont (juce::Font (juce::FontOptions{}.withHeight (16.5f)));
             g.drawText (R.format, badgeRect, juce::Justification::centred);
@@ -425,7 +425,7 @@ void FileBrowserPanel::paint (juce::Graphics& g)
         juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
                                         juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
         g.setGradientFill (outerGrad);
-        g.fillRoundedRectangle (b.toFloat(), 4.0f);
+        g.fillRoundedRectangle(b.toFloat(), 0.0f);
 
         // Cheap win: soft glow behind the border, drawn before the hairline
         // stroke, so the border reads as lit from within rather than just
@@ -433,7 +433,7 @@ void FileBrowserPanel::paint (juce::Graphics& g)
         UIHelpers::drawPanelGlow (g, b.toFloat(), ac, 4.0f);
 
         g.setColour (ac.withAlpha (0.65f));
-        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 4.0f, 1.0f);
+        g.drawRoundedRectangle(b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
         // ── Inner screen area (inset 4 px all around) ────────────────────────────
         const auto innerScreen = b.reduced (4);
@@ -448,10 +448,10 @@ void FileBrowserPanel::paint (juce::Graphics& g)
                                     juce::Colours::transparentBlack, 0,
                                     (float)(innerScreen.getY() + 20), false);
         g.setGradientFill (glow);
-        g.fillRoundedRectangle (innerScreen.toFloat(), 2.0f);
+        g.fillRoundedRectangle(innerScreen.toFloat(), 0.0f);
 
         g.setColour (ac.withAlpha (0.12f));
-        g.drawRoundedRectangle (innerScreen.toFloat().expanded (0.5f), 2.0f, 1.0f);
+        g.drawRoundedRectangle(innerScreen.toFloat().expanded (0.5f), 0.0f, 1.0f);
         return innerScreen;
     }();
 

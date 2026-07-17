@@ -414,7 +414,7 @@ void SfzDropdownPanel::paint (juce::Graphics& g)
             juce::ColourGradient bg (theme.darkBar.darker (0.35f), 0.f, 0.f,
                                       theme.darkBar.darker (0.10f), 0.f, (float) h, false);
             g.setGradientFill (bg);
-            g.fillRoundedRectangle (bounds, 4.0f);
+            g.fillRoundedRectangle(bounds, 0.0f);
         }
 
         const int sepY = kStripH;
@@ -468,7 +468,7 @@ void SfzDropdownPanel::drawSf2ChStrip (juce::Graphics& g) const
     {
         // Subtle button backgrounds
         g.setColour ((disabled ? dim : accent).withAlpha (0.18f));
-        const float spinnerR = (theme.name == "metro") ? 0.0f : 3.f;
+        const float spinnerR = 0.0f;   // flat, all themes
         g.fillRoundedRectangle (decR.toFloat(), spinnerR);
         g.fillRoundedRectangle (incR.toFloat(), spinnerR);
 
@@ -635,7 +635,7 @@ void SfzDropdownPanel::drawMeter (juce::Graphics& g) const
     auto rightBar = juce::Rectangle<int> (area.getX() + barW + 4,  area.getY(), barW, barH);
 
     const bool metroMeter = (theme.name == "metro");
-    const float meterR = metroMeter ? 0.0f : 2.0f;
+    const float meterR = 0.0f;   // flat, all themes
 
     g.setColour (theme.darkBar.darker (0.2f));
     g.fillRoundedRectangle (leftBar.toFloat(),  meterR);
@@ -658,7 +658,7 @@ void SfzDropdownPanel::drawMeter (juce::Graphics& g) const
                 juce::ColourGradient grad (theme.accent.withAlpha (0.85f), 0.f, (float) bar.getBottom(),
                                             theme.accent.brighter (0.5f),  0.f, (float) bar.getY(), false);
                 g.setGradientFill (grad);
-                g.fillRoundedRectangle (fillArea, 2.0f);
+                g.fillRoundedRectangle(fillArea, 0.0f);
             }
         }
         const int holdY = bar.getBottom() - juce::roundToInt ((float) bar.getHeight()

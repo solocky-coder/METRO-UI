@@ -78,7 +78,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
 
     // Background
     g.setColour (theme.darkBar.darker (0.45f));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
+    g.fillRoundedRectangle(getLocalBounds().toFloat(), 0.0f);
 
     // Breadcrumb bar background
     g.setColour (theme.darkBar.darker (0.20f));
@@ -91,7 +91,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
         if (upHover)
         {
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle (upBtnZone.toFloat(), 2.0f);
+            g.fillRoundedRectangle(upBtnZone.toFloat(), 0.0f);
         }
         g.setFont (DysektLookAndFeel::makeFont (14.0f * sf));
         g.setColour (canGoUp ? theme.accent.withAlpha (0.90f)
@@ -359,7 +359,7 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
             const auto badgeRect = juce::Rectangle<int> (w - badgeW - juce::roundToInt (4 * sf),
                                                           (h - badgeH) / 2, badgeW, badgeH);
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle (badgeRect.toFloat(), 2.0f * sf);
+            g.fillRoundedRectangle(badgeRect.toFloat(), 0.0f);
             g.setFont (DysektLookAndFeel::makeFont (10.0f * sf));
             g.setColour (theme.accent.withAlpha (0.80f));
             g.drawText (ext, badgeRect, juce::Justification::centred, false);

@@ -362,9 +362,9 @@ void SliceLcdDisplay::drawFlagsRow (juce::Graphics& g, int /*row*/)
         juce::Rectangle<int> box (fx, stripY, flagW, flagH);
         flagHitRects.push_back ({ box, f.fieldId, f.isCycle });
 
-        fillPhosphorFlag (g, box.toFloat(), pal.phosphor, pal.flagBg, f.on, 2.0f);
+        fillPhosphorFlag (g, box.toFloat(), pal.phosphor, pal.flagBg, f.on, 0.0f);
         g.setColour (f.on ? pal.flagOn : pal.flagOff);
-        g.drawRoundedRectangle (box.toFloat(), 2.0f, 1.0f);
+        g.drawRoundedRectangle(box.toFloat(), 0.0f, 1.0f);
         g.drawText (f.text, box.getX() + pad, box.getY(),
                     box.getWidth() - pad * 2, box.getHeight(),
                     juce::Justification::centred, false);
@@ -638,9 +638,9 @@ void SliceLcdDisplay::paint (juce::Graphics& g)
             const int lkY = y + 1;
             const int lkH = rowH - 3;
             g.setColour (pal.phosphor.withAlpha (0.25f));
-            g.fillRoundedRectangle ((float) lkX, (float) lkY, (float) lkW, (float) lkH, 2.0f);
+            g.fillRoundedRectangle((float) lkX, (float) lkY, (float) lkW, (float) lkH, 0.0f);
             g.setColour (pal.highlight);
-            g.drawRoundedRectangle ((float) lkX, (float) lkY, (float) lkW, (float) lkH, 2.0f, 1.0f);
+            g.drawRoundedRectangle((float) lkX, (float) lkY, (float) lkW, (float) lkH, 0.0f, 1.0f);
             g.setFont (lkF);
             g.setColour (pal.highlight);
             g.drawText (lkStr, lkX + 3, lkY, lkW - 6, lkH, juce::Justification::centred, false);

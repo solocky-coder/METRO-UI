@@ -43,7 +43,7 @@ public:
     {
         const auto& theme = getTheme();
         g.setColour (theme.darkBar.darker (0.35f));
-        g.fillRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
+        g.fillRoundedRectangle(getLocalBounds().toFloat(), 0.0f);
 
         if (strips.empty())
         {
@@ -179,7 +179,7 @@ private:
         const auto& theme = getTheme();
         const bool soloed = (soloedChannel == s.channel);
         g.setColour (soloed ? theme.accent.withAlpha (0.08f) : theme.darkBar.darker (0.15f));
-        g.fillRoundedRectangle (s.bounds.reduced (2).toFloat(), 3.0f);
+        g.fillRoundedRectangle(s.bounds.reduced (2).toFloat(), 0.0f);
         g.setColour (theme.accent.withAlpha (0.12f));
         g.fillRect (s.bounds.getRight() - 1, s.bounds.getY() + 4, 1, s.bounds.getHeight() - 8);
 
@@ -188,20 +188,20 @@ private:
         g.drawText (s.name, s.nameLbl, juce::Justification::centredLeft, true);
 
         g.setColour (theme.accent.withAlpha (0.22f));
-        g.fillRoundedRectangle (s.chBadge.toFloat(), 2.0f);
+        g.fillRoundedRectangle(s.chBadge.toFloat(), 0.0f);
         g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
         g.setColour (theme.accent.withAlpha (0.90f));
         g.drawText (juce::String (s.midiCh), s.chBadge, juce::Justification::centred, false);
 
         const bool muted = state.muted;
         g.setColour (muted ? juce::Colour (0xFFFF6B6B).withAlpha (0.85f) : theme.darkBar.brighter (0.20f));
-        g.fillRoundedRectangle (s.muteBtn.toFloat(), 2.0f);
+        g.fillRoundedRectangle(s.muteBtn.toFloat(), 0.0f);
         g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
         g.setColour (muted ? juce::Colours::white : theme.foreground.withAlpha (0.65f));
         g.drawText ("M", s.muteBtn, juce::Justification::centred, false);
 
         g.setColour (soloed ? juce::Colour (0xFFFFD93D).withAlpha (0.85f) : theme.darkBar.brighter (0.20f));
-        g.fillRoundedRectangle (s.soloBtn.toFloat(), 2.0f);
+        g.fillRoundedRectangle(s.soloBtn.toFloat(), 0.0f);
         g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
         g.setColour (soloed ? juce::Colours::black : theme.foreground.withAlpha (0.65f));
         g.drawText ("S", s.soloBtn, juce::Justification::centred, false);
@@ -246,17 +246,17 @@ private:
         if (track.getHeight() < 10) return;
         const int trackX = track.getCentreX() - 3, trackW = 6;
         g.setColour (theme.darkBar.brighter (0.10f));
-        g.fillRoundedRectangle ((float) trackX, (float) track.getY(), (float) trackW, (float) track.getHeight(), 3.0f);
+        g.fillRoundedRectangle((float) trackX, (float) track.getY(), (float) trackW, (float) track.getHeight(), 0.0f);
 
         const float vol  = state.muted ? state.preMuteVol : state.volume;
         const int fillH  = juce::roundToInt ((float) track.getHeight() * vol);
         const int fillY  = track.getBottom() - fillH;
         g.setColour (state.muted ? theme.accent.withAlpha (0.30f) : theme.accent.withAlpha (0.55f));
         if (fillH > 0)
-            g.fillRoundedRectangle ((float) trackX, (float) fillY, (float) trackW, (float) fillH, 3.0f);
+            g.fillRoundedRectangle((float) trackX, (float) fillY, (float) trackW, (float) fillH, 0.0f);
 
         g.setColour (state.muted ? theme.foreground.withAlpha (0.30f) : theme.foreground.withAlpha (0.85f));
-        g.fillRoundedRectangle ((float)(trackX - 5), (float)(fillY - 4), (float)(trackW + 10), 8.0f, 2.0f);
+        g.fillRoundedRectangle((float)(trackX - 5), (float)(fillY - 4), (float)(trackW + 10), 8.0f, 0.0f);
 
         const float db = juce::Decibels::gainToDecibels (vol);
         g.setFont (DysektLookAndFeel::makeFont (9.0f));

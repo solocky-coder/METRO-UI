@@ -50,7 +50,7 @@ public:
             const auto muteR = rowR.withTrimmedLeft (rowR.getWidth() - muteW - 4)
                                    .withSizeKeepingCentre (muteW, muteH);
             g.setColour (info.enabled ? juce::Colour (0xFF2A8060) : juce::Colour (0xFF602020));
-            g.fillRoundedRectangle (muteR.toFloat(), 3.f);
+            g.fillRoundedRectangle(muteR.toFloat(), 0.0f);
             g.setColour (juce::Colours::white.withAlpha (0.7f));
             g.setFont (juce::Font (juce::jlimit (10.5f, 16.5f, (float)trackH * 0.22f), juce::Font::bold));
             g.drawText (info.enabled ? "M" : "m", muteR, juce::Justification::centred, false);

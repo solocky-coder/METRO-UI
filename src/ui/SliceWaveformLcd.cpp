@@ -981,9 +981,9 @@ void SliceWaveformLcd::drawNodes (juce::Graphics& g, const juce::Rectangle<float
  g.strokePath (shackle, juce::PathStrokeType (1.2f));
  // body rect
  g.setColour (node.colour.withAlpha (hov ? 0.70f : 0.50f));
- g.fillRoundedRectangle (lx, ly, 6.0f, 5.0f, 1.0f);
+ g.fillRoundedRectangle(lx, ly, 6.0f, 5.0f, 0.0f);
  g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.80f));
- g.drawRoundedRectangle (lx, ly, 6.0f, 5.0f, 1.0f, 0.8f);
+ g.drawRoundedRectangle(lx, ly, 6.0f, 5.0f, 0.0f, 0.8f);
  }
 
  // Label BELOW node (always inside frame)

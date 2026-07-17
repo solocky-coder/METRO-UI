@@ -129,7 +129,7 @@ static void ap_drawPiano (juce::Graphics& g, float cx, float cy, float sz, juce:
 {
     const float kw = sz * 0.11f; const float kh = sz * 0.44f; const float bh = kh * 0.58f;
     const float startX = cx - kw * 2.5f;
-    const float keyRadius = (getTheme().name == "metro") ? 0.0f : 0.8f;
+    const float keyRadius = 0.0f;   // flat, all themes
     g.setColour (col.withAlpha (0.85f));
     for (int i = 0; i < 5; ++i)
         g.fillRoundedRectangle (startX + i * (kw + 1.f), cy - kh * 0.5f, kw, kh, keyRadius);

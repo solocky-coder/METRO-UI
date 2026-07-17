@@ -297,7 +297,7 @@ void SfzWaveformLcd::drawWaveformBackdrop (juce::Graphics& g,
         const float barW  = W * windowFrac;
         const float barX  = cx + scrollFrac * (W - barW);
         g.setColour (sfzLcd2Phosphor().withAlpha (0.25f));
-        g.fillRoundedRectangle (barX, barY, barW, 2.0f, 1.0f);
+        g.fillRoundedRectangle(barX, barY, barW, 2.0f, 0.0f);
     }
 }
 

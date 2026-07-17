@@ -193,9 +193,8 @@ void Sf2ProgramGrid::resized()
 void Sf2ProgramGrid::paint (juce::Graphics& g)
 {
     const auto& theme = gridTheme();
-    const bool  metro = (theme.name == "metro");
-    const float r     = metro ? 0.0f : 3.0f;    // cell/background corner radius
-    const float rBadge = metro ? 0.0f : 2.0f;   // channel-badge corner radius
+    const float r      = 0.0f;   // cell/background corner radius — flat, all themes
+    const float rBadge = 0.0f;   // channel-badge corner radius — flat, all themes
     const int   availW = getWidth() - (scrollBar.isVisible() ? kScrollW : 0);
     const int   cellW  = availW / kCols;           // fills full width, no kPad gap
     const int   w      = cellW * kCols;            // actual grid width (≤ availW by integer division)

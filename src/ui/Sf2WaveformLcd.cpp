@@ -545,7 +545,7 @@ void Sf2WaveformLcd::drawWaveformBackdrop (juce::Graphics& g,
         const float barW  = W * windowFrac;
         const float barX  = cx;
         g.setColour (sf2Lcd2Phosphor().withAlpha (0.25f));
-        g.fillRoundedRectangle (barX, barY, barW, 2.0f, 1.0f);
+        g.fillRoundedRectangle(barX, barY, barW, 2.0f, 0.0f);
     }
 }
 

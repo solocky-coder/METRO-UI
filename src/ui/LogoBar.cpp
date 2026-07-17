@@ -81,10 +81,10 @@ void LogoBar::paint (juce::Graphics& g)
     else
     {
         g.setColour (accent.withAlpha (0.18f));
-        g.drawRoundedRectangle (fr.expanded (0.5f), 5.0f, 1.0f);
+        g.drawRoundedRectangle(fr.expanded (0.5f), 0.0f, 1.0f);
         g.setColour (accent);
-        g.drawRoundedRectangle (fr.reduced (0.5f), 4.0f, 1.5f);
+        g.drawRoundedRectangle(fr.reduced (0.5f), 0.0f, 1.5f);
         g.setColour (accent.withAlpha (0.15f));
-        g.drawRoundedRectangle (fr.reduced (2.0f), 3.5f, 1.0f);
+        g.drawRoundedRectangle(fr.reduced (2.0f), 0.0f, 1.0f);
     }
 }

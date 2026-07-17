@@ -885,7 +885,7 @@ void DysektEditor::paint (juce::Graphics& g)
  juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0.f, outerF.getY(),
  juce::Colour (0xFF0E0E0E), 0.f, outerF.getBottom(), false);
  g.setGradientFill (outerGrad);
- g.fillRoundedRectangle (outerF, 4.0f);
+ g.fillRoundedRectangle(outerF, 0.0f);
 
  const float sf = (float) designArea.getHeight() / (float) kTotalH;
  const auto screenF = outerF.reduced (4.0f * sf);
@@ -895,7 +895,7 @@ void DysektEditor::paint (juce::Graphics& g)
  juce::ColourGradient glow (getTheme().accent.withAlpha (0.06f), 0.f, screenF.getY(),
  juce::Colours::transparentBlack, 0.f, screenF.getY() + 20.f, false);
  g.setGradientFill (glow);
- g.fillRoundedRectangle (screenF, 2.0f);
+ g.fillRoundedRectangle(screenF, 0.0f);
  }
  }
 }
@@ -937,15 +937,15 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
      juce::Graphics::ScopedSaveState clip (g);
      g.reduceClipRegion (outerF.expanded (1.0f * sf).toNearestInt());
      g.setColour (ac.withAlpha (0.18f));
-     g.drawRoundedRectangle (outerF.expanded (1.0f * sf), 5.0f * sf, 1.0f * sf);
+     g.drawRoundedRectangle(outerF.expanded (1.0f * sf), 0.0f, 1.0f * sf);
  }
 
  g.setColour (ac.withAlpha (0.60f));
- g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.5f * sf);
+ g.drawRoundedRectangle(outerF.reduced (0.5f * sf), 0.0f, 1.5f * sf);
 
  const auto screenF = outerF.reduced (4.0f * sf);
  g.setColour (ac.withAlpha (0.30f));
- g.drawRoundedRectangle (screenF.expanded (0.5f * sf), 2.0f * sf, 1.0f * sf);
+ g.drawRoundedRectangle(screenF.expanded (0.5f * sf), 0.0f, 1.0f * sf);
  }
  }
 
@@ -973,14 +973,14 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
      juce::Graphics::ScopedSaveState clip (g);
      g.reduceClipRegion (outerF.expanded (1.0f * sf).toNearestInt());
      g.setColour (ac.withAlpha (0.18f));
-     g.drawRoundedRectangle (outerF.expanded (1.0f * sf), 5.0f * sf, 1.0f * sf);
+     g.drawRoundedRectangle(outerF.expanded (1.0f * sf), 0.0f, 1.0f * sf);
  }
 
  g.setColour (ac.withAlpha (0.60f));
- g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.5f * sf);
+ g.drawRoundedRectangle(outerF.reduced (0.5f * sf), 0.0f, 1.5f * sf);
 
  g.setColour (ac.withAlpha (0.30f));
- g.drawRoundedRectangle (outerF.reduced (4.0f * sf), 2.0f * sf, 1.0f * sf);
+ g.drawRoundedRectangle(outerF.reduced (4.0f * sf), 0.0f, 1.0f * sf);
  }
  }
 
@@ -1022,14 +1022,14 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
      juce::Graphics::ScopedSaveState clip (g);
      g.reduceClipRegion (outerF.expanded (1.0f * sf).toNearestInt());
      g.setColour (ac.withAlpha (0.18f));
-     g.drawRoundedRectangle (outerF.expanded (1.0f * sf), 5.0f * sf, 1.0f * sf);
+     g.drawRoundedRectangle(outerF.expanded (1.0f * sf), 0.0f, 1.0f * sf);
  }
 
  g.setColour (ac.withAlpha (0.60f));
- g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 4.0f * sf, 1.5f * sf);
+ g.drawRoundedRectangle(outerF.reduced (0.5f * sf), 0.0f, 1.5f * sf);
 
  g.setColour (ac.withAlpha (0.30f));
- g.drawRoundedRectangle (outerF.reduced (4.0f * sf), 2.0f * sf, 1.0f * sf);
+ g.drawRoundedRectangle(outerF.reduced (4.0f * sf), 0.0f, 1.0f * sf);
  }
  }
  }
@@ -1048,11 +1048,11 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  else
  {
  g.setColour (ac.withAlpha (0.18f));
- g.drawRoundedRectangle (logoF.expanded (1.0f * sf), 5.0f * sf, 1.0f * sf);
+ g.drawRoundedRectangle(logoF.expanded (1.0f * sf), 0.0f, 1.0f * sf);
  g.setColour (ac.withAlpha (0.72f));
- g.drawRoundedRectangle (logoF.reduced (0.5f * sf), 4.0f * sf, 1.5f * sf);
+ g.drawRoundedRectangle(logoF.reduced (0.5f * sf), 0.0f, 1.5f * sf);
  g.setColour (ac.withAlpha (0.18f));
- g.drawRoundedRectangle (logoF.reduced (2.0f * sf), 3.5f * sf, 1.0f * sf);
+ g.drawRoundedRectangle(logoF.reduced (2.0f * sf), 0.0f, 1.0f * sf);
  }
  }
 
@@ -1068,9 +1068,9 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  else
  {
  g.setColour (ac.withAlpha (0.60f));
- g.drawRoundedRectangle (win.reduced (2.0f * sf), 2.5f * sf, 1.5f * sf);
+ g.drawRoundedRectangle(win.reduced (2.0f * sf), 0.0f, 1.5f * sf);
  g.setColour (ac.withAlpha (0.14f));
- g.drawRoundedRectangle (win.reduced (4.0f * sf), 2.0f * sf, 1.0f * sf);
+ g.drawRoundedRectangle(win.reduced (4.0f * sf), 0.0f, 1.0f * sf);
  }
  }
 }

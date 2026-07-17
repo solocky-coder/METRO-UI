@@ -71,14 +71,14 @@ void GlobalEqPanel::paint (juce::Graphics& g)
             auto bgBot = theme.darkBar.darker (0.65f);
             juce::ColourGradient grad (bgTop, 0, 0, bgBot, 0, bounds.getHeight(), false);
             g.setGradientFill (grad);
-            g.fillRoundedRectangle (bounds, 4.f);
+            g.fillRoundedRectangle(bounds, 0.0f);
 
             // Outer glow ring
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.drawRoundedRectangle (bounds.expanded (1.0f), 5.f, 1.0f);
+            g.drawRoundedRectangle(bounds.expanded (1.0f), 0.0f, 1.0f);
             // Main accent border
             g.setColour (theme.accent.withAlpha (0.60f));
-            g.drawRoundedRectangle (bounds.reduced (0.5f), 4.f, 1.5f);
+            g.drawRoundedRectangle(bounds.reduced (0.5f), 0.0f, 1.5f);
         }
     }
 

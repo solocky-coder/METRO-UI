@@ -1087,7 +1087,7 @@ private:
                 clipR.toFloat().reduced (1.f, 1.f)
                     .withLeft ((float)(clipR.getRight() - 8)));
             g.setColour (base.withAlpha (0.4f));
-            g.fillRoundedRectangle (handleR, 2.f);
+            g.fillRoundedRectangle(handleR, 0.0f);
             g.setColour (base.brighter (0.5f).withAlpha (0.45f));
             const float cx = handleR.getCentreX();
             for (int dot = 0; dot < 3; ++dot)
@@ -1143,7 +1143,7 @@ private:
                 const float nh = juce::jmax (1.5f, (float)previewH / (float)range);
                 const float va = muted ? 0.22f : (0.4f + 0.5f * n.velocity / 127.f);
                 g.setColour (base.brighter (0.2f).withAlpha (va));
-                g.fillRoundedRectangle (nx, ny, nw, nh, 0.5f);
+                g.fillRoundedRectangle(nx, ny, nw, nh, 0.0f);
             }
         }
 
