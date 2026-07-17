@@ -6,7 +6,7 @@
 #include "UIHelpers.h"
 
 //==============================================================================
-//  TransportLAF  —  flat tile buttons with a small coloured indicator dot
+//  TransportLAF  —  flat Metro tile buttons with semantic function colours
 //==============================================================================
 class TransportLAF : public DysektLookAndFeel
 {
@@ -23,30 +23,19 @@ public:
     {
         auto bounds = btn.getLocalBounds().toFloat().reduced (1.0f);
 
-        // Flat tile — slightly lighter on hover/press
+        // Flat Metro tile: every control carries a restrained, semantic tint.
+        // Pressed/toggled states intensify it without adding bevels or gradients.
         const auto& theme = getTheme();
-        const juce::Colour tile = isDown        ? theme.buttonHover
-                                : isHighlighted ? theme.button.brighter (0.08f)
-                                                : theme.button;
-        g.setColour (tile);
+        const juce::Colour semantic = colours.count (&btn) ? colours.at (&btn)
+                                                            : juce::Colours::white;
+        const bool on = btn.getToggleState();
+        const float tint = isDown ? 0.58f : (on ? 0.46f : (isHighlighted ? 0.34f : 0.24f));
+        g.setColour (theme.button.interpolatedWith (semantic, tint));
         g.fillRoundedRectangle (bounds, 0.0f);
 
-        // Hairline border — just enough to separate from the background
-        g.setColour (theme.separator);
+        // Hairline border — just enough to separate the square Metro tiles.
+        g.setColour (semantic.withAlpha (on ? 0.85f : 0.48f));
         g.drawRoundedRectangle (bounds, 0.0f, 0.5f);
-
-        // Indicator dot — top-right corner, only when the button is on
-        const bool on = btn.getToggleState();
-        if (on)
-        {
-            const juce::Colour dot = colours.count (&btn) ? colours.at (&btn)
-                                                          : juce::Colours::white;
-            const float dotR = 2.8f;
-            const float dotX = bounds.getRight() - dotR * 2.f - 2.f;
-            const float dotY = bounds.getY()     + 2.f;
-            g.setColour (dot);
-            g.fillEllipse (dotX, dotY, dotR * 2.f, dotR * 2.f);
-        }
     }
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& btn,
@@ -54,12 +43,12 @@ public:
     {
         const bool on = btn.getToggleState();
 
-        // Active: use the dot colour so icon and dot share the same hue
+        // Keep the function colour legible in every state, not just when toggled.
         juce::Colour base = colours.count (&btn) ? colours.at (&btn)
                                                  : juce::Colours::white;
-        const juce::Colour textCol = on    ? base.brighter (0.3f).withAlpha (0.95f)
-                                   : isDown ? juce::Colours::white.withAlpha (0.90f)
-                                           : juce::Colours::white.withAlpha (0.50f);
+        const juce::Colour textCol = on    ? juce::Colours::white.withAlpha (0.98f)
+                                   : isDown ? juce::Colours::white.withAlpha (0.94f)
+                                           : base.brighter (0.22f).withAlpha (0.94f);
         g.setColour (textCol);
         g.setFont (juce::Font (11.5f, juce::Font::bold));
         g.drawText (btn.getButtonText(), btn.getLocalBounds(),
@@ -100,8 +89,8 @@ public:
         };
 
         // Text-label transport buttons (flat, no icons)
-        addBtn (rewindBtn, "REWIND",  cRewind);        // dot mirrors nothing — one-shot action
-        addBtn (playBtn,   "PLAY",    cPlay,  true);   // toggle — dot mirrors engine.isPlaying()
+        addBtn (rewindBtn, "REWIND",  cRewind);        // one-shot action
+        addBtn (playBtn,   "PLAY",    cPlay,  true);   // toggle — syncs to engine.isPlaying()
         addBtn (stopBtn,   "STOP",    cStop);
         addBtn (recBtn,    "RECORD",  cRec,   true);
         addBtn (loopBtn,   "LOOP",    cLoop,  true);
@@ -200,8 +189,14 @@ public:
     //==========================================================================
     void resized() override
     {
-        auto b   = getLocalBounds().reduced (4, 2);
-        const int btnH  = b.getHeight();
+        auto b = getLocalBounds().reduced (4, 0);
+        // One shared content height and Y coordinate keeps buttons, labels, and
+        // the snap selector geometrically centred in the transport row.
+        const int contentH = juce::jmax (1, b.getHeight() - 4);
+        const int contentY = (getHeight() - contentH) / 2;
+        b.setY (contentY);
+        b.setHeight (contentH);
+        const int btnH = contentH;
         const int btnW  = 76;              // wide enough for "REWIND"/"RECORD" text labels
         const int bpmW  = 82;
         const int snapW = 58;
@@ -255,7 +250,7 @@ private:
     {
         const auto& t = getTheme();
 
-        // Mirror engine play state onto playBtn toggle so the dot shows while playing
+        // Mirror engine play state onto playBtn toggle for its active colour state
         const bool playing = engine.isPlaying();
         if (playBtn.getToggleState() != playing)
             playBtn.setToggleState (playing, juce::dontSendNotification);
