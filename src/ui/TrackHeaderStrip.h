@@ -40,11 +40,19 @@ public:
             const auto rowR  = getRowBounds (i);
             const bool sel   = (i == selectedTrack);
 
-            g.setColour (sel ? theme.accent.withAlpha (0.18f) : theme.header);
+            g.setColour (sel ? theme.accent.withAlpha (0.16f) : theme.header);
             g.fillRect (rowR);
 
+            // Flat left accent bar on the selected row — same visual language
+            // as Image 2's active sidebar-tab highlight.
+            if (sel)
+            {
+                g.setColour (theme.accent);
+                g.fillRect (rowR.getX(), rowR.getY(), 3, rowR.getHeight());
+            }
+
             g.setColour (info.colour);
-            g.fillRect (rowR.withTrimmedRight (rowR.getWidth() - 4).toFloat());
+            g.fillRect (rowR.withTrimmedLeft (3).withTrimmedRight (rowR.getWidth() - 7).toFloat());
 
             // Mute button — semantic state colour, kept consistent across themes.
             const int muteW  = juce::jlimit (20, 28, trackH - 8);
@@ -67,10 +75,10 @@ public:
                            (float)(dotR * 2), (float)(dotR * 2));
 
             // Track name
-            g.setFont (juce::Font (juce::jlimit (16.5f, 22.5f, (float)trackH * 0.30f), juce::Font::bold));
+            g.setFont (juce::Font (juce::jlimit (18.0f, 26.0f, (float)trackH * 0.34f), juce::Font::bold));
             g.setColour (sel ? info.colour : theme.foreground);
-            g.drawText (info.name, rowR.getX() + 6, rowR.getY(),
-                        rowR.getWidth() - muteW - 12, trackH,
+            g.drawText (info.name, rowR.getX() + 14, rowR.getY(),
+                        rowR.getWidth() - muteW - 22, trackH,
                         juce::Justification::centredLeft, true);
 
             // Type + channel badge
@@ -83,16 +91,16 @@ public:
                     case TrackType::ChromaticSlice: badge = "CH"; break;
                     case TrackType::SfPlayer:       badge = "SF"; break;
                 }
-                g.setFont (juce::Font (juce::jlimit (12.0f, 16.5f, (float)trackH * 0.18f)));
+                g.setFont (juce::Font (juce::jlimit (13.0f, 18.0f, (float)trackH * 0.20f)));
                 g.setColour (info.colour.withAlpha (0.6f));
-                g.drawText (badge, rowR.getX() + 6, rowR.getCentreY(), 24, trackH / 2,
+                g.drawText (badge, rowR.getX() + 14, rowR.getCentreY(), 26, trackH / 2,
                             juce::Justification::centredLeft, false);
 
                 if (info.type == TrackType::SfPlayer || info.type == TrackType::ChromaticSlice)
                 {
                     g.setColour (info.colour.withAlpha (0.85f));
                     g.drawText ("CH" + juce::String (info.midiChannel + 1),
-                                rowR.getX() + 32, rowR.getCentreY(), 44, trackH / 2,
+                                rowR.getX() + 42, rowR.getCentreY(), 46, trackH / 2,
                                 juce::Justification::centredLeft, false);
                 }
             }

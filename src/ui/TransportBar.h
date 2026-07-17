@@ -61,7 +61,7 @@ public:
                                    : isDown ? juce::Colours::white.withAlpha (0.90f)
                                            : juce::Colours::white.withAlpha (0.50f);
         g.setColour (textCol);
-        g.setFont (juce::Font (15.f));
+        g.setFont (juce::Font (11.5f, juce::Font::bold));
         g.drawText (btn.getButtonText(), btn.getLocalBounds(),
                     juce::Justification::centred, false);
     }
@@ -99,12 +99,12 @@ public:
             addAndMakeVisible (b);
         };
 
-        // Unicode glyphs: rewind ⏮  play ▶  stop ■  rec ⏺  loop ↻
-        addBtn (rewindBtn, juce::String::fromUTF8 ("\xe2\x8f\xae"),  cRewind);        // ⏮
-        addBtn (playBtn,   juce::String::fromUTF8 ("\xe2\x96\xb6"),  cPlay,  true); // ▶ toggle — dot mirrors engine.isPlaying()
-        addBtn (stopBtn,   juce::String::fromUTF8 ("\xe2\x96\xa0"),  cStop);         // ■
-        addBtn (recBtn,    juce::String::fromUTF8 ("\xe2\x8f\xba"),  cRec,   true); // ⏺
-        addBtn (loopBtn,   juce::String::fromUTF8 ("\xe2\x86\xbb"),  cLoop,  true); // ↻
+        // Text-label transport buttons (flat, no icons)
+        addBtn (rewindBtn, "REWIND",  cRewind);        // dot mirrors nothing — one-shot action
+        addBtn (playBtn,   "PLAY",    cPlay,  true);   // toggle — dot mirrors engine.isPlaying()
+        addBtn (stopBtn,   "STOP",    cStop);
+        addBtn (recBtn,    "RECORD",  cRec,   true);
+        addBtn (loopBtn,   "LOOP",    cLoop,  true);
 
         loopBtn.setToggleState (true, juce::dontSendNotification);
 
@@ -202,7 +202,7 @@ public:
     {
         auto b   = getLocalBounds().reduced (4, 2);
         const int btnH  = b.getHeight();
-        const int btnW  = btnH + 4;        // slightly wider than tall — square-ish
+        const int btnW  = 76;              // wide enough for "REWIND"/"RECORD" text labels
         const int bpmW  = 82;
         const int snapW = 58;
         const int posW  = 90;

@@ -45,7 +45,7 @@ class ArrangeView : public juce::Component,
 {
 public:
     static constexpr int kTransportH   = 34;
-    static constexpr int kStripW       = 160;
+    static constexpr int kStripW       = 200;
     static constexpr int kRulerH       = 28;
     static constexpr int kScrollH      = 14;
     static constexpr int kScrollW      = 14;
