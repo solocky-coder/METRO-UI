@@ -235,8 +235,8 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        UIHelpers::drawTexturedPanel (g, getLocalBounds().toFloat(), getTheme().darkBar,
-                                       UIHelpers::PanelZone::Chassis);
+        g.setColour (getTheme().darkBar);
+        g.fillRect (getLocalBounds());
         g.setColour (getTheme().separator);
         g.fillRect (getLocalBounds().removeFromBottom (1));
     }
