@@ -19,27 +19,29 @@ namespace MetroTheme
     {
         ThemeData t;
         t.name             = "metro";
-        // Anchors are the Engineering Manual v1's authoritative values:
-        // Background #1E1E1E, Surface #252526, Text #FFFFFF, Accent #0078D7,
-        // Secondary #C8C8C8. The manual has no "Raised" tier, so hover/grid/
-        // separator/waveformBg are re-derived here from those anchors using
-        // the same relative-brightness ratios as the previous (pre-manual)
-        // palette: hover/grid ≈ Surface brightened ~4%, separator ≈ Surface
-        // brightened ~7%, waveformBg/darkBar ≈ Background darkened ~19%.
-        t.background       = juce::Colour (0xFF1E1E1E);   // Background
-        t.waveformBg       = juce::Colour (0xFF181818);   // Background, darkened ~19%
-        t.darkBar          = juce::Colour (0xFF181818);   // Background, darkened ~19%
+        // Anchors, updated for a more authentically flat-Metro feel: true-black
+        // canvas instead of a dimmed dark gray, a bigger step up to the next
+        // tier so panels/bars/buttons actually separate instead of blurring
+        // together, and a punchier accent (#2899F5, current Fluent "Windows
+        // blue") for more pop against true black. Swap to #0078D7 instead if
+        // you want the period-accurate Windows 8 accent rather than the
+        // modern Fluent one — everything below is derived from this one
+        // constant, so a single-line change re-tints the whole theme.
+        static const juce::Colour kAccent (0xFF2899F5);
+        t.background       = juce::Colour (0xFF000000);   // true-black canvas
+        t.waveformBg       = juce::Colour (0xFF0C0C0C);    // Bars, barely lifted off canvas
+        t.darkBar          = juce::Colour (0xFF0C0C0C);    // Bars, barely lifted off canvas
         t.foreground       = juce::Colour (0xFFFFFFFF);   // Text
-        t.header           = juce::Colour (0xFF1E1E1E);   // top bar == Background
-        t.waveform         = juce::Colour (0xFF0078D7);   // Accent waveform
-        t.selectionOverlay = juce::Colour (0xFF0078D7).withAlpha (0.22f);
-        t.lockActive       = juce::Colour (0xFF0078D7);   // Accent
+        t.header           = juce::Colour (0xFF000000);   // top bar == Background
+        t.waveform         = kAccent;                      // Accent waveform
+        t.selectionOverlay = kAccent.withAlpha (0.22f);
+        t.lockActive       = kAccent;                      // Accent
         t.lockInactive     = juce::Colour (0xFF4A4A4A);   // muted secondary — not manual-anchored
-        t.gridLine         = juce::Colour (0xFF2E2E2F);   // Surface, brightened ~4%
-        t.accent           = juce::Colour (0xFF0078D7);   // Accent
-        t.button           = juce::Colour (0xFF252526);   // Surface
-        t.buttonHover      = juce::Colour (0xFF2E2E2F);   // Surface, brightened ~4%
-        t.separator        = juce::Colour (0xFF343435);   // Surface, brightened ~7%
+        t.gridLine         = juce::Colour (0xFF2B2B2B);    // Surface, brightened
+        t.accent           = kAccent;                      // Accent
+        t.button           = juce::Colour (0xFF1F1F1F);    // Surface, clearly lifted off canvas
+        t.buttonHover      = juce::Colour (0xFF2B2B2B);    // Surface, brightened
+        t.separator        = juce::Colour (0xFF383838);    // Surface, brightened further
 
         // Windows/Metro tile colour set — flat, single-hue swatches, no neon —
         // used for slice colours across the pad grid / mixer / waveform.
