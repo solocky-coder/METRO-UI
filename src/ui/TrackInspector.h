@@ -49,18 +49,11 @@ public:
             return value < 0.0 ? "L" + juce::String ((int) -value) : "R" + juce::String ((int) value);
         };
 
-        automationBox.addItem ("Read",  1);
-        automationBox.addItem ("Write", 2);
-        automationBox.addItem ("Touch", 3);
-        automationBox.addItem ("Latch", 4);
-        automationBox.setSelectedId (1, juce::dontSendNotification);
-
         for (auto* control : { static_cast<juce::Component*> (&inputBox),
                                 static_cast<juce::Component*> (&outputBox),
                                 static_cast<juce::Component*> (&channelBox),
                                 static_cast<juce::Component*> (&volumeSlider),
-                                static_cast<juce::Component*> (&panSlider),
-                                static_cast<juce::Component*> (&automationBox) })
+                                static_cast<juce::Component*> (&panSlider) })
             addAndMakeVisible (*control);
 
         muteButton.onClick = [this]
@@ -118,19 +111,27 @@ public:
     //==========================================================================
     void resized() override
     {
-        auto area = getLocalBounds().reduced (10);
-        area.removeFromTop (58); // painted track identity header + mute/solo/rec/monitor row
-        area.removeFromTop (18); // "ROUTING" section label
-        layoutRow (area, inputBox);
-        layoutRow (area, outputBox);
-        if (channelBox.isVisible()) layoutRow (area, channelBox);
+        auto area = getLocalBounds().reduced (12);
+        area.removeFromTop (52); // selected-track identity card
+        area.removeFromTop (31); // performance control row + breathing room
+
+        area.removeFromTop (20); // ROUTING heading
+        layoutField (area, inputBox);
+        layoutField (area, outputBox);
+        if (channelBox.isVisible()) layoutField (area, channelBox);
+
         area.removeFromTop (10);
-        area.removeFromTop (18); // "CHANNEL" section label
-        layoutRow (area, volumeSlider);
-        layoutRow (area, panSlider);
-        area.removeFromTop (10);
-        area.removeFromTop (18); // "AUTOMATION" section label
-        layoutRow (area, automationBox);
+        area.removeFromTop (20); // CHANNEL heading
+        layoutField (area, volumeSlider);
+        layoutField (area, panSlider);
+
+        const int buttonW = juce::jmax (25, (getWidth() - 24 - 3 * 5) / 4);
+        const int buttonY = 67;
+        constexpr int buttonGap = 5;
+        muteButton   .setBounds (12 + 0 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        soloButton   .setBounds (12 + 1 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        recordButton .setBounds (12 + 2 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        monitorButton.setBounds (12 + 3 * (buttonW + buttonGap), buttonY, buttonW, 25);
     }
 
     void paint (juce::Graphics& g) override
@@ -141,46 +142,44 @@ public:
         g.setColour (theme.separator);
         g.fillRect (getWidth() - 1, 0, 1, getHeight());
 
-        auto area = getLocalBounds().reduced (10);
+        auto content = getLocalBounds().reduced (12);
         if (! hasTrack())
         {
             g.setColour (theme.foreground.withAlpha (0.42f));
-            g.setFont (juce::Font (11.5f));
-            g.drawFittedText ("SELECT A TRACK", area, juce::Justification::centred, 1);
+            g.setFont (DysektLookAndFeel::makeFont (12.0f, true));
+            g.drawFittedText ("SELECT A TRACK", content, juce::Justification::centred, 1);
             return;
         }
 
         const auto info = engine.getTrackInfo (selectedTrack);
-
+        auto card = content.removeFromTop (52).toFloat();
+        g.setColour (theme.button.brighter (0.06f));
+        g.fillRoundedRectangle (card, 6.0f);
+        g.setColour (theme.separator.brighter (0.12f));
+        g.drawRoundedRectangle (card.reduced (0.5f), 6.0f, 1.0f);
         g.setColour (info.colour);
-        g.fillRect (area.getX(), area.getY(), 4, 44);
+        g.fillRoundedRectangle ({ card.getX(), card.getY(), 4.0f, card.getHeight() }, 2.0f);
 
-        auto title = area.withTrimmedLeft (10).removeFromTop (22);
+        auto title = card.toNearestInt().withTrimmedLeft (13).reduced (0, 7).removeFromTop (19);
         g.setColour (theme.foreground);
-        g.setFont (juce::Font (13.5f, juce::Font::bold));
+        g.setFont (DysektLookAndFeel::makeFont (15.0f, true));
         g.drawFittedText (info.name.toUpperCase(), title, juce::Justification::centredLeft, 1);
 
-        auto subtitle = area.withTrimmedLeft (10).withTrimmedTop (22).removeFromTop (16);
-        g.setColour (info.colour.withAlpha (0.85f));
-        g.setFont (juce::Font (9.5f, juce::Font::bold));
+        auto subtitle = card.toNearestInt().withTrimmedLeft (13).withTrimmedTop (29).removeFromTop (13);
+        g.setColour (info.colour.withAlpha (0.90f));
+        g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
         g.drawText (trackTypeName (info.type), subtitle, juce::Justification::centredLeft, false);
 
-        // Mute / Solo / Record / Monitor row
-        const int buttonY   = 58;
-        const int buttonW   = juce::jmax (24, (getWidth() - 20 - 3 * 5) / 4);
-        const int buttonGap = 5;
-        muteButton   .setBounds (10 + 0 * (buttonW + buttonGap), buttonY, buttonW, 22);
-        soloButton   .setBounds (10 + 1 * (buttonW + buttonGap), buttonY, buttonW, 22);
-        recordButton .setBounds (10 + 2 * (buttonW + buttonGap), buttonY, buttonW, 22);
-        monitorButton.setBounds (10 + 3 * (buttonW + buttonGap), buttonY, buttonW, 22);
+        content.removeFromTop (31);
+        sectionLabel (g, "ROUTING", content.removeFromTop (20));
+        drawFieldLabel (g, "INPUT", inputBox);
+        drawFieldLabel (g, "OUTPUT", outputBox);
+        if (channelBox.isVisible()) drawFieldLabel (g, "PART", channelBox);
 
-        auto sections = getLocalBounds().reduced (10);
-        sections.removeFromTop (86);
-        sectionLabel (g, "ROUTING", sections.removeFromTop (18));
-        sections.removeFromTop (64 + (channelBox.isVisible() ? 32 : 0) + 10);
-        sectionLabel (g, "CHANNEL", sections.removeFromTop (18));
-        sections.removeFromTop (64 + 10);
-        sectionLabel (g, "AUTOMATION", sections.removeFromTop (18));
+        content.removeFromTop ((channelBox.isVisible() ? 3 : 2) * 42 + 10);
+        sectionLabel (g, "CHANNEL", content.removeFromTop (20));
+        drawFieldLabel (g, "VOLUME", volumeSlider);
+        drawFieldLabel (g, "PAN", panSlider);
     }
 
 private:
@@ -189,7 +188,7 @@ private:
     bool monitorEnabled  = true;
 
     juce::TextButton muteButton, soloButton, recordButton, monitorButton;
-    juce::ComboBox   inputBox, outputBox, channelBox, automationBox;
+    juce::ComboBox   inputBox, outputBox, channelBox;
     juce::Slider     volumeSlider, panSlider;
 
     bool hasTrack() const { return juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()); }
@@ -214,8 +213,7 @@ private:
                                 static_cast<juce::Component*> (&inputBox),
                                 static_cast<juce::Component*> (&outputBox),
                                 static_cast<juce::Component*> (&volumeSlider),
-                                static_cast<juce::Component*> (&panSlider),
-                                static_cast<juce::Component*> (&automationBox) })
+                                static_cast<juce::Component*> (&panSlider) })
             control->setVisible (visible);
         if (! visible) channelBox.setVisible (false);
     }
@@ -244,18 +242,28 @@ private:
         return "Not Routed";
     }
 
-    static void layoutRow (juce::Rectangle<int>& area, juce::Component& control)
+    static void layoutField (juce::Rectangle<int>& area, juce::Component& control)
     {
-        auto row = area.removeFromTop (26);
-        control.setBounds (row.withTrimmedTop (2));
-        area.removeFromTop (4);
+        auto field = area.removeFromTop (42);
+        control.setBounds (field.withTrimmedTop (14).withHeight (28));
+    }
+
+    static void drawFieldLabel (juce::Graphics& g, const juce::String& text, const juce::Component& control)
+    {
+        auto label = control.getBounds().withHeight (11).translated (0, -13);
+        g.setColour (getTheme().foreground.withAlpha (0.48f));
+        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+        g.drawText (text, label, juce::Justification::centredLeft, false);
     }
 
     static void sectionLabel (juce::Graphics& g, const juce::String& text, juce::Rectangle<int> bounds)
     {
-        g.setColour (getTheme().foreground.withAlpha (0.44f));
-        g.setFont (juce::Font (9.0f, juce::Font::bold));
+        g.setColour (getTheme().foreground.withAlpha (0.48f));
+        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
         g.drawText (text, bounds, juce::Justification::centredLeft);
+        const float ruleY = (float) bounds.getCentreY();
+        g.setColour (getTheme().separator.withAlpha (0.85f));
+        g.drawLine ((float) bounds.getX() + 56.0f, ruleY, (float) bounds.getRight(), ruleY, 1.0f);
     }
 
     void timerCallback() override
