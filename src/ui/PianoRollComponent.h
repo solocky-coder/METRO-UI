@@ -296,10 +296,21 @@ public:
 
         MidiClip* clip = engine.getClip (activeTrack, activeClip);
 
-        if (dragMode == DragMode::Move || dragMode == DragMode::Resize ||
-            dragMode == DragMode::Draw)
+        // NOTE: no pushUndo() here. The undo checkpoint for this whole drag
+        // gesture was already captured *before* the edit began, in
+        // handleDrawDown()/handleSelectDown(). Pushing another snapshot here
+        // (of the *post*-drag state) meant Ctrl+Z had to be pressed twice to
+        // undo a single drag: once to "undo" to the already-current
+        // post-drag state (a no-op), and again to reach the real pre-drag
+        // state.
+        if (dragMode == DragMode::Move && clip)
         {
-            if (clip) pushUndo (clip);   // commit snapshot after drag
+            // moveNote() intentionally leaves the note array unsorted during
+            // the drag (see MidiClip::moveNote) so that indices held here
+            // (selectedNotes, dragNoteIdx) stay valid for the whole gesture.
+            // Now that the gesture is over and those indices are about to be
+            // discarded, restore sorted order once.
+            clip->resortNotes();
         }
 
         dragMode    = DragMode::None;
@@ -919,7 +930,7 @@ private:
 
     void quantiseSelected (MidiClip* clip)
     {
-        if (! clip || snapTicks <= 0) return;
+        if (! clip || snapTicks <= 0 || selectedNotes.isEmpty()) return;
         pushUndo (clip);
         for (int idx : selectedNotes)
         {
@@ -935,14 +946,14 @@ private:
     void splitNote (MidiClip* clip, int idx, int64_t atTick)
     {
         if (! clip || ! juce::isPositiveAndBelow (idx, clip->getNotes().size())) return;
-        pushUndo (clip);
         MidiNote n;
         {
             const juce::ScopedReadLock sl (clip->getLock());
             n = clip->getNotes().getReference (idx);
         }
-        if (atTick <= n.startTick || atTick >= n.endTick()) return;
+        if (atTick <= n.startTick || atTick >= n.endTick()) return;   // no-op: don't push undo for nothing
 
+        pushUndo (clip);
         const int64_t origEnd  = n.endTick();
         clip->resizeNote (idx, atTick - n.startTick);
 
@@ -973,7 +984,7 @@ private:
         {
             if (i == idxA) continue;
             const auto& n = clip->getNotes().getReference (i);
-            if (n.note == noteNum && n.startTick >= aEnd)
+            if (n.note == noteNum && n.startTick == aEnd)   // must be truly adjacent, not just "later"
                 { idxB = i; break; }
         }
         if (idxB < 0) return;

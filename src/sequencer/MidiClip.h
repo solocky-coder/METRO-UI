@@ -61,6 +61,14 @@ public:
     void setNoteDuration  (int index, int64_t durationTicks);
     void clear();
 
+    /** Re-sorts the note array by startTick and rebuilds the midiList.
+     *  moveNote() deliberately does NOT do this itself (see its comment) —
+     *  callers that move notes interactively (e.g. a piano-roll drag) must
+     *  call this once after the whole gesture finishes, not after each
+     *  individual moveNote(). Playback reads notes in any order, so it is
+     *  safe for the array to be temporarily unsorted mid-drag. */
+    void resortNotes();
+
     int hitTest (int64_t tick, int noteNum) const;
 
     //==========================================================================

@@ -74,6 +74,21 @@ void MidiClip::moveNote (int index, int64_t newStartTick, int newNote)
     notes.getReference (index).startTick = juce::jmax ((int64_t) 0, newStartTick);
     if (newNote >= 0 && newNote <= 127)
         notes.getReference (index).note = newNote;
+    // NOTE: deliberately no notes.sort() here. The array is kept sorted by
+    // startTick, and re-sorting on every single moveNote() call silently
+    // reassigns every OTHER note's index whenever this note's startTick
+    // crosses a neighbor's — which corrupts any index a caller is still
+    // holding (e.g. a multi-note drag holding several indices, or a
+    // piano-roll drag holding one index across several mouseDrag calls).
+    // Callers doing interactive/batched moves must call resortNotes() once
+    // after the whole gesture completes instead. Playback does not depend
+    // on note order, so a temporarily-unsorted array is safe.
+    rebuildMidiList();
+}
+
+void MidiClip::resortNotes()
+{
+    const juce::ScopedWriteLock sl (lock);
     notes.sort();
     rebuildMidiList();
 }
