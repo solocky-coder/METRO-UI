@@ -106,7 +106,16 @@ public:
     }
 
     void setSnapTicks  (int64_t ticks) { snapTicks = ticks; }
-    void setActiveTool (Tool t)        { currentTool = t; updateToolbarButtons(); repaint(); }
+    void setActiveTool (Tool t)
+    {
+        currentTool = t;
+        updateToolbarButtons();
+        // Immediate feedback on tool switch (menu pick, toolbar click, shortcut
+        // key) rather than waiting for the next mouseMove; Select-tool's
+        // resize/drag-hand hover refinements still apply on the next mouseMove.
+        setMouseCursor (toolCursorFor (t));
+        repaint();
+    }
 
     //==========================================================================
     void resized() override
@@ -681,6 +690,65 @@ private:
         return d;
     }
 
+    /** Builds an actual mouse cursor out of the same glyph used on the toolbar
+     *  button/menu item for `tool`, so the OS cursor over the grid always
+     *  shows which tool is active rather than a generic system arrow/crosshair. */
+    static juce::MouseCursor makeToolCursor (Tool tool)
+    {
+        constexpr int size = 24;
+        juce::Image img (juce::Image::ARGB, size, size, true);
+        juce::Graphics g (img);
+
+        // One fixed bounding box for every stamp below — using two differently
+        // sized boxes (expanding for an outline pass, shrinking for a fill
+        // pass) desyncs position-anchored glyphs like the Select arrow (built
+        // from b.getX()/b.getY(), not centred) between the two passes, warping
+        // it into a shape that no longer matches the toolbar/menu icon.
+        const auto b = juce::Rectangle<float> (2.0f, 2.0f, (float) size - 4.0f, (float) size - 4.0f);
+
+        // Black outline: stamp the exact same glyph at 1px offsets in every
+        // direction (translation preserves the shape exactly, unlike
+        // rescaling), then a white fill dead-centre on top — like an OS
+        // cursor's outline, but guaranteed to be the identical silhouette as
+        // the toolbar/menu icon, just outlined for legibility over arbitrary
+        // grid content.
+        static const int offs[][2] = { {-1,0}, {1,0}, {0,-1}, {0,1}, {-1,-1}, {1,-1}, {-1,1}, {1,1} };
+        for (auto& o : offs)
+        {
+            juce::Graphics::ScopedSaveState save (g);
+            g.addTransform (juce::AffineTransform::translation ((float) o[0], (float) o[1]));
+            drawToolIcon (g, tool, b, juce::Colours::black);
+        }
+        // White fill on top — kept theme-independent (a static function can't
+        // call findColour() anyway) since these cursors are built once and
+        // cached forever in toolCursorFor()'s static array.
+        drawToolIcon (g, tool, b, juce::Colours::white);
+
+        // Hotspot: the "business end" of each glyph (the arrow tip, pencil
+        // point, glue-drop apex) — Erase/Split have no single sharp point, so
+        // their hotspot is just the icon's centre.
+        int hx = size / 2, hy = size / 2;
+        switch (tool)
+        {
+            case Tool::Select: hx = (int) (size * 0.22f); hy = (int) (size * 0.10f); break;
+            case Tool::Draw:   hx = (int) (size * 0.25f); hy = (int) (size * 0.82f); break;
+            case Tool::Glue:   hy = (int) (size * 0.18f); break;
+            default: break;
+        }
+        return juce::MouseCursor (img, hx, hy);
+    }
+
+    /** Cached per-tool cursors — built once, since makeToolCursor() rasterises
+     *  an image and mouseMove fires far too often to redo that every call. */
+    static const juce::MouseCursor& toolCursorFor (Tool tool)
+    {
+        static const juce::MouseCursor cursors[] = {
+            makeToolCursor (Tool::Select), makeToolCursor (Tool::Draw), makeToolCursor (Tool::Erase),
+            makeToolCursor (Tool::Split),  makeToolCursor (Tool::Glue)
+        };
+        return cursors[(int) tool];
+    }
+
     //── Overlays ────────────────────────────────────────────────────────────────
     std::unique_ptr<juce::Component> velOverlay;
 
@@ -1134,27 +1202,28 @@ private:
     void updateCursorForPosition (const juce::MouseEvent& e)
     {
         if (! gridBounds.contains (e.getPosition())) { setMouseCursor (juce::MouseCursor::NormalCursor); return; }
-        switch (currentTool)
+
+        // Select tool: hovering an actual note still shows a resize/drag hint
+        // (a more useful, specific affordance than the plain tool glyph), but
+        // empty grid space falls back to the Select tool's own cursor glyph —
+        // same idea as Draw/Erase/Split/Glue below, which always show their
+        // tool's cursor since there's no equivalent per-note hint for them.
+        if (currentTool == Tool::Select)
         {
-            case Tool::Draw:  setMouseCursor (juce::MouseCursor::CrosshairCursor); break;
-            case Tool::Erase: setMouseCursor (juce::MouseCursor::NormalCursor);    break;
-            case Tool::Split: setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); break;
-            case Tool::Glue:  setMouseCursor (juce::MouseCursor::NormalCursor);    break;
-            case Tool::Select:
-            {
-                MidiClip* clip = engine.getClip (activeTrack, activeClip);
-                const int64_t tick = xToTick (e.x);
-                const int note = yToNote (e.y);
-                const int idx = hitTestAny (clip, tick, note);
-                if (idx >= 0 && isNearRightEdge (clip, e.x, idx))
-                    setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
-                else if (idx >= 0)
-                    setMouseCursor (juce::MouseCursor::DraggingHandCursor);
-                else
-                    setMouseCursor (juce::MouseCursor::NormalCursor);
-                break;
-            }
+            MidiClip* clip = engine.getClip (activeTrack, activeClip);
+            const int64_t tick = xToTick (e.x);
+            const int note = yToNote (e.y);
+            const int idx = hitTestAny (clip, tick, note);
+            if (idx >= 0 && isNearRightEdge (clip, e.x, idx))
+                setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+            else if (idx >= 0)
+                setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+            else
+                setMouseCursor (toolCursorFor (Tool::Select));
+            return;
         }
+
+        setMouseCursor (toolCursorFor (currentTool));
     }
 
     //==========================================================================
