@@ -530,6 +530,15 @@ private:
     {
         if (engine.isPlaying())
             autoScrollToPlayhead();
+
+        // Applies any notes the audio thread queued while recording. Cheap
+        // no-op when not recording; must run on the message thread, which
+        // this Timer already is. Draining unconditionally (rather than only
+        // while isRecording() is true) means a note-off that arrives right
+        // as recording stops still gets its real duration instead of being
+        // silently dropped.
+        engine.drainRecordedEvents();
+
         repaint();
     }
 

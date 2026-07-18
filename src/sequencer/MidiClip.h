@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
+#include <atomic>
 
 // Forward-declare tracktion type to avoid pulling the full header into every TU.
 // tracktion_engine uses:  namespace tracktion { inline namespace engine { ... } }
@@ -44,7 +45,7 @@ public:
     //==========================================================================
     //  Length
     //==========================================================================
-    int64_t getLengthTicks() const noexcept { return lengthTicks; }
+    int64_t getLengthTicks() const noexcept { return lengthTicks.load (std::memory_order_relaxed); }
     void    setLengthTicks (int64_t t);
 
     double getLengthBeats() const noexcept { return (double)lengthTicks / (double)kPPQ; }
@@ -86,7 +87,7 @@ public:
     const juce::ReadWriteLock& getLock() const noexcept { return lock; }
 
 private:
-    int64_t               lengthTicks = kPPQ * 4 * 4;
+    std::atomic<int64_t>  lengthTicks { kPPQ * 4 * 4 };
     juce::Array<MidiNote> notes;
     mutable juce::ReadWriteLock lock;
     te::MidiList*         midiList    = nullptr;

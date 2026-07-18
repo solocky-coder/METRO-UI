@@ -2,6 +2,21 @@
 // tracktion Engine/Edit/Transport layer has been removed.
 // All note scheduling is done by DYSEKT-SF's own tick scheduler in processBlock().
 // MidiClip.cpp retains its tracktion hook (attachMidiList) for future use.
+//
+// Threading model (audio-thread hot path):
+//   - The track list (which tracks exist, in what order) is an immutable,
+//     atomically-swapped snapshot: Impl::TrackList behind
+//     std::atomic<std::shared_ptr<const TrackList>>. Structural edits
+//     (add/remove/reorder track) build a new vector and publish it with one
+//     atomic store; processBlock() does one atomic load per block and works
+//     from that local snapshot for the whole block. No lock is taken.
+//   - Each SequencerTrack's clip list is the same pattern one level down
+//     (see SequencerTrack::getClips()/addClip()/removeClip()).
+//   - Recording never touches MidiClip from the audio thread. It resolves a
+//     clip-relative tick and pushes a small POD event into a lock-free FIFO;
+//     drainRecordedEvents(), called from the message thread (ArrangeView's
+//     Timer), is the only place that still calls MidiClip::addNote()/
+//     setNoteDuration() for recording.
 
 #include "SequencerEngine.h"
 #include "../audio/SfzPlayer.h"
@@ -9,6 +24,9 @@
 #include <atomic>
 #include <algorithm>
 #include <cmath>
+#include <array>
+#include <vector>
+#include <memory>
 
 // Stream version tags
 static constexpr int kStreamVersion1 = 1;  // legacy single-clip
@@ -18,8 +36,22 @@ static constexpr int kStreamVersion2 = 2;  // multi-clip
 struct SequencerEngine::Impl
 {
     //==========================================================================
-    juce::OwnedArray<SequencerTrack> tracks;
-    mutable juce::ReadWriteLock      tracksLock;
+    //  Track list — copy-on-write, atomically swapped (see file header).
+    //==========================================================================
+    using TrackList = std::vector<std::shared_ptr<SequencerTrack>>;
+
+    std::atomic<std::shared_ptr<const TrackList>> currentTracks
+        { std::make_shared<const TrackList>() };
+
+    std::shared_ptr<const TrackList> getTracks() const noexcept
+    {
+        return currentTracks.load (std::memory_order_acquire);
+    }
+
+    void publishTracks (std::shared_ptr<const TrackList> next)
+    {
+        currentTracks.store (std::move (next), std::memory_order_release);
+    }
 
     double               currentTick = 0.0;
     bool                 justStarted = false;
@@ -48,13 +80,52 @@ struct SequencerEngine::Impl
     std::atomic<int>  selectedLiveChannel  { 0 };  // 1-based; 0 = disabled
     std::atomic<int>  recordingTrackIndex  { -1 }; // which track receives recorded MIDI (-1 = none)
 
+    //==========================================================================
+    //  Recorded-note FIFO  (audio thread writes, message thread drains)
+    //
+    //  Same shape as DysektProcessor's commandFifo, just flowing the other
+    //  direction: audio thread -> message thread instead of message thread ->
+    //  audio thread. Each entry already carries a clip-relative tick, resolved
+    //  at the point of capture, so the drain never has to re-derive it (and
+    //  can't get it wrong if the clip has since moved).
+    //==========================================================================
+    struct RecordedNoteEvent
+    {
+        int     trackIndex = -1;
+        int     note       = 60;
+        int     velocity   = 100;
+        bool    isNoteOn   = true;
+        int64_t localTick  = 0;   // already clip-relative
+    };
+
+    static constexpr int kRecordFifoSize = 1024;
+    juce::AbstractFifo recordFifo { kRecordFifoSize };
+    std::array<RecordedNoteEvent, kRecordFifoSize> recordBuffer;
+    std::atomic<int> droppedRecordEventCount { 0 };  // diagnostic only
+
+    /** Audio-thread only. */
+    void pushRecordedEvent (const RecordedNoteEvent& ev)
+    {
+        const auto scope = recordFifo.write (1);
+        if (scope.blockSize1 > 0)
+            recordBuffer[(size_t) scope.startIndex1] = ev;
+        else if (scope.blockSize2 > 0)
+            recordBuffer[(size_t) scope.startIndex2] = ev;
+        else
+            droppedRecordEventCount.fetch_add (1, std::memory_order_relaxed);  // FIFO full — dropped
+    }
+
     // Tracks notes currently held during recording so we can set their real
-    // duration when the note-off arrives.  Audio-thread only.
-    struct OpenRecNote { int note; int64_t startTick; int noteIndexInClip; };
+    // duration when the note-off arrives. MESSAGE-THREAD ONLY — used
+    // exclusively by SequencerEngine::drainRecordedEvents().
+    struct OpenRecNote { int trackIndex; int note; int64_t startTick; int noteIndexInClip; };
     juce::Array<OpenRecNote> openRecNotes;
 
     //==========================================================================
-    Impl()  = default;
+    Impl()
+    {
+        openRecNotes.ensureStorageAllocated (64);
+    }
     ~Impl() = default;
 
     //==========================================================================
@@ -63,18 +134,18 @@ struct SequencerEngine::Impl
         switch (t.type)
         {
             case TrackType::MainSlice:      return 1;
-            case TrackType::ChromaticSlice: return t.midiChannel + 1;
-            case TrackType::SfPlayer:       return t.midiChannel + 1;  // per-track FluidSynth channel (0-based → 1-based MIDI)
+            case TrackType::ChromaticSlice: return t.midiChannel.load (std::memory_order_relaxed) + 1;
+            case TrackType::SfPlayer:       return t.midiChannel.load (std::memory_order_relaxed) + 1;
         }
         return 1;
     }
 
     /** Compute the global end tick = rightmost clip end across all tracks. */
-    int64_t computeMasterLen() const
+    static int64_t computeMasterLenFor (const TrackList& tracks)
     {
         int64_t masterLen = MidiClip::kPPQ * 4 * 4;
-        for (auto* track : tracks)
-            for (auto* slot : track->clips)
+        for (auto& track : tracks)
+            for (auto& slot : *track->getClips())
                 masterLen = juce::jmax (masterLen, slot->endTick());
         return masterLen;
     }
@@ -89,7 +160,7 @@ struct SequencerEngine::Impl
                           int64_t masterLen)
     {
         const int ch = midiChannelForTrack (track);
-        const double clipStart = (double) slot.startTick;
+        const double clipStart = (double) slot.getStartTick();
         const double clipEnd   = (double) slot.endTick();
 
         double localStart = playheadStart;
@@ -162,8 +233,8 @@ bool    SequencerEngine::getSyncToHost()    const noexcept { return impl->syncTo
 
 int64_t SequencerEngine::getLengthTicks() const noexcept
 {
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    return impl->computeMasterLen();
+    auto snap = impl->getTracks();
+    return Impl::computeMasterLenFor (*snap);
 }
 
 //==============================================================================
@@ -216,10 +287,13 @@ void SequencerEngine::seekToTick (int64_t tick)
 void SequencerEngine::setLengthTicks (int64_t ticks)
 {
     const int64_t clamped = juce::jmax ((int64_t) MidiClip::kPPQ, ticks);
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    for (auto* t : impl->tracks)
-        if (! t->clips.isEmpty())
-            t->clips[0]->clip.setLengthTicks (clamped);
+    auto snap = impl->getTracks();
+    for (auto& t : *snap)
+    {
+        auto slot = t->getClipSlot (0);
+        if (slot != nullptr)
+            slot->clip.setLengthTicks (clamped);
+    }
 }
 
 //==============================================================================
@@ -227,71 +301,78 @@ void SequencerEngine::setLengthTicks (int64_t ticks)
 //==============================================================================
 int SequencerEngine::getNumTracks() const
 {
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    return impl->tracks.size();
+    return (int) impl->getTracks()->size();
 }
 
 SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
 {
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    if (! juce::isPositiveAndBelow (i, impl->tracks.size())) return {};
-    const auto& t = *impl->tracks[i];
-    return { t.type, t.enabled, t.name, t.colour, t.sliceIdx, t.midiChannel, t.preset,
-             t.clips.size() };
+    auto snap = impl->getTracks();
+    if (! juce::isPositiveAndBelow (i, (int) snap->size())) return {};
+    const auto& t = *(*snap)[(size_t) i];
+    return { t.type, t.enabled.load (std::memory_order_relaxed), t.name, t.colour, t.sliceIdx,
+             t.midiChannel.load (std::memory_order_relaxed), t.preset, t.getNumClips() };
 }
 
 void SequencerEngine::setTrackEnabled (int i, bool enabled)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (i, impl->tracks.size()))
-        impl->tracks[i]->enabled = enabled;
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (i, (int) snap->size()))
+        (*snap)[(size_t) i]->enabled.store (enabled, std::memory_order_relaxed);
 }
 
 void SequencerEngine::addMainTrack()
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    if (impl->tracks.isEmpty())
-        impl->tracks.add (new SequencerTrack (SequencerTrack::makeMain()));
+    auto current = impl->getTracks();
+    if (! current->empty()) return;
+    auto next = std::make_shared<Impl::TrackList> (*current);
+    next->push_back (SequencerTrack::makeMain());
+    impl->publishTracks (std::move (next));
 }
 
 void SequencerEngine::addChromaticTrack (int sliceIdx, int chromaticChannel,
                                           const juce::String& name, juce::Colour colour)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    for (auto* t : impl->tracks)
+    auto current = impl->getTracks();
+    for (auto& t : *current)
         if (t->type == TrackType::ChromaticSlice && t->sliceIdx == sliceIdx) return;
-    impl->tracks.add (new SequencerTrack (
-        SequencerTrack::makeChromatic (sliceIdx, chromaticChannel, name, colour)));
+
+    auto next = std::make_shared<Impl::TrackList> (*current);
+    next->push_back (SequencerTrack::makeChromatic (sliceIdx, chromaticChannel, name, colour));
+    impl->publishTracks (std::move (next));
 }
 
 void SequencerEngine::removeChromaticTrack (int sliceIdx)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    for (int i = impl->tracks.size() - 1; i >= 0; --i)
-        if (impl->tracks[i]->type == TrackType::ChromaticSlice
-            && impl->tracks[i]->sliceIdx == sliceIdx)
-            impl->tracks.remove (i);
+    auto current = impl->getTracks();
+    auto next = std::make_shared<Impl::TrackList> (*current);
+    next->erase (std::remove_if (next->begin(), next->end(),
+                    [sliceIdx] (const std::shared_ptr<SequencerTrack>& t)
+                    { return t->type == TrackType::ChromaticSlice && t->sliceIdx == sliceIdx; }),
+                 next->end());
+    impl->publishTracks (std::move (next));
 }
 
 void SequencerEngine::addSfTrack (const Sf2PresetInfo& preset, juce::Colour colour)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    for (auto* t : impl->tracks)
+    auto current = impl->getTracks();
+    for (auto& t : *current)
         if (t->type == TrackType::SfPlayer
             && t->preset.bank   == preset.bank
             && t->preset.preset == preset.preset) return;
 
     // Assign the next available FluidSynth channel (0-15) to this track.
-    // Count existing SfPlayer tracks to determine the channel index.
     int sfCh = 0;
-    for (auto* t : impl->tracks)
+    for (auto& t : *current)
         if (t->type == TrackType::SfPlayer)
-            sfCh = juce::jmax (sfCh, t->midiChannel + 1);
+            sfCh = juce::jmax (sfCh, t->midiChannel.load (std::memory_order_relaxed) + 1);
     sfCh = juce::jmin (sfCh, 15);
 
     auto track = SequencerTrack::makeSfPlayer (preset, colour);
-    track.midiChannel = sfCh;
-    impl->tracks.add (new SequencerTrack (std::move (track)));
+    track->midiChannel.store (sfCh, std::memory_order_relaxed);
+
+    auto next = std::make_shared<Impl::TrackList> (*current);
+    next->push_back (track);
+    impl->publishTracks (std::move (next));
 
     if (impl->sfzPlayer != nullptr)
         impl->sfzPlayer->setPresetOnChannel (sfCh, preset.bank, preset.preset);
@@ -299,33 +380,42 @@ void SequencerEngine::addSfTrack (const Sf2PresetInfo& preset, juce::Colour colo
 
 void SequencerEngine::removeSfTrack (int trackIndex)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (trackIndex, impl->tracks.size())
-        && impl->tracks[trackIndex]->type == TrackType::SfPlayer)
-        impl->tracks.remove (trackIndex);
+    auto current = impl->getTracks();
+    if (! juce::isPositiveAndBelow (trackIndex, (int) current->size())
+        || (*current)[(size_t) trackIndex]->type != TrackType::SfPlayer)
+        return;
+
+    auto next = std::make_shared<Impl::TrackList> (*current);
+    next->erase (next->begin() + trackIndex);
+    impl->publishTracks (std::move (next));
 }
 
 void SequencerEngine::rebuildSfTracks (const std::vector<Sf2PresetInfo>& presets,
                                         const juce::Colour* palette, int paletteSize)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    for (int i = impl->tracks.size() - 1; i >= 0; --i)
-        if (impl->tracks[i]->type == TrackType::SfPlayer)
-            impl->tracks.remove (i);
+    auto current = impl->getTracks();
+    auto next = std::make_shared<Impl::TrackList>();
+    next->reserve (current->size() + presets.size());
+    for (auto& t : *current)
+        if (t->type != TrackType::SfPlayer)
+            next->push_back (t);
 
     for (int i = 0; i < (int) presets.size(); ++i)
     {
         const juce::Colour col = paletteSize > 0
             ? palette[i % paletteSize] : juce::Colour (0xFF406080);
         auto track = SequencerTrack::makeSfPlayer (presets[i], col);
-        track.midiChannel = juce::jmin (i, 15);   // sequential FluidSynth channels
-        impl->tracks.add (new SequencerTrack (std::move (track)));
+        track->midiChannel.store (juce::jmin (i, 15), std::memory_order_relaxed);   // sequential FluidSynth channels
+        next->push_back (track);
+    }
 
-        if (impl->sfzPlayer != nullptr)
+    impl->publishTracks (next);
+
+    if (impl->sfzPlayer != nullptr)
+        for (int i = 0; i < (int) presets.size(); ++i)
             impl->sfzPlayer->setPresetOnChannel (juce::jmin (i, 15),
                                                   presets[i].bank,
                                                   presets[i].preset);
-    }
 }
 
 void SequencerEngine::addOrUpdateSfTrackOnChannel (const Sf2PresetInfo& preset,
@@ -335,33 +425,34 @@ void SequencerEngine::addOrUpdateSfTrackOnChannel (const Sf2PresetInfo& preset,
     const int ch = juce::jlimit (0, 15, midiChannel0Based);
     bool needsPlayerUpdate = false;
 
+    auto current = impl->getTracks();
+
+    // If a track already exists for this preset, just update its channel —
+    // mutated in place (atomic), no snapshot rebuild needed.
+    for (auto& t : *current)
     {
-        const juce::ScopedWriteLock sl (impl->tracksLock);
-
-        // If a track already exists for this preset, just update its channel.
-        for (auto* t : impl->tracks)
+        if (t->type == TrackType::SfPlayer
+            && t->preset.bank   == preset.bank
+            && t->preset.preset == preset.preset)
         {
-            if (t->type == TrackType::SfPlayer
-                && t->preset.bank   == preset.bank
-                && t->preset.preset == preset.preset)
-            {
-                t->midiChannel = ch;
-                needsPlayerUpdate = true;
-                break;
-            }
-        }
-
-        if (! needsPlayerUpdate)
-        {
-            // New track for this preset on the chosen channel.
-            auto track = SequencerTrack::makeSfPlayer (preset, colour);
-            track.midiChannel = ch;
-            impl->tracks.add (new SequencerTrack (std::move (track)));
+            t->midiChannel.store (ch, std::memory_order_relaxed);
             needsPlayerUpdate = true;
+            break;
         }
     }
 
-    // Call sfzPlayer outside the lock to avoid potential deadlock.
+    if (! needsPlayerUpdate)
+    {
+        // New track for this preset on the chosen channel.
+        auto track = SequencerTrack::makeSfPlayer (preset, colour);
+        track->midiChannel.store (ch, std::memory_order_relaxed);
+
+        auto next = std::make_shared<Impl::TrackList> (*current);
+        next->push_back (track);
+        impl->publishTracks (std::move (next));
+        needsPlayerUpdate = true;
+    }
+
     if (needsPlayerUpdate && impl->sfzPlayer != nullptr)
         impl->sfzPlayer->setPresetOnChannel (ch, preset.bank, preset.preset);
 }
@@ -370,13 +461,14 @@ void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Bas
                                     juce::Colour colour)
 {
     const int ch = juce::jlimit (0, 15, midiChannel0Based);
-    const juce::ScopedWriteLock sl (impl->tracksLock);
+    auto current = impl->getTracks();
 
     // Remove any existing SfPlayer track with the same name (previous SFZ load).
-    for (int i = impl->tracks.size() - 1; i >= 0; --i)
-        if (impl->tracks[i]->type == TrackType::SfPlayer
-            && impl->tracks[i]->name == name)
-            impl->tracks.remove (i);
+    auto next = std::make_shared<Impl::TrackList>();
+    next->reserve (current->size() + 1);
+    for (auto& t : *current)
+        if (! (t->type == TrackType::SfPlayer && t->name == name))
+            next->push_back (t);
 
     Sf2PresetInfo sfzPreset;
     sfzPreset.name   = name;
@@ -384,8 +476,10 @@ void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Bas
     sfzPreset.preset = 0;
 
     auto track = SequencerTrack::makeSfPlayer (sfzPreset, colour);
-    track.midiChannel = ch;
-    impl->tracks.add (new SequencerTrack (std::move (track)));
+    track->midiChannel.store (ch, std::memory_order_relaxed);
+    next->push_back (track);
+
+    impl->publishTracks (std::move (next));
 }
 
 //==============================================================================
@@ -393,67 +487,65 @@ void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Bas
 //==============================================================================
 int SequencerEngine::getNumClips (int trackIndex) const
 {
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (trackIndex, impl->tracks.size()))
-        return impl->tracks[trackIndex]->clips.size();
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
+        return (*snap)[(size_t) trackIndex]->getNumClips();
     return 0;
 }
 
 SequencerClipInfo SequencerEngine::getClipInfo (int trackIndex, int clipIndex) const
 {
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (trackIndex, impl->tracks.size()))
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
     {
-        const auto& track = *impl->tracks[trackIndex];
-        if (juce::isPositiveAndBelow (clipIndex, track.clips.size()))
-        {
-            const auto& slot = *track.clips[clipIndex];
-            return { slot.startTick, slot.clip.getLengthTicks() };
-        }
+        auto slot = (*snap)[(size_t) trackIndex]->getClipSlot (clipIndex);
+        if (slot != nullptr)
+            return { slot->getStartTick(), slot->clip.getLengthTicks() };
     }
     return {};
 }
 
 MidiClip* SequencerEngine::getClip (int trackIndex, int clipIndex)
 {
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (trackIndex, impl->tracks.size()))
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
     {
-        auto& track = *impl->tracks[trackIndex];
-        if (juce::isPositiveAndBelow (clipIndex, track.clips.size()))
-            return &track.clips[clipIndex]->clip;
+        auto slot = (*snap)[(size_t) trackIndex]->getClipSlot (clipIndex);
+        if (slot != nullptr) return &slot->clip;
     }
     return nullptr;
 }
 
 MidiClip& SequencerEngine::getClip()
 {
-    return impl->tracks[0]->clips[0]->clip;
+    auto snap = impl->getTracks();
+    return (*snap)[0]->getClipSlot (0)->clip;
 }
 
 int SequencerEngine::addClip (int trackIndex, int64_t startTick, int64_t lengthTicks)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    if (! juce::isPositiveAndBelow (trackIndex, impl->tracks.size())) return -1;
-    return impl->tracks[trackIndex]->addClip (startTick, lengthTicks);
+    auto snap = impl->getTracks();
+    if (! juce::isPositiveAndBelow (trackIndex, (int) snap->size())) return -1;
+    return (*snap)[(size_t) trackIndex]->addClip (startTick, lengthTicks);
 }
 
 void SequencerEngine::removeClip (int trackIndex, int clipIndex)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (trackIndex, impl->tracks.size()))
-        impl->tracks[trackIndex]->removeClip (clipIndex);
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
+        (*snap)[(size_t) trackIndex]->removeClip (clipIndex);
 }
 
 void SequencerEngine::setClipStartTick (int trackIndex, int clipIndex, int64_t newStartTick)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (trackIndex, impl->tracks.size()))
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
     {
-        auto& track = *impl->tracks[trackIndex];
-        if (juce::isPositiveAndBelow (clipIndex, track.clips.size()))
+        auto& track = *(*snap)[(size_t) trackIndex];
+        auto slot = track.getClipSlot (clipIndex);
+        if (slot != nullptr)
         {
-            track.clips[clipIndex]->startTick = juce::jmax ((int64_t) 0, newStartTick);
+            slot->startTick.store (juce::jmax ((int64_t) 0, newStartTick), std::memory_order_relaxed);
             track.sortClips();
         }
     }
@@ -461,24 +553,22 @@ void SequencerEngine::setClipStartTick (int trackIndex, int clipIndex, int64_t n
 
 void SequencerEngine::setClipLengthTicks (int trackIndex, int clipIndex, int64_t newLength)
 {
-    const juce::ScopedWriteLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (trackIndex, impl->tracks.size()))
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
     {
-        auto& track = *impl->tracks[trackIndex];
-        if (juce::isPositiveAndBelow (clipIndex, track.clips.size()))
-            track.clips[clipIndex]->clip.setLengthTicks (
-                juce::jmax ((int64_t) MidiClip::kPPQ, newLength));
+        auto slot = (*snap)[(size_t) trackIndex]->getClipSlot (clipIndex);
+        if (slot != nullptr)
+            slot->clip.setLengthTicks (juce::jmax ((int64_t) MidiClip::kPPQ, newLength));
     }
 }
 
 int64_t SequencerEngine::getTrackLengthTicks (int trackIndex) const noexcept
 {
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    if (juce::isPositiveAndBelow (trackIndex, impl->tracks.size()))
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
     {
-        const auto& track = *impl->tracks[trackIndex];
-        if (! track.clips.isEmpty())
-            return track.clips[0]->clip.getLengthTicks();
+        auto slot = (*snap)[(size_t) trackIndex]->getClipSlot (0);
+        if (slot != nullptr) return slot->clip.getLengthTicks();
     }
     return MidiClip::kPPQ * 4 * 4;
 }
@@ -501,10 +591,10 @@ void SequencerEngine::setSelectedSfLiveChannels (uint16_t channelMask) noexcept
 uint16_t SequencerEngine::getAllSfPlayerChannelMask() const noexcept
 {
     uint16_t mask = 0;
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    for (auto* t : impl->tracks)
+    auto snap = impl->getTracks();
+    for (auto& t : *snap)
         if (t->type == TrackType::SfPlayer)
-            mask |= static_cast<uint16_t> (1u << (t->midiChannel & 0xF));
+            mask |= static_cast<uint16_t> (1u << (t->midiChannel.load (std::memory_order_relaxed) & 0xF));
     return mask;
 }
 
@@ -523,6 +613,61 @@ void SequencerEngine::setRecordingTrack (int trackIndex) noexcept
 {
     impl->recordingTrackIndex.store (trackIndex, std::memory_order_relaxed);
     impl->openRecNotes.clearQuick();  // discard any held notes from previous selection
+}
+
+//==============================================================================
+//  drainRecordedEvents()  —  MESSAGE THREAD ONLY.
+//
+//  The only remaining caller of MidiClip::addNote()/setNoteDuration() for
+//  recording. Safe because it never runs on the audio thread.
+//==============================================================================
+void SequencerEngine::drainRecordedEvents()
+{
+    const auto scope = impl->recordFifo.read (impl->recordFifo.getNumReady());
+    auto snap = impl->getTracks();
+
+    auto applyEvent = [&] (const Impl::RecordedNoteEvent& ev)
+    {
+        if (! juce::isPositiveAndBelow (ev.trackIndex, (int) snap->size())) return;
+        auto slot = (*snap)[(size_t) ev.trackIndex]->getClipSlot (0);
+        if (slot == nullptr) return;
+
+        auto&         clip   = slot->clip;
+        const int64_t clipLen = clip.getLengthTicks();
+
+        if (ev.isNoteOn)
+        {
+            MidiNote n;
+            n.note         = ev.note;
+            n.velocity     = ev.velocity;
+            n.startTick    = ev.localTick;
+            n.durationTick = MidiClip::kPPQ / 4;   // placeholder; corrected on note-off
+            const int idx  = clip.addNote (n);
+            impl->openRecNotes.add ({ ev.trackIndex, n.note, ev.localTick, idx });
+        }
+        else
+        {
+            for (int i = impl->openRecNotes.size() - 1; i >= 0; --i)
+            {
+                auto& orn = impl->openRecNotes.getReference (i);
+                if (orn.trackIndex == ev.trackIndex && orn.note == ev.note)
+                {
+                    // Compute real duration, clamped to loop length.
+                    int64_t dur = ev.localTick - orn.startTick;
+                    if (dur <= 0) dur += clipLen;   // wrapped loop
+                    if (dur <= 0) dur  = MidiClip::kPPQ / 4;
+                    clip.setNoteDuration (orn.noteIndexInClip, dur);
+                    impl->openRecNotes.remove (i);
+                    break;
+                }
+            }
+        }
+    };
+
+    for (int i = 0; i < scope.blockSize1; ++i)
+        applyEvent (impl->recordBuffer[(size_t) (scope.startIndex1 + i)]);
+    for (int i = 0; i < scope.blockSize2; ++i)
+        applyEvent (impl->recordBuffer[(size_t) (scope.startIndex2 + i)]);
 }
 
 //==============================================================================
@@ -592,85 +737,87 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     const bool   doLoop         = impl->looping.load (std::memory_order_relaxed);
     const double blockEndTick   = impl->currentTick + ticksPerSample * numSamples;
 
-    int64_t masterLen = 0;
+    // One atomic load for the whole block — zero locks in the hot path.
+    auto tracksSnap = impl->getTracks();
+    const int64_t masterLen = Impl::computeMasterLenFor (*tracksSnap);
+
+    for (int ti = 0; ti < (int) tracksSnap->size(); ++ti)
     {
-        const juce::ScopedReadLock sl (impl->tracksLock);
-        masterLen = impl->computeMasterLen();
+        auto& track = *(*tracksSnap)[(size_t) ti];
+        if (! track.enabled.load (std::memory_order_relaxed)) continue;
 
-        for (int ti = 0; ti < impl->tracks.size(); ++ti)
+        const int priorSize = outMidi.getNumEvents();
+        auto clipsSnap = track.getClips();
+
+        for (int ci = 0; ci < (int) clipsSnap->size(); ++ci)
         {
-            auto& track = *impl->tracks[ti];
-            if (! track.enabled) continue;
-
-            const int priorSize = outMidi.getNumEvents();
-
-            for (int ci = 0; ci < track.clips.size(); ++ci)
-            {
-                impl->processClipSlot (outMidi, track, ti, ci, *track.clips[ci],
-                                       impl->currentTick, blockEndTick,
-                                       numSamples, ticksPerSample, doLoop, masterLen);
-            }
-
-            if (outMidi.getNumEvents() > priorSize
-                && juce::isPositiveAndBelow (ti, kActivityFlagCount))
-                impl->midiActivityFlags[ti].store (true, std::memory_order_relaxed);
+            impl->processClipSlot (outMidi, track, ti, ci, *(*clipsSnap)[(size_t) ci],
+                                   impl->currentTick, blockEndTick,
+                                   numSamples, ticksPerSample, doLoop, masterLen);
         }
+
+        if (outMidi.getNumEvents() > priorSize
+            && juce::isPositiveAndBelow (ti, kActivityFlagCount))
+            impl->midiActivityFlags[ti].store (true, std::memory_order_relaxed);
     }
 
     impl->justStarted = false;
 
     // ── MIDI input recording ──────────────────────────────────────────────────
     // Cubase-style: the selected (record-armed) track captures all incoming
-    // MIDI regardless of channel.  Note-offs close open notes with their real
-    // duration rather than a fixed placeholder.
+    // MIDI regardless of channel. This never touches MidiClip on this thread
+    // — it resolves each event to a tick relative to the target clip's start
+    // (fixes the earlier absolute-vs-clip-relative bug) and pushes a small
+    // event into the lock-free FIFO. drainRecordedEvents(), called from the
+    // message thread, is what actually calls addNote()/setNoteDuration().
     const int recTi = impl->recordingTrackIndex.load (std::memory_order_relaxed);
     if (impl->recording.load (std::memory_order_relaxed)
         && impl->playing.load (std::memory_order_relaxed)
-        && juce::isPositiveAndBelow (recTi, impl->tracks.size()))
+        && juce::isPositiveAndBelow (recTi, (int) tracksSnap->size()))
     {
-        const juce::ScopedReadLock sl (impl->tracksLock);
-        auto& track = *impl->tracks[recTi];
-        if (! track.clips.isEmpty())
+        auto& track = *(*tracksSnap)[(size_t) recTi];
+        auto  slot0 = track.getClipSlot (0);
+
+        if (slot0 != nullptr)
         {
-            auto& clip = track.clips[0]->clip;
-            const int64_t mLen        = impl->computeMasterLen();
-            const double  ticksPerSmp = (bpm / 60.0) * (double) MidiClip::kPPQ / sampleRate;
+            const int64_t clipStartTick = slot0->getStartTick();
+            const int64_t clipLenTicks  = slot0->clip.getLengthTicks();
+            const double  ticksPerSmp   = (bpm / 60.0) * (double) MidiClip::kPPQ / sampleRate;
+            const bool    haveTargetClip = clipLenTicks > 0;   // guards against modulo-by-zero
 
             for (const auto meta : inMidi)
             {
                 const auto msg = meta.getMessage();
-                if (msg.getChannel() == 16) continue;  // skip SFZ-internal channel
+                if (msg.getChannel() == 16) continue;   // skip SFZ-internal channel
+                if (! haveTargetClip)       continue;
 
-                const double  evTick = impl->currentTick + meta.samplePosition * ticksPerSmp;
-                const int64_t t      = (int64_t) std::fmod (evTick, (double) mLen);
+                const double evTickGlobal = impl->currentTick + meta.samplePosition * ticksPerSmp;
 
-                if (msg.isNoteOn (true))   // true = treat velocity-0 as note-off
+                // Resolve to a tick local to the target clip, in the half-open
+                // range from 0 up to (but not including) clipLenTicks.
+                int64_t localTick = (int64_t) std::fmod (evTickGlobal - (double) clipStartTick,
+                                                          (double) clipLenTicks);
+                if (localTick < 0) localTick += clipLenTicks;
+
+                if (msg.isNoteOn (true))        // true = treat velocity-0 as note-off
                 {
-                    MidiNote n;
-                    n.note         = msg.getNoteNumber();
-                    n.velocity     = msg.getVelocity();
-                    n.startTick    = t;
-                    n.durationTick = MidiClip::kPPQ / 4;  // filled in on note-off
-                    const int idx  = clip.addNote (n);     // addNote returns index
-                    impl->openRecNotes.add ({ n.note, t, idx });
+                    Impl::RecordedNoteEvent ev;
+                    ev.trackIndex = recTi;
+                    ev.note       = msg.getNoteNumber();
+                    ev.velocity   = msg.getVelocity();
+                    ev.isNoteOn   = true;
+                    ev.localTick  = localTick;
+                    impl->pushRecordedEvent (ev);
                 }
                 else if (msg.isNoteOff (true))
                 {
-                    const int noteNum = msg.getNoteNumber();
-                    for (int i = impl->openRecNotes.size() - 1; i >= 0; --i)
-                    {
-                        auto& orn = impl->openRecNotes.getReference (i);
-                        if (orn.note == noteNum)
-                        {
-                            // Compute real duration, clamped to loop length
-                            int64_t dur = t - orn.startTick;
-                            if (dur <= 0) dur += mLen;   // wrapped loop
-                            if (dur <= 0) dur  = MidiClip::kPPQ / 4;
-                            clip.setNoteDuration (orn.noteIndexInClip, dur);
-                            impl->openRecNotes.remove (i);
-                            break;
-                        }
-                    }
+                    Impl::RecordedNoteEvent ev;
+                    ev.trackIndex = recTi;
+                    ev.note       = msg.getNoteNumber();
+                    ev.velocity   = 0;
+                    ev.isNoteOn   = false;
+                    ev.localTick  = localTick;
+                    impl->pushRecordedEvent (ev);
                 }
             }
         }
@@ -700,10 +847,10 @@ void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
     s.writeBool  (impl->looping    .load (std::memory_order_relaxed));
     s.writeBool  (impl->syncToHost .load (std::memory_order_relaxed));
 
-    const juce::ScopedReadLock sl (impl->tracksLock);
-    s.writeInt (impl->tracks.size());
-    for (const auto* t : impl->tracks)
-        const_cast<SequencerTrack*>(t)->writeToStream (s);
+    auto snap = impl->getTracks();
+    s.writeInt ((int) snap->size());
+    for (auto& t : *snap)
+        t->writeToStream (s);
 }
 
 bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
@@ -738,24 +885,21 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
 
     if (bpm < 20.f || bpm > 999.f || n < 0 || n > 256) return false;
 
-    juce::OwnedArray<SequencerTrack> loaded;
+    auto loaded = std::make_shared<Impl::TrackList>();
+    loaded->reserve ((size_t) n);
     for (int i = 0; i < n; ++i)
     {
-        auto t  = std::make_unique<SequencerTrack>();
+        auto t  = std::make_shared<SequencerTrack>();
         bool ok = isV2 ? t->readFromStream (s) : t->readFromStreamV1 (s);
         if (! ok) return false;
-        loaded.add (t.release());
+        loaded->push_back (t);
     }
 
     impl->internalBpm.store (bpm,  std::memory_order_relaxed);
     impl->looping    .store (loop, std::memory_order_relaxed);
     impl->syncToHost .store (sync, std::memory_order_relaxed);
 
-    {
-        const juce::ScopedWriteLock sl (impl->tracksLock);
-        impl->tracks.clear();
-        impl->tracks.swapWith (loaded);
-    }
+    impl->publishTracks (std::move (loaded));
 
     return true;
 }

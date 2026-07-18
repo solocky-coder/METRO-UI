@@ -4,6 +4,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <atomic>
 #include <memory>
+#include <vector>
 
 //==============================================================================
 //  SequencerTrackInfo  —  lightweight metadata snapshot of a SequencerTrack.
@@ -176,6 +177,17 @@ public:
      *  Call alongside setSelectedLiveChannel when the user selects a track.
      *  Pass -1 to disable recording. */
     void setRecordingTrack (int trackIndex) noexcept;
+
+    /** Drains recorded-note events captured by the audio thread during
+     *  processBlock() and applies them to the target clip via
+     *  MidiClip::addNote()/setNoteDuration().
+     *
+     *  MESSAGE-THREAD ONLY. The audio thread never touches MidiClip during
+     *  recording — it resolves a clip-relative tick and pushes a small POD
+     *  event into a lock-free FIFO; this is the only place that still calls
+     *  the (audio-thread-illegal) MidiClip editing calls for recording.
+     *  Call this periodically (e.g. from a UI Timer) while recording. */
+    void drainRecordedEvents();
 
     //==========================================================================
     //  Per-track MIDI activity flags (for the receive indicator in TrackHeaderStrip)
