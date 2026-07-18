@@ -11,9 +11,9 @@
 MidiClip::MidiClip (MidiClip&& other) noexcept
 {
     const juce::ScopedWriteLock sl (other.lock);
-    lengthTicks       = other.lengthTicks;
+    lengthTicks.store (other.lengthTicks.load (std::memory_order_relaxed), std::memory_order_relaxed);
     notes             = std::move (other.notes);
-    other.lengthTicks = kPPQ * 4 * 4;
+    other.lengthTicks.store (kPPQ * 4 * 4, std::memory_order_relaxed);
     // midiList is not transferred — caller must re-attach if needed.
 }
 
@@ -23,9 +23,9 @@ MidiClip& MidiClip::operator= (MidiClip&& other) noexcept
     {
         const juce::ScopedWriteLock wl (lock);
         const juce::ScopedWriteLock rl (other.lock);
-        lengthTicks       = other.lengthTicks;
+        lengthTicks.store (other.lengthTicks.load (std::memory_order_relaxed), std::memory_order_relaxed);
         notes             = std::move (other.notes);
-        other.lengthTicks = kPPQ * 4 * 4;
+        other.lengthTicks.store (kPPQ * 4 * 4, std::memory_order_relaxed);
         // midiList is not transferred — caller must re-attach if needed.
     }
     return *this;
