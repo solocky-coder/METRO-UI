@@ -20,9 +20,10 @@
 // paint(), not routed through LookAndFeel virtual calls at all — those are
 // themed via getTheme().name == "metro" checks inside the components
 // themselves (WaveformView.cpp, PadGridView.cpp, MixerPanel.cpp, etc.), and
-// are unaffected by which LookAndFeel object is active. This class only
-// covers the standard JUCE widgets DysektLookAndFeel already draws for:
-// TextButton, ComboBox, Slider (linear + rotary), PopupMenu, TextEditor.
+// are unaffected by which LookAndFeel object is active. This class overrides
+// TextButton, Slider (linear + rotary), PopupMenu, and TextEditor; ComboBox
+// is inherited unchanged from DysektLookAndFeel since the two are now
+// pixel-identical (flat, square corners) — see DysektLookAndFeel::drawComboBox.
 class MetroLookAndFeel : public DysektLookAndFeel
 {
 public:
@@ -30,10 +31,6 @@ public:
 
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool isHighlighted, bool isDown) override;
-
-    void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
-                       int buttonX, int buttonY, int buttonW, int buttonH,
-                       juce::ComboBox&) override;
 
     void drawPopupMenuBackground (juce::Graphics&, int width, int height) override;
 

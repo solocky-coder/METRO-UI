@@ -27,31 +27,6 @@ void MetroLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& bu
 
 // ── Combo boxes ──────────────────────────────────────────────────────────────
 // Flat fill, thin border, accent only when focused — no bevel/glow.
-void MetroLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, bool isButtonDown,
-                                      int buttonX, int /*buttonY*/, int /*buttonW*/, int /*buttonH*/,
-                                      juce::ComboBox& box)
-{
-    const auto& t = getTheme();
-    auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
-    const float r = 0.0f; // manual: flat, square corners — no radius
-
-    g.setColour (isButtonDown ? t.buttonHover : t.button);
-    g.fillRoundedRectangle (bounds, r);
-
-    const bool focused = box.hasKeyboardFocus (false);
-    g.setColour (focused ? t.accent : t.separator);
-    g.drawRoundedRectangle (bounds, r, 1.0f);
-
-    const int arrowCX = buttonX + (width - buttonX) / 2;
-    const int arrowCY = height / 2;
-    const int arrowHalf = 4;
-    g.setColour (t.foreground.withAlpha (0.85f));
-    g.drawLine ((float) (arrowCX - arrowHalf), (float) (arrowCY - 2),
-                (float) arrowCX,               (float) (arrowCY + 2), 1.5f);
-    g.drawLine ((float) arrowCX,               (float) (arrowCY + 2),
-                (float) (arrowCX + arrowHalf), (float) (arrowCY - 2), 1.5f);
-}
-
 // ── Popup menus ──────────────────────────────────────────────────────────────
 // Flat card, square corners per manual's corner-radius rule (base class uses 3px).
 void MetroLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)

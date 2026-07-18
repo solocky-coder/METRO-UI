@@ -262,7 +262,7 @@ void DysektLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     const auto& t = getTheme();
     auto cbBounds = juce::Rectangle<float> (0, 0, (float)width, (float)height).reduced (0.5f);
 
-    const float r = 4.0f;   // Metro combo-box radius — kept as-is, now universal
+    const float r = 0.0f;   // Flat — matches every other flattened control in the app
     g.setColour (isButtonDown ? t.buttonHover : t.button);
     g.fillRoundedRectangle (cbBounds, r);
 

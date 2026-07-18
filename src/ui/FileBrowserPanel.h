@@ -34,7 +34,12 @@ static inline void drawFileListFolderGlyph (juce::Graphics& g, juce::Rectangle<f
 }
 
 // ── Tiny LookAndFeel override to shrink the file-list font ───────────────────
-class SmallListLookAndFeel : public juce::LookAndFeel_V4
+// Inherits DysektLookAndFeel (not juce::LookAndFeel_V4 directly) so popup menus,
+// the combo box, and every widget not overridden here automatically track the
+// app's shape language and theme colours — same pattern as TransportLAF/
+// MetroLookAndFeel. Only the small file-list's own sizing and row painting are
+// genuinely specialized; everything else is inherited unchanged.
+class SmallListLookAndFeel : public DysektLookAndFeel
 {
 public:
     SmallListLookAndFeel() {}
@@ -54,63 +59,11 @@ public:
         setColour (juce::Label::textColourId, t.foreground.withAlpha (0.75f));
     }
 
-    void drawPopupMenuBackground (juce::Graphics& g, int w, int h) override
-    {
-        g.fillAll (getTheme().darkBar);
-        g.setColour (getTheme().separator);
-        g.drawRect (0, 0, w, h, 1);
-    }
-
-    void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
-                            bool isSeparator, bool isActive, bool isHighlighted,
-                            bool isTicked, bool, const juce::String& text,
-                            const juce::String&, const juce::Drawable*,
-                            const juce::Colour*) override
-    {
-        if (isSeparator)
-        {
-            g.setColour (getTheme().separator);
-            g.fillRect (area.reduced (4, 0).withHeight (1).withY (area.getCentreY()));
-            return;
-        }
-        if (isHighlighted && isActive)
-        {
-            g.setColour (getTheme().accent.withAlpha (0.15f));
-            g.fillRect (area);
-        }
-        const int dotZone = 16;
-        if (isTicked)
-        {
-            g.setColour (getTheme().accent);
-            g.fillRect (area.getX() + 6, area.getCentreY() - 2, 4, 4);
-        }
-        const auto textCol = isTicked ? getTheme().accent
-                           : isActive ? getTheme().foreground
-                                      : getTheme().foreground.withAlpha (0.4f);
-        g.setColour (textCol);
-        g.setFont (juce::Font (juce::FontOptions{}.withHeight (19.5f)));
-        g.drawText (text,
-                    area.withLeft (area.getX() + dotZone)
-                        .withRight (area.getRight() - 4),
-                    juce::Justification::centredLeft);
-    }
-
+    // Popup menu background/item drawing and the combo box are no longer
+    // overridden here — DysektLookAndFeel's versions are flat and theme-driven
+    // now, so this list gets the same look as every other combo/popup in the
+    // app for free. Only the font size stays specialized (below).
     juce::Font getPopupMenuFont() override { return juce::Font (juce::FontOptions{}.withHeight (19.5f)); }
-
-    void drawComboBox (juce::Graphics& g, int width, int height, bool,
-                       int buttonX, int, int, int, juce::ComboBox& box) override
-    {
-        const auto& t = getTheme();
-        g.setColour (t.darkBar.darker (0.3f));
-        g.fillRect (0, 0, width, height);
-        g.setColour (box.hasKeyboardFocus (false) ? t.accent.withAlpha (0.5f) : t.separator);
-        g.drawRect (0, 0, width, height, 1);
-        const int cx = buttonX + (width - buttonX) / 2;
-        const int cy = height / 2;
-        g.setColour (t.foreground.withAlpha (0.85f));
-        g.drawLine ((float)(cx - 4), (float)(cy - 2), (float)(cx),     (float)(cy + 2), 1.5f);
-        g.drawLine ((float)(cx),     (float)(cy + 2), (float)(cx + 4), (float)(cy - 2), 1.5f);
-    }
 
     juce::Font getComboBoxFont (juce::ComboBox&) override
     {
