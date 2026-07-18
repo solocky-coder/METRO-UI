@@ -166,7 +166,7 @@ void DysektLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectan
                                             bool isSeparator, bool isActive, bool isHighlighted,
                                             bool isTicked, bool /*hasSubMenu*/,
                                             const juce::String& text, const juce::String& /*shortcutText*/,
-                                            const juce::Drawable* /*icon*/, const juce::Colour* /*textColour*/)
+                                            const juce::Drawable* icon, const juce::Colour* /*textColour*/)
 {
     // Solid background first
     g.setColour (getTheme().darkBar.brighter (0.06f));
@@ -202,13 +202,32 @@ void DysektLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectan
                     dotSize, dotSize);
     }
 
+    // ── Leading icon (e.g. the piano-roll tool glyphs on the right-click
+    //    Tool submenu) ────────────────────────────────────────────────────
+    // getIdealPopupMenuItemSize() already widens rows that carry an icon, but
+    // this override used to ignore the `icon` parameter entirely (it was
+    // named as a discarded /*icon*/ argument), so PopupMenu::Item::setImage()
+    // had no visible effect — items always rendered as text-only regardless
+    // of what the caller set. Paint it in a fixed-width zone right after the
+    // tick zone, then push the text start past it.
+    int contentLeft = area.getX() + tickZoneW;
+    if (icon != nullptr)
+    {
+        const int iconZoneW = (int) (22 * sMenuScale);
+        const int iconSize  = (int) (16 * sMenuScale);
+        auto iconBounds = juce::Rectangle<int> (contentLeft, area.getY(), iconZoneW, area.getHeight())
+                              .withSizeKeepingCentre (iconSize, iconSize);
+        icon->drawWithin (g, iconBounds.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+        contentLeft += iconZoneW;
+    }
+
     const juce::Colour textCol = isTicked ? getTheme().accent
                                : isActive ? getTheme().foreground
                                           : getTheme().foreground.withAlpha (0.4f);
     g.setColour (textCol);
     g.setFont (getPopupMenuFont());
 
-    auto textArea = area.withLeft (area.getX() + tickZoneW)
+    auto textArea = area.withLeft (contentLeft)
                         .withRight (area.getRight() - (int) (4 * sMenuScale));
     g.drawText (text, textArea, juce::Justification::centredLeft);
 }
