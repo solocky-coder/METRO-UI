@@ -73,7 +73,7 @@ bool SliceControlBar::isSfzPlayer2Mode() const noexcept
 
 void SliceControlBar::setSfzZoneSummary (int zoneIndex, const juce::String& name,
                                          int loKey, int hiKey, int rootPitch,
-                                         float tuneCents, float pan, float volDb, float releaseSec)
+                                         float tuneCents, float pan, float volDb, float releaseSec, bool isLooped)
 {
     sfzZoneSummary.valid      = true;
     sfzZoneSummary.index      = zoneIndex;
@@ -85,6 +85,7 @@ void SliceControlBar::setSfzZoneSummary (int zoneIndex, const juce::String& name
     sfzZoneSummary.pan        = pan;
     sfzZoneSummary.volDb      = volDb;
     sfzZoneSummary.releaseSec = releaseSec;
+    sfzZoneSummary.isLooped   = isLooped;
     repaint();
 }
 
@@ -1346,41 +1347,70 @@ locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
 // slices — they have no selectedSlice/UiSliceSnapshot entry of their own —
 // so this reads from sfzZoneSummary, populated externally by the editor via
 // setSfzZoneSummary() whenever a matrix row is clicked or drag-edited.
+void SliceControlBar::drawSfzZoneCell (juce::Graphics& g, int x, int y,
+                                          const juce::String& label, const juce::String& value,
+                                          int field, int& outWidth)
+{
+    const int w = psCellW, h = psCellH;
+    const auto r = juce::Rectangle<int> (x, y, w, h);
+    g.setColour (getTheme().button.withAlpha (0.72f)); g.fillRect (r);
+    g.setColour (getTheme().separator.withAlpha (0.50f)); g.drawRect (r);
+    g.setFont (DysektLookAndFeel::makeFont (8.0f * paintSf, true));
+    g.setColour (getTheme().foreground.withAlpha (0.45f));
+    g.drawText (label, r.reduced (4, 2).removeFromTop (11), juce::Justification::centredLeft);
+    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
+    g.setColour (getTheme().foreground.withAlpha (0.92f));
+    g.drawText (value, r.reduced (4, 2), juce::Justification::centredBottom);
+    sfzZoneCells.push_back ({ r, field });
+    outWidth = w;
+}
+
 void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int width, int height) const
 {
-    g.setFont (DysektLookAndFeel::makeFont (14.0f * paintSf));
-
+    auto* self = const_cast<SliceControlBar*> (this);
     if (! sfzZoneSummary.valid)
     {
+        g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf));
         g.setColour (getTheme().foreground.withAlpha (0.35f));
-        g.drawText ("No zone selected", x, y, width, height, juce::Justification::centredLeft);
+        g.drawText ("Select a zone to edit", x, y, width, height, juce::Justification::centredLeft);
         return;
     }
-
     const auto& z = sfzZoneSummary;
-
-    juce::String keyRange = (z.loKey == z.hiKey)
-        ? scbMidiNoteName (z.loKey)
-        : scbMidiNoteName (z.loKey) + "-" + scbMidiNoteName (z.hiKey);
-
-    juce::String rootStr = (z.rootPitch >= 0) ? scbMidiNoteName (z.rootPitch) : "--";
-
-    juce::String pitchStr = (z.tuneCents >= 0.0f ? "+" : "") + juce::String ((int) std::round (z.tuneCents)) + "c";
-
-    juce::String panStr;
+    auto note = [] (int n) { return scbMidiNoteName (juce::jlimit (0, 127, n)); };
+    const juce::String pan = z.pan == 0.f ? "C" : (z.pan < 0.f ? "L" : "R") + juce::String (juce::roundToInt (std::abs (z.pan) * 100.f));
+    const juce::String values[] = { note (z.loKey), note (z.hiKey),
+        z.rootPitch >= 0 ? note (z.rootPitch) : "--",
+        juce::String (juce::roundToInt (z.tuneCents)) + "ct", pan,
+        juce::String (z.volDb, 1) + "dB", juce::String (z.releaseSec, 3) + "s",
+        z.isLooped ? "ON" : "OFF" };
+    const char* labels[] = { "loKey", "hiKey", "ROOT", "PITCH", "PAN", "VOLUME", "RELEASE", "LOOP" };
+    const int fields[] = { ZoneLoKey, ZoneHiKey, ZoneRoot, ZonePitch, ZonePan, ZoneVolume, ZoneRelease, ZoneLoop };
+    int cx = x, cw = 0;
+    for (int i = 0; i < 8 && cx + psCellW <= x + width; ++i)
     {
-        const int pv = juce::roundToInt (z.pan * 100.0f);
-        panStr = (pv == 0) ? "C" : (pv < 0 ? ("L" + juce::String (-pv)) : ("R" + juce::String (pv)));
+        self->drawSfzZoneCell (g, cx, y, labels[i], values[i], fields[i], cw);
+        cx += cw + juce::roundToInt (4.0f * paintSf);
     }
+}
 
-    juce::String volStr = juce::String (z.volDb, 1) + " dB";
-    juce::String relStr = juce::String (juce::roundToInt (z.releaseSec * 1000.0f)) + " ms";
-
-    juce::String line = keyRange + "  |  Root: " + rootStr + "  |  Pitch: " + pitchStr
-                       + "  |  Pan: " + panStr + "  |  Vol: " + volStr + "  |  Rel: " + relStr;
-
-    g.setColour (getTheme().foreground.withAlpha (0.9f));
-    g.drawText (line, x, y, width, height, juce::Justification::centredLeft);
+void SliceControlBar::applySfzZoneDrag (int field, float value, bool commit)
+{
+    if (! sfzZoneSummary.valid) return;
+    auto& z = sfzZoneSummary;
+    switch (field)
+    {
+        case ZoneLoKey:   z.loKey = juce::jmin (z.hiKey, juce::jlimit (0, 127, juce::roundToInt (value))); break;
+        case ZoneHiKey:   z.hiKey = juce::jmax (z.loKey, juce::jlimit (0, 127, juce::roundToInt (value))); break;
+        case ZoneRoot:    z.rootPitch = juce::jlimit (0, 127, juce::roundToInt (value)); break;
+        case ZonePitch:   z.tuneCents = juce::jlimit (-100.f, 100.f, value); break;
+        case ZonePan:     z.pan = juce::jlimit (-1.f, 1.f, value); break;
+        case ZoneVolume:  z.volDb = juce::jlimit (-60.f, 12.f, value); break;
+        case ZoneRelease: z.releaseSec = juce::jlimit (0.f, 60.f, value); break;
+        case ZoneLoop:    z.isLooped = value > 0.5f; break;
+        default: return;
+    }
+    if (commit && onSfzZoneParamEdited) onSfzZoneParamEdited (z.index, field, value);
+    repaint();
 }
 
 // =============================================================================
@@ -1580,7 +1610,30 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
 
  if (textEditor != nullptr) textEditor.reset();
  activeDragCell = -1;
+ activeSfzZoneField = 0;
  auto pos = e.getPosition();
+ if (isSfzPlayer2Mode() && zoneViewActive && sfzZoneSummary.valid)
+ {
+     for (const auto& zoneCell : sfzZoneCells)
+         if (zoneCell.bounds.contains (pos))
+         {
+             if (zoneCell.field == ZoneLoop)
+             { applySfzZoneDrag (ZoneLoop, sfzZoneSummary.isLooped ? 0.f : 1.f, true); return; }
+             activeSfzZoneField = zoneCell.field;
+             dragStartY = pos.y;
+             switch (activeSfzZoneField) {
+                 case ZoneLoKey: dragStartValue = (float) sfzZoneSummary.loKey; break;
+                 case ZoneHiKey: dragStartValue = (float) sfzZoneSummary.hiKey; break;
+                 case ZoneRoot: dragStartValue = (float) sfzZoneSummary.rootPitch; break;
+                 case ZonePitch: dragStartValue = sfzZoneSummary.tuneCents; break;
+                 case ZonePan: dragStartValue = sfzZoneSummary.pan; break;
+                 case ZoneVolume: dragStartValue = sfzZoneSummary.volDb; break;
+                 case ZoneRelease: dragStartValue = sfzZoneSummary.releaseSec; break;
+             }
+             sfzZoneEditPending = true;
+             return;
+         }
+ }
  const auto& ui = sfzMode ? processor.getUiSliceSnapshot2() : processor.getUiSliceSnapshot();
 
  // FINE mode toggle badge — check before cell loop so it doesn't start a drag
@@ -1911,7 +1964,7 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
  // ── Lock guard: block all param changes if selected slice is fully locked ─
  {
  const auto& snap = sfzMode ? processor.getUiSliceSnapshot2() : processor.getUiSliceSnapshot();
- if (snap.selectedSlice >= 0 && snap.selectedSlice < snap.numSlices)
+ if (activeSfzZoneField == 0 && snap.selectedSlice >= 0 && snap.selectedSlice < snap.numSlices)
  {
  const auto& sl = snap.slices[(size_t) snap.selectedSlice];
  if (sl.lockMask == 0xFFFFFFFFu)
@@ -1922,6 +1975,16 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
  }
  }
 
+ if (activeSfzZoneField != 0)
+ {
+     const float delta = (float) (dragStartY - e.y);
+     float scale = e.mods.isShiftDown() ? 0.1f : 1.0f;
+     if (activeSfzZoneField == ZonePan) scale *= 0.01f;
+     else if (activeSfzZoneField == ZoneVolume) scale *= 0.5f;
+     else if (activeSfzZoneField == ZoneRelease) scale *= 0.01f;
+     applySfzZoneDrag (activeSfzZoneField, dragStartValue + delta * scale, false);
+     return;
+ }
  if (activeDragCell < 0) return;
  // Use the snapshot taken at mouseDown — cells[] is rebuilt by every repaint()
  // so indexing by activeDragCell after a repaint reads the wrong cell.
@@ -2096,6 +2159,24 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
 // =============================================================================
 void SliceControlBar::mouseUp (const juce::MouseEvent& /*e*/)
 {
+ if (activeSfzZoneField != 0)
+ {
+     const int field = activeSfzZoneField;
+     activeSfzZoneField = 0;
+     if (sfzZoneEditPending && onSfzZoneParamEdited)
+     {
+         float value = 0.f;
+         switch (field) {
+             case ZoneLoKey: value = (float) sfzZoneSummary.loKey; break; case ZoneHiKey: value = (float) sfzZoneSummary.hiKey; break;
+             case ZoneRoot: value = (float) sfzZoneSummary.rootPitch; break; case ZonePitch: value = sfzZoneSummary.tuneCents; break;
+             case ZonePan: value = sfzZoneSummary.pan; break; case ZoneVolume: value = sfzZoneSummary.volDb; break;
+             case ZoneRelease: value = sfzZoneSummary.releaseSec; break;
+         }
+         onSfzZoneParamEdited (sfzZoneSummary.index, field, value);
+     }
+     sfzZoneEditPending = false;
+     return;
+ }
  using F = DysektProcessor;
 
  if (activeDragCell >= 0)

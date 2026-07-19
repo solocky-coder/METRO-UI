@@ -51,9 +51,16 @@ public:
     // selectedSlice/UiSliceSnapshot representation of their own.
     void setSfzZoneSummary (int zoneIndex, const juce::String& name,
                             int loKey, int hiKey, int rootPitch,
-                            float tuneCents, float pan, float volDb, float releaseSec);
+                            float tuneCents, float pan, float volDb, float releaseSec, bool isLooped = false);
     void clearSfzZoneSummary();
 
+    /// Fired after a zone parameter is changed in the SFZ-PLAYER control bar.
+    std::function<void (int zoneIndex, int field, float value)> onSfzZoneParamEdited;
+
+public:
+    enum SfzZoneField { ZoneLoKey = -100, ZoneHiKey, ZoneRoot, ZonePitch,
+                        ZonePan, ZoneVolume, ZoneRelease, ZoneLoop };
+    struct SfzZoneCell { juce::Rectangle<int> bounds; int field; };
 private:
     void timerCallback() override;
     float pulsePhase    = 0.0f;   // 0..1, advances each timer tick
@@ -75,6 +82,7 @@ private:
         bool valid = false;
         int index = -1, loKey = 0, hiKey = 127, rootPitch = -1;
         float tuneCents = 0.0f, pan = 0.0f, volDb = -7.0f, releaseSec = 0.664f;
+        bool isLooped = false;
         juce::String name;
     } sfzZoneSummary;
 
@@ -105,6 +113,13 @@ private:
     };
 
     std::vector<ParamCell> cells;
+    std::vector<SfzZoneCell> sfzZoneCells;
+    int activeSfzZoneField = 0;
+    bool sfzZoneEditPending = false;
+
+    void drawSfzZoneCell (juce::Graphics&, int x, int y, const juce::String& label,
+                          const juce::String& value, int field, int& outWidth);
+    void applySfzZoneDrag (int field, float value, bool commit);
 
     void drawParamCell (juce::Graphics& g, int x, int y, const juce::String& label,
                         const juce::String& value, bool locked, uint32_t lockBit,

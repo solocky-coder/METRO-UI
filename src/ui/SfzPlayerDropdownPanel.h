@@ -48,6 +48,10 @@ public:
     void resized () override;
     void timerCallback() override;
 
+    /// Persist an editable SFZ zone and hot-reload the player.
+    void writeSfzZoneChange (const juce::File& f, int rowIndex,
+                             const KeysPanel::Keyzone& updated);
+
     // ── FileDragAndDropTarget ─────────────────────────────────────────────────
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
@@ -169,9 +173,6 @@ private:
 
     // ── Preset navigation ─────────────────────────────────────────────────────
     void selectPreset (int delta);
-
-    void writeSfzZoneChange (const juce::File& f, int rowIndex,
-                              const KeysPanel::Keyzone& updated);
 
     // ── Add Zone / Save SFZ As ────────────────────────────────────────────────
     void openAddZoneChooser();

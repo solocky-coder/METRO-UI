@@ -176,14 +176,39 @@ zoneBuilderKeysPanel.onRowClicked = [this] (int rowIndex)
     }
     const auto& z = zones[(size_t) rowIndex];
     sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
-                                       z.tuneCents, z.pan, z.volDb, z.releaseSec);
+                                       z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
 };
 zoneBuilderKeysPanel.onZoneEdited = [this] (int rowIndex, const KeysPanel::Keyzone& z)
 {
     // Keep the readout live while the user is drag-editing the currently
     // selected row's numeric columns in the matrix.
     sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
-                                       z.tuneCents, z.pan, z.volDb, z.releaseSec);
+                                       z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
+};
+sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float value)
+{
+    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
+    if (rowIndex < 0 || rowIndex >= (int) zones.size()) return;
+    auto z = zones[(size_t) rowIndex];
+    switch (field)
+    {
+        case SliceControlBar::ZoneLoKey:   z.loKey = juce::jmin (z.hiKey, juce::roundToInt (value)); break;
+        case SliceControlBar::ZoneHiKey:   z.hiKey = juce::jmax (z.loKey, juce::roundToInt (value)); break;
+        case SliceControlBar::ZoneRoot:    z.rootPitch = juce::roundToInt (value); break;
+        case SliceControlBar::ZonePitch:   z.tuneCents = value; break;
+        case SliceControlBar::ZonePan:     z.pan = value; break;
+        case SliceControlBar::ZoneVolume:  z.volDb = value; break;
+        case SliceControlBar::ZoneRelease: z.releaseSec = value; break;
+        case SliceControlBar::ZoneLoop:    z.isLooped = value > 0.5f; break;
+        default: return;
+    }
+    // Use the established zone-matrix writer, so SCB edits persist and reload
+    // into the SFZ player just like edits made in the matrix itself.
+    sfzPlayerDropdown.writeSfzZoneChange (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz,
+                                    rowIndex, z);
+    sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
+                                       z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
+    refreshZoneBuilderMatrix (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz);
 };
  addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
