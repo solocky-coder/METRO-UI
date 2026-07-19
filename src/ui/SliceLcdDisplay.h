@@ -94,8 +94,8 @@ private:
  static juce::String formatMs (float secs);
  static juce::String formatPan (float pan);
 
- // True when midiRouteMode == SfzPlayer2 (SFZ-PLAYER tab) — routes all
- // reads/writes to sliceManager2/voicePool2 instead of the Slicer's.
+ // True when activeUiTab == SfzPlayer2 (SFZ-PLAYER tab, arranger-independent)
+ // — routes all reads/writes to sliceManager2/voicePool2 instead of the Slicer's.
  bool isSfzPlayer2Mode() const noexcept;
 
  DysektProcessor& processor;

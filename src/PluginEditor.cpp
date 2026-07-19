@@ -423,6 +423,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  // Restore the correct MIDI route mode that matches the saved uiMode.
  // setUiMode() wasn't called by loadUserSettings(), so we must do this here.
  syncMidiRouteMode();
+ processor.activeUiTab.store (uiMode, std::memory_order_relaxed);
 
  // Keep the tab strip in sync with the restored uiMode — without this the
  // tab highlight defaults to SLICER regardless of which mode was actually
@@ -545,6 +546,11 @@ void DysektEditor::setUiMode (int mode)
 {
  if (uiMode == mode) return;
  uiMode = mode;
+ // Arranger-independent "which tab is active" signal — see the activeUiTab
+ // doc comment in PluginProcessor.h. Must be set here (not derived from
+ // midiRouteMode) because syncMidiRouteMode() below overwrites midiRouteMode
+ // to Sequencer whenever the Arranger has focus.
+ processor.activeUiTab.store (uiMode, std::memory_order_relaxed);
  // Leaving slicer mode — reset pad view to waveform
  if (uiMode != 0) { showPadGrid = false; sliceControlBar.setPadViewActive (false); }
  // Leaving Slicer while a trim session is still pending (file load hasn't

@@ -57,9 +57,9 @@ SliceControlBar::SliceControlBar (DysektProcessor& p) : processor (p)
 
 bool SliceControlBar::isSfzPlayer2Mode() const noexcept
 {
-    // midiRouteMode: 0=Slicer, 1=SfPlayer, 2=SfzPlayer2, 3=Sequencer
-    return processor.midiRouteMode.load (std::memory_order_relaxed)
-         == static_cast<int> (DysektProcessor::MidiRouteMode::SfzPlayer2);
+    // activeUiTab (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) — arranger-independent,
+    // unlike midiRouteMode which the Arranger overwrites to Sequencer.
+    return processor.activeUiTab.load (std::memory_order_relaxed) == 1;
 }
 
 void SliceControlBar::timerCallback()
@@ -821,10 +821,9 @@ void SliceControlBar::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos
 // =============================================================================
 void SliceControlBar::paint (juce::Graphics& g)
 {
- const bool sfzPlayerMode = (processor.midiRouteMode.load (std::memory_order_relaxed)
-                              == static_cast<int> (DysektProcessor::MidiRouteMode::SfPlayer))
-                          || (processor.midiRouteMode.load (std::memory_order_relaxed)
-                              == static_cast<int> (DysektProcessor::MidiRouteMode::SfzPlayer2));
+ // activeUiTab (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) -- arranger-independent,
+ // unlike midiRouteMode which the Arranger overwrites to Sequencer.
+ const bool sfzPlayerMode = processor.activeUiTab.load (std::memory_order_relaxed) != 0;
  // ── LCD-style frame — matches waveform + LCD screen aesthetic ────────────
  {
  auto b = getLocalBounds();

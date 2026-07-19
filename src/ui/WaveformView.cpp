@@ -102,8 +102,9 @@ bool WaveformView::isInteracting() const noexcept
 
 bool WaveformView::isSfzPlayer2Mode() const noexcept
 {
-    return processor.midiRouteMode.load (std::memory_order_relaxed)
-           == static_cast<int> (DysektProcessor::MidiRouteMode::SfzPlayer2);
+    // activeUiTab (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) — arranger-independent,
+    // unlike midiRouteMode which the Arranger overwrites to Sequencer.
+    return processor.activeUiTab.load (std::memory_order_relaxed) == 1;
 }
 
 SampleData& WaveformView::activeSampleData() const noexcept
@@ -1466,9 +1467,9 @@ bool WaveformView::isInterestedInFileDrag (const juce::StringArray& files)
  {
  auto ext = juce::File (f).getFileExtension().toLowerCase();
         // In SFZ-PLAYER or SF2-player mode: only accept .sfz files
-        const int routeMode = processor.midiRouteMode.load (std::memory_order_relaxed);
-        const bool sfzMode = (routeMode == static_cast<int> (DysektProcessor::MidiRouteMode::SfPlayer))
-                          || (routeMode == static_cast<int> (DysektProcessor::MidiRouteMode::SfzPlayer2));
+        // activeUiTab (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) — arranger-independent,
+        // unlike midiRouteMode which the Arranger overwrites to Sequencer.
+        const bool sfzMode = processor.activeUiTab.load (std::memory_order_relaxed) != 0;
  if (sfzMode)
  {
      if (ext == ".sfz") return true;
@@ -1492,9 +1493,11 @@ void WaveformView::filesDropped (const juce::StringArray& files, int, int)
  processor.zoom.store (1.0f);
  processor.scroll.store (0.0f);
  prevCacheKey = {};
-    const int routeMode2 = processor.midiRouteMode.load (std::memory_order_relaxed);
-    const bool isSfPlayerTab    = (routeMode2 == static_cast<int> (DysektProcessor::MidiRouteMode::SfPlayer));
-    const bool isSfzPlayer2Tab  = (routeMode2 == static_cast<int> (DysektProcessor::MidiRouteMode::SfzPlayer2));
+    // activeUiTab (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) — arranger-independent,
+    // unlike midiRouteMode which the Arranger overwrites to Sequencer.
+    const int activeTab = processor.activeUiTab.load (std::memory_order_relaxed);
+    const bool isSfPlayerTab    = (activeTab == 2);
+    const bool isSfzPlayer2Tab  = (activeTab == 1);
  if (isSfPlayerTab || isSfzPlayer2Tab)
  {
         // SFZ-PLAYER tab: load via SoundFontLoader, which renders every SFZ

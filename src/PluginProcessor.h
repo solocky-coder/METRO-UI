@@ -309,6 +309,9 @@ public:
      *              sfzPlayer receives mask = 0 (no live input).
      *  SfPlayer  — slicer is bypassed entirely; sfzPlayer receives
      *              mask = all assigned SF-track channels.
+     *  SfzPlayer2 — UI-display hint only for the SFZ-PLAYER tab; live MIDI
+     *              ownership for sfzPlayer2 is governed by its own channel
+     *              mask (sfzPlayer2ChannelMask), independent of this mode.
      *  Sequencer — sequencer drives SF output; sfzPlayer live mask is
      *              governed by setSelectedSfLiveChannels(); slicer is bypassed.
      */
@@ -647,7 +650,17 @@ public:
     std::atomic<int>  trimRegionStart  { 0 };
     std::atomic<int>  trimRegionEnd    { 0 };
     std::atomic<bool> trimModeActive   { false };  // set by editor; CC routes to trim when true
-    std::atomic<int>  midiRouteMode    { 0 };       // 0=Slicer, 1=SfPlayer, 2=Sequencer
+    std::atomic<int>  midiRouteMode    { 0 };       // 0=Slicer, 1=SfPlayer, 2=SfzPlayer2, 3=Sequencer
+
+    // Which UI tab is actually selected — mirrors DysektEditor::uiMode
+    // (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) and is set ONLY from setUiMode().
+    // Unlike midiRouteMode, this is NEVER overwritten when the Arranger opens
+    // (syncMidiRouteMode() forces midiRouteMode to Sequencer for live-MIDI
+    // routing purposes, which made every isSfzPlayer2Mode()/isSfPlayerMode()
+    // display check across the UI silently fall back to Slicer once the
+    // Arranger had focus). Display code should read activeUiTab; only the
+    // live-MIDI routing path should still care about midiRouteMode.
+    std::atomic<int>  activeUiTab      { 0 };       // 0=Slicer, 1=SfzPlayer2, 2=SfPlayer
     std::atomic<int> trimInSample    { 0 };
     std::atomic<int> trimOutSample   { 0 };
 

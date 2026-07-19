@@ -94,8 +94,8 @@ private:
     float envAt (float xn)  const;     // interpolated Y at position xn
 
     // ── SF-PLAYER mode helpers ────────────────────────────────────────────────
-    bool  isSfPlayerMode() const;      // true when midiRouteMode == SfPlayer
-    bool  isSfzPlayer2Mode() const;    // true when midiRouteMode == SfzPlayer2 (SFZ-PLAYER tab)
+    bool  isSfPlayerMode() const;      // true when activeUiTab == SfPlayer (arranger-independent)
+    bool  isSfzPlayer2Mode() const;    // true when activeUiTab == SfzPlayer2 (SFZ-PLAYER tab)
     void  buildSfEnvelopeNodes();      // read sfzPlayer ADSR → sfEnv / envNodes
     void  commitSfNodes();             // sfEnv → sfzPlayer setters (no APVTS)
     void  drawSfPlayerPanel (juce::Graphics& g, const juce::Rectangle<float>& area);

@@ -92,8 +92,9 @@ SliceLcdDisplay::SliceLcdDisplay (DysektProcessor& p)
 
 bool SliceLcdDisplay::isSfzPlayer2Mode() const noexcept
 {
-    // midiRouteMode: 0=Slicer, 1=SfPlayer, 2=SfzPlayer2, 3=Sequencer
-    return processor.midiRouteMode.load (std::memory_order_relaxed) == 2;
+    // activeUiTab (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) — arranger-independent,
+    // unlike midiRouteMode which the Arranger overwrites to Sequencer.
+    return processor.activeUiTab.load (std::memory_order_relaxed) == 1;
 }
 
 // ── Data building ──────────────────────────────────────────────────────────────

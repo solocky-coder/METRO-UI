@@ -1158,13 +1158,14 @@ void SliceWaveformLcd::paint (juce::Graphics& g)
 
 bool SliceWaveformLcd::isSfPlayerMode() const
 {
-    // midiRouteMode: 0=Slicer, 1=SfPlayer, 2=SfzPlayer2, 3=Sequencer
-    return processor.midiRouteMode.load (std::memory_order_relaxed) == 1;
+    // activeUiTab (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) — arranger-independent,
+    // unlike midiRouteMode which the Arranger overwrites to Sequencer.
+    return processor.activeUiTab.load (std::memory_order_relaxed) == 2;
 }
 
 bool SliceWaveformLcd::isSfzPlayer2Mode() const
 {
-    return processor.midiRouteMode.load (std::memory_order_relaxed) == 2;
+    return processor.activeUiTab.load (std::memory_order_relaxed) == 1;
 }
 
 // Build envNodes from sfzPlayer's live ADSR atomics.
