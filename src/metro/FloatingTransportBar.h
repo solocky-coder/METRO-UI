@@ -1,0 +1,137 @@
+/*
+    DYSEKT 2
+    Metro UI
+
+    FloatingTransportBar.h
+
+    A detachable transport panel: cycle/loop, tempo, musical position, the
+    transport button cluster, locators, grid snap, and Ableton Link — the
+    same set of controls MetroTransportBar docks under the header, but able
+    to leave the main window entirely and float as its own borderless panel
+    that remembers where it was left.
+
+    Deliberately does NOT wrap juce::DocumentWindow (see SlotWindow.h /
+    PianoRollPanel.h for that shape elsewhere in the app). Those give the OS
+    title bar; this panel needs a custom strip — grip dots, a pin toggle, a
+    dock button — matching the reference mockup, so it owns its chrome and
+    drags itself via ComponentDragger instead.
+*/
+#pragma once
+
+#include <functional>
+#include <juce_gui_basics/juce_gui_basics.h>
+#include "../sequencer/AbletonLink.h"
+
+class SequencerEngine;
+
+namespace dysekt::metro
+{
+/**
+    FloatingTransportBar
+
+    Usage:
+        floatingTransport = std::make_unique<FloatingTransportBar> (engine, linkPtr);
+        floatingTransport->onDockRequested = [this] { showDocked(); undock.reset(); };
+        floatingTransport->show();   // adds itself to the desktop at its last position
+
+    The panel is a plain juce::Component the whole time — show()/hide() decide
+    whether it is currently living on the desktop as its own top-level window
+    or sitting invisible, so callers never juggle two different objects for
+    the docked and floating states.
+*/
+class FloatingTransportBar final : public juce::Component,
+                                   private juce::Timer
+{
+public:
+    explicit FloatingTransportBar (SequencerEngine& sequencer, AbletonLink* link = nullptr);
+    ~FloatingTransportBar() override;
+
+    /** Adds this component to the desktop as a borderless floating window at
+        its last remembered screen position (or a sensible default the first
+        time), and brings it to the front. */
+    void show();
+
+    /** Removes this component from the desktop, saving its current position
+        for next time. The component itself is not destroyed. */
+    void hide();
+
+    bool isFloating() const noexcept { return isOnDesktop(); }
+
+    /** Fired when the user double-clicks the title strip, or presses the
+        dock button — the host owns what "docking" means (e.g. re-parenting
+        this component back inline, or simply hiding it in favour of an
+        already-docked MetroTransportBar). This class only manages its own
+        desktop window lifecycle; it never re-parents itself. */
+    std::function<void()> onDockRequested;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+
+private:
+    //==========================================================================
+    //  Layout regions, computed once per resized() and reused by paint()
+    //==========================================================================
+    struct Layout
+    {
+        juce::Rectangle<int> titleStrip;
+        juce::Rectangle<int> cycleLabel, cycleButton;
+        juce::Rectangle<int> tempoLabel, tempoField;
+        juce::Rectangle<int> positionLabel, positionField;
+        juce::Rectangle<int> transportRow;
+        juce::Rectangle<int> locatorsLabel, locatorsField;
+        juce::Rectangle<int> setLeftButton, setRightButton;
+        juce::Rectangle<int> gridLabel, gridField;
+        juce::Rectangle<int> linkField;
+        juce::Rectangle<int> dockField;
+        int divider1 = 0, divider2 = 0, divider3 = 0;
+    };
+    Layout computeLayout() const;
+
+    void timerCallback() override;
+    void updateTempoFromEditor();
+    void setLeftLocatorToPlayhead();
+    void setRightLocatorToPlayhead();
+    static juce::String formatMusicalPosition (double beats);
+
+    static juce::File getPositionFile();
+    void restorePosition();
+    void savePosition() const;
+
+    SequencerEngine& engine;
+    AbletonLink*     linkPtr = nullptr;
+
+    // ── Title strip chrome ──────────────────────────────────────────────
+    juce::TextButton pinButton   { "Pin" };
+    juce::TextButton dockButton  { "Dock" };
+    juce::ComponentDragger dragger;
+
+    // ── Left section: cycle/loop + tempo ────────────────────────────────
+    juce::TextButton cycleButton { "LOOP" };
+    juce::Label      tempoLabel;
+
+    // ── Centre: musical position + transport cluster ───────────────────
+    juce::Label      positionLabel;
+    juce::TextButton toStartButton { "|<" };
+    juce::TextButton backButton    { "<<" };
+    juce::TextButton playButton    { ">" };
+    juce::TextButton stopButton    { "[]" };
+    juce::TextButton recordButton  { "REC" };
+
+    // ── Right: locators ──────────────────────────────────────────────────
+    juce::Label       locatorsLabel;
+    juce::TextButton  setLeftButton  { "SET LEFT" };
+    juce::TextButton  setRightButton { "SET RIGHT" };
+    int64_t leftLocatorTick  = 0;
+    int64_t rightLocatorTick = 0;
+
+    // ── Far right: grid snap + link ─────────────────────────────────────
+    juce::ComboBox   gridCombo;
+    juce::TextButton linkButton { "LINK" };
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FloatingTransportBar)
+};
+} // namespace dysekt::metro
