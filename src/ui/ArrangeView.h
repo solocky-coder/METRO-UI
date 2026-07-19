@@ -1089,16 +1089,11 @@ private:
             g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f);
         }
 
-        // Colour header strip along top
-        const float headerH = juce::jmin (7.f, (float)trackH * 0.13f);
+        // Left accent bar (flat, no rounding — replaces the old top strip)
+        const float accentW = 3.f;
         g.setColour (base.withAlpha (muted ? 0.24f : 0.90f));
-        {
-            juce::Path hdr;
-            hdr.addRoundedRectangle (clipR.getX() + 1.f, clipR.getY() + 1.f,
-                                     clipR.getWidth() - 2.f, headerH,
-                                     3.f, 3.f, true, true, false, false);
-            g.fillPath (hdr);
-        }
+        g.fillRect (clipR.getX() + 1.f, clipR.getY() + 1.f,
+                    accentW, (float)clipR.getHeight() - 2.f);
 
         // Track name
         if (trackH >= 20)
@@ -1107,8 +1102,8 @@ private:
             g.setColour (muted ? getTheme().foreground.withAlpha (0.35f)
                                : juce::Colours::white.withAlpha (0.88f));
             g.drawText (info.name,
-                        clipR.getX() + 5, clipR.getY() + (int)headerH,
-                        juce::jmax (0, clipR.getWidth() - 24),
+                        clipR.getX() + 5 + (int)accentW, clipR.getY() + 2,
+                        juce::jmax (0, clipR.getWidth() - 24 - (int)accentW),
                         juce::jmax (0, (int)(trackH * 0.38f)),
                         juce::Justification::centredLeft, true);
         }
@@ -1167,6 +1162,18 @@ private:
 
         g.saveState();
         g.reduceClipRegion (clipR.withTrimmedTop (headerH).withTrimmedBottom (2));
+
+        // Bar-boundary grid lines behind the notes
+        {
+            const int64_t ppq    = MidiClip::kPPQ;
+            const int64_t barLen = ppq * 4;
+            g.setColour (base.brighter (0.15f).withAlpha (muted ? 0.10f : 0.18f));
+            for (int64_t t = barLen; t < clipLen; t += barLen)
+            {
+                const float gx = clipR.getX() + (float)t / (float)clipLen * clipR.getWidth();
+                g.fillRect (juce::Rectangle<float> (gx, (float)previewY, 1.f, (float)previewH));
+            }
+        }
 
         {
             const juce::ScopedReadLock sl (clip->getLock());
