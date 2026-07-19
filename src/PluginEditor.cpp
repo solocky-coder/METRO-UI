@@ -547,6 +547,17 @@ void DysektEditor::setUiMode (int mode)
  uiMode = mode;
  // Leaving slicer mode — reset pad view to waveform
  if (uiMode != 0) { showPadGrid = false; sliceControlBar.setPadViewActive (false); }
+ // Leaving Slicer while a trim session is still pending (file load hasn't
+ // finished yet, so trimSession->active is still false) must cancel that
+ // session outright. Otherwise the timerCallback poll at the bottom of this
+ // file later sees the load complete, flips trimSession->active to true, and
+ // resized()'s `uiMode == 0 || trimActive` check then forces the Slicer's
+ // waveform/trim layout back on top of whatever tab the user has since
+ // switched to (e.g. SFZ-PLAYER) — trim is exclusively a Slicer flow (see
+ // showTrimDialog's SF2/SFZ guard) and must never survive a tab switch away
+ // from it.
+ if (uiMode != 0 && trimSession != nullptr && ! trimSession->active)
+     trimSession.reset();
  // Leaving SFZ-PLAYER — reset zone-builder view so it can't leak into other
  // tabs (e.g. keep the SCB spuriously visible in Slicer; see the SCB
  // visibility gate in resized() for why this previously mattered).
@@ -683,6 +694,20 @@ void DysektEditor::toggleBrowserPanel()
 
 void DysektEditor::showTrimDialog (const juce::File& file, bool isRelink)
 {
+ // A new load (or relink) supersedes any previous pending trim session.
+ // Without this, starting a second load before the first one's async decode
+ // finishes left the old trimSession sitting around pointed at a file that's
+ // no longer the one actually loading — the timerCallback poll further down
+ // matches purely on sampleData's filePath, so it could later fire trim mode
+ // for the wrong (stale) session, or hold trimActive true and force the
+ // Slicer layout back on top of another tab for a load that has nothing to
+ // do with trimming. Only safe to clear here because trimDialog itself is
+ // still nullptr at this point for a genuinely new load — an already-active
+ // session (trimDialog open) means the user is mid-trim and this function
+ // isn't reached again until they finish or cancel it.
+ if (trimSession != nullptr && ! trimSession->active)
+     trimSession.reset();
+
  if (isRelink) {
  processor.loadFileAsync (file);
  return;
