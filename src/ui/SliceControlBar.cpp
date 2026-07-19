@@ -894,19 +894,6 @@ void SliceControlBar::paint (juce::Graphics& g)
  const int kToggleBtnW = si (52);
  int rightEdge = getWidth() - si (8) - kToggleBtnW * 2 - si (4) - si (6); // two buttons + gap
  int row1y = si (7), row2y = si (38); // centred: (72-59)/2 = 6.5 -> 7px top padding
-
- // ZONES matrix active (SFZ-PLAYER only): the normal per-slice knob row below
- // is driven by selectedSlice/UiSliceSnapshot, but zone-builder rows are
- // pending zones with no slice of their own -- show the selected-zone readout
- // instead. Independent of idx validity, since it has nothing to do with
- // slice selection.
- if (sfzMode && zoneViewActive)
- {
-     drawSfzZoneSummary (g, si (8), row1y, rightEdge - si (8), psCellH);
-     drawViewToggleButtons (g);
-     return;
- }
-
  if (idx < 0 || idx >= numSlices)
  {
  g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
@@ -1074,6 +1061,18 @@ void SliceControlBar::paint (juce::Graphics& g)
  true, 0, F::FieldOutputBus, 0.f, 15.f, 1.f,
  false, true, cw);
  x += cw + si (4);
+ }
+
+ // Selected-zone readout — SFZ-PLAYER ZONES view only, appended after OUT
+ // MAIN in the same row rather than replacing anything. See
+ // setSfzZoneSummary() doc comment.
+ if (sfzMode && zoneViewActive)
+ {
+ g.setColour (getTheme().separator.withAlpha (0.5f));
+ g.drawVerticalLine (x + 2, (float) row1y + 4, (float) row1y + 28);
+ x += 8;
+ drawSfzZoneSummary (g, x, row1y, rightEdge - x, psCellH);
+ x = rightEdge;
  }
 
  // ── Chromatic group: hidden in SFZ-player mode ─────────────────────────
@@ -1340,22 +1339,21 @@ locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
 // =============================================================================
 // drawSfzZoneSummary
 // =============================================================================
-// Compact read-only readout of the currently selected row in the SFZ-PLAYER's
-// ZONES matrix (zoneBuilderKeysPanel). Pending zones staged there aren't
+// Compact single-line, read-only readout of the currently selected row in the
+// SFZ-PLAYER's ZONES matrix (zoneBuilderKeysPanel), drawn inline in row 1 to
+// the right of OUT MAIN — NOT a replacement for the normal per-slice knob
+// row, which stays exactly as-is. Pending zones staged in the matrix aren't
 // slices — they have no selectedSlice/UiSliceSnapshot entry of their own —
 // so this reads from sfzZoneSummary, populated externally by the editor via
 // setSfzZoneSummary() whenever a matrix row is clicked or drag-edited.
 void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int width, int height) const
 {
-    juce::ignoreUnused (height);
+    g.setFont (DysektLookAndFeel::makeFont (14.0f * paintSf));
 
     if (! sfzZoneSummary.valid)
     {
-        g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
         g.setColour (getTheme().foreground.withAlpha (0.35f));
-        g.drawText ("No zone selected", x, juce::roundToInt (24.0f * paintSf),
-                    juce::roundToInt (220.0f * paintSf), juce::roundToInt (18.0f * paintSf),
-                    juce::Justification::centredLeft);
+        g.drawText ("No zone selected", x, y, width, height, juce::Justification::centredLeft);
         return;
     }
 
@@ -1381,15 +1379,8 @@ void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int w
     juce::String line = keyRange + "  |  Root: " + rootStr + "  |  Pitch: " + pitchStr
                        + "  |  Pan: " + panStr + "  |  Vol: " + volStr + "  |  Rel: " + relStr;
 
-    g.setFont (DysektLookAndFeel::makeFont (14.0f * paintSf));
-    g.setColour (getTheme().foreground.withAlpha (0.55f));
-    g.drawText ("ZONE " + juce::String (z.index + 1) + (z.name.isNotEmpty() ? (": " + z.name) : juce::String()),
-               x, y, width, juce::roundToInt (14.0f * paintSf), juce::Justification::centredLeft);
-
-    g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
     g.setColour (getTheme().foreground.withAlpha (0.9f));
-    g.drawText (line, x, y + juce::roundToInt (16.0f * paintSf), width,
-               juce::roundToInt (18.0f * paintSf), juce::Justification::centredLeft);
+    g.drawText (line, x, y, width, height, juce::Justification::centredLeft);
 }
 
 // =============================================================================
