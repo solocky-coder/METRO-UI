@@ -7,10 +7,12 @@
 //  TrackInspector — compact, selected-track control surface docked to the left
 //  of ArrangeView's TrackHeaderStrip.
 //
-//  Routing stays intentionally simple: one source, one instrument destination.
-//  Only SoundFont tracks expose a MIDI part/channel selector, since they alone
-//  are multi-timbral in the current instrument model — Slice and Chromatic
-//  tracks are always pinned to their fixed engine channel.
+//  No MIDI Out / Monitor controls: output routing is fixed (engine owns the
+//  destination per track type) and there is no separate audio monitor path
+//  to gate — this project records MIDI only. Only SoundFont tracks expose a
+//  MIDI part/channel selector, since they alone are multi-timbral in the
+//  current instrument model — Slice and Chromatic tracks are always pinned
+//  to their fixed engine channel.
 //==============================================================================
 class TrackInspector : public juce::Component,
                        private juce::Timer
@@ -21,13 +23,10 @@ public:
         configureButton (muteButton,    "M", juce::Colour (0xffc99140));
         configureButton (soloButton,    "S", juce::Colour (0xffd1b34c));
         configureButton (recordButton,  "R", juce::Colour (0xffd95454));
-        configureButton (monitorButton, "I", juce::Colour (0xff41b8a2));
 
         inputBox.addItem ("All MIDI Inputs", 1);
         inputBox.setSelectedId (1, juce::dontSendNotification);
         inputBox.setEnabled (false);
-
-        outputBox.setEnabled (false);
 
         channelBox.setVisible (false);
         for (int channel = 1; channel <= 16; ++channel)
@@ -50,7 +49,6 @@ public:
         };
 
         for (auto* control : { static_cast<juce::Component*> (&inputBox),
-                                static_cast<juce::Component*> (&outputBox),
                                 static_cast<juce::Component*> (&channelBox),
                                 static_cast<juce::Component*> (&volumeSlider),
                                 static_cast<juce::Component*> (&panSlider) })
@@ -63,7 +61,21 @@ public:
             refresh();
         };
         recordButton.onClick  = [this] { engine.setRecording (recordButton.getToggleState()); };
-        monitorButton.onClick = [this] { monitorEnabled = monitorButton.getToggleState(); repaint(); };
+        soloButton.onClick    = [this]
+        {
+            if (hasTrack())
+                engine.setTrackSolo (selectedTrack, soloButton.getToggleState());
+        };
+        volumeSlider.onValueChange = [this]
+        {
+            if (hasTrack())
+                engine.setTrackVolumeDb (selectedTrack, (float) volumeSlider.getValue());
+        };
+        panSlider.onValueChange = [this]
+        {
+            if (hasTrack())
+                engine.setTrackPan (selectedTrack, (float) (panSlider.getValue() / 100.0));
+        };
         channelBox.onChange   = [this]
         {
             if (! hasTrack()) return;
@@ -92,12 +104,10 @@ public:
 
         const auto info = engine.getTrackInfo (selectedTrack);
         muteButton.setToggleState    (! info.enabled, juce::dontSendNotification);
+        soloButton.setToggleState    (info.solo, juce::dontSendNotification);
         recordButton.setToggleState  (engine.isRecording(), juce::dontSendNotification);
-        monitorButton.setToggleState (monitorEnabled, juce::dontSendNotification);
-
-        outputBox.clear (juce::dontSendNotification);
-        outputBox.addItem (destinationName (info), 1);
-        outputBox.setSelectedId (1, juce::dontSendNotification);
+        volumeSlider.setValue (info.volumeDb, juce::dontSendNotification);
+        panSlider.setValue (info.pan * 100.0, juce::dontSendNotification);
 
         const bool isMultiTimbral = info.type == TrackType::SfPlayer;
         channelBox.setVisible (isMultiTimbral);
@@ -117,7 +127,6 @@ public:
 
         area.removeFromTop (20); // ROUTING heading
         layoutField (area, inputBox);
-        layoutField (area, outputBox);
         if (channelBox.isVisible()) layoutField (area, channelBox);
 
         area.removeFromTop (10);
@@ -125,13 +134,12 @@ public:
         layoutField (area, volumeSlider);
         layoutField (area, panSlider);
 
-        const int buttonW = juce::jmax (25, (getWidth() - 24 - 3 * 5) / 4);
+        const int buttonW = juce::jmax (25, (getWidth() - 24 - 2 * 5) / 3);
         const int buttonY = 67;
         constexpr int buttonGap = 5;
-        muteButton   .setBounds (12 + 0 * (buttonW + buttonGap), buttonY, buttonW, 25);
-        soloButton   .setBounds (12 + 1 * (buttonW + buttonGap), buttonY, buttonW, 25);
-        recordButton .setBounds (12 + 2 * (buttonW + buttonGap), buttonY, buttonW, 25);
-        monitorButton.setBounds (12 + 3 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        muteButton  .setBounds (12 + 0 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        soloButton  .setBounds (12 + 1 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        recordButton.setBounds (12 + 2 * (buttonW + buttonGap), buttonY, buttonW, 25);
     }
 
     void paint (juce::Graphics& g) override
@@ -173,10 +181,9 @@ public:
         content.removeFromTop (31);
         sectionLabel (g, "ROUTING", content.removeFromTop (20));
         drawFieldLabel (g, "INPUT", inputBox);
-        drawFieldLabel (g, "OUTPUT", outputBox);
         if (channelBox.isVisible()) drawFieldLabel (g, "PART", channelBox);
 
-        content.removeFromTop ((channelBox.isVisible() ? 3 : 2) * 42 + 10);
+        content.removeFromTop ((channelBox.isVisible() ? 2 : 1) * 42 + 10);
         sectionLabel (g, "CHANNEL", content.removeFromTop (20));
         drawFieldLabel (g, "VOLUME", volumeSlider);
         drawFieldLabel (g, "PAN", panSlider);
@@ -185,10 +192,9 @@ public:
 private:
     SequencerEngine& engine;
     int  selectedTrack   = -1;
-    bool monitorEnabled  = true;
 
-    juce::TextButton muteButton, soloButton, recordButton, monitorButton;
-    juce::ComboBox   inputBox, outputBox, channelBox;
+    juce::TextButton muteButton, soloButton, recordButton;
+    juce::ComboBox   inputBox, channelBox;
     juce::Slider     volumeSlider, panSlider;
 
     bool hasTrack() const { return juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()); }
@@ -209,9 +215,7 @@ private:
         for (auto* control : { static_cast<juce::Component*> (&muteButton),
                                 static_cast<juce::Component*> (&soloButton),
                                 static_cast<juce::Component*> (&recordButton),
-                                static_cast<juce::Component*> (&monitorButton),
                                 static_cast<juce::Component*> (&inputBox),
-                                static_cast<juce::Component*> (&outputBox),
                                 static_cast<juce::Component*> (&volumeSlider),
                                 static_cast<juce::Component*> (&panSlider) })
             control->setVisible (visible);
@@ -227,19 +231,6 @@ private:
             case TrackType::SfPlayer:       return "SOUNDFONT PROGRAM";
         }
         return {};
-    }
-
-    static juce::String destinationName (const SequencerTrackInfo& info)
-    {
-        switch (info.type)
-        {
-            case TrackType::MainSlice:      return "Slices — Pad Map";
-            case TrackType::ChromaticSlice: return "Slices — Chromatic";
-            case TrackType::SfPlayer:       return info.preset.name.isNotEmpty()
-                                                    ? "SoundFont — " + info.preset.name
-                                                    : "SoundFont Program";
-        }
-        return "Not Routed";
     }
 
     static void layoutField (juce::Rectangle<int>& area, juce::Component& control)
@@ -270,9 +261,12 @@ private:
     {
         if (hasTrack())
         {
-            const bool shouldBeMuted = ! engine.getTrackInfo (selectedTrack).enabled;
+            const auto info = engine.getTrackInfo (selectedTrack);
+            const bool shouldBeMuted = ! info.enabled;
             if (muteButton.getToggleState() != shouldBeMuted)
                 muteButton.setToggleState (shouldBeMuted, juce::dontSendNotification);
+            if (soloButton.getToggleState() != info.solo)
+                soloButton.setToggleState (info.solo, juce::dontSendNotification);
         }
     }
 

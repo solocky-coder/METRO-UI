@@ -31,6 +31,7 @@
 // Stream version tags
 static constexpr int kStreamVersion1 = 1;  // legacy single-clip
 static constexpr int kStreamVersion2 = 2;  // multi-clip
+static constexpr int kStreamVersion3 = 3;  // + per-track solo/volumeDb/pan
 
 //==============================================================================
 struct SequencerEngine::Impl
@@ -309,8 +310,19 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     auto snap = impl->getTracks();
     if (! juce::isPositiveAndBelow (i, (int) snap->size())) return {};
     const auto& t = *(*snap)[(size_t) i];
-    return { t.type, t.enabled.load (std::memory_order_relaxed), t.name, t.colour, t.sliceIdx,
-             t.midiChannel.load (std::memory_order_relaxed), t.preset, t.getNumClips() };
+    SequencerTrackInfo info;
+    info.type        = t.type;
+    info.enabled     = t.enabled.load (std::memory_order_relaxed);
+    info.solo        = t.solo.load (std::memory_order_relaxed);
+    info.volumeDb    = t.volumeDb.load (std::memory_order_relaxed);
+    info.pan         = t.pan.load (std::memory_order_relaxed);
+    info.name        = t.name;
+    info.colour      = t.colour;
+    info.sliceIdx    = t.sliceIdx;
+    info.midiChannel = t.midiChannel.load (std::memory_order_relaxed);
+    info.preset      = t.preset;
+    info.numClips    = t.getNumClips();
+    return info;
 }
 
 void SequencerEngine::setTrackEnabled (int i, bool enabled)
@@ -318,6 +330,27 @@ void SequencerEngine::setTrackEnabled (int i, bool enabled)
     auto snap = impl->getTracks();
     if (juce::isPositiveAndBelow (i, (int) snap->size()))
         (*snap)[(size_t) i]->enabled.store (enabled, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setTrackSolo (int i, bool solo)
+{
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (i, (int) snap->size()))
+        (*snap)[(size_t) i]->solo.store (solo, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setTrackVolumeDb (int i, float volumeDb)
+{
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (i, (int) snap->size()))
+        (*snap)[(size_t) i]->volumeDb.store (volumeDb, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setTrackPan (int i, float pan)
+{
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (i, (int) snap->size()))
+        (*snap)[(size_t) i]->pan.store (pan, std::memory_order_relaxed);
 }
 
 void SequencerEngine::addMainTrack()
@@ -741,10 +774,20 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     auto tracksSnap = impl->getTracks();
     const int64_t masterLen = Impl::computeMasterLenFor (*tracksSnap);
 
+    // Standard mixer convention: while any track is soloed, only soloed
+    // tracks are audible, regardless of their own enabled/mute state.
+    bool anySoloed = false;
+    for (auto& t : *tracksSnap)
+    {
+        if (t->solo.load (std::memory_order_relaxed)) { anySoloed = true; break; }
+    }
+
     for (int ti = 0; ti < (int) tracksSnap->size(); ++ti)
     {
         auto& track = *(*tracksSnap)[(size_t) ti];
-        if (! track.enabled.load (std::memory_order_relaxed)) continue;
+        const bool audible = anySoloed ? track.solo.load (std::memory_order_relaxed)
+                                       : track.enabled.load (std::memory_order_relaxed);
+        if (! audible) continue;
 
         const int priorSize = outMidi.getNumEvents();
         auto clipsSnap = track.getClips();
@@ -842,7 +885,7 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
 //==============================================================================
 void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 {
-    s.writeInt   (kStreamVersion2);
+    s.writeInt   (kStreamVersion3);
     s.writeFloat (impl->internalBpm.load (std::memory_order_relaxed));
     s.writeBool  (impl->looping    .load (std::memory_order_relaxed));
     s.writeBool  (impl->syncToHost .load (std::memory_order_relaxed));
@@ -855,7 +898,7 @@ void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 
 bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
 {
-    // Peek at first int — kStreamVersion2 means multi-clip format,
+    // Peek at first int — kStreamVersion2/3 mean multi-clip format,
     // otherwise treat the bytes as a legacy float BPM (version 1).
     const auto startPos = s.getPosition();
     const int firstInt  = s.readInt();
@@ -864,8 +907,9 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     bool  loop, sync;
     int   n;
     const bool isV2 = (firstInt == kStreamVersion2);
+    const bool isV3 = (firstInt == kStreamVersion3);
 
-    if (isV2)
+    if (isV2 || isV3)
     {
         bpm  = s.readFloat();
         loop = s.readBool();
@@ -890,7 +934,7 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     for (int i = 0; i < n; ++i)
     {
         auto t  = std::make_shared<SequencerTrack>();
-        bool ok = isV2 ? t->readFromStream (s) : t->readFromStreamV1 (s);
+        bool ok = (isV2 || isV3) ? t->readFromStream (s, isV3) : t->readFromStreamV1 (s);
         if (! ok) return false;
         loaded->push_back (t);
     }

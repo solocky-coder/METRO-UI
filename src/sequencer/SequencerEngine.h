@@ -13,6 +13,9 @@ struct SequencerTrackInfo
 {
     TrackType     type        = TrackType::MainSlice;
     bool          enabled     = true;
+    bool          solo        = false;
+    float         volumeDb    = 0.0f;   // -60..+6, not yet applied to audio output
+    float         pan         = 0.0f;   // -1..+1, not yet applied to audio output
     juce::String  name;
     juce::Colour  colour      = juce::Colour (0xFF3A6080);
     int           sliceIdx    = -1;
@@ -72,6 +75,17 @@ public:
     SequencerTrackInfo getTrackInfo (int i) const;
 
     void setTrackEnabled (int i, bool enabled);
+
+    /** Solo follows standard mixer convention: while any track is soloed,
+     *  only soloed tracks are audible, regardless of their own enabled/mute
+     *  state. Clearing solo on all tracks restores normal enabled-based
+     *  gating. */
+    void setTrackSolo (int i, bool solo);
+
+    /** Stored on the track and persisted; not yet applied to audio output. */
+    void setTrackVolumeDb (int i, float volumeDb);
+    /** Stored on the track and persisted; not yet applied to audio output. -1..+1 */
+    void setTrackPan (int i, float pan);
 
     void addMainTrack();
     void addChromaticTrack (int sliceIdx, int chromaticChannel,

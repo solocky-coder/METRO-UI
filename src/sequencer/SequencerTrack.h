@@ -66,9 +66,10 @@ struct ClipSlot
 //  Lifetime model: a SequencerTrack, once created, is always held behind a
 //  shared_ptr<SequencerTrack> inside a SequencerEngine track-list snapshot
 //  (see SequencerEngine::Impl::TrackList). It is never copied or moved —
-//  fields that can change after publication (enabled, midiChannel) are
-//  atomics mutated in place; the clip list is copy-on-write and atomically
-//  swapped, so the audio thread never takes a lock to read any of it.
+//  fields that can change after publication (enabled, solo, volumeDb, pan,
+//  midiChannel) are atomics mutated in place; the clip list is copy-on-write
+//  and atomically swapped, so the audio thread never takes a lock to read
+//  any of it.
 //==============================================================================
 enum class TrackType { MainSlice, ChromaticSlice, SfPlayer };
 
@@ -82,6 +83,9 @@ struct SequencerTrack
     //==========================================================================
     TrackType         type        = TrackType::MainSlice;   // immutable after construction
     std::atomic<bool> enabled     { true };                 // mutated in place — no rebuild needed
+    std::atomic<bool> solo        { false };                // mutated in place — gates playback, see SequencerEngine::processBlock
+    std::atomic<float> volumeDb   { 0.0f };                  // -60..+6 dB — stored/persisted, not yet applied to audio output
+    std::atomic<float> pan        { 0.0f };                  // -1..+1    — stored/persisted, not yet applied to audio output
 
     // Display — set once at construction, read-only afterwards.
     juce::String name;
@@ -206,9 +210,16 @@ struct SequencerTrack
         s.writeInt ((int) snap->size());
         for (auto& slot : *snap)
             slot->writeToStream (s);
+
+        // v3 extension — appended after the clip list so v2 readers (which
+        // stop here) and the legacy v1 reader are unaffected; see
+        // readFromStream()'s hasExtendedFields gate.
+        s.writeBool  (solo.load (std::memory_order_relaxed));
+        s.writeFloat (volumeDb.load (std::memory_order_relaxed));
+        s.writeFloat (pan.load (std::memory_order_relaxed));
     }
 
-    bool readFromStream (juce::MemoryInputStream& s)
+    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true)
     {
         type        = (TrackType) s.readInt();
         enabled.store (s.readBool(), std::memory_order_relaxed);
@@ -232,6 +243,13 @@ struct SequencerTrack
             next->push_back (std::move (slot));
         }
         sortAndPublish (std::move (next));
+
+        if (hasExtendedFields)
+        {
+            solo.store     (s.readBool(),  std::memory_order_relaxed);
+            volumeDb.store (s.readFloat(), std::memory_order_relaxed);
+            pan.store      (s.readFloat(), std::memory_order_relaxed);
+        }
         return true;
     }
 
