@@ -95,12 +95,13 @@ private:
 
     // ── Hit-test cell ─────────────────────────────────────────────────────
     struct Cell {
-        int  row       { -1 };    // >=0 = slice index; -1 = master; -2 = sf2 header; -3+ = sf2 channel
+        int  row       { -1 };    // >=0 = slice index; -1 = master; -2 = sf2 header; -3 = sfz2 (real SFZ-Player) row; -4- = sf2 channel
         Col  col       { ColGain };
         juce::Rectangle<int> bounds;
         bool isMaster  { false };
         bool isSf2     { false }; // true = SF-PLAYER header row
         bool isSf2Ch   { false }; // true = SF2 per-channel sub-row
+        bool isSfz2    { false }; // true = SFZ-Player (sfzPlayer2 / real .sfz engine) row
         int  sf2Channel{ -1 };    // FluidSynth channel index (0-based) when isSf2Ch
     };
 
@@ -111,6 +112,11 @@ private:
     void drawSf2Row       (juce::Graphics&, int rowY) const;
     void drawSf2ChannelRow(juce::Graphics&, int rowY, int channel,
                            const Sf2PresetInfo& preset) const;
+    /** Row for sfzPlayer2 — the real .sfz-file engine ("SFZ-PLAYER" tab).
+        Only occupies space (and is drawn) once a .sfz file is loaded, so a
+        mixer track appears automatically as soon as the SFZ-Player has
+        something to play. */
+    void drawSfz2Row      (juce::Graphics&, int rowY) const;
     void drawKnobInRow (juce::Graphics&, int cx, int cy, float norm,
                         bool locked, bool isMaster = false,
                         bool isGain = false) const;
@@ -141,6 +147,8 @@ private:
     int   sf2RowY     () const;
     int   sf2ChRowY   (int chRowIdx) const;   // top Y of a per-channel sub-row (0-based index)
     int   sf2TotalH   () const;               // kSf2RowH + N * kSf2ChRowH
+    int   sfz2RowY    () const;               // top Y of the sfzPlayer2 row, sits below the sf2 section
+    int   sfz2TotalH  () const;               // kSf2RowH when sfzPlayer2 has a file loaded, else 0
     Cell  hitTest     (juce::Point<int> pos) const;
 
     // ── Drag state ────────────────────────────────────────────────────────
@@ -149,6 +157,7 @@ private:
         bool   isMaster  { false };
         bool   isSf2     { false };
         bool   isSf2Ch   { false };
+        bool   isSfz2    { false };
         int    sf2Channel{ -1 };
         int    sliceIdx  { -1 };
         Col    col       { ColGain };
