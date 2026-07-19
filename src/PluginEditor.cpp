@@ -295,6 +295,24 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
         repaint();
     };
 
+    // Keep the main header and MIDI routing in sync when the floating window's
+    // own Mixer / Arranger switcher is used.
+    slotWindow.onViewSelected = [this] (SlotWindowContent::Content selected)
+    {
+        const bool mixerSelected = selected == SlotWindowContent::Content::Mixer;
+        activeSlot = mixerSelected ? SlotContent::Mixer : SlotContent::Seq;
+        headerBar.setBodeActive (mixerSelected);
+        headerBar.setEqActive (false);
+        headerBar.setSeqActive (! mixerSelected);
+
+        if (! mixerSelected)
+            arrangeView.notifyCurrentTrack();
+
+        syncMidiRouteMode();
+        resized();
+        repaint();
+    };
+
     // Route live MIDI to the right engine based on which track type is selected.
     // SF-player track → Sequencer mode (channel mask already set by ArrangeView).
     // Slicer track (MainSlice / ChromaticSlice) → Slicer mode.
