@@ -634,6 +634,13 @@ public:
     // All three are derived/cached state — not serialised directly; rebuilt on load
     // (sfPlayerChannelMask and savedSfPlayerChannelMask are restored from the saved
     //  lo/hi range in setStateInformation; chromaticSliceChannelMask from slice data).
+    // Bits 1 and 2 (channel 1 = Slicer, channel 2 = SFZ-Player) are permanently
+    // reserved and must never be set for the SF2/FluidSynth player. Apply this
+    // mask (bitwise AND) at every point where sfPlayerChannelMask is built,
+    // restored, or consumed, in addition to the hard per-message channel guard
+    // in SfzPlayer::process().
+    static constexpr uint32_t kSf2AllowedMidiChannelMask = 0x1FFF8u; // bits 3..16 (channel N = bit N)
+
     std::atomic<uint32_t> sfPlayerChannelMask      { 0u };       // disabled until user sets a range
     std::atomic<uint32_t> savedSfPlayerChannelMask { 1u << 3 };  // hardcoded ch3 default (unless preset overrides)
     std::atomic<uint32_t> chromaticSliceChannelMask { 0u };

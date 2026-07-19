@@ -56,8 +56,8 @@ public:
      *  Channels outside [low, high] are greyed out in the right-click menu. */
     void setChannelRange (int low, int high)
     {
-        rangeLow  = juce::jlimit (1, 16, low);
-        rangeHigh = juce::jlimit (1, 16, high);
+        rangeLow  = juce::jlimit (3, 16, low);
+        rangeHigh = juce::jlimit (3, 16, high);
     }
 
     /** Called by SfzDropdownPanel whenever chromaticSliceChannelMask and/or

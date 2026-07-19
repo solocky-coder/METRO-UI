@@ -364,6 +364,15 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              processor.sfzPlayer2.loadFile (f, processor.fileLoadPool);
              processor.loadSoundFontAsync (f, SoundFontLoadTarget::SfzPlayer2);   // waveform preview -> sampleData2
 
+            #if DYSEKT_STANDALONE
+             // Auto-create/update the SFZ-Player's Arranger sequencer track the
+             // moment a file is loaded — mirrors the wiring already present on
+             // the legacy sfzPlayerDropdown.onSfzFileLoaded path (this is the
+             // active BrowserPanel load path and was previously missing it).
+             static const juce::Colour kSfzTrackColour (0xFF9060D0);
+             pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
+            #endif
+
              // Neither sfzPlayer2 (never .process()'d) nor sampleData2's
              // DecodedSample (SoundFontLoader only sets ->fileName, never
              // ->filePath) reliably tracks which .sfz is loaded. The file is
@@ -2507,6 +2516,10 @@ void DysektEditor::commitZoneBuilderPendingZones()
     processor.sfzPlayer2.loadFile (zoneBuilderTargetSfz, processor.fileLoadPool);
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed);
     processor.loadSoundFontAsync (zoneBuilderTargetSfz, SoundFontLoadTarget::SfzPlayer2);
+   #if DYSEKT_STANDALONE
+    pianoRollPanel.addSfzInstrumentTrack (zoneBuilderTargetSfz.getFileNameWithoutExtension(),
+                                          juce::Colour (0xFF9060D0));
+   #endif
     refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
     repaint();
 }
@@ -2529,6 +2542,10 @@ void DysektEditor::discardZoneBuilderPendingZones()
         processor.sfzPlayer2.loadFile (zoneBuilderTargetSfz, processor.fileLoadPool);
         processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed);
         processor.loadSoundFontAsync (zoneBuilderTargetSfz, SoundFontLoadTarget::SfzPlayer2);
+       #if DYSEKT_STANDALONE
+        pianoRollPanel.addSfzInstrumentTrack (zoneBuilderTargetSfz.getFileNameWithoutExtension(),
+                                              juce::Colour (0xFF9060D0));
+       #endif
     }
     refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
     repaint();
@@ -2569,6 +2586,10 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
         // required: sliceManager2/sampleData2 are only populated by the async
         // soundfont decode, not by sfzPlayer2.loadFile() alone.
         processor.loadSoundFontAsync (dest, SoundFontLoadTarget::SfzPlayer2);
+       #if DYSEKT_STANDALONE
+        pianoRollPanel.addSfzInstrumentTrack (dest.getFileNameWithoutExtension(),
+                                              juce::Colour (0xFF9060D0));
+       #endif
         refreshZoneBuilderMatrix (dest);
         repaint();
 

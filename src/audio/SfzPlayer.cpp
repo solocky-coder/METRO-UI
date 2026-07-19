@@ -829,17 +829,15 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
 
     // ── Forward MIDI to FluidSynth ────────────────────────────────────────────
     // Multi-timbral mode: route each message to its own FluidSynth channel (0-based).
-    // No channel filtering — every channel passes through so each sequencer track
-    // fires on the channel its preset was assigned to via setPresetOnChannel().
-
-    // ── Forward MIDI to FluidSynth ────────────────────────────────────────────
-    // Multi-timbral mode: route each message to its own FluidSynth channel (0-based).
+    // Channels 1 and 2 are reserved (Slicer / SFZ-Player respectively) and are
+    // filtered out below before any note/CC/etc. processing occurs. Every other
+    // channel (3-16) passes through so each sequencer track fires on the channel
+    // its preset was assigned to via setPresetOnChannel().
     //
-    // Live controller fan-out: if a message arrives on MIDI ch 1 AND
-    // liveInputChannelMask is non-zero, it is remapped to every channel set in
-    // that mask instead.  This lets a controller that always sends on ch 1 play
-    // whichever SF2 preset channels are currently selected in the UI.
-    // Sequencer messages (already on their correct channel) pass through unchanged.
+    // NOTE: the previous "ch-1 fan-out" behaviour (remapping ch-1 messages to
+    // every channel in liveInputChannelMask) has been removed — it directly
+    // contradicted the channel-1 reservation. liveMask is retained only for
+    // debug logging below.
 
     const uint16_t liveMask = liveInputChannelMask.load (std::memory_order_relaxed);
     bool sf2DebugHadNoteOnThisBlock = false;   // TEMP diagnostic — see note below
@@ -855,13 +853,17 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         const auto msg    = meta.getMessage();
         const int  midiCh = msg.getChannel();   // 1-16
 
+        // Hard reservation boundary: MIDI channel 1 is owned by the Slicer and
+        // channel 2 is owned by the SFZ-Player. The SF2/FluidSynth player must
+        // never react to either channel, regardless of mask/UI state upstream.
+        if (midiCh < 3 || midiCh > 16)
+            continue;
+
         // TEMP diagnostic: log every message unconditionally, before any
         // channel/velocity filtering, so we can catch cases where isNoteOn()
         // or the targetMask computation silently drops something.
         {
-            const uint16_t previewTargetMask = (midiCh == 1 && liveMask != 0)
-                                              ? liveMask
-                                              : (uint16_t) (1u << (midiCh - 1));
+            const uint16_t previewTargetMask = (uint16_t) (1u << (midiCh - 1));
             sf2DebugLog ("  msg: ch=" + juce::String (midiCh)
                 + " desc=\"" + msg.getDescription() + "\""
                 + " isNoteOn(false)=" + juce::String ((int) msg.isNoteOn (false))
@@ -890,12 +892,11 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         }
 
         // Determine the set of FluidSynth channels to address.
-        // Fan-out applies only to ch-1 messages when a live mask is configured.
-        uint16_t targetMask;
-        if (midiCh == 1 && liveMask != 0)
-            targetMask = liveMask;
-        else
-            targetMask = (uint16_t)(1u << (midiCh - 1));  // single destination
+        // Channels 1 and 2 are filtered out above (reserved for Slicer / SFZ-Player),
+        // so every message reaching this point targets its own channel directly —
+        // no fan-out. (liveInputChannelMask-based ch-1 fan-out has been removed:
+        // it directly contradicted the channel-1/2 reservation.)
+        const uint16_t targetMask = (uint16_t) (1u << (midiCh - 1));
 
         for (int fch = 0; fch < 16; ++fch)
         {

@@ -548,9 +548,12 @@ void Sf2ProgramGrid::showChannelMenu (int presetIdx, juce::Point<int> screenPos)
             if (kv.first != presetIdx && kv.second == ch)
                 usedByOther = true;
 
+        // Channels 1 and 2 are permanently reserved (1=Slicer, 2=SFZ-Player) and
+        // must never be selectable for SF2, regardless of blockedMask/range state.
         // Channels owned by chromatic slices, or currently occupied by the
-        // SFZ-Player (sfzPlayer2), are never available to the SF2 player.
-        const bool reserved = (blockedMask & (1u << ch)) != 0u;
+        // SFZ-Player (sfzPlayer2), are also never available to the SF2 player.
+        const bool hardReserved = (ch < 3);
+        const bool reserved = hardReserved || ((blockedMask & (1u << ch)) != 0u);
         const bool inRange  = (ch >= rangeLow && ch <= rangeHigh) && ! reserved;
 
         const juce::String label = "Channel " + juce::String (ch)
@@ -588,6 +591,11 @@ void Sf2ProgramGrid::showChannelMenu (int presetIdx, juce::Point<int> screenPos)
             else if (result >= 101 && result <= 116)
             {
                 const int ch = result - 100;
+                if (ch < 3)
+                {
+                    repaint();
+                    return;   // channels 1-2 are permanently reserved — never assignable
+                }
 
                 // A MIDI channel can only drive one preset at a time. If another
                 // preset already holds this channel, its assignment is now stale

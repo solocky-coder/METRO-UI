@@ -1568,7 +1568,7 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
     // are zero only when their respective engine has never been enabled (no
     // file loaded / no channel range configured) — NOT based on which tab has
     // UI focus, so all engines keep listening concurrently regardless of tab.
-    const uint32_t sfMask  = sfPlayerChannelMask.load  (std::memory_order_relaxed);
+    const uint32_t sfMask  = sfPlayerChannelMask.load  (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
     const uint32_t sfz2Mask = sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
 
     for (const auto metadata : midi)
@@ -2965,10 +2965,10 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // the note reaches sfzPlayer and is excluded from the slicer by the bitmask
     // check above.  If sfPlayerChannelMask == 0 the SF player is disabled; skip.
     {
-        const uint32_t sfMaskInject = sfPlayerChannelMask.load (std::memory_order_relaxed);
-        // Find lowest set channel (1-based bits 1..16)
-        int injectCh = 1;
-        for (int c = 1; c <= 16; ++c)
+        const uint32_t sfMaskInject = sfPlayerChannelMask.load (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
+        // Find lowest set channel (1-based bits 3..16 — channels 1/2 are reserved)
+        int injectCh = 3;
+        for (int c = 3; c <= 16; ++c)
             if (sfMaskInject & (1u << c)) { injectCh = c; break; }
         const bool sfEnabled = (sfMaskInject != 0);
 
@@ -3036,7 +3036,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // ── Snoop note messages to update active-note bitmask for keyboard display ──
     // Snoop messages on the SF player's assigned channels only.
     {
-        const uint32_t sfMaskSnoop = sfPlayerChannelMask.load (std::memory_order_relaxed);
+        const uint32_t sfMaskSnoop = sfPlayerChannelMask.load (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
 
         for (const auto metadata : midi)
         {
@@ -3044,7 +3044,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             if (sfMaskSnoop != 0)
             {
                 const int ch = msg.getChannel();   // 1-based
-                if (ch < 1 || ch > 16 || ! (sfMaskSnoop & (1u << ch))) continue;
+                if (ch < 3 || ch > 16 || ! (sfMaskSnoop & (1u << ch))) continue;
             }
             const int n = msg.getNoteNumber();
             if (n < 0 || n > 127) continue;
@@ -3425,14 +3425,23 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // ── Build sfzMidiBuf — channel-mask split from the merged `midi` buffer ──
         juce::MidiBuffer sfzMidiBuf;
         {
-            const uint32_t sfMaskBuild = sfPlayerChannelMask.load (std::memory_order_relaxed);
+            // Sanitize against the reserved-channel invariant here too (defense in
+            // depth — channels 1/2 are also hard-filtered in SfzPlayer::process()).
+            const uint32_t sfMaskBuild = sfPlayerChannelMask.load (std::memory_order_relaxed)
+                                          & kSf2AllowedMidiChannelMask;
 
             if (sfMaskBuild != 0)
             {
-                const bool allChannels = ((sfMaskBuild & 0x1FFFEu) == 0x1FFFEu); // bits 1-16 all set
+                const bool allChannels = ((sfMaskBuild & kSf2AllowedMidiChannelMask) == kSf2AllowedMidiChannelMask); // bits 3-16 all set
                 if (allChannels)
                 {
-                    sfzMidiBuf = midi;
+                    for (const auto meta : midi)
+                    {
+                        const auto& msg = meta.getMessage();
+                        const int ch = msg.getChannel();   // 1-based
+                        if (ch >= 3 && ch <= 16)
+                            sfzMidiBuf.addEvent (msg, meta.samplePosition);
+                    }
                 }
                 else
                 {
@@ -3440,7 +3449,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     {
                         const auto& msg = meta.getMessage();
                         const int ch = msg.getChannel();   // 1-based
-                        if (ch >= 1 && ch <= 16 && (sfMaskBuild & (1u << ch)))
+                        if (ch >= 3 && ch <= 16 && (sfMaskBuild & (1u << ch)))
                             sfzMidiBuf.addEvent (msg, meta.samplePosition);
                     }
                 }
@@ -3448,9 +3457,16 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
            #if DYSEKT_STANDALONE
             // `midi` has been cleared for an SF2-selected sequencer track so
-            // it cannot trigger the slicer. Add its original live input here;
-            // SfzPlayer performs the channel-1-to-selected-track fan-out.
-            sfzMidiBuf.addEvents (standaloneSfLiveInput, 0, numSamples, 0);
+            // it cannot trigger the slicer. Add its original live input here —
+            // but only channels 3-16; channel 1 (slicer) and channel 2
+            // (SFZ-Player) must never reach the SF2 player, so no raw fan-out.
+            for (const auto meta : standaloneSfLiveInput)
+            {
+                const auto& msg = meta.getMessage();
+                const int ch = msg.getChannel();   // 1-based
+                if (ch >= 3 && ch <= 16)
+                    sfzMidiBuf.addEvent (msg, meta.samplePosition);
+            }
            #endif
         }
 
@@ -3811,12 +3827,12 @@ void DysektProcessor::getStateInformation (juce::MemoryBlock& destData)
     // The channel range is derived from sfPlayerChannelMask for serialisation.
     // Channel 1 is hardwired to the slicer and never in the mask.
     {
-        const uint32_t mask = sfPlayerChannelMask.load (std::memory_order_relaxed);
+        const uint32_t mask = sfPlayerChannelMask.load (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
         int lo = 0, hi = 0;
         if (mask != 0)
         {
-            for (int c = 2; c <= 16; ++c)  if (mask & (1u << c)) { lo = c; break; }
-            for (int c = 16; c >= 2; --c)  if (mask & (1u << c)) { hi = c; break; }
+            for (int c = 3; c <= 16; ++c)  if (mask & (1u << c)) { lo = c; break; }
+            for (int c = 16; c >= 3; --c)  if (mask & (1u << c)) { hi = c; break; }
         }
         stream.writeInt (lo);
         stream.writeInt (hi);
@@ -4000,26 +4016,28 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
             if (version >= 25)
             {
                 // New range-based routing — convert lo/hi range back to bitmask.
-                // Channel 1 is hardwired to the slicer; clamp lo to 2 minimum.
+                // Channels 1-2 are hardwired to the slicer/SFZ-player; clamp lo to 3 minimum.
                 const int lo = stream.readInt();
                 const int hi = stream.readInt();
                 uint32_t mask = 0u;
                 if (lo >= 1 && hi >= lo)
-                    for (int c = juce::jmax (lo, 2); c <= juce::jmin (hi, 16); ++c)
+                    for (int c = juce::jmax (lo, 3); c <= juce::jmin (hi, 16); ++c)
                         mask |= (1u << c);
+                mask &= kSf2AllowedMidiChannelMask;
                 sfPlayerChannelMask.store (mask, std::memory_order_relaxed);
             }
             else
             {
                 // v23/v24: single-channel value — map to one-channel mask,
                 // or the hardcoded ch3 default if it was 0 (old omni mode).
-                // Channel 1 is hardwired to the slicer; never set bit 1.
+                // Channels 1-2 are hardwired to the slicer/SFZ-player; never set those bits.
                 const int oldCh = stream.readInt();
                 uint32_t mask = 0u;
-                if (oldCh >= 2 && oldCh <= 16)
+                if (oldCh >= 3 && oldCh <= 16)
                     mask = (1u << oldCh);
-                else if (oldCh == 0 || oldCh == 1)
-                    mask = (1u << 3);   // legacy omni → hardcoded ch3 default
+                else
+                    mask = (1u << 3);   // legacy omni / reserved channel → hardcoded ch3 default
+                mask &= kSf2AllowedMidiChannelMask;
                 sfPlayerChannelMask.store (mask, std::memory_order_relaxed);
             }
         }
@@ -4061,7 +4079,7 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
     // Mirror the restored sfPlayerChannelMask into savedSfPlayerChannelMask so
     // that switching to Slicer mode and back preserves the loaded channel range.
     savedSfPlayerChannelMask.store (
-        sfPlayerChannelMask.load (std::memory_order_relaxed),
+        sfPlayerChannelMask.load (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask,
         std::memory_order_relaxed);
 
     // Rebuild chromaticSliceChannelMask now that all slices are restored.

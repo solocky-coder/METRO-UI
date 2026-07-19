@@ -395,11 +395,13 @@ void SequencerEngine::addSfTrack (const Sf2PresetInfo& preset, juce::Colour colo
             && t->preset.preset == preset.preset) return;
 
     // Assign the next available FluidSynth channel (0-15) to this track.
-    int sfCh = 0;
+    // 0-based channels 0 and 1 (MIDI channels 1 and 2) are reserved for the
+    // Slicer and SFZ-Player respectively — SF2 tracks must start at 0-based 2.
+    int sfCh = 2;
     for (auto& t : *current)
         if (t->type == TrackType::SfPlayer)
             sfCh = juce::jmax (sfCh, t->midiChannel.load (std::memory_order_relaxed) + 1);
-    sfCh = juce::jmin (sfCh, 15);
+    sfCh = juce::jlimit (2, 15, sfCh);
 
     auto track = SequencerTrack::makeSfPlayer (preset, colour);
     track->midiChannel.store (sfCh, std::memory_order_relaxed);
@@ -439,7 +441,9 @@ void SequencerEngine::rebuildSfTracks (const std::vector<Sf2PresetInfo>& presets
         const juce::Colour col = paletteSize > 0
             ? palette[i % paletteSize] : juce::Colour (0xFF406080);
         auto track = SequencerTrack::makeSfPlayer (presets[i], col);
-        track->midiChannel.store (juce::jmin (i, 15), std::memory_order_relaxed);   // sequential FluidSynth channels
+        // 0-based channels 0/1 (MIDI ch 1/2) are reserved for Slicer/SFZ-Player;
+        // sequential FluidSynth channels for SF2 tracks start at 0-based 2.
+        track->midiChannel.store (juce::jmin (i + 2, 15), std::memory_order_relaxed);
         next->push_back (track);
     }
 
@@ -447,7 +451,7 @@ void SequencerEngine::rebuildSfTracks (const std::vector<Sf2PresetInfo>& presets
 
     if (impl->sfzPlayer != nullptr)
         for (int i = 0; i < (int) presets.size(); ++i)
-            impl->sfzPlayer->setPresetOnChannel (juce::jmin (i, 15),
+            impl->sfzPlayer->setPresetOnChannel (juce::jmin (i + 2, 15),
                                                   presets[i].bank,
                                                   presets[i].preset);
 }
@@ -456,7 +460,9 @@ void SequencerEngine::addOrUpdateSfTrackOnChannel (const Sf2PresetInfo& preset,
                                                     int midiChannel0Based,
                                                     juce::Colour colour)
 {
-    const int ch = juce::jlimit (0, 15, midiChannel0Based);
+    // 0-based channels 0/1 (MIDI ch 1/2) are reserved for Slicer/SFZ-Player;
+    // SF2 tracks may only occupy 0-based channels 2-15.
+    const int ch = juce::jlimit (2, 15, midiChannel0Based);
     bool needsPlayerUpdate = false;
 
     auto current = impl->getTracks();
@@ -623,7 +629,12 @@ uint16_t SequencerEngine::getAllSfPlayerChannelMask() const noexcept
     auto snap = impl->getTracks();
     for (auto& t : *snap)
         if (t->type == TrackType::SfPlayer)
-            mask |= static_cast<uint16_t> (1u << (t->midiChannel.load (std::memory_order_relaxed) & 0xF));
+        {
+            const int ch0 = t->midiChannel.load (std::memory_order_relaxed) & 0xF;
+            if (ch0 < 2)   // 0-based ch 0/1 (MIDI ch 1/2) reserved — never emit their bits
+                continue;
+            mask |= static_cast<uint16_t> (1u << ch0);
+        }
     return mask;
 }
 
