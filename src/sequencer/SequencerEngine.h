@@ -22,6 +22,10 @@ struct SequencerTrackInfo
     int           midiChannel = 0;
     Sf2PresetInfo preset;
     int           numClips    = 0;
+    // See SequencerTrack::isSfzInstrument — only meaningful when
+    // type == TrackType::SfPlayer; distinguishes a real .sfz-file
+    // instrument track from an SF2 preset track.
+    bool          isSfzInstrument = false;
 };
 
 //==============================================================================

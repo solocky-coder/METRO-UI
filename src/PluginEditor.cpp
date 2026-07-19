@@ -258,6 +258,22 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      if (info.type == TrackType::SfPlayer)
          pianoRollPanel.addOrUpdateSfPresetTrack (info.preset, midiChannel1Based, info.colour);
  };
+
+ // Loading a real .sfz file previously never created its Arranger track —
+ // addSfzInstrumentTrack() existed but nothing called it. Wire the one
+ // official "load committed" callback so the SFZ-PLAYER gets an Arranger
+ // track the same way SF2 presets do via onPresetChannelAssigned above.
+ // Known gap: a few call sites in SfzPlayerDropdownPanel.cpp invoke
+ // sfzPlayer2.loadFile() directly instead of routing through onFileChosen
+ // (which is what fires onSfzFileLoaded), so those paths still won't
+ // create/update the Arranger track. Left as-is for now — fixing every
+ // load call site is a larger, separate cleanup.
+ sfzPlayerDropdown.onSfzFileLoaded = [this] (const juce::File& f, bool isSfz)
+ {
+     if (! isSfz) return;
+     static const juce::Colour kSfzTrackColour (0xFF9060D0);
+     pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
+ };
 #endif
  shortcutsPanel.setVisible (false);
  addChildComponent (shortcutsPanel);
@@ -283,7 +299,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
     // SF-player track → Sequencer mode (channel mask already set by ArrangeView).
     // Slicer track (MainSlice / ChromaticSlice) → Slicer mode.
     // Nothing selected → Sequencer mode with mask=0 (no live input).
-    arrangeView.onTrackTypeSelected = [this] (TrackType type, bool hasSelection)
+    arrangeView.onTrackTypeSelected = [this] (TrackType type, bool hasSelection, bool isSfzInstrument)
     {
         if (activeSlot != SlotContent::Seq) return;
         using Mode = DysektProcessor::MidiRouteMode;
@@ -291,8 +307,18 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
             (hasSelection && type != TrackType::SfPlayer)
                 ? Mode::Slicer
                 : Mode::Sequencer);
+
+        // Switch the main UI (Slicer / SFZ-PLAYER / SF2-PLAYER tab) to match
+        // whichever track was just selected in the Arranger, so the player
+        // showing on screen always agrees with the selected track.
+        if (hasSelection)
+            setUiMode (type == TrackType::SfPlayer ? (isSfzInstrument ? 1 : 2) : 0);
     };
 #endif
+
+    // Selecting a Mixer row switches the main UI to that track's player,
+    // mirroring the Arranger behaviour above.
+    mixerPanel.onTrackSelected = [this] (int mode) { setUiMode (mode); };
  shortcutsPanel.onDismiss = [this] { toggleShortcutsPanel(); };
  shortcutsPanel.onThemeRequest = [this]
  {

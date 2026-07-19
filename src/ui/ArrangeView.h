@@ -62,9 +62,14 @@ public:
     std::function<void(int trackIndex, int clipIndex)> onClipDoubleClicked;
 
     /** Fired whenever the selected track changes.
-     *  @param type        Track type of the newly selected track.
-     *  @param hasSelection  false when nothing is selected (deselect / empty view). */
-    std::function<void(TrackType type, bool hasSelection)> onTrackTypeSelected;
+     *  @param type          Track type of the newly selected track.
+     *  @param hasSelection  false when nothing is selected (deselect / empty view).
+     *  @param isSfzInstrument  Only meaningful when type == SfPlayer && hasSelection;
+     *                          true if the track is a real .sfz-file instrument track
+     *                          rather than an SF2 preset track — see
+     *                          SequencerTrack::isSfzInstrument. Lets listeners tell
+     *                          the SFZ-PLAYER and SF2-PLAYER tabs apart. */
+    std::function<void(TrackType type, bool hasSelection, bool isSfzInstrument)> onTrackTypeSelected;
 
     /** Re-fires onTrackTypeSelected for the currently selected track.
      *  Call this when opening the sequencer panel so the editor can
@@ -74,9 +79,12 @@ public:
         if (onTrackTypeSelected)
         {
             if (juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()))
-                onTrackTypeSelected (engine.getTrackInfo (selectedTrack).type, true);
+            {
+                const auto info = engine.getTrackInfo (selectedTrack);
+                onTrackTypeSelected (info.type, true, info.isSfzInstrument);
+            }
             else
-                onTrackTypeSelected (TrackType::MainSlice, false);
+                onTrackTypeSelected (TrackType::MainSlice, false, false);
         }
     }
 
@@ -646,6 +654,7 @@ private:
 
         uint16_t mask = 0;
         TrackType type = TrackType::MainSlice;
+        bool isSfzInstrument = false;
         bool hasSelection = juce::isPositiveAndBelow (idx, engine.getNumTracks());
 
         int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
@@ -654,6 +663,7 @@ private:
         {
             const auto info = engine.getTrackInfo (idx);
             type = info.type;
+            isSfzInstrument = info.isSfzInstrument;
             switch (info.type)
             {
                 case TrackType::MainSlice:
@@ -675,7 +685,7 @@ private:
         engine.setRecordingTrack (hasSelection ? idx : -1);
 
         if (onTrackTypeSelected)
-            onTrackTypeSelected (type, hasSelection);
+            onTrackTypeSelected (type, hasSelection, isSfzInstrument);
     }
 
     static void styleScrollBar (juce::ScrollBar& sb)

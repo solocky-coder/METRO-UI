@@ -322,6 +322,7 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.midiChannel = t.midiChannel.load (std::memory_order_relaxed);
     info.preset      = t.preset;
     info.numClips    = t.getNumClips();
+    info.isSfzInstrument = t.isSfzInstrument;
     return info;
 }
 
@@ -503,12 +504,7 @@ void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Bas
         if (! (t->type == TrackType::SfPlayer && t->name == name))
             next->push_back (t);
 
-    Sf2PresetInfo sfzPreset;
-    sfzPreset.name   = name;
-    sfzPreset.bank   = 0;
-    sfzPreset.preset = 0;
-
-    auto track = SequencerTrack::makeSfPlayer (sfzPreset, colour);
+    auto track = SequencerTrack::makeSfzInstrument (name, colour);
     track->midiChannel.store (ch, std::memory_order_relaxed);
     next->push_back (track);
 

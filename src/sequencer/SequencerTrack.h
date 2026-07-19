@@ -98,6 +98,17 @@ struct SequencerTrack
     // SfPlayer fields — immutable after construction.
     Sf2PresetInfo preset;              // bank + program + name
 
+    // Runtime-only marker distinguishing the two engines that both use
+    // TrackType::SfPlayer: an SF2 preset track (false, the common case) vs
+    // a real .sfz-file instrument track created via makeSfzInstrument()
+    // (true). Deliberately NOT persisted — SFZ instrument tracks are
+    // recreated fresh from the loaded .sfz file on every session load, so
+    // there's nothing to round-trip, and adding a new serialised field here
+    // would mean touching the v2/v3 stream format for no benefit. Defaults
+    // false so every existing/legacy track (including plain SF2 presets
+    // read from disk) is correctly treated as non-SFZ.
+    bool isSfzInstrument = false;
+
     //==========================================================================
     //  Clip list  (copy-on-write, atomically swapped)
     //==========================================================================
@@ -187,6 +198,30 @@ struct SequencerTrack
         t->preset      = p;
         t->midiChannel.store (15, std::memory_order_relaxed);
         t->name        = p.name;
+        t->colour      = colour;
+        t->addClip (0);
+        return t;
+    }
+
+    /** Same shape as makeSfPlayer(), but tagged isSfzInstrument=true so
+     *  callers (e.g. ArrangeView's selection callback) can tell a real
+     *  .sfz-file track apart from an SF2 preset track — both share
+     *  TrackType::SfPlayer since they play back through the sequencer's
+     *  clip/channel machinery identically. */
+    static std::shared_ptr<SequencerTrack> makeSfzInstrument (const juce::String& name,
+                                                               juce::Colour colour)
+    {
+        Sf2PresetInfo p;
+        p.name   = name;
+        p.bank   = 0;
+        p.preset = 0;
+
+        auto t = std::make_shared<SequencerTrack>();
+        t->type            = TrackType::SfPlayer;
+        t->preset          = p;
+        t->isSfzInstrument = true;
+        t->midiChannel.store (15, std::memory_order_relaxed);
+        t->name        = name;
         t->colour      = colour;
         t->addClip (0);
         return t;

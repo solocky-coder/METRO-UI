@@ -57,6 +57,14 @@ public:
     explicit MixerPanel (DysektProcessor& p);
     ~MixerPanel() override;
 
+    /** Fired when the user clicks a row that corresponds to one of the three
+     *  player tabs, so the owner can switch the main UI to match.
+     *  @param uiMode  0 = Slicer (slice row), 1 = SFZ-PLAYER (sfzPlayer2 row),
+     *                 2 = SF2-PLAYER (SF-PLAYER header or channel row).
+     *  Not fired for clicks on the master row — no player tab corresponds
+     *  to the overall output. */
+    std::function<void(int uiMode)> onTrackSelected;
+
     void paint   (juce::Graphics&) override;
     void resized () override;
 

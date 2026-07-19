@@ -1272,6 +1272,16 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
     const auto& snap = processor.getUiSliceSnapshot();
     const Cell c = hitTest (e.getPosition());
 
+    // Any click on a slice / SF-PLAYER / SFZ-PLAYER row switches the main UI
+    // to that track's player. Master row is excluded — it's the overall
+    // output, not a player. See onTrackSelected doc comment for uiMode values.
+    if (onTrackSelected)
+    {
+        if (c.row >= 0 && c.row < snap.numSlices) onTrackSelected (0);
+        else if (c.isSfz2)                        onTrackSelected (1);
+        else if (c.isSf2 || c.isSf2Ch)             onTrackSelected (2);
+    }
+
     // Click on name column (c.row == -2) or anywhere in a valid row → select slice
     if (c.row >= 0 && c.row < snap.numSlices)
     {
