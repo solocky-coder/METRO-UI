@@ -103,6 +103,11 @@ public:
     /** Scroll the zone matrix to highlight the row covering 'note'. */
     void highlightNoteInMatrix (int note);
 
+    /** Read-only access to the current zone list, for callers that need the
+     *  full Keyzone data behind an onRowClicked/onZoneEdited row index
+     *  (e.g. to drive a selected-zone summary readout elsewhere in the UI). */
+    const std::vector<Keyzone>& getKeyzones() const noexcept { return keyzones; }
+
     // Called by ZoneMatrixContent to schedule a deferred note-off
     void scheduleNoteOff (int note);
 

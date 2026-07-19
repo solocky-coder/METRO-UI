@@ -18,6 +18,15 @@ static const juce::Colour kAdsrAttack { 0xFF00FF87 }; // Toxic Lime
 static const juce::Colour kAdsrDecay { 0xFFFFE800 }; // Radioactive Yellow
 static const juce::Colour kAdsrSustain { 0xFF00C8FF }; // Ice Blue
 static const juce::Colour kAdsrRelease { 0xFFFF6B00 }; // Molten Orange
+
+static juce::String scbMidiNoteName (int note)
+{
+    static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    note = juce::jlimit (0, 127, note);
+    juce::String s (names[note % 12]);
+    s += juce::String (note / 12 - 2);   // C3 = 60 → octave = 60/12-2 = 3
+    return s;
+}
 static const juce::Colour kAdsrHold    { 0xFFFF00FF }; // Hot Magenta
 
 static juce::Colour adsrTintForField (int fieldId)
@@ -60,6 +69,30 @@ bool SliceControlBar::isSfzPlayer2Mode() const noexcept
     // activeUiTab (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) — arranger-independent,
     // unlike midiRouteMode which the Arranger overwrites to Sequencer.
     return processor.activeUiTab.load (std::memory_order_relaxed) == 1;
+}
+
+void SliceControlBar::setSfzZoneSummary (int zoneIndex, const juce::String& name,
+                                         int loKey, int hiKey, int rootPitch,
+                                         float tuneCents, float pan, float volDb, float releaseSec)
+{
+    sfzZoneSummary.valid      = true;
+    sfzZoneSummary.index      = zoneIndex;
+    sfzZoneSummary.name       = name;
+    sfzZoneSummary.loKey      = loKey;
+    sfzZoneSummary.hiKey      = hiKey;
+    sfzZoneSummary.rootPitch  = rootPitch;
+    sfzZoneSummary.tuneCents  = tuneCents;
+    sfzZoneSummary.pan        = pan;
+    sfzZoneSummary.volDb      = volDb;
+    sfzZoneSummary.releaseSec = releaseSec;
+    repaint();
+}
+
+void SliceControlBar::clearSfzZoneSummary()
+{
+    if (! sfzZoneSummary.valid) return;
+    sfzZoneSummary = SfzZoneSummary {};
+    repaint();
 }
 
 void SliceControlBar::timerCallback()
@@ -860,7 +893,20 @@ void SliceControlBar::paint (juce::Graphics& g)
  int numSlices = ui.numSlices;
  const int kToggleBtnW = si (52);
  int rightEdge = getWidth() - si (8) - kToggleBtnW * 2 - si (4) - si (6); // two buttons + gap
- int row1y = si (7), row2y = si (38); // centred: (72-59)/2 = 6.5 → 7px top padding
+ int row1y = si (7), row2y = si (38); // centred: (72-59)/2 = 6.5 -> 7px top padding
+
+ // ZONES matrix active (SFZ-PLAYER only): the normal per-slice knob row below
+ // is driven by selectedSlice/UiSliceSnapshot, but zone-builder rows are
+ // pending zones with no slice of their own -- show the selected-zone readout
+ // instead. Independent of idx validity, since it has nothing to do with
+ // slice selection.
+ if (sfzMode && zoneViewActive)
+ {
+     drawSfzZoneSummary (g, si (8), row1y, rightEdge - si (8), psCellH);
+     drawViewToggleButtons (g);
+     return;
+ }
+
  if (idx < 0 || idx >= numSlices)
  {
  g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
@@ -1289,6 +1335,61 @@ locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
  // PAD MODE is a Slicer-only feature. The SFZ-PLAYER SCB has no pad grid, so
  // we skip drawing (and hit-testing, see mouseDown) the toggle entirely there.
  drawViewToggleButtons (g);
+}
+
+// =============================================================================
+// drawSfzZoneSummary
+// =============================================================================
+// Compact read-only readout of the currently selected row in the SFZ-PLAYER's
+// ZONES matrix (zoneBuilderKeysPanel). Pending zones staged there aren't
+// slices — they have no selectedSlice/UiSliceSnapshot entry of their own —
+// so this reads from sfzZoneSummary, populated externally by the editor via
+// setSfzZoneSummary() whenever a matrix row is clicked or drag-edited.
+void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int width, int height) const
+{
+    juce::ignoreUnused (height);
+
+    if (! sfzZoneSummary.valid)
+    {
+        g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
+        g.setColour (getTheme().foreground.withAlpha (0.35f));
+        g.drawText ("No zone selected", x, juce::roundToInt (24.0f * paintSf),
+                    juce::roundToInt (220.0f * paintSf), juce::roundToInt (18.0f * paintSf),
+                    juce::Justification::centredLeft);
+        return;
+    }
+
+    const auto& z = sfzZoneSummary;
+
+    juce::String keyRange = (z.loKey == z.hiKey)
+        ? scbMidiNoteName (z.loKey)
+        : scbMidiNoteName (z.loKey) + "-" + scbMidiNoteName (z.hiKey);
+
+    juce::String rootStr = (z.rootPitch >= 0) ? scbMidiNoteName (z.rootPitch) : "--";
+
+    juce::String pitchStr = (z.tuneCents >= 0.0f ? "+" : "") + juce::String ((int) std::round (z.tuneCents)) + "c";
+
+    juce::String panStr;
+    {
+        const int pv = juce::roundToInt (z.pan * 100.0f);
+        panStr = (pv == 0) ? "C" : (pv < 0 ? ("L" + juce::String (-pv)) : ("R" + juce::String (pv)));
+    }
+
+    juce::String volStr = juce::String (z.volDb, 1) + " dB";
+    juce::String relStr = juce::String (juce::roundToInt (z.releaseSec * 1000.0f)) + " ms";
+
+    juce::String line = keyRange + "  |  Root: " + rootStr + "  |  Pitch: " + pitchStr
+                       + "  |  Pan: " + panStr + "  |  Vol: " + volStr + "  |  Rel: " + relStr;
+
+    g.setFont (DysektLookAndFeel::makeFont (14.0f * paintSf));
+    g.setColour (getTheme().foreground.withAlpha (0.55f));
+    g.drawText ("ZONE " + juce::String (z.index + 1) + (z.name.isNotEmpty() ? (": " + z.name) : juce::String()),
+               x, y, width, juce::roundToInt (14.0f * paintSf), juce::Justification::centredLeft);
+
+    g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
+    g.setColour (getTheme().foreground.withAlpha (0.9f));
+    g.drawText (line, x, y + juce::roundToInt (16.0f * paintSf), width,
+               juce::roundToInt (18.0f * paintSf), juce::Justification::centredLeft);
 }
 
 // =============================================================================

@@ -45,6 +45,15 @@ public:
     /// Fired when the user clicks the SAVE button.
     std::function<void()> onZoneSaveRequested;
 
+    // Selected-zone readout — SFZ-PLAYER ZONES view only. Driven externally
+    // by the editor from KeysPanel::onRowClicked / onZoneEdited on the zone
+    // builder matrix, since pending zones aren't slices and have no
+    // selectedSlice/UiSliceSnapshot representation of their own.
+    void setSfzZoneSummary (int zoneIndex, const juce::String& name,
+                            int loKey, int hiKey, int rootPitch,
+                            float tuneCents, float pan, float volDb, float releaseSec);
+    void clearSfzZoneSummary();
+
 private:
     void timerCallback() override;
     float pulsePhase    = 0.0f;   // 0..1, advances each timer tick
@@ -59,6 +68,15 @@ private:
 
     bool  zoneDirty = false;        // mirrors editor zoneBuilderDirty — shows/hides the SAVE button
     juce::Rectangle<int> zoneSaveBtnArea; // hit-tested in mouseDown — SAVE button (SFZ-PLAYER only, when dirty)
+
+    // Selected-zone readout state — see setSfzZoneSummary() doc comment above.
+    struct SfzZoneSummary
+    {
+        bool valid = false;
+        int index = -1, loKey = 0, hiKey = 127, rootPitch = -1;
+        float tuneCents = 0.0f, pan = 0.0f, volDb = -7.0f, releaseSec = 0.664f;
+        juce::String name;
+    } sfzZoneSummary;
 
     // True when the SFZ-PLAYER tab (sliceManager2/voicePool2 — a full second
     // Slicer instance) is the active engine. Mirrors SliceLcdDisplay's
@@ -129,6 +147,9 @@ private:
     // Independent of per-slice state — must be drawn even when no slice is
     // selected, so ZONES stays reachable on an empty/not-yet-populated kit.
     void drawViewToggleButtons (juce::Graphics& g);
+    // Compact per-zone readout drawn in place of the normal slice-param row
+    // when the SFZ-PLAYER ZONES matrix is active — see setSfzZoneSummary().
+    void drawSfzZoneSummary (juce::Graphics& g, int x, int y, int width, int height) const;
     void showTextEditor (const ParamCell& cell, float currentValue);
     void showMidiLearnMenu (int fieldId, juce::Point<int> screenPos);
 

@@ -137,6 +137,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
 
              showZoneBuilder = false;
              sliceControlBar.setZoneViewActive (false);
+             sliceControlBar.clearSfzZoneSummary();
              resized();
              repaint();
          };
@@ -165,6 +166,25 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  zoneBuilderKeysPanel.setSfzEditable (true);
  zoneBuilderKeysPanel.setAddZoneButtonVisible (true);
  zoneBuilderKeysPanel.onAddZoneRequested = [this] { openZoneBuilderAddZone(); };
+zoneBuilderKeysPanel.onRowClicked = [this] (int rowIndex)
+{
+    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
+    if (rowIndex < 0 || rowIndex >= (int) zones.size())
+    {
+        sliceControlBar.clearSfzZoneSummary();
+        return;
+    }
+    const auto& z = zones[(size_t) rowIndex];
+    sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
+                                       z.tuneCents, z.pan, z.volDb, z.releaseSec);
+};
+zoneBuilderKeysPanel.onZoneEdited = [this] (int rowIndex, const KeysPanel::Keyzone& z)
+{
+    // Keep the readout live while the user is drag-editing the currently
+    // selected row's numeric columns in the matrix.
+    sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
+                                       z.tuneCents, z.pan, z.volDb, z.releaseSec);
+};
  addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
  // so the timer re-populates the zone matrix on the next completed load.
@@ -571,6 +591,7 @@ void DysektEditor::setUiMode (int mode)
  {
      showZoneBuilder = false;
      sliceControlBar.setZoneViewActive (false);
+     sliceControlBar.clearSfzZoneSummary();
 
      // Known limitation: unlike the ZONES toggle-off gate (onZoneViewToggle),
      // switching tabs away from SFZ-PLAYER drops any staged-but-unsaved zones
@@ -2207,6 +2228,7 @@ void DysektEditor::refreshZoneBuilderMatrix (const juce::File& sfzFile)
         zoneBuilderKeysPanel.setKeyzones (SfzPlayerDropdownPanel::parseSfzZones (sfzFile));
     else
         zoneBuilderKeysPanel.clearKeyzones();
+    sliceControlBar.clearSfzZoneSummary();
 }
 
 void DysektEditor::openZoneBuilderAddZone()
