@@ -1,14 +1,15 @@
 #include "FloatingTransportBar.h"
 #include <cmath>
-#include "MetroColours.h"
-#include "MetroMetrics.h"
-#include "MetroTypography.h"
+#include "../metro/MetroColours.h"
+#include "../metro/MetroMetrics.h"
+#include "../metro/MetroTypography.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
-#include "../ui/DysektLookAndFeel.h"
+#include "DysektLookAndFeel.h"
 
-namespace dysekt::metro
-{
+using namespace dysekt::metro;   // MetroColours' Base/Text/Accent/Transport + MetroMetrics/MetroTypography —
+                                  // kept as this panel's own chrome palette, independent of whichever
+                                  // main-window theme is active. See ArrangeView::showFloatingTransport().
 namespace
 {
     // Mirrors PluginEditor.cpp's getSettingsDir() convention (same app-data
@@ -61,7 +62,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     configureTransportButton (cycleButton, "LOOP", Accent::Cyan, "Toggle looping");
     cycleButton.setClickingTogglesState (true);
     cycleButton.onStateChange = [this] { engine.setLooping (cycleButton.getToggleState()); };
-
+    addAndMakeVisible (cycleButton);
 
     // ── Tempo ────────────────────────────────────────────────────────────
     tempoLabel.setEditable (true, true, false);
@@ -109,7 +110,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     stopButton.onClick   = [this] { engine.stop(); };
     recordButton.onStateChange = [this] { engine.setRecording (recordButton.getToggleState()); };
 
-    for (auto* b : { &toStartButton, &backButton, &playButton, &stopButton, &recordButton, &cycleButton })
+    for (auto* b : { &toStartButton, &backButton, &playButton, &stopButton, &recordButton })
         addAndMakeVisible (*b);
 
     // ── Locators ─────────────────────────────────────────────────────────
@@ -149,8 +150,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
         addAndMakeVisible (linkButton);
     }
 
-    // Two content rows plus the title strip; no unused vertical well below the controls.
-    setSize (MetroMetrics::grid * 120, MetroMetrics::grid * 16);
+    setSize (MetroMetrics::grid * 137, MetroMetrics::grid * 33);
     startTimerHz (20);
 }
 
@@ -215,18 +215,30 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     const int labelH = MetroMetrics::grid * 2;
     const int gap    = MetroMetrics::grid * 2;
 
-    // ── Centre: musical position above the complete transport cluster ───
-    auto centreCol = area.removeFromLeft (MetroMetrics::grid * 43);
+    // ── Left section: cycle/loop over tempo ─────────────────────────────
+    auto leftCol = area.removeFromLeft (MetroMetrics::grid * 20);
+    L.cycleLabel  = leftCol.removeFromTop (labelH);
+    L.cycleButton = leftCol.removeFromTop (MetroMetrics::controlHeight);
+    leftCol.removeFromTop (MetroMetrics::halfGrid);
+    L.tempoLabel  = leftCol.removeFromTop (labelH);
+    L.tempoField  = leftCol.removeFromTop (MetroMetrics::largeControlHeight);
+
+    area.removeFromLeft (gap);
+    L.divider1 = area.getX();
+    area.removeFromLeft (gap);
+
+    // ── Centre section: musical position + transport row ────────────────
+    auto centreCol = area.removeFromLeft (MetroMetrics::grid * 38);
     L.positionLabel = centreCol.removeFromTop (labelH);
     L.positionField = centreCol.removeFromTop (MetroMetrics::largeControlHeight);
     centreCol.removeFromTop (MetroMetrics::halfGrid);
     L.transportRow = centreCol.removeFromTop (MetroMetrics::largeControlHeight);
 
     area.removeFromLeft (gap);
-    L.divider1 = area.getX();
+    L.divider2 = area.getX();
     area.removeFromLeft (gap);
 
-    // ── Right: locators ──────────────────────────────────────────────────
+    // ── Right section: locators ──────────────────────────────────────────
     auto rightCol = area.removeFromLeft (MetroMetrics::grid * 30);
     L.locatorsLabel = rightCol.removeFromTop (labelH);
     L.locatorsField = rightCol.removeFromTop (MetroMetrics::controlHeight);
@@ -237,16 +249,15 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     L.setRightButton = setRow;
 
     area.removeFromLeft (gap);
-    L.divider2 = area.getX();
+    L.divider3 = area.getX();
     area.removeFromLeft (gap);
 
-    // ── Far right: a single BPM → GRID → LINK row ───────────────────────
-    auto farRow = area.removeFromBottom (MetroMetrics::largeControlHeight);
-    L.tempoField = farRow.removeFromLeft (MetroMetrics::grid * 10);
-    farRow.removeFromLeft (MetroMetrics::halfGrid);
-    L.gridField = farRow.removeFromLeft (MetroMetrics::grid * 10);
-    farRow.removeFromLeft (MetroMetrics::halfGrid);
-    L.linkField = farRow;
+    // ── Far right: grid snap, link, dock ─────────────────────────────────
+    auto farCol = area;
+    L.gridLabel = farCol.removeFromTop (labelH);
+    L.gridField = farCol.removeFromTop (MetroMetrics::controlHeight);
+    farCol.removeFromTop (MetroMetrics::halfGrid);
+    L.linkField = farCol.removeFromTop (MetroMetrics::largeControlHeight);
 
     return L;
 }
@@ -260,15 +271,16 @@ void FloatingTransportBar::resized()
     pinButton.setBounds (strip.removeFromLeft (MetroMetrics::grid * 6));
     dockButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 7));
 
+    cycleButton.setBounds (L.cycleButton);
     tempoLabel.setBounds (L.tempoField);
 
     positionLabel.setBounds (L.positionField);
 
     auto transport = L.transportRow;
     const int btnGap = MetroMetrics::halfGrid;
-    const int n = 6;
+    const int n = 5;
     const int btnW = (transport.getWidth() - btnGap * (n - 1)) / n;
-    for (auto* b : { &toStartButton, &backButton, &playButton, &stopButton, &recordButton, &cycleButton })
+    for (auto* b : { &toStartButton, &backButton, &playButton, &stopButton, &recordButton })
     {
         b->setBounds (transport.removeFromLeft (btnW));
         transport.removeFromLeft (btnGap);
@@ -278,9 +290,9 @@ void FloatingTransportBar::resized()
     setLeftButton.setBounds (L.setLeftButton);
     setRightButton.setBounds (L.setRightButton);
 
-    gridCombo.setBounds (L.gridField);
+    gridCombo.setBounds (L.gridField.withWidth (juce::jmin (L.gridField.getWidth(), MetroMetrics::grid * 10)));
     if (linkPtr != nullptr)
-        linkButton.setBounds (L.linkField);
+        linkButton.setBounds (L.linkField.withWidth (juce::jmin (L.linkField.getWidth(), MetroMetrics::grid * 10)));
 }
 
 //==============================================================================
@@ -308,11 +320,14 @@ void FloatingTransportBar::paint (juce::Graphics& g)
 
     g.setColour (Text::Muted);
     g.setFont (MetroTypography::caption());
+    g.drawText ("CYCLE", L.cycleLabel, juce::Justification::bottomLeft);
+    g.drawText ("TEMPO", L.tempoLabel, juce::Justification::bottomLeft);
     g.drawText ("MUSICAL POSITION", L.positionLabel, juce::Justification::centredBottom);
     g.drawText ("LOCATORS", L.locatorsLabel, juce::Justification::bottomLeft);
+    g.drawText ("GRID", L.gridLabel, juce::Justification::bottomLeft);
 
     g.setColour (Base::Border);
-    for (int x : { L.divider1, L.divider2 })
+    for (int x : { L.divider1, L.divider2, L.divider3 })
         g.drawVerticalLine (x, (float) (L.titleStrip.getBottom() + MetroMetrics::grid),
                            (float) (getHeight() - MetroMetrics::grid));
 }
@@ -406,7 +421,7 @@ void FloatingTransportBar::restorePosition()
     // Clamp onto whichever display currently contains that point, in case
     // the panel was last closed on a monitor that is no longer connected.
     const auto& displays = juce::Desktop::getInstance().getDisplays();
-    const auto* display  = displays.getDisplayForPoint ({ x, y });
+    const auto* display  = displays.getDisplayForPoint (juce::Point<int> (x, y));
     const auto  area     = (display != nullptr) ? display->userArea
                                                  : juce::Rectangle<int> (0, 0, 1920, 1080);
     x = juce::jlimit (area.getX(), juce::jmax (area.getX(), area.getRight() - getWidth()), x);
@@ -426,4 +441,3 @@ void FloatingTransportBar::savePosition() const
     xml.setAttribute ("y", getY());
     xml.writeTo (getPositionFile());
 }
-} // namespace dysekt::metro

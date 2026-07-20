@@ -614,6 +614,18 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         }
     }
 
+    // TEMP diagnostic — NOT gated to "once": the block above only ever
+    // catches the very first process() call of the session (typically
+    // silent, before any note is played), so it can't show us what happens
+    // on an actual note-on. This logs every block that actually carries
+    // MIDI, for as long as the session runs.
+    if (! midiIn.isEmpty())
+        sf2DebugLog ("process(): non-empty block — " + juce::String (midiIn.getNumEvents())
+            + " event(s), loaded=" + juce::String ((int) loaded.load (std::memory_order_relaxed))
+            + " isSfzFile=" + juce::String ((int) isSfzFile)
+            + " sfizzSynth=" + juce::String (sfizzSynth != nullptr ? "non-null" : "NULL")
+            + " midiChannel(filterCh)=" + juce::String (midiChannel.load (std::memory_order_relaxed)));
+
     applyPendingLoad();
 
     if (! loaded.load (std::memory_order_relaxed))
@@ -647,6 +659,13 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         {
             const auto msg = meta.getMessage();
             const int  ch  = msg.getChannel();   // 1-16
+
+            if (msg.isNoteOn() || msg.isNoteOff())
+                sf2DebugLog (juce::String ("  [sfizz] msg: ch=") + juce::String (ch)
+                    + " filterCh=" + juce::String (filterCh)
+                    + " note=" + juce::String (msg.getNoteNumber())
+                    + (msg.isNoteOn() ? " NOTE-ON" : " NOTE-OFF")
+                    + ((filterCh != 0 && ch != filterCh) ? "  -> DROPPED (channel mismatch)" : "  -> forwarded to sfizz"));
 
             if (filterCh != 0 && ch != filterCh)
                 continue;
