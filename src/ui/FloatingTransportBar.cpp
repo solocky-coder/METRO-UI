@@ -58,13 +58,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     dockButton.onClick = [this] { if (onDockRequested) onDockRequested(); };
     addAndMakeVisible (dockButton);
 
-    // ── Cycle / loop ─────────────────────────────────────────────────────
-    configureTransportButton (cycleButton, "LOOP", Accent::Cyan, "Toggle looping");
-    cycleButton.setClickingTogglesState (true);
-    cycleButton.onStateChange = [this] { engine.setLooping (cycleButton.getToggleState()); };
-    addAndMakeVisible (cycleButton);
-
-    // ── Tempo ────────────────────────────────────────────────────────────
+    // ── Tempo (BPM) — lives in the far-right BPM/GRID/LINK row ─────────────
     tempoLabel.setEditable (true, true, false);
     tempoLabel.setJustificationType (juce::Justification::centred);
     tempoLabel.setFont (DysektLookAndFeel::makeMonoFont (16.0f, true));
@@ -92,8 +86,10 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     configureTransportButton (playButton,    ">",   Transport::Play, "Play");
     configureTransportButton (stopButton,    "[]",  Accent::Orange,  "Stop");
     configureTransportButton (recordButton,  "REC", Transport::Record, "Record");
+    configureTransportButton (cycleButton,   "LOOP", Accent::Cyan,   "Toggle looping");
     playButton.setClickingTogglesState (true);
     recordButton.setClickingTogglesState (true);
+    cycleButton.setClickingTogglesState (true);
 
     toStartButton.onClick = [this] { engine.rewind(); };
     backButton.onClick = [this]
@@ -109,8 +105,11 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     };
     stopButton.onClick   = [this] { engine.stop(); };
     recordButton.onStateChange = [this] { engine.setRecording (recordButton.getToggleState()); };
+    cycleButton.onStateChange  = [this] { engine.setLooping (cycleButton.getToggleState()); };
 
-    for (auto* b : { &toStartButton, &backButton, &playButton, &stopButton, &recordButton })
+    // Order matches most DAW transports (Cubase/Nuendo-style, per the rest of
+    // this panel's iconography): to-start, rewind, play, stop, record, cycle.
+    for (auto* b : { &toStartButton, &backButton, &playButton, &stopButton, &recordButton, &cycleButton })
         addAndMakeVisible (*b);
 
     // ── Locators ─────────────────────────────────────────────────────────
@@ -150,7 +149,10 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
         addAndMakeVisible (linkButton);
     }
 
-    setSize (MetroMetrics::grid * 137, MetroMetrics::grid * 33);
+    // Must stay in sync with computeLayout(): title strip (3) + top pad (0.5)
+    // + row 1 (5) + inter-row gap (0.5) + row 2 (5) + bottom pad (0.5), with
+    // a little slack — sized to the two content rows and nothing more.
+    setSize (MetroMetrics::grid * 140, MetroMetrics::grid * 16);
     startTimerHz (20);
 }
 
@@ -167,8 +169,12 @@ void FloatingTransportBar::show()
     if (! isOnDesktop())
     {
         setOpaque (true);
-        addToDesktop (juce::ComponentPeer::windowIsTemporary
-                       | juce::ComponentPeer::windowHasDropShadow);
+        // NOT windowIsTemporary: that flag makes the OS treat this as a
+        // transient popup (like a tooltip or menu), which auto-hides the
+        // instant the main UI window is clicked/activated, and can also
+        // break the drag capture below. This panel needs to behave like a
+        // normal (if borderless) persistent floating window instead.
+        addToDesktop (juce::ComponentPeer::windowHasDropShadow);
         restorePosition();
     }
     setVisible (true);
@@ -204,60 +210,55 @@ void FloatingTransportBar::mouseDoubleClick (const juce::MouseEvent& e)
 }
 
 //==============================================================================
+// Two content rows, sized to exactly what they need — no dead space below.
+// Row 1 (readouts):  musical position  |  locators
+// Row 2 (buttons):   transport cluster (incl. LOOP) + SET LEFT/RIGHT  |  BPM / GRID / LINK
 FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 {
     Layout L;
     auto area = getLocalBounds();
 
     L.titleStrip = area.removeFromTop (MetroMetrics::grid * 3);
-    area.reduce (MetroMetrics::panelPadding, MetroMetrics::panelPadding);
+    area.reduce (MetroMetrics::panelPadding, 0);
+    area.removeFromTop (MetroMetrics::halfGrid);
+    area.removeFromBottom (MetroMetrics::halfGrid);
 
-    const int labelH = MetroMetrics::grid * 2;
-    const int gap    = MetroMetrics::grid * 2;
+    const int gap  = MetroMetrics::grid * 2;
+    const int rowH = MetroMetrics::largeControlHeight;
 
-    // ── Left section: cycle/loop over tempo ─────────────────────────────
-    auto leftCol = area.removeFromLeft (MetroMetrics::grid * 20);
-    L.cycleLabel  = leftCol.removeFromTop (labelH);
-    L.cycleButton = leftCol.removeFromTop (MetroMetrics::controlHeight);
-    leftCol.removeFromTop (MetroMetrics::halfGrid);
-    L.tempoLabel  = leftCol.removeFromTop (labelH);
-    L.tempoField  = leftCol.removeFromTop (MetroMetrics::largeControlHeight);
+    // ── Row 1: position readout | locators readout ──────────────────────
+    auto row1 = area.removeFromTop (rowH);
+    L.positionField = row1.removeFromLeft (MetroMetrics::grid * 54);
+    row1.removeFromLeft (gap * 2);
+    L.locatorsField = row1.removeFromLeft (MetroMetrics::grid * 30);
 
-    area.removeFromLeft (gap);
-    L.divider1 = area.getX();
-    area.removeFromLeft (gap);
+    area.removeFromTop (MetroMetrics::halfGrid);
 
-    // ── Centre section: musical position + transport row ────────────────
-    auto centreCol = area.removeFromLeft (MetroMetrics::grid * 38);
-    L.positionLabel = centreCol.removeFromTop (labelH);
-    L.positionField = centreCol.removeFromTop (MetroMetrics::largeControlHeight);
-    centreCol.removeFromTop (MetroMetrics::halfGrid);
-    L.transportRow = centreCol.removeFromTop (MetroMetrics::largeControlHeight);
+    // ── Row 2: transport cluster (incl. LOOP) + set-left/right | BPM/GRID/LINK ──
+    auto row2 = area.removeFromTop (rowH);
 
-    area.removeFromLeft (gap);
-    L.divider2 = area.getX();
-    area.removeFromLeft (gap);
+    L.transportRow = row2.removeFromLeft (MetroMetrics::grid * 54);
 
-    // ── Right section: locators ──────────────────────────────────────────
-    auto rightCol = area.removeFromLeft (MetroMetrics::grid * 30);
-    L.locatorsLabel = rightCol.removeFromTop (labelH);
-    L.locatorsField = rightCol.removeFromTop (MetroMetrics::controlHeight);
-    rightCol.removeFromTop (MetroMetrics::halfGrid);
-    auto setRow = rightCol.removeFromTop (MetroMetrics::largeControlHeight);
+    row2.removeFromLeft (gap * 2);
+    L.divider1 = row2.getX();
+    row2.removeFromLeft (gap);
+
+    auto setRow = row2.removeFromLeft (MetroMetrics::grid * 30);
     L.setLeftButton  = setRow.removeFromLeft (setRow.getWidth() / 2 - MetroMetrics::halfGrid);
     setRow.removeFromLeft (MetroMetrics::grid);
     L.setRightButton = setRow;
 
-    area.removeFromLeft (gap);
-    L.divider3 = area.getX();
-    area.removeFromLeft (gap);
+    row2.removeFromLeft (gap * 2);
+    L.divider2 = row2.getX();
+    row2.removeFromLeft (gap);
 
-    // ── Far right: grid snap, link, dock ─────────────────────────────────
-    auto farCol = area;
-    L.gridLabel = farCol.removeFromTop (labelH);
-    L.gridField = farCol.removeFromTop (MetroMetrics::controlHeight);
-    farCol.removeFromTop (MetroMetrics::halfGrid);
-    L.linkField = farCol.removeFromTop (MetroMetrics::largeControlHeight);
+    // ── Far right: one row, BPM then GRID then LINK ─────────────────────
+    L.tempoCaption = row2.removeFromLeft (MetroMetrics::grid * 5);
+    L.tempoField   = row2.removeFromLeft (MetroMetrics::grid * 9);
+    row2.removeFromLeft (MetroMetrics::grid);
+    L.gridField    = row2.removeFromLeft (MetroMetrics::grid * 10);
+    row2.removeFromLeft (MetroMetrics::grid);
+    L.linkField    = row2.removeFromLeft (MetroMetrics::grid * 10);
 
     return L;
 }
@@ -271,28 +272,26 @@ void FloatingTransportBar::resized()
     pinButton.setBounds (strip.removeFromLeft (MetroMetrics::grid * 6));
     dockButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 7));
 
-    cycleButton.setBounds (L.cycleButton);
-    tempoLabel.setBounds (L.tempoField);
-
     positionLabel.setBounds (L.positionField);
+    locatorsLabel.setBounds (L.locatorsField);
 
     auto transport = L.transportRow;
     const int btnGap = MetroMetrics::halfGrid;
-    const int n = 5;
+    const int n = 6;
     const int btnW = (transport.getWidth() - btnGap * (n - 1)) / n;
-    for (auto* b : { &toStartButton, &backButton, &playButton, &stopButton, &recordButton })
+    for (auto* b : { &toStartButton, &backButton, &playButton, &stopButton, &recordButton, &cycleButton })
     {
         b->setBounds (transport.removeFromLeft (btnW));
         transport.removeFromLeft (btnGap);
     }
 
-    locatorsLabel.setBounds (L.locatorsField);
     setLeftButton.setBounds (L.setLeftButton);
     setRightButton.setBounds (L.setRightButton);
 
-    gridCombo.setBounds (L.gridField.withWidth (juce::jmin (L.gridField.getWidth(), MetroMetrics::grid * 10)));
+    tempoLabel.setBounds (L.tempoField);
+    gridCombo.setBounds (L.gridField);
     if (linkPtr != nullptr)
-        linkButton.setBounds (L.linkField.withWidth (juce::jmin (L.linkField.getWidth(), MetroMetrics::grid * 10)));
+        linkButton.setBounds (L.linkField);
 }
 
 //==============================================================================
@@ -318,16 +317,16 @@ void FloatingTransportBar::paint (juce::Graphics& g)
     g.setFont (MetroTypography::caption());
     g.drawText ("TRANSPORT", L.titleStrip.withTrimmedLeft (MetroMetrics::grid * 8), juce::Justification::centredLeft);
 
+    // BPM is the one far-right field whose value alone ("120.00") wouldn't
+    // otherwise be self-explanatory the way GRID (shows "1/16") and LINK
+    // (shows its own name) already are — everything else reads fine without
+    // a caption, which is what let row 1 shrink down to just the readouts.
     g.setColour (Text::Muted);
     g.setFont (MetroTypography::caption());
-    g.drawText ("CYCLE", L.cycleLabel, juce::Justification::bottomLeft);
-    g.drawText ("TEMPO", L.tempoLabel, juce::Justification::bottomLeft);
-    g.drawText ("MUSICAL POSITION", L.positionLabel, juce::Justification::centredBottom);
-    g.drawText ("LOCATORS", L.locatorsLabel, juce::Justification::bottomLeft);
-    g.drawText ("GRID", L.gridLabel, juce::Justification::bottomLeft);
+    g.drawText ("BPM", L.tempoCaption, juce::Justification::centredLeft);
 
     g.setColour (Base::Border);
-    for (int x : { L.divider1, L.divider2, L.divider3 })
+    for (int x : { L.divider1, L.divider2 })
         g.drawVerticalLine (x, (float) (L.titleStrip.getBottom() + MetroMetrics::grid),
                            (float) (getHeight() - MetroMetrics::grid));
 }

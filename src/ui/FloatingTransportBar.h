@@ -78,19 +78,21 @@ private:
     //==========================================================================
     //  Layout regions, computed once per resized() and reused by paint()
     //==========================================================================
+    //  Two content rows below the title strip:
+    //    Row 1 (readouts): musical position  |  locators
+    //    Row 2 (buttons):  transport cluster (incl. LOOP) + SET LEFT/RIGHT
+    //                      |  far-right BPM / GRID / LINK, in that order
     struct Layout
     {
         juce::Rectangle<int> titleStrip;
-        juce::Rectangle<int> cycleLabel, cycleButton;
-        juce::Rectangle<int> tempoLabel, tempoField;
-        juce::Rectangle<int> positionLabel, positionField;
+        juce::Rectangle<int> positionField;
+        juce::Rectangle<int> locatorsField;
         juce::Rectangle<int> transportRow;
-        juce::Rectangle<int> locatorsLabel, locatorsField;
         juce::Rectangle<int> setLeftButton, setRightButton;
-        juce::Rectangle<int> gridLabel, gridField;
+        juce::Rectangle<int> tempoCaption, tempoField;
+        juce::Rectangle<int> gridField;
         juce::Rectangle<int> linkField;
-        juce::Rectangle<int> dockField;
-        int divider1 = 0, divider2 = 0, divider3 = 0;
+        int divider1 = 0, divider2 = 0;
     };
     Layout computeLayout() const;
 
@@ -112,26 +114,27 @@ private:
     juce::TextButton dockButton  { "Dock" };
     juce::ComponentDragger dragger;
 
-    // ── Left section: cycle/loop + tempo ────────────────────────────────
-    juce::TextButton cycleButton { "LOOP" };
-    juce::Label      tempoLabel;
-
-    // ── Centre: musical position + transport cluster ───────────────────
+    // ── Row 1: musical position readout ─────────────────────────────────
     juce::Label      positionLabel;
+
+    // ── Row 2: transport cluster, LOOP included with the other transport
+    //    buttons (as in most DAWs) rather than off in its own section ────
     juce::TextButton toStartButton { "|<" };
     juce::TextButton backButton    { "<<" };
     juce::TextButton playButton    { ">" };
     juce::TextButton stopButton    { "[]" };
     juce::TextButton recordButton  { "REC" };
+    juce::TextButton cycleButton   { "LOOP" };
 
-    // ── Right: locators ──────────────────────────────────────────────────
+    // ── Row 1/2: locators readout + set-left/set-right buttons ─────────
     juce::Label       locatorsLabel;
     juce::TextButton  setLeftButton  { "SET LEFT" };
     juce::TextButton  setRightButton { "SET RIGHT" };
     int64_t leftLocatorTick  = 0;
     int64_t rightLocatorTick = 0;
 
-    // ── Far right: grid snap + link ─────────────────────────────────────
+    // ── Far right: BPM, grid snap, link — one row, in that order ───────
+    juce::Label      tempoLabel;
     juce::ComboBox   gridCombo;
     juce::TextButton linkButton { "LINK" };
 
