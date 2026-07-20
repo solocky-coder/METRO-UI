@@ -921,7 +921,7 @@ void DysektEditor::toggleSeqPanel()
 #if DYSEKT_STANDALONE
         pianoRollPanel.closeWindow();
         slotWindow.closeWindow();
-        processor.sequencer.setSelectedLiveChannel (0);
+        processor.sequencer.setSelectedTrack (-1);
         processor.sequencer.setSelectedSfLiveChannels (0);
         processor.sequencer.setRecordingTrack (-1);
 #endif

@@ -657,30 +657,25 @@ private:
         bool isSfzInstrument = false;
         bool hasSelection = juce::isPositiveAndBelow (idx, engine.getNumTracks());
 
-        int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
-
         if (hasSelection)
         {
             const auto info = engine.getTrackInfo (idx);
             type = info.type;
             isSfzInstrument = info.isSfzInstrument;
-            switch (info.type)
-            {
-                case TrackType::MainSlice:
-                    liveCh = 1;  // slicer always responds on ch 1
-                    break;
-                case TrackType::ChromaticSlice:
-                    liveCh = info.midiChannel + 1;  // stored 0-based
-                    break;
-                case TrackType::SfPlayer:
-                    liveCh = 0;  // SfPlayer uses liveInputChannelMask instead
-                    if (info.midiChannel >= 0 && info.midiChannel < 16)
-                        mask = (uint16_t)(1u << info.midiChannel);
-                    break;
-            }
+
+            // Independent of setSelectedTrack() below: this mask feeds
+            // SfzPlayer's own live-input routing (setSelectedSfLiveChannels),
+            // not the LiveTargetPlayer re-stamp/clear logic in processBlock().
+            if (info.type == TrackType::SfPlayer
+                && info.midiChannel >= 0 && info.midiChannel < 16)
+                mask = (uint16_t) (1u << info.midiChannel);
         }
 
-        engine.setSelectedLiveChannel (liveCh);
+        // Derives both the re-stamp channel and the LiveTargetPlayer
+        // (slicer/sf2/sfz/none) from the track's own type/isSfzInstrument/
+        // midiChannel — see SequencerEngine::getSelectedLiveTarget() and
+        // the reset logic in PluginProcessor::processBlock().
+        engine.setSelectedTrack (hasSelection ? idx : -1);
         engine.setSelectedSfLiveChannels (mask);
         engine.setRecordingTrack (hasSelection ? idx : -1);
 
