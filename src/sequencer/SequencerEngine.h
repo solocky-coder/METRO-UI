@@ -7,6 +7,19 @@
 #include <vector>
 
 //==============================================================================
+//  LiveTargetPlayer / SelectedLiveTarget  —  see
+//  docs/selected-track-live-midi-workflow.md and
+//  SequencerEngine::getSelectedLiveTarget().
+//==============================================================================
+enum class LiveTargetPlayer { none, slicer, sf2, sfz };
+
+struct SelectedLiveTarget
+{
+    LiveTargetPlayer player      = LiveTargetPlayer::none;
+    int              midiChannel = 0;   // 1-based; 0 = none
+};
+
+//==============================================================================
 //  SequencerTrackInfo  —  lightweight metadata snapshot of a SequencerTrack.
 //==============================================================================
 struct SequencerTrackInfo
@@ -185,11 +198,38 @@ public:
     /** Set the MIDI channel (1-based) that live input should be re-stamped to
      *  when the arranger is active.  Pass 0 to disable re-stamping (SfPlayer
      *  tracks handle their own routing via liveInputChannelMask).
-     *  Called from ArrangeView::selectTrack on the message thread — atomic. */
+     *  Called from ArrangeView::selectTrack on the message thread — atomic.
+     *  @deprecated Prefer setSelectedTrack(), which also lets the engine
+     *  resolve the target player type for getSelectedLiveTarget(). Kept for
+     *  any call sites that only care about the re-stamp channel. */
     void setSelectedLiveChannel (int ch1Based) noexcept;
 
     /** Returns the current selected live channel (1-16), or 0 if none. */
     int  getSelectedLiveChannel() const noexcept;
+
+    /** Set which arranger track index is currently selected in the UI.
+     *  Pass -1 when nothing is selected. Derives and caches both the
+     *  re-stamp channel (as returned by getSelectedLiveChannel()) and the
+     *  target player (as returned by getSelectedLiveTarget()) from that
+     *  track's type/isSfzInstrument/midiChannel.
+     *  Called from ArrangeView::selectTrack on the message thread — atomic. */
+    void setSelectedTrack (int trackIndex) noexcept;
+
+    /** Returns the live-MIDI destination (player + channel) for the
+     *  currently selected arranger track, per
+     *  docs/selected-track-live-midi-workflow.md:
+     *    - MainSlice / ChromaticSlice track selected -> LiveTargetPlayer::slicer
+     *    - SfPlayer track selected, isSfzInstrument == false -> LiveTargetPlayer::sf2
+     *    - SfPlayer track selected, isSfzInstrument == true  -> LiveTargetPlayer::sfz
+     *    - nothing selected / out of range               -> LiveTargetPlayer::none
+     *  Safe to call from the audio thread (lock-free snapshot read). */
+    SelectedLiveTarget getSelectedLiveTarget() const noexcept;
+
+    /** Returns a bitmask (bit N = channel N+1, 0-based) covering every
+     *  SfPlayer track whose isSfzInstrument flag is set — i.e. real .sfz
+     *  arranger tracks, as opposed to SF2-preset SfPlayer tracks. Used so
+     *  processBlock() can make sure sfzPlayer2 listens on those channels. */
+    uint16_t getSfzInstrumentChannelMask() const noexcept;
 
     /** Tell the engine which track index receives recorded MIDI.
      *  Call alongside setSelectedLiveChannel when the user selects a track.

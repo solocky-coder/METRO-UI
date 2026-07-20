@@ -79,6 +79,7 @@ struct SequencerEngine::Impl
 
     std::atomic<bool> midiActivityFlags[SequencerEngine::kActivityFlagCount] = {};
     std::atomic<int>  selectedLiveChannel  { 0 };  // 1-based; 0 = disabled
+    std::atomic<SelectedLiveTarget> selectedLiveTarget {}; // player + channel for the selected track
     std::atomic<int>  recordingTrackIndex  { -1 }; // which track receives recorded MIDI (-1 = none)
 
     //==========================================================================
@@ -638,6 +639,19 @@ uint16_t SequencerEngine::getAllSfPlayerChannelMask() const noexcept
     return mask;
 }
 
+uint16_t SequencerEngine::getSfzInstrumentChannelMask() const noexcept
+{
+    uint16_t mask = 0;
+    auto snap = impl->getTracks();
+    for (auto& t : *snap)
+        if (t->type == TrackType::SfPlayer && t->isSfzInstrument)
+        {
+            const int ch0 = t->midiChannel.load (std::memory_order_relaxed) & 0xF;
+            mask |= static_cast<uint16_t> (1u << ch0);
+        }
+    return mask;
+}
+
 //==============================================================================
 void SequencerEngine::setSelectedLiveChannel (int ch1Based) noexcept
 {
@@ -647,6 +661,39 @@ void SequencerEngine::setSelectedLiveChannel (int ch1Based) noexcept
 int SequencerEngine::getSelectedLiveChannel() const noexcept
 {
     return impl->selectedLiveChannel.load (std::memory_order_relaxed);
+}
+
+void SequencerEngine::setSelectedTrack (int trackIndex) noexcept
+{
+    SelectedLiveTarget target;   // defaults to { LiveTargetPlayer::none, 0 }
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
+    {
+        auto& t = *(*snap)[(size_t) trackIndex];
+        target.midiChannel = midiChannelForTrack (t);
+
+        switch (t.type)
+        {
+            case TrackType::MainSlice:
+            case TrackType::ChromaticSlice:
+                target.player = LiveTargetPlayer::slicer;
+                break;
+
+            case TrackType::SfPlayer:
+                target.player = t.isSfzInstrument ? LiveTargetPlayer::sfz
+                                                   : LiveTargetPlayer::sf2;
+                break;
+        }
+    }
+
+    impl->selectedLiveTarget.store (target, std::memory_order_relaxed);
+    // Keep the legacy channel-only accessor in sync for any remaining callers.
+    impl->selectedLiveChannel.store (target.midiChannel, std::memory_order_relaxed);
+}
+
+SelectedLiveTarget SequencerEngine::getSelectedLiveTarget() const noexcept
+{
+    return impl->selectedLiveTarget.load (std::memory_order_relaxed);
 }
 
 void SequencerEngine::setRecordingTrack (int trackIndex) noexcept
