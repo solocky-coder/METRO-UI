@@ -87,7 +87,14 @@ struct SequencerTrack
     std::atomic<float> volumeDb   { 0.0f };                  // -60..+6 dB — stored/persisted, not yet applied to audio output
     std::atomic<float> pan        { 0.0f };                  // -1..+1    — stored/persisted, not yet applied to audio output
 
-    // Display — set once at construction, read-only afterwards.
+    // Display — set once at construction and read-only afterwards, with one
+    // sanctioned exception: the singleton SFZ-instrument track mutates these
+    // in place from SequencerEngine::addSfzTrack() when a new .sfz file is
+    // loaded or its channel is changed, instead of being torn down and
+    // rebuilt, so its track-list index/selection stays stable. Not atomic —
+    // safe only because every reader (getTrackInfo(), UI Timers) and every
+    // writer of these two fields run on the message thread exclusively;
+    // never touch name/colour from the audio thread.
     juce::String name;
     juce::Colour colour      = juce::Colour (0xFF3A6080);
 

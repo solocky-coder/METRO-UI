@@ -85,7 +85,11 @@ public:
 
     void addSfzInstrumentTrack (const juce::String& name, juce::Colour colour)
     {
-        engine.addSfzTrack (name, 15, colour);
+        // 0-based channel 1 == MIDI channel 2, matching sfzPlayer2's own
+        // default channel (see DysektProcessor's sfzPlayer2.setMidiChannel(2)
+        // and the sfzPlayer2ChannelMask default). Channel 16 here was never
+        // correct — sfzPlayer2 was never listening there.
+        engine.addSfzTrack (name, 1, colour);
     }
 
     SequencerTrackInfo getTrackInfo (int i) const { return engine.getTrackInfo (i); }

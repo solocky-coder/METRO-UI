@@ -504,17 +504,26 @@ void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Bas
     const int ch = juce::jlimit (0, 15, midiChannel0Based);
     auto current = impl->getTracks();
 
-    // Remove any existing SfPlayer track with the same name (previous SFZ load).
-    auto next = std::make_shared<Impl::TrackList>();
-    next->reserve (current->size() + 1);
+    // Only one SFZ-instrument track ever exists. If it's already there,
+    // update it in place — same shared_ptr, same track-list index — so a
+    // channel change or loading a different .sfz file doesn't disturb the
+    // current selection. See the "sanctioned exception" note on
+    // SequencerTrack::name/colour.
     for (auto& t : *current)
-        if (! (t->type == TrackType::SfPlayer && t->name == name))
-            next->push_back (t);
+        if (t->type == TrackType::SfPlayer && t->isSfzInstrument)
+        {
+            t->name   = name;
+            t->colour = colour;
+            t->midiChannel.store (ch, std::memory_order_relaxed);
+            return;
+        }
 
+    // First SFZ load this session — nothing to replace, append fresh.
     auto track = SequencerTrack::makeSfzInstrument (name, colour);
     track->midiChannel.store (ch, std::memory_order_relaxed);
-    next->push_back (track);
 
+    auto next = std::make_shared<Impl::TrackList> (*current);
+    next->push_back (track);
     impl->publishTracks (std::move (next));
 }
 
@@ -646,8 +655,12 @@ uint16_t SequencerEngine::getSfzInstrumentChannelMask() const noexcept
     for (auto& t : *snap)
         if (t->type == TrackType::SfPlayer && t->isSfzInstrument)
         {
-            const int ch0 = t->midiChannel.load (std::memory_order_relaxed) & 0xF;
-            mask |= static_cast<uint16_t> (1u << ch0);
+            // t->midiChannel is stored 0-based, but this mask feeds
+            // sfzPlayer2ChannelMask, which processMidi2() tests directly
+            // against the 1-based MIDI channel number (no -1) — so the bit
+            // index here must be the 1-based channel, not the 0-based one.
+            const int ch1 = (t->midiChannel.load (std::memory_order_relaxed) & 0xF) + 1;
+            mask |= static_cast<uint16_t> (1u << ch1);
         }
     return mask;
 }

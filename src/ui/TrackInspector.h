@@ -80,7 +80,16 @@ public:
         {
             if (! hasTrack()) return;
             const auto info = engine.getTrackInfo (selectedTrack);
-            if (info.type == TrackType::SfPlayer)
+            if (info.type != TrackType::SfPlayer) return;
+
+            // SF2-preset tracks are matched/updated by preset (bank+program);
+            // a real .sfz-file track has no meaningful preset to match on, so
+            // routing it through addOrUpdateSfTrackOnChannel silently failed
+            // to update the track that's actually playing — it has to go
+            // through addSfzTrack instead, same as loading a new .sfz file.
+            if (info.isSfzInstrument)
+                engine.addSfzTrack (info.name, channelBox.getSelectedId() - 1, info.colour);
+            else
                 engine.addOrUpdateSfTrackOnChannel (info.preset, channelBox.getSelectedId() - 1, info.colour);
         };
 
