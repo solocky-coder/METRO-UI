@@ -670,7 +670,7 @@ void SequencerEngine::setSelectedTrack (int trackIndex) noexcept
     if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
     {
         auto& t = *(*snap)[(size_t) trackIndex];
-        target.midiChannel = midiChannelForTrack (t);
+        target.midiChannel = Impl::midiChannelForTrack (t);
 
         switch (t.type)
         {

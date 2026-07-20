@@ -426,6 +426,15 @@ public:
 #if DYSEKT_STANDALONE
     SequencerEngine  sequencer;
     AbletonLink      abletonLink;
+
+    /** Selected-track live MIDI routing state — see
+     *  docs/selected-track-live-midi-workflow.md and the reset logic in
+     *  processBlock() around sequencer.getSelectedLiveTarget(). Both start
+     *  at 0: lastLiveTargetPlayer == 0 is the sentinel for "no previous
+     *  target" (0 also happens to equal LiveTargetPlayer::none), so the
+     *  very first processBlock() call never triggers a spurious reset. */
+    int lastLiveTargetPlayer  = 0;
+    int lastLiveTargetChannel = 0;
 #endif
     LazyChopEngine   lazyChop;
     SampleData       sampleData;
