@@ -1,18 +1,14 @@
 /*
     DYSEKT 2
+    Metro UI
 
     FloatingTransportBar.h
 
     A detachable transport panel: cycle/loop, tempo, musical position, the
     transport button cluster, locators, grid snap, and Ableton Link — the
-    same set of controls the docked TransportBar shows under the arranger,
-    but able to leave the main window entirely and float as its own
-    borderless panel that remembers where it was left.
-
-    Ported from the (never-instantiated) metro/ UI shell — see
-    ArrangeView::showFloatingTransport()/dockTransport() for the live
-    wiring, and TransportBar's onFloatRequested for the docked "Float"
-    button that triggers it.
+    same set of controls MetroTransportBar docks under the header, but able
+    to leave the main window entirely and float as its own borderless panel
+    that remembers where it was left.
 
     Deliberately does NOT wrap juce::DocumentWindow (see SlotWindow.h /
     PianoRollPanel.h for that shape elsewhere in the app). Those give the OS
@@ -28,9 +24,10 @@
 
 class SequencerEngine;
 
+namespace dysekt::metro
+{
 /**
     FloatingTransportBar
-
 
     Usage:
         floatingTransport = std::make_unique<FloatingTransportBar> (engine, linkPtr);
@@ -81,16 +78,15 @@ private:
     struct Layout
     {
         juce::Rectangle<int> titleStrip;
-        juce::Rectangle<int> cycleLabel, cycleButton;
-        juce::Rectangle<int> tempoLabel, tempoField;
+        juce::Rectangle<int> tempoField;
         juce::Rectangle<int> positionLabel, positionField;
         juce::Rectangle<int> transportRow;
         juce::Rectangle<int> locatorsLabel, locatorsField;
         juce::Rectangle<int> setLeftButton, setRightButton;
-        juce::Rectangle<int> gridLabel, gridField;
+        juce::Rectangle<int> gridField;
         juce::Rectangle<int> linkField;
         juce::Rectangle<int> dockField;
-        int divider1 = 0, divider2 = 0, divider3 = 0;
+        int divider1 = 0, divider2 = 0;
     };
     Layout computeLayout() const;
 
@@ -112,7 +108,7 @@ private:
     juce::TextButton dockButton  { "Dock" };
     juce::ComponentDragger dragger;
 
-    // ── Left section: cycle/loop + tempo ────────────────────────────────
+    // ── Transport controls ──────────────────────────────────────────────
     juce::TextButton cycleButton { "LOOP" };
     juce::Label      tempoLabel;
 
@@ -131,9 +127,10 @@ private:
     int64_t leftLocatorTick  = 0;
     int64_t rightLocatorTick = 0;
 
-    // ── Far right: grid snap + link ─────────────────────────────────────
+    // ── Far right: BPM, grid snap + link ─────────────────────────────────
     juce::ComboBox   gridCombo;
     juce::TextButton linkButton { "LINK" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FloatingTransportBar)
 };
+} // namespace dysekt::metro
