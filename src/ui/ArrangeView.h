@@ -517,6 +517,10 @@ public:
         transport.setVisible (true);
     }
 
+    /** Lets an owner (e.g. SlotWindowContent) dock extra controls — such as the
+     *  Mixer / Arranger view switcher — into the far left of the transport row. */
+    TransportBar& getTransportBar() noexcept { return transport; }
+
 private:
     //==========================================================================
     //  State

@@ -42,6 +42,21 @@ public:
         arrangeView.setVisible (c == Content::Arrange);
 
         const bool showSwitcher = c == Content::Mixer || c == Content::Arrange;
+
+        // Arrange has its own transport row — dock the switcher buttons into its
+        // far left instead of reserving a separate row above it. Mixer has no
+        // transport row of its own, so the switcher keeps its standalone row.
+        if (c == Content::Arrange)
+        {
+            arrangeView.getTransportBar().setViewButtons (&mixerButton, &arrangeButton);
+        }
+        else
+        {
+            arrangeView.getTransportBar().setViewButtons (nullptr, nullptr);
+            addChildComponent (mixerButton);
+            addChildComponent (arrangeButton);
+        }
+
         mixerButton.setVisible (showSwitcher);
         arrangeButton.setVisible (showSwitcher);
         updateViewButtonState();
@@ -56,26 +71,32 @@ public:
     void resized() override
     {
         auto r = getLocalBounds();
+        // Arrange docks the switcher into its own transport row, so it needs no
+        // separate switcher row here; Mixer/Eq still reserve one above the content.
         constexpr int switcherHeight = 34;
+        const bool reserveSwitcherRow = (current == Content::Mixer);
         const auto contentBounds = (current == Content::Mixer || current == Content::Arrange)
-                                     ? r.withTrimmedTop (switcherHeight)
+                                     ? (reserveSwitcherRow ? r.withTrimmedTop (switcherHeight) : r)
                                      : r;
         mixerPanel.setBounds  (contentBounds);
         eqPanel.setBounds     (contentBounds);
         arrangeView.setBounds (contentBounds);
 
-        auto switcher = r.removeFromTop (switcherHeight).reduced (8, 5);
-        constexpr int arrangeWidth = 92;
-        constexpr int mixerWidth = 70;
-        arrangeButton.setBounds (switcher.removeFromRight (arrangeWidth));
-        switcher.removeFromRight (4);
-        mixerButton.setBounds (switcher.removeFromRight (mixerWidth));
+        if (reserveSwitcherRow)
+        {
+            auto switcher = r.removeFromTop (switcherHeight).reduced (8, 5);
+            constexpr int arrangeWidth = 92;
+            constexpr int mixerWidth = 70;
+            arrangeButton.setBounds (switcher.removeFromRight (arrangeWidth));
+            switcher.removeFromRight (4);
+            mixerButton.setBounds (switcher.removeFromRight (mixerWidth));
+        }
     }
 
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xFF060608));
-        if (current == Content::Mixer || current == Content::Arrange)
+        if (current == Content::Mixer)
         {
             g.setColour (juce::Colour (0xFF2A2A35));
             g.drawHorizontalLine (34, 0.0f, (float) getWidth());

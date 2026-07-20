@@ -174,6 +174,18 @@ public:
         linkBtn  .setLookAndFeel (nullptr);
     }
 
+    /** Docks (or undocks, with nullptrs) external view-switcher buttons — e.g.
+     *  the Mixer / Arranger toggle — into the far left of the transport row.
+     *  Ownership stays with the caller; TransportBar only reparents + positions. */
+    void setViewButtons (juce::TextButton* mixerBtn, juce::TextButton* arrangeBtn)
+    {
+        viewMixerBtn   = mixerBtn;
+        viewArrangeBtn = arrangeBtn;
+        if (viewMixerBtn   != nullptr) addAndMakeVisible (*viewMixerBtn);
+        if (viewArrangeBtn != nullptr) addAndMakeVisible (*viewArrangeBtn);
+        resized();
+    }
+
     //==========================================================================
     int64_t getSnapTicks() const
     {
@@ -215,6 +227,20 @@ public:
         const int linkW = 54;
         const int gap   = 4;
 
+        // ── Far left: view switcher (Mixer / Arranger), when docked ───────
+        if (viewMixerBtn != nullptr || viewArrangeBtn != nullptr)
+        {
+            constexpr int arrangeWidth = 92;
+            constexpr int mixerWidth   = 70;
+            auto left = b.removeFromLeft (mixerWidth + gap + arrangeWidth);
+            if (viewMixerBtn != nullptr)
+                viewMixerBtn->setBounds (left.removeFromLeft (mixerWidth));
+            left.removeFromLeft (gap);
+            if (viewArrangeBtn != nullptr)
+                viewArrangeBtn->setBounds (left.removeFromLeft (arrangeWidth));
+            b.removeFromLeft (gap * 2);
+        }
+
         // ── Far right: FLOAT → LINK → pos → snap → BPM ────────────────────
         floatBtn.setBounds (b.removeFromRight (floatW)); b.removeFromRight (gap * 2);
 
@@ -227,11 +253,12 @@ public:
         snapCombo.setBounds (b.removeFromRight (snapW)); b.removeFromRight (gap * 2);
         bpmLabel .setBounds (b.removeFromRight (bpmW));  b.removeFromRight (gap * 2);
 
-        // ── Transport: truly centered in full bar ─────────────────────────
+        // ── Transport: centered in whatever space remains between the
+        //    (optional) view switcher on the left and the info cluster
+        //    on the right ──────────────────────────────────────────────────
         const int nBtns  = 5;
         const int groupW = nBtns * btnW + (nBtns - 1) * gap;
-        const int fullW  = getLocalBounds().getWidth();
-        const int cx     = (fullW - groupW) / 2;
+        const int cx     = b.getX() + (b.getWidth() - groupW) / 2;
         const int y      = b.getY();
 
         rewindBtn.setBounds (cx + 0 * (btnW + gap), y, btnW, btnH);
@@ -263,6 +290,10 @@ private:
     juce::TextButton  linkBtn { "LINK" };
     juce::Label       bpmLabel, posLabel;
     juce::ComboBox    snapCombo;
+
+    // Externally-owned view switcher (Mixer / Arranger), docked in via setViewButtons().
+    juce::TextButton* viewMixerBtn   = nullptr;
+    juce::TextButton* viewArrangeBtn = nullptr;
 
     void timerCallback() override
     {
