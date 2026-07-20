@@ -3113,7 +3113,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         for (const auto meta : midi)
         {
             auto msg = meta.getMessage();
-            if (msg.isChannelMessage() && msg.getChannel() == 1)
+            if (msg.getChannel() == 1)
                 msg.setChannel (selectedTarget.midiChannel);
             transformed.addEvent (msg, meta.samplePosition);
         }

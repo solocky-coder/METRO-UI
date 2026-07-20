@@ -9,6 +9,7 @@
 #include "MetroSelection.h"
 #include "MetroSidebar.h"
 #include "MetroTransportBar.h"
+#include "FloatingTransportBar.h"
 
 class PadGridView;
 class FileBrowserPanel;
@@ -34,9 +35,19 @@ private:
     void onArrangementSelectionChanged (const MetroSelection& selection);
     static juce::String inspectorMessageFor (MetroContent content);
 
+    /** Lazily creates (on first use) and shows the floating transport panel,
+        hiding the docked MetroTransportBar while it's up. Wired to
+        transportBar.onFloatRequested. */
+    void showFloatingTransport();
+
+    /** Hides/destroys the floating panel and restores the docked transport
+        bar. Wired to FloatingTransportBar::onDockRequested. */
+    void dockTransport();
+
     DysektProcessor& processor;
     MetroLookAndFeel lookAndFeel;
     MetroTransportBar transportBar;
+    std::unique_ptr<FloatingTransportBar> floatingTransport;
     MetroSidebar sidebar;
     std::unique_ptr<MetroArrangementView> arrangementView;
     MetroInspector inspector;

@@ -1,5 +1,6 @@
 #include "MetroStandaloneEditor.h"
-#include "MetroTheme.h"
+#include "MetroColours.h"
+#include "MetroMetrics.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../ui/FileBrowserPanel.h"
 #include "../ui/MixerPanel.h"
@@ -18,6 +19,7 @@ MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
     browserView = std::make_unique<FileBrowserPanel> (processor);
     mixerView = std::make_unique<MixerPanel> (processor);
     sidebar.onSelectionChanged = [this] (MetroContent content) { showContent (content); };
+    transportBar.onFloatRequested = [this] { showFloatingTransport(); };
 
     for (auto* component : { static_cast<juce::Component*> (&transportBar), static_cast<juce::Component*> (&sidebar),
                              static_cast<juce::Component*> (arrangementView.get()), static_cast<juce::Component*> (&inspector),
@@ -27,18 +29,18 @@ MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
 
     showContent (MetroContent::arrange);
     setResizable (true, true);
-    setSize (MetroTheme::Metrics::grid * 150, MetroTheme::Metrics::grid * 100);
+    setSize (MetroMetrics::grid * 150, MetroMetrics::grid * 100);
 }
 
 MetroStandaloneEditor::~MetroStandaloneEditor() { setLookAndFeel (nullptr); }
-void MetroStandaloneEditor::paint (juce::Graphics& graphics) { graphics.fillAll (MetroTheme::Colours::windowBackground); }
+void MetroStandaloneEditor::paint (juce::Graphics& graphics) { graphics.fillAll (Base::Background); }
 
 void MetroStandaloneEditor::resized()
 {
     auto area = getLocalBounds();
-    transportBar.setBounds (area.removeFromTop (MetroTheme::Metrics::transportHeight));
-    inspector.setBounds (area.removeFromBottom (MetroTheme::Metrics::inspectorHeight));
-    sidebar.setBounds (area.removeFromLeft (MetroTheme::Metrics::sidebarWidth));
+    transportBar.setBounds (area.removeFromTop (MetroMetrics::transportHeight));
+    inspector.setBounds (area.removeFromBottom (MetroMetrics::inspectorHeight));
+    sidebar.setBounds (area.removeFromLeft (MetroMetrics::sidebarWidth));
     arrangementView->setBounds (area); padsView->setBounds (area);
     browserView->setBounds (area); mixerView->setBounds (area);
 }
@@ -86,5 +88,25 @@ juce::String MetroStandaloneEditor::inspectorMessageFor (MetroContent content)
         case MetroContent::mixer: return "Select a channel to inspect its routing and levels";
     }
     return {};
+}
+
+void MetroStandaloneEditor::showFloatingTransport()
+{
+    if (floatingTransport == nullptr)
+    {
+        floatingTransport = std::make_unique<FloatingTransportBar> (processor.sequencer, &processor.abletonLink);
+        floatingTransport->onDockRequested = [this] { dockTransport(); };
+    }
+
+    transportBar.setVisible (false);
+    floatingTransport->show();
+}
+
+void MetroStandaloneEditor::dockTransport()
+{
+    if (floatingTransport != nullptr)
+        floatingTransport->hide();
+
+    transportBar.setVisible (true);
 }
 } // namespace dysekt::metro

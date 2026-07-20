@@ -1,5 +1,7 @@
 #include "MetroArrangementView.h"
-#include "MetroTheme.h"
+#include "MetroColours.h"
+#include "MetroMetrics.h"
+#include "MetroTypography.h"
 #include "../sequencer/SequencerEngine.h"
 
 namespace dysekt::metro
@@ -44,13 +46,13 @@ void MetroArrangementView::setSelection (MetroSelection newSelection)
 
 int MetroArrangementView::beatWidthPx() const noexcept
 {
-    return juce::jmax (4, static_cast<int> (MetroTheme::Metrics::timelineBeatWidth * zoom));
+    return juce::jmax (4, static_cast<int> (MetroMetrics::timelineBeatWidth * zoom));
 }
 
 juce::Rectangle<int> MetroArrangementView::trackRowBounds (int trackIndex) const
 {
-    const auto y = MetroTheme::Metrics::grid * 3 + trackIndex * MetroTheme::Metrics::trackHeight;
-    return { 0, y, getWidth(), MetroTheme::Metrics::trackHeight };
+    const auto y = MetroMetrics::grid * 3 + trackIndex * MetroMetrics::trackHeight;
+    return { 0, y, getWidth(), MetroMetrics::trackHeight };
 }
 
 juce::Rectangle<int> MetroArrangementView::clipBounds (int trackIndex, int clipIndex, int rowY) const
@@ -59,15 +61,15 @@ juce::Rectangle<int> MetroArrangementView::clipBounds (int trackIndex, int clipI
     const auto beatWidth = beatWidthPx();
     const auto clipX = static_cast<int> (clip.startTick / 960) * beatWidth - static_cast<int> (scrollPixels);
     const auto clipWidth = juce::jmax (beatWidth, static_cast<int> (clip.lengthTicks / 960) * beatWidth);
-    return { clipX, rowY + MetroTheme::Metrics::grid, clipWidth, MetroTheme::Metrics::trackHeight - MetroTheme::Metrics::grid * 2 };
+    return { clipX, rowY + MetroMetrics::grid, clipWidth, MetroMetrics::trackHeight - MetroMetrics::grid * 2 };
 }
 
 void MetroArrangementView::paint (juce::Graphics& graphics)
 {
     const auto bounds = getLocalBounds();
     const auto beatWidth = beatWidthPx();
-    graphics.fillAll (MetroTheme::Colours::windowBackground);
-    graphics.setFont (MetroTheme::smallFont());
+    graphics.fillAll (Base::Background);
+    graphics.setFont (MetroTypography::small());
 
     const auto scrollOffset = static_cast<int> (scrollPixels);
     const auto firstBeat = scrollOffset / beatWidth;
@@ -75,11 +77,11 @@ void MetroArrangementView::paint (juce::Graphics& graphics)
 
     for (int x = startX, beat = firstBeat; x < bounds.getWidth(); x += beatWidth, ++beat)
     {
-        graphics.setColour (MetroTheme::Colours::separator.withAlpha (0.55f));
+        graphics.setColour (Base::Border.withAlpha (0.55f));
         graphics.drawVerticalLine (x, 0.0f, static_cast<float> (bounds.getHeight()));
-        graphics.setColour (MetroTheme::Colours::textDisabled);
-        graphics.drawText (juce::String (beat + 1), x + MetroTheme::Metrics::grid, 0,
-                           beatWidth, MetroTheme::Metrics::grid * 3,
+        graphics.setColour (Text::Disabled);
+        graphics.drawText (juce::String (beat + 1), x + MetroMetrics::grid, 0,
+                           beatWidth, MetroMetrics::grid * 3,
                            juce::Justification::centredLeft);
     }
 
@@ -89,21 +91,21 @@ void MetroArrangementView::paint (juce::Graphics& graphics)
         const auto track = engine.getTrackInfo (index);
         const bool trackSelected = selection.isTrack() && selection.trackIndex == index;
 
-        graphics.setColour (trackSelected ? MetroTheme::Colours::raisedPanel
-                                           : MetroTheme::Colours::panelBackground.withAlpha (0.75f));
+        graphics.setColour (trackSelected ? Base::Elevated
+                                           : Base::Surface.withAlpha (0.75f));
         graphics.fillRect (row);
-        graphics.setColour (MetroTheme::Colours::separator);
+        graphics.setColour (Base::Border);
         graphics.drawHorizontalLine (row.getBottom() - 1, 0.0f, static_cast<float> (bounds.getWidth()));
         graphics.setColour (track.colour.brighter (0.2f));
-        graphics.fillRect (row.removeFromLeft (MetroTheme::Metrics::grid / 2));
+        graphics.fillRect (row.removeFromLeft (MetroMetrics::grid / 2));
         if (trackSelected)
         {
-            graphics.setColour (MetroTheme::Colours::focusRing);
+            graphics.setColour (State::Focus);
             graphics.drawRect (trackRowBounds (index), 1);
         }
-        graphics.setColour (MetroTheme::Colours::textPrimary);
-        graphics.drawText (track.name, MetroTheme::Metrics::grid * 2, row.getY(),
-                           MetroTheme::Metrics::grid * 18, MetroTheme::Metrics::trackHeight,
+        graphics.setColour (Text::Primary);
+        graphics.drawText (track.name, MetroMetrics::grid * 2, row.getY(),
+                           MetroMetrics::grid * 18, MetroMetrics::trackHeight,
                            juce::Justification::centredLeft);
 
         for (int clipIndex = 0; clipIndex < engine.getNumClips (index); ++clipIndex)
@@ -115,17 +117,17 @@ void MetroArrangementView::paint (juce::Graphics& graphics)
             graphics.fillRect (clipRect);
             if (clipSelected)
             {
-                graphics.setColour (MetroTheme::Colours::focusRing);
+                graphics.setColour (State::Focus);
                 graphics.drawRect (clipRect, 2);
             }
-            graphics.setColour (MetroTheme::Colours::textPrimary);
+            graphics.setColour (Text::Primary);
             graphics.drawText ("Clip " + juce::String (clipIndex + 1),
-                               clipRect.reduced (MetroTheme::Metrics::grid),
+                               clipRect.reduced (MetroMetrics::grid),
                                juce::Justification::centredLeft, true);
         }
     }
 
-    graphics.setColour (MetroTheme::Colours::accent);
+    graphics.setColour (Accent::Blue);
     graphics.drawVerticalLine (static_cast<int> (engine.getPlayheadBeats()) * beatWidth - scrollOffset,
                                0.0f, static_cast<float> (bounds.getHeight()));
 }
@@ -182,7 +184,7 @@ void MetroArrangementView::mouseWheelMove (const juce::MouseEvent&, const juce::
     // Zoom is not currently mapped to a modifier key check here (JUCE gives us the
     // event separately from mods on some platforms); callers can still drive
     // setZoom() directly (e.g. from a future zoom control). Wheel motion scrolls.
-    setScrollPosition (scrollPixels - wheel.deltaY * MetroTheme::Metrics::timelineBeatWidth * 4.0f);
+    setScrollPosition (scrollPixels - wheel.deltaY * MetroMetrics::timelineBeatWidth * 4.0f);
 }
 
 void MetroArrangementView::timerCallback()

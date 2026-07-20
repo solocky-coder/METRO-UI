@@ -1,5 +1,6 @@
 #include "MetroSidebar.h"
-#include "MetroTheme.h"
+#include "MetroColours.h"
+#include "MetroMetrics.h"
 
 namespace dysekt::metro
 {
@@ -30,16 +31,16 @@ void MetroSidebar::setSelectedContent (MetroContent content)
 
 void MetroSidebar::paint (juce::Graphics& graphics)
 {
-    graphics.fillAll (MetroTheme::Colours::panelBackground);
-    graphics.setColour (MetroTheme::Colours::separator);
-    graphics.fillRect (getLocalBounds().removeFromRight (MetroTheme::Metrics::separatorThickness));
+    graphics.fillAll (Base::Surface);
+    graphics.setColour (Base::Border);
+    graphics.fillRect (getLocalBounds().removeFromRight (MetroMetrics::separatorThickness));
 }
 
 void MetroSidebar::resized()
 {
-    auto area = getLocalBounds().reduced (MetroTheme::Metrics::panelPadding);
+    auto area = getLocalBounds().reduced (MetroMetrics::panelPadding);
     for (auto* button : { &arrange, &pads, &browser, &mixer })
-        button->setBounds (area.removeFromTop (MetroTheme::Metrics::controlHeight));
+        button->setBounds (area.removeFromTop (MetroMetrics::controlHeight));
 }
 
 void MetroSidebar::selectContent (MetroContent content)

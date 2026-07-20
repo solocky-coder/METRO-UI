@@ -32,14 +32,6 @@ public:
         for (int channel = 1; channel <= 16; ++channel)
             channelBox.addItem ("Part " + juce::String (channel), channel);
 
-        // Recommended read-only status line (UI requirement #3): shows exactly
-        // where a plain channel-1 keyboard currently goes, e.g.
-        // "Live keyboard (Ch. 1) -> Piano / SF2 / Ch. 3".
-        liveStatusLabel.setJustificationType (juce::Justification::centredLeft);
-        liveStatusLabel.setFont (DysektLookAndFeel::makeFont (10.0f, false));
-        liveStatusLabel.setInterceptsMouseClicks (false, false);
-        addAndMakeVisible (liveStatusLabel);
-
         volumeSlider.setSliderStyle (juce::Slider::LinearBar);
         volumeSlider.setRange (-60.0, 6.0, 0.1);
         volumeSlider.setValue (0.0, juce::dontSendNotification);
@@ -88,12 +80,8 @@ public:
         {
             if (! hasTrack()) return;
             const auto info = engine.getTrackInfo (selectedTrack);
-            if (info.type != TrackType::SfPlayer) return;
-            const int ch0Based = channelBox.getSelectedId() - 1;
-            if (info.isSfzInstrument)
-                engine.setSfzTrackChannel (selectedTrack, ch0Based);
-            else
-                engine.addOrUpdateSfTrackOnChannel (info.preset, ch0Based, info.colour);
+            if (info.type == TrackType::SfPlayer)
+                engine.addOrUpdateSfTrackOnChannel (info.preset, channelBox.getSelectedId() - 1, info.colour);
         };
 
         setControlsVisible (false);
@@ -126,9 +114,6 @@ public:
         if (isMultiTimbral)
             channelBox.setSelectedId (info.midiChannel + 1, juce::dontSendNotification);
 
-        liveStatusLabel.setText (describeLiveTarget (engine.getSelectedLiveTarget(), info.name),
-                                  juce::dontSendNotification);
-
         resized();
         repaint();
     }
@@ -139,7 +124,6 @@ public:
         auto area = getLocalBounds().reduced (12);
         area.removeFromTop (52); // selected-track identity card
         area.removeFromTop (31); // performance control row + breathing room
-        liveStatusLabel.setBounds (area.removeFromTop (16)); // live-target status line
 
         area.removeFromTop (20); // ROUTING heading
         layoutField (area, inputBox);
@@ -195,7 +179,6 @@ public:
         g.drawText (trackTypeName (info.type), subtitle, juce::Justification::centredLeft, false);
 
         content.removeFromTop (31);
-        content.removeFromTop (16); // live-target status line (drawn by liveStatusLabel itself)
         sectionLabel (g, "ROUTING", content.removeFromTop (20));
         drawFieldLabel (g, "INPUT", inputBox);
         if (channelBox.isVisible()) drawFieldLabel (g, "PART", channelBox);
@@ -213,25 +196,6 @@ private:
     juce::TextButton muteButton, soloButton, recordButton;
     juce::ComboBox   inputBox, channelBox;
     juce::Slider     volumeSlider, panSlider;
-    juce::Label      liveStatusLabel;
-
-    /** UI requirement #3: "Live keyboard (Ch. 1) -> Piano / SF2 / Ch. 3". */
-    static juce::String describeLiveTarget (const SelectedLiveTarget& target, const juce::String& trackName)
-    {
-        if (target.player == LiveTargetPlayer::none || target.midiChannel < 1)
-            return "Live keyboard (Ch. 1) \u2192 no live target";
-
-        juce::String engineTag;
-        switch (target.player)
-        {
-            case LiveTargetPlayer::slicer: engineTag = "Slicer"; break;
-            case LiveTargetPlayer::sf2:    engineTag = "SF2";    break;
-            case LiveTargetPlayer::sfz:    engineTag = "SFZ";    break;
-            case LiveTargetPlayer::none:   break;
-        }
-        return "Live keyboard (Ch. 1) \u2192 " + trackName + " / " + engineTag
-                + " / Ch. " + juce::String (target.midiChannel);
-    }
 
     bool hasTrack() const { return juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()); }
 
@@ -253,8 +217,7 @@ private:
                                 static_cast<juce::Component*> (&recordButton),
                                 static_cast<juce::Component*> (&inputBox),
                                 static_cast<juce::Component*> (&volumeSlider),
-                                static_cast<juce::Component*> (&panSlider),
-                                static_cast<juce::Component*> (&liveStatusLabel) })
+                                static_cast<juce::Component*> (&panSlider) })
             control->setVisible (visible);
         if (! visible) channelBox.setVisible (false);
     }
@@ -304,9 +267,6 @@ private:
                 muteButton.setToggleState (shouldBeMuted, juce::dontSendNotification);
             if (soloButton.getToggleState() != info.solo)
                 soloButton.setToggleState (info.solo, juce::dontSendNotification);
-
-            liveStatusLabel.setText (describeLiveTarget (engine.getSelectedLiveTarget(), info.name),
-                                      juce::dontSendNotification);
         }
     }
 

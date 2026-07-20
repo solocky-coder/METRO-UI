@@ -1,5 +1,7 @@
 #include "MetroInspector.h"
-#include "MetroTheme.h"
+#include "MetroColours.h"
+#include "MetroMetrics.h"
+#include "MetroTypography.h"
 
 namespace dysekt::metro
 {
@@ -35,20 +37,20 @@ void MetroInspector::clearSelection()
 
 void MetroInspector::paint (juce::Graphics& graphics)
 {
-    graphics.fillAll (MetroTheme::Colours::panelBackground);
-    graphics.setColour (MetroTheme::Colours::separator);
-    graphics.fillRect (getLocalBounds().removeFromTop (MetroTheme::Metrics::separatorThickness));
+    graphics.fillAll (Base::Surface);
+    graphics.setColour (Base::Border);
+    graphics.fillRect (getLocalBounds().removeFromTop (MetroMetrics::separatorThickness));
 
-    auto content = getLocalBounds().reduced (MetroTheme::Metrics::panelPadding);
-    graphics.setColour (MetroTheme::Colours::textDisabled);
-    graphics.setFont (MetroTheme::captionFont());
-    graphics.drawText ("INSPECTOR", content.removeFromTop (MetroTheme::Metrics::grid * 3),
+    auto content = getLocalBounds().reduced (MetroMetrics::panelPadding);
+    graphics.setColour (Text::Disabled);
+    graphics.setFont (MetroTypography::caption());
+    graphics.drawText ("INSPECTOR", content.removeFromTop (MetroMetrics::grid * 3),
                        juce::Justification::centredLeft, true);
 
     if (selection.isNone())
     {
-        graphics.setColour (MetroTheme::Colours::textSecondary);
-        graphics.setFont (MetroTheme::smallFont());
+        graphics.setColour (Text::Secondary);
+        graphics.setFont (MetroTypography::small());
         graphics.drawText (contextMessage, content, juce::Justification::centredLeft, true);
         return;
     }
@@ -58,24 +60,24 @@ void MetroInspector::paint (juce::Graphics& graphics)
 
 void MetroInspector::paintSelectionDetails (juce::Graphics& graphics, juce::Rectangle<int> content)
 {
-    graphics.setColour (MetroTheme::Colours::textPrimary);
-    graphics.setFont (MetroTheme::bodyFont());
+    graphics.setColour (Text::Primary);
+    graphics.setFont (MetroTypography::body());
 
     if (selection.isTrack())
     {
         graphics.drawText ("Track: " + selection.track.name,
-                           content.removeFromTop (MetroTheme::Metrics::grid * 3),
+                           content.removeFromTop (MetroMetrics::grid * 3),
                            juce::Justification::centredLeft, true);
     }
     else if (selection.isClip())
     {
         graphics.drawText ("Clip " + juce::String (selection.clipIndex + 1) + " on " + selection.track.name,
-                           content.removeFromTop (MetroTheme::Metrics::grid * 3),
+                           content.removeFromTop (MetroMetrics::grid * 3),
                            juce::Justification::centredLeft, true);
     }
 
-    graphics.setColour (MetroTheme::Colours::textSecondary);
-    graphics.setFont (MetroTheme::smallFont());
+    graphics.setColour (Text::Secondary);
+    graphics.setFont (MetroTypography::small());
 
     if (selection.isClip())
     {
@@ -83,13 +85,13 @@ void MetroInspector::paintSelectionDetails (juce::Graphics& graphics, juce::Rect
         const auto lengthBeats = static_cast<double> (selection.clip.lengthTicks) / 960.0;
         graphics.drawText ("Start: beat " + juce::String (startBeats, 2)
                                + "   Length: " + juce::String (lengthBeats, 2) + " beats",
-                           content.removeFromTop (MetroTheme::Metrics::grid * 3),
+                           content.removeFromTop (MetroMetrics::grid * 3),
                            juce::Justification::centredLeft, true);
     }
     else if (selection.isTrack())
     {
         graphics.drawText (juce::String (selection.track.numClips) + " clip(s) on this track",
-                           content.removeFromTop (MetroTheme::Metrics::grid * 3),
+                           content.removeFromTop (MetroMetrics::grid * 3),
                            juce::Justification::centredLeft, true);
     }
 }
