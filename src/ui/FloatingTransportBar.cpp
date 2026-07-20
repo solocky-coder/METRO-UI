@@ -164,8 +164,9 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     leftLocatorTick = engine.getLoopStartTick();
     rightLocatorTick = engine.getLoopEndTick();
 
-    // Compact two-row transport: locators above, controls below.
-    setSize (MetroMetrics::grid * 100, MetroMetrics::grid * 20);
+    // Compact single-row transport: position + transport, locators, and
+    // BPM/GRID/LINK laid out side by side (see computeLayout()).
+    setSize (MetroMetrics::grid * 128, MetroMetrics::grid * 13);
     startTimerHz (20);
 }
 
@@ -223,9 +224,9 @@ void FloatingTransportBar::mouseDoubleClick (const juce::MouseEvent& e)
 }
 
 //==============================================================================
-// Two content rows, sized to exactly what they need — no dead space below.
-// Row 1 (readouts):  musical position  |  locators
-// Row 2 (buttons):   transport cluster (incl. LOOP) + SET LEFT/RIGHT  |  BPM / GRID / LINK
+// A single transport-first row, sized to exactly what it needs — no dead
+// space above or below. Left to right: musical position + transport cluster,
+// then the editable L/R locators, then BPM / GRID / LINK on the far right.
 FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 {
     Layout L;
@@ -236,25 +237,31 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     area.removeFromTop (MetroMetrics::grid * 2);
 
     const int rowH = MetroMetrics::largeControlHeight;
+    auto row = area.removeFromTop (rowH);
 
-    // Top row: directly writable L/R locators, centred as one compact group.
-    auto locatorRow = area.removeFromTop (rowH);
-    L.locatorsField = locatorRow.withSizeKeepingCentre (MetroMetrics::grid * 28, rowH);
+    // ── Left: musical position + transport cluster ──────────────────────
+    L.positionField = row.removeFromLeft (MetroMetrics::grid * 21);
+    row.removeFromLeft (MetroMetrics::grid);
+    L.transportRow = row.removeFromLeft (MetroMetrics::grid * 37);
 
-    area.removeFromTop (MetroMetrics::grid * 2);
+    row.removeFromLeft (MetroMetrics::grid * 2);
+    L.divider1 = row.getX();
+    row.removeFromLeft (MetroMetrics::grid * 2);
 
-    // Bottom row: position and transport on the left; BPM, Grid, Link on the right.
-    auto controlRow = area.removeFromTop (rowH);
-    L.positionField = controlRow.removeFromLeft (MetroMetrics::grid * 21);
-    controlRow.removeFromLeft (MetroMetrics::grid);
-    L.transportRow = controlRow.removeFromLeft (MetroMetrics::grid * 37);
-    controlRow.removeFromLeft (MetroMetrics::grid * 2);
-    L.tempoCaption = controlRow.removeFromLeft (MetroMetrics::grid * 4);
-    L.tempoField   = controlRow.removeFromLeft (MetroMetrics::grid * 6);
-    controlRow.removeFromLeft (MetroMetrics::grid);
-    L.gridField    = controlRow.removeFromLeft (MetroMetrics::grid * 9);
-    controlRow.removeFromLeft (MetroMetrics::grid);
-    L.linkField    = controlRow.removeFromLeft (MetroMetrics::grid * 8);
+    // ── Middle: directly writable L/R locators ───────────────────────────
+    L.locatorsField = row.removeFromLeft (MetroMetrics::grid * 28);
+
+    row.removeFromLeft (MetroMetrics::grid * 2);
+    L.divider2 = row.getX();
+    row.removeFromLeft (MetroMetrics::grid * 2);
+
+    // ── Far right: BPM, grid snap, link — one row, in that order ────────
+    L.tempoCaption = row.removeFromLeft (MetroMetrics::grid * 4);
+    L.tempoField   = row.removeFromLeft (MetroMetrics::grid * 6);
+    row.removeFromLeft (MetroMetrics::grid);
+    L.gridField    = row.removeFromLeft (MetroMetrics::grid * 9);
+    row.removeFromLeft (MetroMetrics::grid);
+    L.linkField    = row.removeFromLeft (MetroMetrics::grid * 8);
 
     return L;
 }

@@ -78,9 +78,8 @@ private:
     //==========================================================================
     //  Layout regions, computed once per resized() and reused by paint()
     //==========================================================================
-    //  Two content rows below the title strip:
-    //    Row 1: centred, editable L/R locators
-    //    Row 2: musical position + transport | BPM / GRID / LINK
+    //  A single content row below the title strip, left to right:
+    //    musical position + transport cluster | editable L/R locators | BPM / GRID / LINK
     struct Layout
     {
         juce::Rectangle<int> titleStrip;
