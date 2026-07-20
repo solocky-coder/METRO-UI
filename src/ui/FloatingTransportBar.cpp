@@ -84,12 +84,15 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     addAndMakeVisible (positionLabel);
 
     // ── Transport cluster ────────────────────────────────────────────────
-    configureTransportButton (toStartButton, "▮◀", Text::Secondary, "Return to start");
-    configureTransportButton (backButton,    "◀◀", Text::Secondary, "Step back one bar");
-    configureTransportButton (playButton,    "▶",  Transport::Play, "Play");
-    configureTransportButton (stopButton,    "■",  Accent::Orange, "Stop");
-    configureTransportButton (recordButton,  "●",  Transport::Record, "Record");
-    configureTransportButton (cycleButton,   "⟳",  Accent::Cyan, "Toggle looping");
+    // Use ASCII labels here: the embedded UI typeface does not include the
+    // Unicode transport glyphs, which otherwise render as missing characters
+    // on the detached desktop component.
+    configureTransportButton (toStartButton, "|<",   Text::Secondary,   "Return to start");
+    configureTransportButton (backButton,    "<<",   Text::Secondary,   "Step back one bar");
+    configureTransportButton (playButton,    ">",    Transport::Play,   "Play");
+    configureTransportButton (stopButton,    "[]",   Accent::Orange,    "Stop");
+    configureTransportButton (recordButton,  "REC",  Transport::Record, "Record");
+    configureTransportButton (cycleButton,   "LOOP", Accent::Cyan,      "Toggle looping");
     playButton.setClickingTogglesState (true);
     recordButton.setClickingTogglesState (true);
     cycleButton.setClickingTogglesState (true);
@@ -207,14 +210,25 @@ void FloatingTransportBar::hide()
 //==============================================================================
 void FloatingTransportBar::mouseDown (const juce::MouseEvent& e)
 {
-    if (computeLayout().titleStrip.contains (e.getPosition()))
+    // Capture eligibility at mouse-down. Once the desktop component moves,
+    // getMouseDownPosition() is expressed in its new local coordinates and
+    // can no longer be used reliably to test the original title-strip hit.
+    draggingTitleStrip = isOnDesktop()
+                      && computeLayout().titleStrip.contains (e.getPosition());
+
+    if (draggingTitleStrip)
         dragger.startDraggingComponent (this, e);
 }
 
 void FloatingTransportBar::mouseDrag (const juce::MouseEvent& e)
 {
-    if (isOnDesktop() && computeLayout().titleStrip.contains (e.getMouseDownPosition()))
+    if (draggingTitleStrip)
         dragger.dragComponent (this, e, nullptr);
+}
+
+void FloatingTransportBar::mouseUp (const juce::MouseEvent&)
+{
+    draggingTitleStrip = false;
 }
 
 void FloatingTransportBar::mouseDoubleClick (const juce::MouseEvent& e)

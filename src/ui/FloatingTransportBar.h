@@ -72,6 +72,7 @@ public:
 
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
 private:
@@ -113,14 +114,15 @@ private:
     juce::TextButton pinButton   { "Pin" };
     juce::TextButton dockButton  { "Dock" };
     juce::ComponentDragger dragger;
+    bool draggingTitleStrip = false;
 
-    // ── Bottom row: filled transport icons ──────────────────────────────
-    juce::TextButton toStartButton { "▮◀" };
-    juce::TextButton backButton    { "◀◀" };
-    juce::TextButton playButton    { "▶" };
-    juce::TextButton stopButton    { "■" };
-    juce::TextButton recordButton  { "●" };
-    juce::TextButton cycleButton   { "⟳" };
+    // ── Bottom row: transport controls ──────────────────────────────────
+    juce::TextButton toStartButton { "|<" };
+    juce::TextButton backButton    { "<<" };
+    juce::TextButton playButton    { ">" };
+    juce::TextButton stopButton    { "[]" };
+    juce::TextButton recordButton  { "REC" };
+    juce::TextButton cycleButton   { "LOOP" };
     juce::TextButton setLeftButton  { "SET LEFT" };
     juce::TextButton setRightButton { "SET RIGHT" };
 
