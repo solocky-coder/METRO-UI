@@ -70,6 +70,8 @@ public:
 
     /** Global length = end of last clip across all tracks (governs playhead wrap). */
     int64_t getLengthTicks()    const noexcept;
+    int64_t getLoopStartTick() const noexcept;
+    int64_t getLoopEndTick()   const noexcept;
 
     void play();
     void stop();
@@ -81,6 +83,8 @@ public:
     void setBpm       (float b);
     void setHostBpm   (float b);
     void seekToTick   (int64_t tick);
+    /** Sets the inclusive-start/exclusive-end cycle range used while looping. */
+    void setLoopRange (int64_t startTick, int64_t endTick);
 
     /** Backward-compat: sets clip 0 length on all tracks. */
     void setLengthTicks (int64_t ticks);

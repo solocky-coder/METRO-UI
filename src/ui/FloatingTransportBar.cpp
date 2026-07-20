@@ -47,6 +47,9 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     : engine (sequencer), linkPtr (link)
 {
     setOpaque (true);
+    // The exposed title strip is a drag handle whenever this component is on
+    // the desktop; child controls keep their normal click behaviour.
+    setMouseCursor (juce::MouseCursor::DraggingHandCursor);
 
     // ── Title strip chrome ───────────────────────────────────────────────
     configureChrome (pinButton, "PIN", "Keep this panel above other windows");
@@ -81,12 +84,12 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     addAndMakeVisible (positionLabel);
 
     // ── Transport cluster ────────────────────────────────────────────────
-    configureTransportButton (toStartButton, "|<",  Text::Secondary, "Return to start");
-    configureTransportButton (backButton,    "<<",  Text::Secondary, "Step back one bar");
-    configureTransportButton (playButton,    ">",   Transport::Play, "Play");
-    configureTransportButton (stopButton,    "[]",  Accent::Orange,  "Stop");
-    configureTransportButton (recordButton,  "REC", Transport::Record, "Record");
-    configureTransportButton (cycleButton,   "LOOP", Accent::Cyan,   "Toggle looping");
+    configureTransportButton (toStartButton, "▮◀", Text::Secondary, "Return to start");
+    configureTransportButton (backButton,    "◀◀", Text::Secondary, "Step back one bar");
+    configureTransportButton (playButton,    "▶",  Transport::Play, "Play");
+    configureTransportButton (stopButton,    "■",  Accent::Orange, "Stop");
+    configureTransportButton (recordButton,  "●",  Transport::Record, "Record");
+    configureTransportButton (cycleButton,   "⟳",  Accent::Cyan, "Toggle looping");
     playButton.setClickingTogglesState (true);
     recordButton.setClickingTogglesState (true);
     cycleButton.setClickingTogglesState (true);
@@ -113,13 +116,21 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
         addAndMakeVisible (*b);
 
     // ── Locators ─────────────────────────────────────────────────────────
-    locatorsLabel.setJustificationType (juce::Justification::centredLeft);
-    locatorsLabel.setFont (DysektLookAndFeel::makeMonoFont (13.0f));
-    locatorsLabel.setColour (juce::Label::backgroundColourId, Base::Background);
-    locatorsLabel.setColour (juce::Label::textColourId, Text::Primary);
-    addAndMakeVisible (locatorsLabel);
+    // Separate editable fields keep both numbers centred and make the cycle
+    // range directly writable in familiar bars.beats.ticks notation.
+    for (auto* field : { &leftLocatorLabel, &rightLocatorLabel })
+    {
+        field->setEditable (true, true, false);
+        field->setJustificationType (juce::Justification::centred);
+        field->setFont (DysektLookAndFeel::makeMonoFont (13.0f));
+        field->setColour (juce::Label::backgroundColourId, Base::Background);
+        field->setColour (juce::Label::textColourId, Text::Primary);
+        field->setTooltip ("Cycle locator — enter bars.beats.ticks");
+        field->onTextChange = [this] { updateLocatorsFromEditors(); };
+        addAndMakeVisible (*field);
+    }
 
-    configureChrome (setLeftButton, "SET LEFT", "Set the left locator to the playhead");
+    configureChrome (setLeftButton, "SET LEFT", "Set the left cycle locator to the playhead");
     configureChrome (setRightButton, "SET RIGHT", "Set the right locator to the playhead");
     setLeftButton.onClick  = [this] { setLeftLocatorToPlayhead(); };
     setRightButton.onClick = [this] { setRightLocatorToPlayhead(); };
@@ -148,6 +159,9 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
         linkButton.onStateChange = [this] { if (linkPtr) linkPtr->setEnabled (linkButton.getToggleState()); };
         addAndMakeVisible (linkButton);
     }
+
+    leftLocatorTick = engine.getLoopStartTick();
+    rightLocatorTick = engine.getLoopEndTick();
 
     // Must stay in sync with computeLayout(): title strip (3) + top pad (0.5)
     // + row 1 (5) + inter-row gap (0.5) + row 2 (5) + bottom pad (0.5), with
@@ -226,33 +240,28 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     const int gap  = MetroMetrics::grid * 2;
     const int rowH = MetroMetrics::largeControlHeight;
 
-    // ── Row 1: position readout | locators readout ──────────────────────
+    // ── Row 1: transport cluster + SET LEFT/RIGHT ──────────────────────
     auto row1 = area.removeFromTop (rowH);
-    L.positionField = row1.removeFromLeft (MetroMetrics::grid * 54);
+    L.transportRow = row1.removeFromLeft (MetroMetrics::grid * 54);
     row1.removeFromLeft (gap * 2);
-    L.locatorsField = row1.removeFromLeft (MetroMetrics::grid * 30);
-
-    area.removeFromTop (MetroMetrics::halfGrid);
-
-    // ── Row 2: transport cluster (incl. LOOP) + set-left/right | BPM/GRID/LINK ──
-    auto row2 = area.removeFromTop (rowH);
-
-    L.transportRow = row2.removeFromLeft (MetroMetrics::grid * 54);
-
-    row2.removeFromLeft (gap * 2);
-    L.divider1 = row2.getX();
-    row2.removeFromLeft (gap);
-
-    auto setRow = row2.removeFromLeft (MetroMetrics::grid * 30);
+    L.divider1 = row1.getX();
+    row1.removeFromLeft (gap);
+    auto setRow = row1.removeFromLeft (MetroMetrics::grid * 30);
     L.setLeftButton  = setRow.removeFromLeft (setRow.getWidth() / 2 - MetroMetrics::halfGrid);
     setRow.removeFromLeft (MetroMetrics::grid);
     L.setRightButton = setRow;
 
+    area.removeFromTop (MetroMetrics::halfGrid);
+
+    // ── Row 2: position + editable L/R, followed by BPM / GRID / LINK ──
+    auto row2 = area.removeFromTop (rowH);
+    L.positionField = row2.removeFromLeft (MetroMetrics::grid * 54);
     row2.removeFromLeft (gap * 2);
     L.divider2 = row2.getX();
     row2.removeFromLeft (gap);
+    L.locatorsField = row2.removeFromLeft (MetroMetrics::grid * 30);
 
-    // ── Far right: one row, BPM then GRID then LINK ─────────────────────
+    row2.removeFromLeft (gap * 2);
     L.tempoCaption = row2.removeFromLeft (MetroMetrics::grid * 5);
     L.tempoField   = row2.removeFromLeft (MetroMetrics::grid * 9);
     row2.removeFromLeft (MetroMetrics::grid);
@@ -273,7 +282,10 @@ void FloatingTransportBar::resized()
     dockButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 7));
 
     positionLabel.setBounds (L.positionField);
-    locatorsLabel.setBounds (L.locatorsField);
+    auto locators = L.locatorsField;
+    const int locatorW = locators.getWidth() / 2;
+    leftLocatorLabel.setBounds (locators.removeFromLeft (locatorW));
+    rightLocatorLabel.setBounds (locators);
 
     auto transport = L.transportRow;
     const int btnGap = MetroMetrics::halfGrid;
@@ -351,9 +363,12 @@ void FloatingTransportBar::timerCallback()
 
     positionLabel.setText (formatMusicalPosition (engine.getPlayheadBeats()), juce::dontSendNotification);
 
-    locatorsLabel.setText ("L " + formatMusicalPosition ((double) leftLocatorTick / (double) MidiClip::kPPQ)
-                            + "   R " + formatMusicalPosition ((double) rightLocatorTick / (double) MidiClip::kPPQ),
-                            juce::dontSendNotification);
+    if (! leftLocatorLabel.isBeingEdited())
+        leftLocatorLabel.setText ("L " + formatMusicalPosition ((double) leftLocatorTick / (double) MidiClip::kPPQ),
+                                  juce::dontSendNotification);
+    if (! rightLocatorLabel.isBeingEdited())
+        rightLocatorLabel.setText ("R " + formatMusicalPosition ((double) rightLocatorTick / (double) MidiClip::kPPQ),
+                                   juce::dontSendNotification);
 
     if (linkPtr != nullptr)
     {
@@ -372,19 +387,44 @@ void FloatingTransportBar::updateTempoFromEditor()
 
 void FloatingTransportBar::setLeftLocatorToPlayhead()
 {
-    // The engine's loop always wraps at tick 0 (see SequencerEngine::
-    // getLengthTicks — "governs playhead wrap"); it has no independent
-    // loop-start offset yet. Until that lands, the left locator doubles as
-    // an explicit seek target rather than a true loop start.
     leftLocatorTick = engine.getPlayheadTick();
-    engine.seekToTick (leftLocatorTick);
+    if (rightLocatorTick <= leftLocatorTick)
+        rightLocatorTick = leftLocatorTick + MidiClip::kPPQ;
+    engine.setLoopRange (leftLocatorTick, rightLocatorTick);
 }
 
 void FloatingTransportBar::setRightLocatorToPlayhead()
 {
     rightLocatorTick = engine.getPlayheadTick();
-    if (rightLocatorTick > leftLocatorTick)
-        engine.setLengthTicks (rightLocatorTick - leftLocatorTick);
+    if (rightLocatorTick <= leftLocatorTick)
+        rightLocatorTick = leftLocatorTick + MidiClip::kPPQ;
+    engine.setLoopRange (leftLocatorTick, rightLocatorTick);
+}
+
+void FloatingTransportBar::updateLocatorsFromEditors()
+{
+    const auto left = parseMusicalPosition (leftLocatorLabel.getText());
+    const auto right = parseMusicalPosition (rightLocatorLabel.getText());
+    if (left < 0 || right < 0)
+        return;
+
+    leftLocatorTick = left;
+    rightLocatorTick = juce::jmax (right, leftLocatorTick + (int64_t) MidiClip::kPPQ);
+    engine.setLoopRange (leftLocatorTick, rightLocatorTick);
+}
+
+int64_t FloatingTransportBar::parseMusicalPosition (const juce::String& text)
+{
+    auto value = text.trim().removeCharacters ("LRlr ");
+    const auto parts = juce::StringArray::fromTokens (value, ".", "");
+    if (parts.size() != 3)
+        return -1;
+    const int bar = parts[0].getIntValue();
+    const int beat = parts[1].getIntValue();
+    const int tick = parts[2].getIntValue();
+    if (bar < 1 || beat < 1 || beat > 4 || tick < 0 || tick >= MidiClip::kPPQ)
+        return -1;
+    return ((int64_t) (bar - 1) * 4 + (beat - 1)) * MidiClip::kPPQ + tick;
 }
 
 juce::String FloatingTransportBar::formatMusicalPosition (double beats)

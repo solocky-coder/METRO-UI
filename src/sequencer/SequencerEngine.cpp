@@ -57,6 +57,9 @@ struct SequencerEngine::Impl
     double               currentTick = 0.0;
     bool                 justStarted = false;
     std::atomic<int64_t> playheadTick { 0 };
+    std::atomic<int64_t> loopStartTick { 0 };
+    // 0 means use the current project end, preserving the legacy full-song loop.
+    std::atomic<int64_t> loopEndTick   { 0 };
 
     struct ActiveNote { int trackIdx; int clipIdx; int note; int channel; };
     juce::Array<ActiveNote> activeNotes;
@@ -159,7 +162,7 @@ struct SequencerEngine::Impl
                           int trackIdx, int clipIdx, const ClipSlot& slot,
                           double playheadStart, double playheadEnd,
                           int numSamples, double ticksPerSample, bool doLoop,
-                          int64_t masterLen)
+                          int64_t loopStart, int64_t loopEnd)
     {
         const int ch = midiChannelForTrack (track);
         const double clipStart = (double) slot.getStartTick();
@@ -168,10 +171,12 @@ struct SequencerEngine::Impl
         double localStart = playheadStart;
         double localEnd   = playheadEnd;
 
-        if (doLoop && masterLen > 0)
+        if (doLoop && loopEnd > loopStart)
         {
-            localStart = std::fmod (localStart, (double) masterLen);
-            localEnd   = localStart + (playheadEnd - playheadStart);
+            const double loopLength = (double) (loopEnd - loopStart);
+            localStart = (double) loopStart + std::fmod (localStart - (double) loopStart, loopLength);
+            if (localStart < (double) loopStart) localStart += loopLength;
+            localEnd = localStart + (playheadEnd - playheadStart);
         }
 
         if (localEnd <= clipStart || localStart >= clipEnd)
@@ -239,6 +244,17 @@ int64_t SequencerEngine::getLengthTicks() const noexcept
     return Impl::computeMasterLenFor (*snap);
 }
 
+int64_t SequencerEngine::getLoopStartTick() const noexcept
+{
+    return impl->loopStartTick.load (std::memory_order_relaxed);
+}
+
+int64_t SequencerEngine::getLoopEndTick() const noexcept
+{
+    const auto configured = impl->loopEndTick.load (std::memory_order_relaxed);
+    return configured > 0 ? configured : getLengthTicks();
+}
+
 //==============================================================================
 void SequencerEngine::play()
 {
@@ -284,6 +300,14 @@ void SequencerEngine::seekToTick (int64_t tick)
 {
     impl->pendingSeekTick.store (tick, std::memory_order_relaxed);
     impl->pendingSeek    .store (true, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setLoopRange (int64_t startTick, int64_t endTick)
+{
+    const auto start = juce::jmax ((int64_t) 0, startTick);
+    const auto end = juce::jmax (start + (int64_t) MidiClip::kPPQ, endTick);
+    impl->loopStartTick.store (start, std::memory_order_relaxed);
+    impl->loopEndTick.store (end, std::memory_order_relaxed);
 }
 
 void SequencerEngine::setLengthTicks (int64_t ticks)
@@ -840,6 +864,10 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     // One atomic load for the whole block — zero locks in the hot path.
     auto tracksSnap = impl->getTracks();
     const int64_t masterLen = Impl::computeMasterLenFor (*tracksSnap);
+    const int64_t loopStart = impl->loopStartTick.load (std::memory_order_relaxed);
+    const int64_t configuredLoopEnd = impl->loopEndTick.load (std::memory_order_relaxed);
+    const int64_t loopEnd = configuredLoopEnd > loopStart ? configuredLoopEnd : masterLen;
+    const int64_t loopLength = juce::jmax ((int64_t) MidiClip::kPPQ, loopEnd - loopStart);
 
     // Standard mixer convention: while any track is soloed, only soloed
     // tracks are audible, regardless of their own enabled/mute state.
@@ -863,7 +891,7 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
         {
             impl->processClipSlot (outMidi, track, ti, ci, *(*clipsSnap)[(size_t) ci],
                                    impl->currentTick, blockEndTick,
-                                   numSamples, ticksPerSample, doLoop, masterLen);
+                                   numSamples, ticksPerSample, doLoop, loopStart, loopEnd);
         }
 
         if (outMidi.getNumEvents() > priorSize
@@ -933,12 +961,13 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
         }
     }
 
-    if (doLoop && masterLen > 0 && blockEndTick >= (double) masterLen)
+    if (doLoop && loopEnd > loopStart && blockEndTick >= (double) loopEnd)
     {
         const int loopSample = juce::jlimit (0, numSamples - 1,
-            (int)(((double) masterLen - impl->currentTick) / ticksPerSample));
+            (int)(((double) loopEnd - impl->currentTick) / ticksPerSample));
         impl->flushAllActiveNotes (outMidi, loopSample);
-        impl->currentTick = std::fmod (blockEndTick, (double) masterLen);
+        impl->currentTick = (double) loopStart
+                          + std::fmod (blockEndTick - (double) loopStart, (double) loopLength);
         impl->justStarted = true;
     }
     else

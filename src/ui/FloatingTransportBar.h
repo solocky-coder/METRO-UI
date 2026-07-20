@@ -79,9 +79,9 @@ private:
     //  Layout regions, computed once per resized() and reused by paint()
     //==========================================================================
     //  Two content rows below the title strip:
-    //    Row 1 (readouts): musical position  |  locators
-    //    Row 2 (buttons):  transport cluster (incl. LOOP) + SET LEFT/RIGHT
-    //                      |  far-right BPM / GRID / LINK, in that order
+    //    Row 1: transport cluster + SET LEFT/RIGHT
+    //    Row 2: musical position + editable L/R locators
+    //            | far-right BPM / GRID / LINK
     struct Layout
     {
         juce::Rectangle<int> titleStrip;
@@ -100,7 +100,9 @@ private:
     void updateTempoFromEditor();
     void setLeftLocatorToPlayhead();
     void setRightLocatorToPlayhead();
+    void updateLocatorsFromEditors();
     static juce::String formatMusicalPosition (double beats);
+    static int64_t parseMusicalPosition (const juce::String& text);
 
     static juce::File getPositionFile();
     void restorePosition();
@@ -114,22 +116,20 @@ private:
     juce::TextButton dockButton  { "Dock" };
     juce::ComponentDragger dragger;
 
-    // ── Row 1: musical position readout ─────────────────────────────────
-    juce::Label      positionLabel;
+    // ── Row 1: filled transport icons, plus locator capture buttons ─────
+    juce::TextButton toStartButton { "▮◀" };
+    juce::TextButton backButton    { "◀◀" };
+    juce::TextButton playButton    { "▶" };
+    juce::TextButton stopButton    { "■" };
+    juce::TextButton recordButton  { "●" };
+    juce::TextButton cycleButton   { "⟳" };
+    juce::TextButton setLeftButton  { "SET LEFT" };
+    juce::TextButton setRightButton { "SET RIGHT" };
 
-    // ── Row 2: transport cluster, LOOP included with the other transport
-    //    buttons (as in most DAWs) rather than off in its own section ────
-    juce::TextButton toStartButton { "|<" };
-    juce::TextButton backButton    { "<<" };
-    juce::TextButton playButton    { ">" };
-    juce::TextButton stopButton    { "[]" };
-    juce::TextButton recordButton  { "REC" };
-    juce::TextButton cycleButton   { "LOOP" };
-
-    // ── Row 1/2: locators readout + set-left/set-right buttons ─────────
-    juce::Label       locatorsLabel;
-    juce::TextButton  setLeftButton  { "SET LEFT" };
-    juce::TextButton  setRightButton { "SET RIGHT" };
+    // ── Row 2: position plus individually editable, centered L/R values ─
+    juce::Label positionLabel;
+    juce::Label leftLocatorLabel;
+    juce::Label rightLocatorLabel;
     int64_t leftLocatorTick  = 0;
     int64_t rightLocatorTick = 0;
 
