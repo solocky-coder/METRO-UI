@@ -87,9 +87,11 @@ public:
             auto switcher = r.removeFromTop (switcherHeight).reduced (8, 5);
             constexpr int arrangeWidth = 92;
             constexpr int mixerWidth = 70;
-            arrangeButton.setBounds (switcher.removeFromRight (arrangeWidth));
-            switcher.removeFromRight (4);
-            mixerButton.setBounds (switcher.removeFromRight (mixerWidth));
+            // Dock far left, mixer then arrange — same order/position as the
+            // switcher docked into the transport bar in Arrange view.
+            mixerButton.setBounds (switcher.removeFromLeft (mixerWidth));
+            switcher.removeFromLeft (4);
+            arrangeButton.setBounds (switcher.removeFromLeft (arrangeWidth));
         }
     }
 
