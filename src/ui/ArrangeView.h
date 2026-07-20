@@ -720,6 +720,15 @@ private:
         engine.setSelectedSfLiveChannels (mask);
         engine.setRecordingTrack (hasSelection ? idx : -1);
 
+        // Authoritative live-routing target for PluginProcessor::processBlock
+        // (see SequencerEngine::getSelectedLiveTarget() / setMidiRouteMode()'s
+        // comment on ArrangeView::selectTrack). The accessors above are
+        // legacy/vestigial and do NOT feed getSelectedLiveTarget() — without
+        // this call selectedLiveTarget never leaves its {none, 0} default, so
+        // channel-1 live notes are never re-stamped to the selected track's
+        // engine/channel no matter what's highlighted in the Arranger.
+        engine.setSelectedTrack (hasSelection ? idx : -1);
+
         if (onTrackTypeSelected)
             onTrackTypeSelected (type, hasSelection, isSfzInstrument);
     }
