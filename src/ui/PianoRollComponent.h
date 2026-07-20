@@ -284,6 +284,11 @@ public:
                 updateRubberBandSelection (clip);
                 break;
             }
+            case DragMode::Sweep:
+            {
+                applySweepTool (clip, tick, noteNum);
+                break;
+            }
             default: break;
         }
 
@@ -519,7 +524,7 @@ public:
                     case 3:  showNotePropertiesDialog(clip, noteIdx); break;
                     case 4:  selectAll(clip); break;
                     case 5:  selectedNotes.clear(); velocityLane.setSelectedNote(-1); break;
-                    case 6:  pushUndo(clip); quantiseSelected(clip); break;
+                    case 6:  quantiseSelected(clip); break;
                     case 7:  showSetVelocityDialog(clip); break;
                     case 8:  deleteSelected(clip); break;
                     case 9:  zoomToFit(clip); break;
@@ -559,7 +564,7 @@ private:
     int     loopDragMode  = 0;   // 0=none, 1=start, 2=end
 
     //── Drag state ─────────────────────────────────────────────────────────────
-    enum class DragMode { None, Draw, Move, Resize, RubberBand };
+    enum class DragMode { None, Draw, Move, Resize, RubberBand, Sweep };
     DragMode dragMode    = DragMode::None;
     int      dragNoteIdx = -1;
     int64_t  dragStartTick = 0, dragOrigStart = 0, dragOrigDuration = 0;
@@ -895,7 +900,19 @@ private:
         const int64_t pasteStart = snap (engine.getPlayheadTick());
         selectedNotes.clear();
 
-        for (const auto& n : clipboard)
+        // clipboard is in copy-time (click/selection) order, not necessarily
+        // startTick order. addNote() inserts into the clip's notes array
+        // sorted by startTick (MidiClip::addNote uses addSorted), so if we
+        // insert out of time order here, a later-in-this-loop note with an
+        // earlier startTick lands *before* an already-inserted note in the
+        // array — shifting that earlier insertion's index and leaving a
+        // stale entry in selectedNotes. Sorting a local copy first means
+        // every insertion in this loop only ever lands after the ones
+        // already added, so previously stored indices never shift.
+        juce::Array<MidiNote> sortedClipboard = clipboard;
+        sortedClipboard.sort();
+
+        for (const auto& n : sortedClipboard)
         {
             MidiNote pasted = n;
             pasted.startTick += pasteStart;
@@ -1146,6 +1163,29 @@ private:
 
     void handleEraseDown (const juce::MouseEvent&, MidiClip* clip, int64_t tick, int noteNum)
     {
+        eraseNoteAt (clip, tick, noteNum);
+        dragMode = DragMode::Sweep;
+    }
+
+    void handleSplitDown (const juce::MouseEvent&, MidiClip* clip, int64_t tick, int noteNum)
+    {
+        int idx = hitTestAny (clip, tick, noteNum);
+        if (idx >= 0) splitNote (clip, idx, tick);
+        dragMode = DragMode::Sweep;
+    }
+
+    void handleGlueDown (const juce::MouseEvent&, MidiClip* clip, int64_t tick, int noteNum)
+    {
+        glueNotes (clip, tick, noteNum);
+        dragMode = DragMode::Sweep;
+    }
+
+    /** Deletes whichever note is under (tick, noteNum), if any. Shared by
+     *  handleEraseDown() (single click) and the Sweep drag handling in
+     *  mouseDrag() (click-and-drag across several notes) — safe to call
+     *  repeatedly at the same/nearby position since a miss is just a no-op. */
+    void eraseNoteAt (MidiClip* clip, int64_t tick, int noteNum)
+    {
         int idx = hitTestAny (clip, tick, noteNum);
         if (idx >= 0)
         {
@@ -1157,15 +1197,25 @@ private:
         }
     }
 
-    void handleSplitDown (const juce::MouseEvent&, MidiClip* clip, int64_t tick, int noteNum)
+    /** Applies the current Erase/Split/Glue tool at (tick, noteNum) — used
+     *  while sweeping the mouse across the grid with one of those tools
+     *  active, so a click-and-drag affects every note the cursor passes
+     *  over instead of only the note under the initial click. Each of these
+     *  is naturally idempotent when called repeatedly at the same spot: a
+     *  note already erased just won't be hit again, a note already split
+     *  exactly at this tick won't split again (splitNote() no-ops when
+     *  atTick lands on an existing note boundary), and glueNotes() no-ops
+     *  once there's no adjacent note left to merge. */
+    void applySweepTool (MidiClip* clip, int64_t tick, int noteNum)
     {
-        int idx = hitTestAny (clip, tick, noteNum);
-        if (idx >= 0) splitNote (clip, idx, tick);
-    }
-
-    void handleGlueDown (const juce::MouseEvent&, MidiClip* clip, int64_t tick, int noteNum)
-    {
-        glueNotes (clip, tick, noteNum);
+        switch (currentTool)
+        {
+            case Tool::Erase: eraseNoteAt (clip, tick, noteNum);        break;
+            case Tool::Split: { int idx = hitTestAny (clip, tick, noteNum);
+                                if (idx >= 0) splitNote (clip, idx, tick); } break;
+            case Tool::Glue:  glueNotes (clip, tick, noteNum);          break;
+            default: break;
+        }
     }
 
     //==========================================================================
