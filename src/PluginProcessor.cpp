@@ -663,8 +663,12 @@ void DysektProcessor::setMidiRouteMode (MidiRouteMode mode)
             sequencer.setSelectedSfLiveChannels (sequencer.getAllSfPlayerChannelMask());
             break;
         case MidiRouteMode::Sequencer:
-            // Live-input mask is managed by ArrangeView / setSelectedSfLiveChannels();
-            // leave it unchanged here so the currently-selected track keeps focus.
+            // Selected-track live routing is governed entirely by
+            // SequencerEngine::setSelectedTrackIndex()/getSelectedLiveTarget()
+            // (see ArrangeView::selectTrack and PluginProcessor::processBlock)
+            // — setSelectedSfLiveChannels() is legacy/vestigial (see its
+            // declaration in SequencerEngine.h) and is intentionally left
+            // untouched here so it can't misrepresent or conflict with that.
             break;
     }
 #else
@@ -3059,72 +3063,130 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
 
 #if DYSEKT_STANDALONE
-    // MIDI from a selected SF2 sequencer track must bypass the slicer's
-    // live-input re-stamping below.  Keep an untouched copy for the SF2/SFZ
-    // players; their own channel masks (sfPlayerChannelMask / liveInputChannelMask /
-    // sfzPlayer2ChannelMask) are independent of whichever sequencer track is
-    // currently selected, so this MUST be captured unconditionally, before
-    // either branch below re-stamps or clears `midi` for the slicer — not
-    // only in the "no slicer track selected" branch. Previously this was
-    // only assigned when liveCh == 0, which meant the SF2/SFZ players got
-    // no live MIDI at all whenever a MainSlice/ChromaticSlice track was the
-    // selected track (the common/default case), since `midi` itself was
-    // being fully re-stamped to that track's channel with no untouched copy
-    // kept anywhere.
+    // ── Selected-track live MIDI routing ──────────────────────────────────────
+    // See docs/selected-track-live-midi-workflow.md. SequencerEngine is the
+    // single authoritative source of truth for where a normal channel-1
+    // performance stream should currently go (slicer / SF2 / SFZ), derived
+    // straight from the selected arranger track's own type + MIDI-channel
+    // assignment — see SequencerEngine::getSelectedLiveTarget().
+    const SelectedLiveTarget selectedTarget = sequencer.getSelectedLiveTarget();
+
+    // If the selection changed since the previous block, reset whichever
+    // engine the *previous* selection was pointing at, so switching tracks
+    // with notes held never leaves stuck notes (acceptance test #10). Skip
+    // on the very first call after nothing was selected (lastLiveTargetPlayer
+    // == 0 means "no previous target").
+    bool needsSf2Reset = false, needsSfzReset = false;
+    int  resetChannel  = 0;
+    if (lastLiveTargetPlayer != 0
+        && (lastLiveTargetChannel != selectedTarget.midiChannel
+            || lastLiveTargetPlayer != (int) selectedTarget.player)
+        && lastLiveTargetChannel >= 1 && lastLiveTargetChannel <= 16)
+    {
+        resetChannel = lastLiveTargetChannel;
+        switch ((LiveTargetPlayer) lastLiveTargetPlayer)
+        {
+            case LiveTargetPlayer::slicer:
+                // Direct call — no MIDI round-trip needed, and this way it
+                // takes effect regardless of how `midi` gets re-routed below.
+                voicePool.releaseAll();
+                lazyChop.stop (voicePool, sliceManager);
+                std::fill (std::begin (heldNotes), std::end (heldNotes), false);
+                break;
+            case LiveTargetPlayer::sf2:  needsSf2Reset = true; break;
+            case LiveTargetPlayer::sfz:  needsSfzReset = true; break;
+            case LiveTargetPlayer::none: break;
+        }
+    }
+    lastLiveTargetChannel = selectedTarget.midiChannel;
+    lastLiveTargetPlayer  = (int) selectedTarget.player;
+
+    // ── Transform ordinary channel-1 live input to the selected track's
+    //    destination channel — and nothing else. Only plain channel messages
+    //    on channel 1 are retargeted; MIDI that already arrives on any other
+    //    channel (deliberate external multitimbral routing) and non-channel
+    //    messages (MIDI clock, transport/system real-time, SysEx) pass
+    //    through completely untouched, regardless of selection.
+    if (selectedTarget.midiChannel >= 1 && selectedTarget.midiChannel <= 16)
+    {
+        juce::MidiBuffer transformed;
+        for (const auto meta : midi)
+        {
+            auto msg = meta.getMessage();
+            if (msg.isChannelMessage() && msg.getChannel() == 1)
+                msg.setChannel (selectedTarget.midiChannel);
+            transformed.addEvent (msg, meta.samplePosition);
+        }
+        midi = std::move (transformed);
+    }
+
+    // Keep a copy of the (already-transformed) live input for the SF2/SFZ
+    // players, captured before the slicer-only re-stamp/clear below. Their
+    // own channel-based routing (sfzMidiBuf construction / processMidi2) is
+    // independent of whichever sequencer track is currently selected, so
+    // this must be captured unconditionally — not only when an SF-player
+    // track happens to be selected — otherwise the SF2/SFZ engines would get
+    // no live MIDI at all whenever a MainSlice/ChromaticSlice track is
+    // selected (the common/default case).
     const juce::MidiBuffer standaloneSfLiveInput (midi);
+
+    // Recorded/playback events for SF2/SFZ arranger tracks, captured below —
+    // needs to outlive the inner block since it's consumed further down when
+    // sfzMidiBuf is built and when processMidi2's input is assembled.
+    juce::MidiBuffer standaloneSfPlayerRecordedEvents;
 
     // ── Sequencer MIDI injection ──────────────────────────────────────────────
     {
         juce::MidiBuffer seqEvents;
         sequencer.processBlock (seqEvents, midi, buffer.getNumSamples(), currentSampleRate);
 
-        // Split seqEvents into slicer-bound and SF-player-bound buffers.
-        // SF-player tracks emit on their FluidSynth MIDI channel (1-based = ch+1).
-        // Those events must NOT reach processMidi/VoicePool — they go to sfzPlayer
-        // via the normal FluidSynth channel routing.  Only slicer-track events
-        // (MainSlice on ch 1, ChromaticSlice on their chromatic channel) should
-        // reach processMidi.
+        // Split seqEvents (this block's recorded/playback events for every
+        // enabled track, regardless of selection — arranger playback is
+        // independent of selection, see requirement #3) into slicer-bound vs
+        // SF-player-bound buffers. SF-player tracks emit on their FluidSynth
+        // or SFZ-player MIDI channel; those events must NOT reach
+        // processMidi/VoicePool — they are handled entirely below via
+        // sfzMidiBuf / processMidi2's own channel-based routing.
         const uint16_t sfMask = sequencer.getAllSfPlayerChannelMask(); // bit N = ch N (0-based)
         juce::MidiBuffer slicerSeqEvents;
+        juce::MidiBuffer sfPlayerSeqEvents;   // recorded playback for SF2/SFZ arranger tracks
         if (sequencer.isPlaying())
         {
             for (const auto meta : seqEvents)
             {
                 const auto msg = meta.getMessage();
                 const int ch0  = msg.getChannel() - 1;  // convert to 0-based
-                // Keep only events whose channel is NOT owned by an SF-player track.
                 if (ch0 < 0 || ! (sfMask & (1u << ch0)))
                     slicerSeqEvents.addEvent (msg, meta.samplePosition);
-                // SF-player events stay in seqEvents — sfzPlayer already receives
-                // them via the full midi buffer passed to processBlock above.
+                else
+                    sfPlayerSeqEvents.addEvent (msg, meta.samplePosition);
             }
         }
+        standaloneSfPlayerRecordedEvents = std::move (sfPlayerSeqEvents);
 
-        // Re-stamp live input to the selected track's channel so the VoicePool
-        // routes correctly (chromatic slices key off channel number).
-        // liveCh == 0 means an SF-player track is selected: sfzPlayer owns live
-        // input via liveInputChannelMask; clear the slicer buffer entirely.
-        const int liveCh = sequencer.getSelectedLiveChannel();
-        if (liveCh > 0)
-        {
-            juce::MidiBuffer restamped;
-            for (const auto meta : midi)
-            {
-                const auto msg = meta.getMessage();
-                if (msg.getChannel() == 16) { restamped.addEvent (msg, meta.samplePosition); continue; }
-                auto m = msg; m.setChannel (liveCh); restamped.addEvent (m, meta.samplePosition);
-            }
-            midi = restamped;
-            midi.addEvents (slicerSeqEvents, 0, buffer.getNumSamples(), 0);
-        }
-        else
-        {
-            // SF-player track selected (or nothing selected): VoicePool only sees
-            // slicer sequencer events. standaloneSfLiveInput (captured above,
-            // before this block ran) already holds the untouched live input.
+        // The slicer only ever sees the already-transformed live channel-1
+        // input (now on the selected track's own channel, whatever it is)
+        // plus recorded slicer-track playback. When the selected track isn't
+        // a slicer track, clear the transformed copy out of `midi` first so
+        // an SF2/SFZ-targeted live note can never also trigger a slice —
+        // slicer-track playback from OTHER tracks still comes through via
+        // slicerSeqEvents regardless of what's selected.
+        if (selectedTarget.player != LiveTargetPlayer::slicer)
             midi.clear();
-            midi.addEvents (slicerSeqEvents, 0, buffer.getNumSamples(), 0);
-        }
+        midi.addEvents (slicerSeqEvents, 0, buffer.getNumSamples(), 0);
+    }
+
+    // Whenever an SFZ-instrument arranger track exists, make sure its
+    // assigned channel is one sfzPlayer2 (the dedicated SFZ engine) actually
+    // listens on — arranger SFZ tracks are never wired into this mask
+    // anywhere else, so without this a selected/soloed SFZ track's live and
+    // recorded MIDI would silently have nowhere to go. Only ever OR bits in;
+    // never clear any — the independent SFZ-Player dropdown/range feature
+    // owns the rest of this mask and must not be disturbed.
+    {
+        const uint16_t sfzTrackMask = sequencer.getSfzInstrumentChannelMask();
+        if (sfzTrackMask != 0)
+            sfzPlayer2ChannelMask.fetch_or (sfzTrackMask, std::memory_order_relaxed);
     }
 #endif
 
@@ -3134,12 +3196,20 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // processMidi2() drives the SFZ-PLAYER tab (sliceManager2/voicePool2),
     // which — like sfzPlayer/sfPlayerChannelMask below — listens on its own
     // dedicated channel(s) via sfzPlayer2ChannelMask regardless of which
-    // sequencer track is selected. Feed it the untouched live input (merged
-    // with whatever's left in `midi`, e.g. slicer-bound sequencer events) so
+    // sequencer track is selected. Feed it the untouched (post-selected-
+    // track-transform) live input, merged with recorded playback for any
+    // SF2/SFZ arranger track (standaloneSfPlayerRecordedEvents), plus
+    // whatever's left in `midi` (e.g. slicer-bound sequencer events) — so
     // it isn't starved the way it was when only the re-stamped/cleared
     // `midi` reached it.
     juce::MidiBuffer midiForPlayer2 (midi);
     midiForPlayer2.addEvents (standaloneSfLiveInput, 0, buffer.getNumSamples(), 0);
+    midiForPlayer2.addEvents (standaloneSfPlayerRecordedEvents, 0, buffer.getNumSamples(), 0);
+    if (needsSfzReset)
+    {
+        midiForPlayer2.addEvent (juce::MidiMessage::allNotesOff (resetChannel), 0);
+        midiForPlayer2.addEvent (juce::MidiMessage::allSoundOff (resetChannel), 0);
+    }
     processMidi2 (midiForPlayer2);
 #else
     processMidi2 (midi);
@@ -3456,16 +3526,35 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
 
            #if DYSEKT_STANDALONE
-            // `midi` has been cleared for an SF2-selected sequencer track so
-            // it cannot trigger the slicer. Add its original live input here —
-            // but only channels 3-16; channel 1 (slicer) and channel 2
-            // (SFZ-Player) must never reach the SF2 player, so no raw fan-out.
+            // `midi` has been cleared of live input for a non-slicer-selected
+            // sequencer track so it cannot trigger the slicer. Add the
+            // (already selected-track-transformed) live input and any
+            // recorded SF2-preset arranger-track playback here — but only
+            // channels 3-16, and never a channel owned by an SFZ-instrument
+            // arranger track (that's sfzPlayer2's job, not FluidSynth's), so
+            // there's no raw fan-out and no double-dispatch between engines.
+            const uint16_t sfzInstrumentMask = sequencer.getSfzInstrumentChannelMask();
+            auto isFluidSynthChannel = [sfzInstrumentMask] (int ch1Based)
+            {
+                if (ch1Based < 3 || ch1Based > 16) return false;
+                return (sfzInstrumentMask & (1u << (ch1Based - 1))) == 0;
+            };
             for (const auto meta : standaloneSfLiveInput)
             {
                 const auto& msg = meta.getMessage();
-                const int ch = msg.getChannel();   // 1-based
-                if (ch >= 3 && ch <= 16)
+                if (isFluidSynthChannel (msg.getChannel()))
                     sfzMidiBuf.addEvent (msg, meta.samplePosition);
+            }
+            for (const auto meta : standaloneSfPlayerRecordedEvents)
+            {
+                const auto& msg = meta.getMessage();
+                if (isFluidSynthChannel (msg.getChannel()))
+                    sfzMidiBuf.addEvent (msg, meta.samplePosition);
+            }
+            if (needsSf2Reset && isFluidSynthChannel (resetChannel))
+            {
+                sfzMidiBuf.addEvent (juce::MidiMessage::allNotesOff (resetChannel), 0);
+                sfzMidiBuf.addEvent (juce::MidiMessage::allSoundOff (resetChannel), 0);
             }
            #endif
         }

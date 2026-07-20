@@ -641,48 +641,29 @@ private:
         return juce::jmax (maxEnd * 2, MidiClip::kPPQ * 4 * 32);
     }
 
-    //==========================================================================
-    //  Scrollbars
-    //==========================================================================
-    /** Set the selected track index and update the SfzPlayer's live input channel mask.
-     *  If the selected track is an SF2/SFZ track, its FluidSynth channel receives
-     *  live controller (ch-1) input.  Any other track type clears the mask (silence). */
+    /** Set the selected track index.  SequencerEngine::getSelectedLiveTarget()
+     *  derives the live-input destination (player + channel) directly from
+     *  the track list using this index — this is now the single source of
+     *  truth for the "selected arranger track owns live channel-1 input"
+     *  workflow (see docs/selected-track-live-midi-workflow.md, part A). */
     void selectTrack (int idx)
     {
         selectedTrack = idx;
         inspector.setSelectedTrack (idx);
 
-        uint16_t mask = 0;
         TrackType type = TrackType::MainSlice;
         bool isSfzInstrument = false;
         bool hasSelection = juce::isPositiveAndBelow (idx, engine.getNumTracks());
-
-        int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
 
         if (hasSelection)
         {
             const auto info = engine.getTrackInfo (idx);
             type = info.type;
             isSfzInstrument = info.isSfzInstrument;
-            switch (info.type)
-            {
-                case TrackType::MainSlice:
-                    liveCh = 1;  // slicer always responds on ch 1
-                    break;
-                case TrackType::ChromaticSlice:
-                    liveCh = info.midiChannel + 1;  // stored 0-based
-                    break;
-                case TrackType::SfPlayer:
-                    liveCh = 0;  // SfPlayer uses liveInputChannelMask instead
-                    if (info.midiChannel >= 0 && info.midiChannel < 16)
-                        mask = (uint16_t)(1u << info.midiChannel);
-                    break;
-            }
         }
 
-        engine.setSelectedLiveChannel (liveCh);
-        engine.setSelectedSfLiveChannels (mask);
-        engine.setRecordingTrack (hasSelection ? idx : -1);
+        engine.setSelectedTrackIndex (hasSelection ? idx : -1);
+        engine.setRecordingTrack     (hasSelection ? idx : -1);
 
         if (onTrackTypeSelected)
             onTrackTypeSelected (type, hasSelection, isSfzInstrument);

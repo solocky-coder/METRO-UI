@@ -312,8 +312,13 @@ public:
      *  SfzPlayer2 — UI-display hint only for the SFZ-PLAYER tab; live MIDI
      *              ownership for sfzPlayer2 is governed by its own channel
      *              mask (sfzPlayer2ChannelMask), independent of this mode.
-     *  Sequencer — sequencer drives SF output; sfzPlayer live mask is
-     *              governed by setSelectedSfLiveChannels(); slicer is bypassed.
+     *  Sequencer — the arranger drives live routing: whichever track is
+     *              selected owns channel-1 live input, via
+     *              SequencerEngine::setSelectedTrackIndex()/
+     *              getSelectedLiveTarget() (see selected-track-live-midi-
+     *              workflow docs). Not gated by this mode at all — arranger
+     *              track selection works the same regardless of which tab
+     *              has focus.
      */
     enum class MidiRouteMode { Slicer, SfPlayer, SfzPlayer2, Sequencer };
     void setMidiRouteMode (MidiRouteMode mode);
@@ -648,6 +653,17 @@ public:
     // SFZ-Player (sfzPlayer2) channel ownership — default ch2 (bit 2)
     std::atomic<uint32_t> sfzPlayer2ChannelMask      { 1u << 2 }; // ch 2 default
     std::atomic<uint32_t> savedSfzPlayer2ChannelMask { 1u << 2 };
+
+    // Standalone-only: selected-track live MIDI routing (see
+    // docs/selected-track-live-midi-workflow.md). Audio-thread-only, plain
+    // (non-atomic) members — processBlock() runs on a single thread and is
+    // the only place these are touched.
+    //   lastLiveTargetChannel/-Player remember the previous block's
+    //   SelectedLiveTarget so a track switch can send an all-notes-off/
+    //   all-sound-off to whichever engine the *previous* selection was
+    //   pointing at, preventing stuck notes (acceptance test #10).
+    int lastLiveTargetChannel = 0;              // 1-16, 0 = none
+    int lastLiveTargetPlayer  = 0;              // matches (int) LiveTargetPlayer
 
     /** Rebuild chromaticSliceChannelMask from current slice data.
      *  Must be called on the audio thread (or before first audio callback). */
