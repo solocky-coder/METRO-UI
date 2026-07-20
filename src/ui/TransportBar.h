@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/AbletonLink.h"
@@ -67,6 +68,10 @@ class TransportBar : public juce::Component,
                      private juce::Timer
 {
 public:
+    /** Fired when the Float button is clicked. Owner (ArrangeView) decides what
+     *  "floating" means — see ArrangeView::showFloatingTransport(). */
+    std::function<void()> onFloatRequested;
+
     TransportBar (SequencerEngine& seq, AbletonLink* link = nullptr)
         : engine (seq), linkPtr (link)
     {
@@ -77,6 +82,7 @@ public:
         const juce::Colour cRec    = juce::Colour (0xffdd2222);
         const juce::Colour cLoop   = juce::Colour (0xff00bcd4);
         const juce::Colour cLink   = juce::Colour (0xff7b68ee);
+        const juce::Colour cFloat  = juce::Colour (0xff888888);
 
         auto addBtn = [&](juce::TextButton& b, const juce::String& glyph,
                           juce::Colour col, bool isToggle = false)
@@ -94,6 +100,9 @@ public:
         addBtn (stopBtn,   "STOP",    cStop);
         addBtn (recBtn,    "REC",     cRec,   true);
         addBtn (loopBtn,   "LOOP",    cLoop,  true);
+        addBtn (floatBtn,  "FLOAT",   cFloat);
+        floatBtn.setTooltip ("Detach the transport into a floating panel");
+        floatBtn.onClick = [this] { if (onFloatRequested) onFloatRequested(); };
 
         loopBtn.setToggleState (true, juce::dontSendNotification);
 
@@ -161,6 +170,7 @@ public:
         stopBtn  .setLookAndFeel (nullptr);
         recBtn   .setLookAndFeel (nullptr);
         loopBtn  .setLookAndFeel (nullptr);
+        floatBtn .setLookAndFeel (nullptr);
         linkBtn  .setLookAndFeel (nullptr);
     }
 
@@ -198,13 +208,16 @@ public:
         b.setHeight (contentH);
         const int btnH = contentH;
         const int btnW  = 58;              // compact editor transport tiles
+        const int floatW = 58;
         const int bpmW  = 76;
         const int snapW = 66;
         const int posW  = 84;
         const int linkW = 54;
         const int gap   = 4;
 
-        // ── Right side: LINK → pos → snap → BPM ──────────────────────────
+        // ── Far right: FLOAT → LINK → pos → snap → BPM ────────────────────
+        floatBtn.setBounds (b.removeFromRight (floatW)); b.removeFromRight (gap * 2);
+
         if (linkPtr != nullptr)
         {
             linkBtn  .setBounds (b.removeFromRight (linkW));
@@ -246,6 +259,7 @@ private:
     TransportLAF      laf;
 
     juce::TextButton  rewindBtn, playBtn, stopBtn, recBtn, loopBtn;
+    juce::TextButton  floatBtn { "FLOAT" };
     juce::TextButton  linkBtn { "LINK" };
     juce::Label       bpmLabel, posLabel;
     juce::ComboBox    snapCombo;

@@ -294,6 +294,7 @@ target_sources(DysektStandalone PRIVATE
     src/ui/GlobalEqPanel.cpp
     src/sequencer/SequencerEngine.cpp
     src/sequencer/MidiClip.cpp
+    src/ui/FloatingTransportBar.cpp
     src/standalone/Main.cpp
     src/standalone/MainWindow.cpp
 )

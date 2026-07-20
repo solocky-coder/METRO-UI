@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "TransportBar.h"
+#include "FloatingTransportBar.h"
 #include "TrackHeaderStrip.h"
 #include "TrackInspector.h"
 #include "../sequencer/SequencerEngine.h"
@@ -91,6 +92,7 @@ public:
     //==========================================================================
     ArrangeView (SequencerEngine& seq, AbletonLink* link = nullptr)
         : engine (seq),
+          linkPtr (link),
           transport (seq, link),
           trackStrip (seq),
           inspector (seq)
@@ -98,6 +100,8 @@ public:
         addAndMakeVisible (transport);
         addAndMakeVisible (inspector);
         addAndMakeVisible (trackStrip);
+
+        transport.onFloatRequested = [this] { showFloatingTransport(); };
 
         // ── Horizontal scrollbar ──────────────────────────────────────────────
         hScroll.setRangeLimits (0.0, 1.0);
@@ -132,6 +136,8 @@ public:
         hScroll.removeListener (this);
         vScroll.removeListener (this);
         stopTimer();
+        if (floatingTransport != nullptr)
+            floatingTransport->hide();
     }
 
     //==========================================================================
@@ -483,12 +489,42 @@ public:
         return false;
     }
 
+    //==========================================================================
+    //  Floating transport
+    //==========================================================================
+    /** Lazily creates (on first use) and shows the floating transport panel,
+     *  hiding the docked TransportBar while it's up. Wired to
+     *  transport.onFloatRequested. */
+    void showFloatingTransport()
+    {
+        if (floatingTransport == nullptr)
+        {
+            floatingTransport = std::make_unique<FloatingTransportBar> (engine, linkPtr);
+            floatingTransport->onDockRequested = [this] { dockTransport(); };
+        }
+
+        transport.setVisible (false);
+        floatingTransport->show();
+    }
+
+    /** Hides the floating panel and restores the docked transport bar.
+     *  Wired to FloatingTransportBar::onDockRequested. */
+    void dockTransport()
+    {
+        if (floatingTransport != nullptr)
+            floatingTransport->hide();
+
+        transport.setVisible (true);
+    }
+
 private:
     //==========================================================================
     //  State
     //==========================================================================
     SequencerEngine&      engine;
+    AbletonLink*          linkPtr = nullptr;
     TransportBar          transport;
+    std::unique_ptr<FloatingTransportBar> floatingTransport;
     TrackInspector        inspector;
     TrackHeaderStrip      trackStrip;
     juce::ScrollBar       hScroll { false };
@@ -657,25 +693,30 @@ private:
         bool isSfzInstrument = false;
         bool hasSelection = juce::isPositiveAndBelow (idx, engine.getNumTracks());
 
+        int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
+
         if (hasSelection)
         {
             const auto info = engine.getTrackInfo (idx);
             type = info.type;
             isSfzInstrument = info.isSfzInstrument;
-
-            // Independent of setSelectedTrack() below: this mask feeds
-            // SfzPlayer's own live-input routing (setSelectedSfLiveChannels),
-            // not the LiveTargetPlayer re-stamp/clear logic in processBlock().
-            if (info.type == TrackType::SfPlayer
-                && info.midiChannel >= 0 && info.midiChannel < 16)
-                mask = (uint16_t) (1u << info.midiChannel);
+            switch (info.type)
+            {
+                case TrackType::MainSlice:
+                    liveCh = 1;  // slicer always responds on ch 1
+                    break;
+                case TrackType::ChromaticSlice:
+                    liveCh = info.midiChannel + 1;  // stored 0-based
+                    break;
+                case TrackType::SfPlayer:
+                    liveCh = 0;  // SfPlayer uses liveInputChannelMask instead
+                    if (info.midiChannel >= 0 && info.midiChannel < 16)
+                        mask = (uint16_t)(1u << info.midiChannel);
+                    break;
+            }
         }
 
-        // Derives both the re-stamp channel and the LiveTargetPlayer
-        // (slicer/sf2/sfz/none) from the track's own type/isSfzInstrument/
-        // midiChannel — see SequencerEngine::getSelectedLiveTarget() and
-        // the reset logic in PluginProcessor::processBlock().
-        engine.setSelectedTrack (hasSelection ? idx : -1);
+        engine.setSelectedLiveChannel (liveCh);
         engine.setSelectedSfLiveChannels (mask);
         engine.setRecordingTrack (hasSelection ? idx : -1);
 
