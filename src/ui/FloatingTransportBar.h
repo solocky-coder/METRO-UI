@@ -79,9 +79,8 @@ private:
     //  Layout regions, computed once per resized() and reused by paint()
     //==========================================================================
     //  Two content rows below the title strip:
-    //    Row 1: transport cluster + SET LEFT/RIGHT
-    //    Row 2: musical position + editable L/R locators
-    //            | far-right BPM / GRID / LINK
+    //    Row 1: centred, editable L/R locators
+    //    Row 2: musical position + transport | BPM / GRID / LINK
     struct Layout
     {
         juce::Rectangle<int> titleStrip;
@@ -116,7 +115,7 @@ private:
     juce::TextButton dockButton  { "Dock" };
     juce::ComponentDragger dragger;
 
-    // ── Row 1: filled transport icons, plus locator capture buttons ─────
+    // ── Bottom row: filled transport icons ──────────────────────────────
     juce::TextButton toStartButton { "▮◀" };
     juce::TextButton backButton    { "◀◀" };
     juce::TextButton playButton    { "▶" };
@@ -126,7 +125,7 @@ private:
     juce::TextButton setLeftButton  { "SET LEFT" };
     juce::TextButton setRightButton { "SET RIGHT" };
 
-    // ── Row 2: position plus individually editable, centered L/R values ─
+    // ── Top row: individually editable, centred L/R values ──────────────
     juce::Label positionLabel;
     juce::Label leftLocatorLabel;
     juce::Label rightLocatorLabel;

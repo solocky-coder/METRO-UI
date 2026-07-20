@@ -130,12 +130,13 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
         addAndMakeVisible (*field);
     }
 
+    // The locator values are written directly in the upper row, matching the
+    // compact floating-transport layout. The legacy capture buttons remain
+    // available for host integrations but are not shown in this panel.
     configureChrome (setLeftButton, "SET LEFT", "Set the left cycle locator to the playhead");
     configureChrome (setRightButton, "SET RIGHT", "Set the right locator to the playhead");
     setLeftButton.onClick  = [this] { setLeftLocatorToPlayhead(); };
     setRightButton.onClick = [this] { setRightLocatorToPlayhead(); };
-    addAndMakeVisible (setLeftButton);
-    addAndMakeVisible (setRightButton);
 
     // ── Grid snap ────────────────────────────────────────────────────────
     gridCombo.addItem ("1/1",  1);
@@ -163,10 +164,8 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     leftLocatorTick = engine.getLoopStartTick();
     rightLocatorTick = engine.getLoopEndTick();
 
-    // Must stay in sync with computeLayout(): title strip (3) + top pad (0.5)
-    // + row 1 (5) + inter-row gap (0.5) + row 2 (5) + bottom pad (0.5), with
-    // a little slack — sized to the two content rows and nothing more.
-    setSize (MetroMetrics::grid * 140, MetroMetrics::grid * 16);
+    // Compact two-row transport: locators above, controls below.
+    setSize (MetroMetrics::grid * 100, MetroMetrics::grid * 20);
     startTimerHz (20);
 }
 
@@ -233,41 +232,29 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     auto area = getLocalBounds();
 
     L.titleStrip = area.removeFromTop (MetroMetrics::grid * 3);
-    area.reduce (MetroMetrics::panelPadding, 0);
-    area.removeFromTop (MetroMetrics::halfGrid);
-    area.removeFromBottom (MetroMetrics::halfGrid);
+    area.reduce (MetroMetrics::grid, 0);
+    area.removeFromTop (MetroMetrics::grid * 2);
 
-    const int gap  = MetroMetrics::grid * 2;
     const int rowH = MetroMetrics::largeControlHeight;
 
-    // ── Row 1: transport cluster + SET LEFT/RIGHT ──────────────────────
-    auto row1 = area.removeFromTop (rowH);
-    L.transportRow = row1.removeFromLeft (MetroMetrics::grid * 54);
-    row1.removeFromLeft (gap * 2);
-    L.divider1 = row1.getX();
-    row1.removeFromLeft (gap);
-    auto setRow = row1.removeFromLeft (MetroMetrics::grid * 30);
-    L.setLeftButton  = setRow.removeFromLeft (setRow.getWidth() / 2 - MetroMetrics::halfGrid);
-    setRow.removeFromLeft (MetroMetrics::grid);
-    L.setRightButton = setRow;
+    // Top row: directly writable L/R locators, centred as one compact group.
+    auto locatorRow = area.removeFromTop (rowH);
+    L.locatorsField = locatorRow.withSizeKeepingCentre (MetroMetrics::grid * 28, rowH);
 
-    area.removeFromTop (MetroMetrics::halfGrid);
+    area.removeFromTop (MetroMetrics::grid * 2);
 
-    // ── Row 2: position + editable L/R, followed by BPM / GRID / LINK ──
-    auto row2 = area.removeFromTop (rowH);
-    L.positionField = row2.removeFromLeft (MetroMetrics::grid * 54);
-    row2.removeFromLeft (gap * 2);
-    L.divider2 = row2.getX();
-    row2.removeFromLeft (gap);
-    L.locatorsField = row2.removeFromLeft (MetroMetrics::grid * 30);
-
-    row2.removeFromLeft (gap * 2);
-    L.tempoCaption = row2.removeFromLeft (MetroMetrics::grid * 5);
-    L.tempoField   = row2.removeFromLeft (MetroMetrics::grid * 9);
-    row2.removeFromLeft (MetroMetrics::grid);
-    L.gridField    = row2.removeFromLeft (MetroMetrics::grid * 10);
-    row2.removeFromLeft (MetroMetrics::grid);
-    L.linkField    = row2.removeFromLeft (MetroMetrics::grid * 10);
+    // Bottom row: position and transport on the left; BPM, Grid, Link on the right.
+    auto controlRow = area.removeFromTop (rowH);
+    L.positionField = controlRow.removeFromLeft (MetroMetrics::grid * 21);
+    controlRow.removeFromLeft (MetroMetrics::grid);
+    L.transportRow = controlRow.removeFromLeft (MetroMetrics::grid * 37);
+    controlRow.removeFromLeft (MetroMetrics::grid * 2);
+    L.tempoCaption = controlRow.removeFromLeft (MetroMetrics::grid * 4);
+    L.tempoField   = controlRow.removeFromLeft (MetroMetrics::grid * 6);
+    controlRow.removeFromLeft (MetroMetrics::grid);
+    L.gridField    = controlRow.removeFromLeft (MetroMetrics::grid * 9);
+    controlRow.removeFromLeft (MetroMetrics::grid);
+    L.linkField    = controlRow.removeFromLeft (MetroMetrics::grid * 8);
 
     return L;
 }
@@ -276,17 +263,18 @@ void FloatingTransportBar::resized()
 {
     const auto L = computeLayout();
 
-    // Title strip: pin on the left of the grip area, dock at the far right.
     auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::quarterGrid);
     pinButton.setBounds (strip.removeFromLeft (MetroMetrics::grid * 6));
     dockButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 7));
 
-    positionLabel.setBounds (L.positionField);
+    // L/R captions sit outside their fields so the numerical values stay truly centred.
     auto locators = L.locatorsField;
-    const int locatorW = locators.getWidth() / 2;
-    leftLocatorLabel.setBounds (locators.removeFromLeft (locatorW));
-    rightLocatorLabel.setBounds (locators);
+    locators.removeFromLeft (MetroMetrics::grid * 2);
+    leftLocatorLabel.setBounds (locators.removeFromLeft (MetroMetrics::grid * 11));
+    locators.removeFromLeft (MetroMetrics::grid * 2);
+    rightLocatorLabel.setBounds (locators.removeFromLeft (MetroMetrics::grid * 11));
 
+    positionLabel.setBounds (L.positionField);
     auto transport = L.transportRow;
     const int btnGap = MetroMetrics::halfGrid;
     const int n = 6;
@@ -297,9 +285,8 @@ void FloatingTransportBar::resized()
         transport.removeFromLeft (btnGap);
     }
 
-    setLeftButton.setBounds (L.setLeftButton);
-    setRightButton.setBounds (L.setRightButton);
-
+    setLeftButton.setVisible (false);
+    setRightButton.setVisible (false);
     tempoLabel.setBounds (L.tempoField);
     gridCombo.setBounds (L.gridField);
     if (linkPtr != nullptr)
@@ -328,6 +315,12 @@ void FloatingTransportBar::paint (juce::Graphics& g)
     g.setColour (Text::Muted);
     g.setFont (MetroTypography::caption());
     g.drawText ("TRANSPORT", L.titleStrip.withTrimmedLeft (MetroMetrics::grid * 8), juce::Justification::centredLeft);
+
+    // Locator captions are painted separately so their editable values can be centred.
+    g.setColour (Text::Muted);
+    g.setFont (MetroTypography::caption());
+    g.drawText ("L", leftLocatorLabel.getBounds().translated (-MetroMetrics::grid * 2, 0), juce::Justification::centred);
+    g.drawText ("R", rightLocatorLabel.getBounds().translated (-MetroMetrics::grid * 2, 0), juce::Justification::centred);
 
     // BPM is the one far-right field whose value alone ("120.00") wouldn't
     // otherwise be self-explanatory the way GRID (shows "1/16") and LINK
