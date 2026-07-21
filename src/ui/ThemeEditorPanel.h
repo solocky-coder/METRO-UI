@@ -109,6 +109,18 @@ public:
         resetBtn.onClick = [this] { loadBaseTheme(); };
         addAndMakeVisible (resetBtn);
 
+        pickBtn.setButtonText ("PICK");
+        pickBtn.setClickingTogglesState (true);
+        pickBtn.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
+        pickBtn.onClick = [this]
+        {
+            pickModeActive = pickBtn.getToggleState();
+            setMouseCursor (pickModeActive ? juce::MouseCursor::CrosshairCursor
+                                            : juce::MouseCursor::NormalCursor);
+            repaint();
+        };
+        addAndMakeVisible (pickBtn);
+
         // Seed with whatever theme is currently active
         loadFromTheme (getTheme());
     }
