@@ -208,7 +208,7 @@ public:
     };
 
     // ── Load kind ─────────────────────────────────────────────────────────
-    enum LoadKind { LoadKindReplace = 0, LoadKindRelink = 1 };
+    enum LoadKind { LoadKindReplace = 0, LoadKindRelink = 1, LoadKindTrim = 2 };
 
     // ── Trim preference ───────────────────────────────────────────────────────
     enum TrimPreference { TrimPrefAsk = 0, TrimPrefAlways = 1, TrimPrefNever = 2 };
@@ -714,6 +714,17 @@ private:
     // Private helpers
     // =========================================================================
     void requestSampleLoad (const juce::File& file, LoadKind kind);
+
+    /** Atomically swaps completedLoadData for newValue and returns the
+     *  previous contents. Non-allocating either way -- safe to call from
+     *  processBlock() as well as from requestSampleLoad(). */
+    SampleData::SnapshotPtr exchangeCompletedLoadData (SampleData::SnapshotPtr newValue);
+
+    /** Same contract as exchangeCompletedLoadData(), for the SFZ-PLAYER (2)
+     *  and SF2-PLAYER (3) preview pipelines. */
+    SampleData::SnapshotPtr exchangeCompletedLoadData2 (SampleData::SnapshotPtr newValue);
+    SampleData::SnapshotPtr exchangeCompletedLoadData3 (SampleData::SnapshotPtr newValue);
+
     void clearVoicesBeforeSampleSwap();
     void clearVoicesBeforeSampleSwap2();
     void clampSlicesToSampleBounds();
@@ -811,15 +822,32 @@ public:
     std::atomic<int>  nextLoadToken  { 0 };
     std::atomic<int>  latestLoadToken{ 0 };
     std::atomic<int>  latestLoadKind { (int) LoadKindReplace };
-    std::atomic<SampleData::DecodedSample*> completedLoadData   { nullptr };
+    // Holds the fully-prepared payload for the primary (Slicer) sample-load
+    // pipeline. Built as a SnapshotPtr entirely on the loader worker thread
+    // (see requestSampleLoad()'s onSuccess lambda) so that processBlock()
+    // only ever performs a non-allocating pointer/refcount swap when it
+    // consumes this -- see SampleData::applyDecodedSample().
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    std::atomic<SampleData::SnapshotPtr> completedLoadData;
+#else
+    SampleData::SnapshotPtr              completedLoadData;
+#endif
     std::atomic<FailedLoadResult*>          completedLoadFailure { nullptr };
     std::atomic<SfzSlicePayload*>           pendingSfzSlices     { nullptr };
 
     /** Second, independent load-result pipeline for the SFZ-PLAYER's preview
      *  buffer (sampleData2). Populated by loadSoundFontAsync(file,
      *  SoundFontLoadTarget::SfzPlayer2) via SoundFontLoader; consumed in
-     *  processBlock and applied to sampleData2 only — never sampleData. */
-    std::atomic<SampleData::DecodedSample*> completedLoadData2  { nullptr };
+     *  processBlock and applied to sampleData2 only — never sampleData.
+     *  Built as a SnapshotPtr entirely on the loader worker thread (mirrors
+     *  completedLoadData above) so processBlock() only ever performs a
+     *  non-allocating pointer/refcount swap -- never a unique_ptr->shared_ptr
+     *  control-block allocation. */
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    std::atomic<SampleData::SnapshotPtr> completedLoadData2;
+#else
+    SampleData::SnapshotPtr              completedLoadData2;
+#endif
 
     /** Heap-allocated zone payload posted by SoundFontLoader for a
      *  SoundFontLoadTarget::SfzPlayer2 load -- the same per-note
@@ -833,8 +861,13 @@ public:
      *  buffer (sampleData3). Populated by loadSoundFontAsync(file,
      *  SoundFontLoadTarget::SfPlayer) via SoundFontLoader; consumed in
      *  processBlock and applied to sampleData3 only. Mirrors
-     *  completedLoadData2/pendingPreviewZones2 exactly. */
-    std::atomic<SampleData::DecodedSample*> completedLoadData3  { nullptr };
+     *  completedLoadData2/pendingPreviewZones2 exactly, including the
+     *  worker-thread-built SnapshotPtr. */
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    std::atomic<SampleData::SnapshotPtr> completedLoadData3;
+#else
+    SampleData::SnapshotPtr              completedLoadData3;
+#endif
     std::atomic<SfzPreviewZonePayload*>     pendingPreviewZones3 { nullptr };
 
     /** SF2-PLAYER per-preset waveform preview state. sampleData3/previewZones3

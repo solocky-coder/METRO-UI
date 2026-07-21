@@ -51,6 +51,60 @@ private:
     FailureFn onFailure;
 };
 
+// Mirrors SampleDecodeJob, but crops an already-decoded sample instead of
+// decoding a file. SampleData::createTrimmed() allocates a new AudioBuffer,
+// copies PCM, and builds peak mipmaps -- real work that must not happen
+// inside processBlock(). `source` keeps the pre-trim buffer alive via
+// shared ownership (a SnapshotPtr obtained from sampleData.getSnapshot()),
+// so it's safe to read from this worker thread regardless of what the
+// audio thread does to sampleData in the meantime.
+class SampleTrimJob final : public juce::ThreadPoolJob
+{
+public:
+    using SuccessFn = std::function<void (int, DysektProcessor::LoadKind,
+                                          std::unique_ptr<SampleData::DecodedSample>)>;
+    using FailureFn = std::function<void (int, DysektProcessor::LoadKind)>;
+
+    SampleTrimJob (SampleData::SnapshotPtr sourceIn, int trimInIn, int trimOutIn,
+                   int loadToken, DysektProcessor::LoadKind kind,
+                   SuccessFn onSuccessIn, FailureFn onFailureIn)
+        : juce::ThreadPoolJob ("SampleTrimJob"),
+          source (std::move (sourceIn)),
+          trimIn (trimInIn),
+          trimOut (trimOutIn),
+          token (loadToken),
+          loadKind (kind),
+          onSuccess (std::move (onSuccessIn)),
+          onFailure (std::move (onFailureIn))
+    {
+    }
+
+    JobStatus runJob() override
+    {
+        std::unique_ptr<SampleData::DecodedSample> trimmed;
+        if (source != nullptr)
+            trimmed = SampleData::createTrimmed (*source, trimIn, trimOut);
+
+        if (shouldExit())
+            return jobHasFinished;
+
+        if (trimmed != nullptr)
+            onSuccess (token, loadKind, std::move (trimmed));
+        else
+            onFailure (token, loadKind);
+        return jobHasFinished;
+    }
+
+private:
+    SampleData::SnapshotPtr source;
+    int trimIn = 0;
+    int trimOut = 0;
+    int token = 0;
+    DysektProcessor::LoadKind loadKind = DysektProcessor::LoadKindTrim;
+    SuccessFn onSuccess;
+    FailureFn onFailure;
+};
+
 static constexpr uint32_t kValidLockMask =
     kLockBpm | kLockPitch | kLockAlgorithm | kLockAttack | kLockDecay | kLockSustain
     | kLockRelease | kLockMuteGroup | kLockStretch | kLockTonality | kLockFormant
@@ -188,16 +242,13 @@ DysektProcessor::DysektProcessor()
 DysektProcessor::~DysektProcessor()
 {
     fileLoadPool.removeAllJobs (true, 5000);
-    auto* pending = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
-    delete pending;
+    exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
     delete failed;
-    auto* pending2 = completedLoadData2.exchange (nullptr, std::memory_order_acq_rel);
-    delete pending2;
+    exchangeCompletedLoadData2 (nullptr);   // drops the SnapshotPtr; frees itself, no delete needed
     auto* pendingZones2 = pendingPreviewZones2.exchange (nullptr, std::memory_order_acq_rel);
     delete pendingZones2;
-    auto* pending3 = completedLoadData3.exchange (nullptr, std::memory_order_acq_rel);
-    delete pending3;
+    exchangeCompletedLoadData3 (nullptr);   // drops the SnapshotPtr; frees itself, no delete needed
     auto* pendingZones3 = pendingPreviewZones3.exchange (nullptr, std::memory_order_acq_rel);
     delete pendingZones3;
 }
@@ -277,15 +328,46 @@ void DysektProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
 void DysektProcessor::releaseResources() {}
 
+SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData (SampleData::SnapshotPtr newValue)
+{
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    return completedLoadData.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+    return std::atomic_exchange_explicit (&completedLoadData, std::move (newValue),
+                                          std::memory_order_acq_rel);
+#endif
+}
+
+SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData2 (SampleData::SnapshotPtr newValue)
+{
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    return completedLoadData2.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+    return std::atomic_exchange_explicit (&completedLoadData2, std::move (newValue),
+                                          std::memory_order_acq_rel);
+#endif
+}
+
+SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData3 (SampleData::SnapshotPtr newValue)
+{
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    return completedLoadData3.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+    return std::atomic_exchange_explicit (&completedLoadData3, std::move (newValue),
+                                          std::memory_order_acq_rel);
+#endif
+}
+
 void DysektProcessor::requestSampleLoad (const juce::File& file, LoadKind kind)
 {
     const int token = nextLoadToken.fetch_add (1, std::memory_order_relaxed) + 1;
     latestLoadToken.store (token, std::memory_order_release);
     latestLoadKind.store ((int) kind, std::memory_order_release);
 
-    // Keep only the latest completed decode payload.
-    auto* oldDecoded = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
-    delete oldDecoded;
+    // Keep only the latest completed decode payload. This runs on the
+    // message/setup thread (never processBlock), so it's fine for the
+    // dropped SnapshotPtr's refcount to hit zero and free its buffer here.
+    exchangeCompletedLoadData (nullptr);
     auto* oldFailure = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
     delete oldFailure;
 
@@ -311,8 +393,12 @@ void DysektProcessor::requestSampleLoad (const juce::File& file, LoadKind kind)
         if (finishedToken != latestLoadToken.load (std::memory_order_acquire))
             return;
 
-        auto* old = completedLoadData.exchange (decoded.release(), std::memory_order_acq_rel);
-        delete old;
+        // Runs on the loader worker thread. Converting unique_ptr -> SnapshotPtr
+        // here (not in processBlock) is where the one-time shared_ptr control-
+        // block allocation happens, so the audio thread only ever inherits an
+        // already-built, ready-to-publish payload and does a plain pointer swap.
+        SampleData::SnapshotPtr ready = std::move (decoded);
+        exchangeCompletedLoadData (std::move (ready));
         latestLoadKind.store ((int) finishedKind, std::memory_order_release);
     };
 
@@ -339,13 +425,22 @@ void DysektProcessor::loadFileAsync (const juce::File& file)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  applyTrimToCurrentSample
-//  Stores the trim region and dispatches CmdApplyTrim so the audio thread
-//  can react (e.g. clamp slice boundaries, adjust waveform display start).
-//  intParam1 = trimStart (samples), intParam2 = trimEnd (samples).
+//  Stores the trim region for live UI feedback, pushes a lightweight
+//  CmdApplyTrim so the undo system captures the PRE-trim state at the right
+//  moment (see the first cmd.type switch in handleCommand()), then dispatches
+//  the actual crop to fileLoadPool as a SampleTrimJob. The trimmed buffer +
+//  mipmaps are built entirely on that worker thread and delivered back
+//  through the same completedLoadData / token pipeline requestSampleLoad()
+//  uses, so processBlock() only ever does a non-allocating pointer swap when
+//  it applies the result -- see the LoadKindTrim handling there.
 // ─────────────────────────────────────────────────────────────────────────────
 void DysektProcessor::applyTrimToCurrentSample (int trimStart, int trimEnd)
 {
-    const int total = sampleData.getNumFrames();
+    auto snap = sampleData.getSnapshot();
+    if (snap == nullptr)
+        return;
+
+    const int total = snap->buffer.getNumSamples();
     trimStart = juce::jlimit (0, juce::jmax (0, total - 1), trimStart);
     trimEnd   = juce::jlimit (trimStart + 1, total, trimEnd);
 
@@ -357,6 +452,41 @@ void DysektProcessor::applyTrimToCurrentSample (int trimStart, int trimEnd)
     c.intParam1 = trimStart;
     c.intParam2 = trimEnd;
     pushCommand (c);
+
+    const int token = nextLoadToken.fetch_add (1, std::memory_order_relaxed) + 1;
+    latestLoadToken.store (token, std::memory_order_release);
+    latestLoadKind.store  ((int) LoadKindTrim, std::memory_order_release);
+
+    // Discard any stale in-flight result (from a previous trim or file load)
+    // before this one supersedes it -- mirrors requestSampleLoad().
+    exchangeCompletedLoadData (nullptr);
+    delete completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
+
+    auto onSuccess = [this] (int finishedToken, LoadKind finishedKind,
+                             std::unique_ptr<SampleData::DecodedSample> decoded)
+    {
+        if (finishedToken != latestLoadToken.load (std::memory_order_acquire))
+            return;
+
+        // Runs on the trim worker thread -- the unique_ptr -> SnapshotPtr
+        // control-block allocation happens here, not in processBlock().
+        SampleData::SnapshotPtr ready = std::move (decoded);
+        exchangeCompletedLoadData (std::move (ready));
+        latestLoadKind.store ((int) finishedKind, std::memory_order_release);
+    };
+
+    auto onFailure = [this] (int finishedToken, LoadKind /*finishedKind*/)
+    {
+        // A degenerate trim range (e.g. the sample changed size out from
+        // under this request) leaves the current sample untouched -- there's
+        // no file path here to report through the FailedLoadResult/relink UI,
+        // so this is a silent no-op, matching the previous inline behaviour.
+        (void) finishedToken;
+    };
+
+    fileLoadPool.addJob (new SampleTrimJob (snap, trimStart, trimEnd, token, LoadKindTrim,
+                                            onSuccess, onFailure),
+                         true);
 }
 
 void DysektProcessor::loadSoundFontAsync (const juce::File& file, SoundFontLoadTarget target,
@@ -380,7 +510,7 @@ void DysektProcessor::loadSoundFontAsync (const juce::File& file, SoundFontLoadT
         latestLoadToken.store (token, std::memory_order_release);
         latestLoadKind.store  ((int) LoadKindReplace, std::memory_order_release);
 
-        delete completedLoadData.exchange    (nullptr, std::memory_order_acq_rel);
+        exchangeCompletedLoadData (nullptr);
         delete completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
 
         auto* payload  = new FailedLoadResult();
@@ -394,8 +524,8 @@ void DysektProcessor::loadSoundFontAsync (const juce::File& file, SoundFontLoadT
         // SFZ-PLAYER / SF2-PLAYER previews are visual-only and have no
         // failure UI of their own — just discard any stale preview payload
         // and silently no-op.
-        delete completedLoadData2.exchange (nullptr, std::memory_order_acq_rel);
-        delete completedLoadData3.exchange (nullptr, std::memory_order_acq_rel);
+        exchangeCompletedLoadData2 (nullptr);
+        exchangeCompletedLoadData3 (nullptr);
     }
 #endif
 }
@@ -1534,27 +1664,20 @@ void DysektProcessor::handleCommand (const Command& cmd)
             break;
 
         case CmdApplyTrim:
-            // 1. Physically crop the audio buffer to [trimStart, trimEnd)
-            // 2. Clear all slices — trimmed sample enters slice window clean,
-            //    playing chromatically until user adds first slice (same as fresh load).
-            {
-                const int tStart = cmd.intParam1;
-                const int tEnd   = cmd.intParam2;
-
-                auto snap = sampleData.getSnapshot();
-                if (snap != nullptr)
-                {
-                    auto trimmed = SampleData::createTrimmed (*snap, tStart, tEnd);
-                    if (trimmed != nullptr)
-                        sampleData.applyDecodedSample (std::move (trimmed));
-                }
-
-                const int totalFrames = sampleData.getNumFrames();
-                sliceManager.clearAll();
-                sliceManager.selectedSlice.store (-1, std::memory_order_relaxed);
-                (void) totalFrames;
-            }
-            publishUiSliceSnapshot();
+            // Intentionally empty. This command still exists purely so the
+            // first switch above (gesture/undo bookkeeping) captures an undo
+            // snapshot of the PRE-trim state at the moment the user commits
+            // the trim. The actual crop is no longer done here: it would mean
+            // allocating a new AudioBuffer, copying PCM, and building mipmaps
+            // synchronously inside processBlock() (via drainCommands()).
+            // applyTrimToCurrentSample() now dispatches that work to
+            // fileLoadPool (see SampleTrimJob below) and posts the completed,
+            // already-built SnapshotPtr through the same completedLoadData /
+            // exchangeCompletedLoadData() pipeline used for ordinary file
+            // loads -- consumed a few lines above in this function as
+            // LoadKindTrim, which does the buffer swap, sliceManager.clearAll(),
+            // and publishUiSliceSnapshot() (via uiSnapshotDirty) once the
+            // worker's result actually arrives.
             break;
 
         case CmdNone:
@@ -2662,18 +2785,24 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
     bool loadStateChanged = false;
     {
-        auto* rawDecoded = completedLoadData.exchange (nullptr, std::memory_order_acq_rel);
-        if (rawDecoded != nullptr)
+        // Non-allocating: exchangeCompletedLoadData() swaps a shared_ptr that
+        // was already fully built (buffer + mipmaps + control block) on the
+        // loader worker thread. applyDecodedSample() below is likewise just a
+        // pointer/refcount assignment — no PCM copy happens on this thread.
+        SampleData::SnapshotPtr decoded = exchangeCompletedLoadData (nullptr);
+        if (decoded != nullptr)
         {
-            std::unique_ptr<SampleData::DecodedSample> decoded (rawDecoded);
             clearVoicesBeforeSampleSwap();
-            sampleData.applyDecodedSample (std::move (decoded));
+            sampleData.applyDecodedSample (decoded);
             sampleMissing.store (false);
             missingFilePath.clear();
             sampleAvailability.store ((int) SampleStateLoaded, std::memory_order_relaxed);
 
-            if (latestLoadKind.load (std::memory_order_acquire) == (int) LoadKindReplace)
+            const int finishedKind = latestLoadKind.load (std::memory_order_acquire);
+            if (finishedKind == (int) LoadKindReplace || finishedKind == (int) LoadKindTrim)
             {
+                // Trimmed sample enters slice window clean, playing chromatically
+                // until the user adds a first slice (same as a fresh load).
                 sliceManager.clearAll();
                 const juce::String fname = sampleData.getFileName();
                 const bool isDefault = fname.equalsIgnoreCase ("Empty.wav")
@@ -2748,12 +2877,16 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // applied to sliceManager2 unconditionally (no chromatic/uiMode branching
     // needed: this engine has no other use for its slices).
     {
-        auto* rawDecoded2 = completedLoadData2.exchange (nullptr, std::memory_order_acq_rel);
-        if (rawDecoded2 != nullptr)
+        // Non-allocating: exchangeCompletedLoadData2() swaps a shared_ptr that
+        // was already fully built (buffer + mipmaps + control block) on the
+        // loader worker thread -- see SoundFontLoader's SfzPlayer2 branch.
+        // applyDecodedSample() below is likewise just a pointer/refcount
+        // assignment, so no PCM copy or allocation happens on this thread.
+        SampleData::SnapshotPtr decoded2 = exchangeCompletedLoadData2 (nullptr);
+        if (decoded2 != nullptr)
         {
-            std::unique_ptr<SampleData::DecodedSample> decoded2 (rawDecoded2);
             clearVoicesBeforeSampleSwap2();
-            sampleData2.applyDecodedSample (std::move (decoded2));
+            sampleData2.applyDecodedSample (decoded2);
             sliceManager2.clearAll();
             uiSnapshotDirty.store (true, std::memory_order_release);
         }
@@ -2819,11 +2952,11 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // Mirrors the SFZ-PLAYER preview pipeline above exactly, but for the
     // SF2-PLAYER tab's own independent buffer/zone overlay.
     {
-        auto* rawDecoded3 = completedLoadData3.exchange (nullptr, std::memory_order_acq_rel);
-        if (rawDecoded3 != nullptr)
+        // Non-allocating for the same reason as completedLoadData2 above.
+        SampleData::SnapshotPtr decoded3 = exchangeCompletedLoadData3 (nullptr);
+        if (decoded3 != nullptr)
         {
-            std::unique_ptr<SampleData::DecodedSample> decoded3 (rawDecoded3);
-            sampleData3.applyDecodedSample (std::move (decoded3));
+            sampleData3.applyDecodedSample (decoded3);
             uiSnapshotDirty.store (true, std::memory_order_release);
         }
 

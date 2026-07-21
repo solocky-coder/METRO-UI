@@ -209,6 +209,7 @@ target_include_directories(Dysekt PRIVATE
 
 target_compile_definitions(Dysekt PUBLIC
     JUCE_USE_CURL=0
+    JUCE_USE_MP3AUDIOFORMAT=1
     DYSEKT_HAS_LINK=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -310,6 +311,7 @@ target_include_directories(DysektStandalone PRIVATE
 
 target_compile_definitions(DysektStandalone PUBLIC
     JUCE_USE_CURL=0
+    JUCE_USE_MP3AUDIOFORMAT=1
     DYSEKT_HAS_LINK=$<BOOL:${DYSEKT_HAS_LINK}>
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_WEB_BROWSER=0

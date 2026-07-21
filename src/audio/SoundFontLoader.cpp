@@ -847,10 +847,11 @@ private:
                                                                      std::memory_order_acq_rel);
             delete oldPayload;
 
-            // Post decoded audio (same path as WAV loader — processBlock polls this)
-            auto* old = processor.completedLoadData.exchange (decoded.release(),
-                                                              std::memory_order_acq_rel);
-            delete old;
+            // Post decoded audio (same path as WAV loader — processBlock polls this).
+            // Build the SnapshotPtr here, on the worker thread, so processBlock's
+            // consumption is a plain pointer swap (see SampleData::applyDecodedSample).
+            SampleData::SnapshotPtr ready = std::move (decoded);
+            processor.exchangeCompletedLoadData (std::move (ready));
 
             processor.latestLoadKind.store ((int) DysektProcessor::LoadKindReplace,
                                             std::memory_order_release);
@@ -872,9 +873,11 @@ private:
                                                                        std::memory_order_acq_rel);
             delete oldZones;
 
-            auto* old = processor.completedLoadData2.exchange (decoded.release(),
-                                                               std::memory_order_acq_rel);
-            delete old;
+            // Built here, on the loader worker thread, so processBlock's
+            // consumption via exchangeCompletedLoadData2() is a plain
+            // pointer/refcount swap -- see SampleData::applyDecodedSample().
+            SampleData::SnapshotPtr ready2 = std::move (decoded);
+            processor.exchangeCompletedLoadData2 (std::move (ready2));
         }
         else // SoundFontLoadTarget::SfPlayer
         {
@@ -895,9 +898,10 @@ private:
                                                                        std::memory_order_acq_rel);
             delete oldZones;
 
-            auto* old = processor.completedLoadData3.exchange (decoded.release(),
-                                                               std::memory_order_acq_rel);
-            delete old;
+            // Built here, on the loader worker thread -- mirrors the
+            // completedLoadData2 fix above.
+            SampleData::SnapshotPtr ready3 = std::move (decoded);
+            processor.exchangeCompletedLoadData3 (std::move (ready3));
         }
         return jobHasFinished;
     }
@@ -1112,7 +1116,7 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
                                          std::memory_order_release);
 
         // Discard any pending payload from a previous Slicer-target load
-        delete processor.completedLoadData.exchange  (nullptr, std::memory_order_acq_rel);
+        processor.exchangeCompletedLoadData (nullptr);
         delete processor.completedLoadFailure.exchange(nullptr, std::memory_order_acq_rel);
         delete processor.pendingSfzSlices.exchange   (nullptr, std::memory_order_acq_rel);
     }
@@ -1121,13 +1125,13 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         // SFZ-PLAYER preview pipeline is independent of the Slicer's token
         // sequence — it never checks tokens, so there's nothing to bump here.
         // Just discard any stale preview payload from a previous preview load.
-        delete processor.completedLoadData2.exchange (nullptr, std::memory_order_acq_rel);
+        processor.exchangeCompletedLoadData2 (nullptr);
         delete processor.pendingPreviewZones2.exchange (nullptr, std::memory_order_acq_rel);
     }
     else // SoundFontLoadTarget::SfPlayer
     {
         // SF2-PLAYER preview pipeline — mirrors SfzPlayer2 exactly, own buffer.
-        delete processor.completedLoadData3.exchange (nullptr, std::memory_order_acq_rel);
+        processor.exchangeCompletedLoadData3 (nullptr);
         delete processor.pendingPreviewZones3.exchange (nullptr, std::memory_order_acq_rel);
 
         // Flag ANY SfPlayer-target render as in-flight — the initial
