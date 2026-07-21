@@ -1000,13 +1000,7 @@ void DysektEditor::toggleThemeEditor()
 
  themeEditorPanel->onDismiss = [this] { toggleThemeEditor(); };
 
- addAndMakeVisible (*themeEditorPanel);
- constexpr int kThemeEditorRailWidth = 320;
- auto railBounds = getLocalBounds();
- themeEditorPanel->setBounds (railBounds.removeFromRight (juce::jmin (kThemeEditorRailWidth, railBounds.getWidth())));
- themeEditorPanel->toFront (true);
- themeEditorPanel->grabKeyboardFocus();
- repaint();
+ themeEditorPanel->show();
 }
 
 // ── Waveform frame rect helper ────────────────────────────────────────────────

@@ -38,6 +38,7 @@ public:
         // ── Title bar ────────────────────────────────────────────────────
         titleLabel.setText ("THEME EDITOR", juce::dontSendNotification);
         titleLabel.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+        titleLabel.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (titleLabel);
 
         closeBtn.setButtonText ("X");
@@ -123,7 +124,39 @@ public:
 
         // Seed with whatever theme is currently active
         loadFromTheme (getTheme());
+        setSize (kDefaultWidth, kDefaultHeight);
     }
+
+    ~ThemeEditorPanel() override
+    {
+        if (isOnDesktop())
+            savePosition();
+    }
+
+    void show()
+    {
+        if (! isOnDesktop())
+        {
+            setOpaque (true);
+            addToDesktop (juce::ComponentPeer::windowHasDropShadow);
+            restorePosition();
+        }
+
+        setVisible (true);
+        toFront (true);
+        grabKeyboardFocus();
+    }
+
+    void hide()
+    {
+        if (! isOnDesktop())
+            return;
+
+        savePosition();
+        removeFromDesktop();
+    }
+
+    bool isFloating() const noexcept { return isOnDesktop(); }
 
     // ── Layout ────────────────────────────────────────────────────────────
     void resized() override
@@ -131,6 +164,7 @@ public:
         const auto& T = getTheme();
         juce::ignoreUnused (T);
         dialogBounds = getLocalBounds().reduced (4, 8);
+        titleBarBounds = dialogBounds.withHeight (36);
         auto db = dialogBounds;
 
         auto titleBar = db.removeFromTop (36);
@@ -185,6 +219,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto& T = getTheme();
+        g.fillAll (T.darkBar.darker (0.5f));
         g.setColour (T.header);
         g.fillRect (dialogBounds);
 
@@ -215,8 +250,30 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        auto closeButtonBounds = titleBarBounds.removeFromRight (36).reduced (4);
+        draggingTitleStrip = isOnDesktop()
+                          && titleBarBounds.contains (e.getPosition())
+                          && ! closeButtonBounds.contains (e.getPosition());
+
+        if (draggingTitleStrip)
+        {
+            dragger.startDraggingComponent (this, e);
+            return;
+        }
+
         if (pickModeActive && previewStripBounds.contains (e.getPosition()))
             pickPreviewTarget (e.getPosition());
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (draggingTitleStrip)
+            dragger.dragComponent (this, e, nullptr);
+    }
+
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        draggingTitleStrip = false;
     }
 
     // Expose working copy for external read
@@ -331,6 +388,9 @@ private:
     };
 
     // ── Data ──────────────────────────────────────────────────────────────
+    static constexpr int kDefaultWidth = 340;
+    static constexpr int kDefaultHeight = 640;
+
     juce::File   themesDir;
     ThemeData    working;
 
@@ -338,7 +398,9 @@ private:
     juce::ScrollBar               scrollbar { true };
 
     // Layout state (set in resized, used in layoutRows)
-    juce::Rectangle<int> dialogBounds, scrollArea, previewStripBounds;
+    juce::Rectangle<int> dialogBounds, scrollArea, previewStripBounds, titleBarBounds;
+    juce::ComponentDragger dragger;
+    bool draggingTitleStrip = false;
     int rowLayoutW = 200, rowLayoutH = 26, rowLayoutGap = 2;
     int rowLayoutCols = 2, rowLayoutPerCol = 15;
     int rowLayoutX0 = 0, rowLayoutY0 = 0;
@@ -351,8 +413,44 @@ private:
     juce::ComboBox   baseCombo;
     juce::TextEditor nameEditor;
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    juce::File getPositionFile() const
+    {
+        return themesDir.getParentDirectory().getChildFile ("theme_editor_position.xml");
+    }
 
+    void restorePosition()
+    {
+        int x = 120, y = 120;
+        const auto file = getPositionFile();
+
+        if (file.existsAsFile())
+            if (auto xml = juce::XmlDocument::parse (file))
+            {
+                x = xml->getIntAttribute ("x", x);
+                y = xml->getIntAttribute ("y", y);
+            }
+
+        const auto& displays = juce::Desktop::getInstance().getDisplays();
+        const auto* display = displays.getDisplayForPoint ({ x, y });
+        const auto area = display != nullptr ? display->userArea
+                                             : juce::Rectangle<int> (0, 0, 1920, 1080);
+        x = juce::jlimit (area.getX(), juce::jmax (area.getX(), area.getRight() - getWidth()), x);
+        y = juce::jlimit (area.getY(), juce::jmax (area.getY(), area.getBottom() - getHeight()), y);
+        setTopLeftPosition (x, y);
+    }
+
+    void savePosition() const
+    {
+        const auto file = getPositionFile();
+        file.getParentDirectory().createDirectory();
+
+        juce::XmlElement xml ("THEME_EDITOR_POSITION");
+        xml.setAttribute ("x", getX());
+        xml.setAttribute ("y", getY());
+        xml.writeTo (file);
+    }
+
+    // ── Build rows ──────────────────────────────────────────────────────
     void addRow (const juce::String& display, const juce::String& key)
     {
         auto* row = rows.add (new ColourRow (display, key));
