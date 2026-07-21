@@ -1697,17 +1697,25 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
     // UI focus, so all engines keep listening concurrently regardless of tab.
     const uint32_t sfMask  = sfPlayerChannelMask.load  (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
     const uint32_t sfz2Mask = sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
+    const bool inTrimMode = trimModeActive.load (std::memory_order_relaxed);
 
     for (const auto metadata : midi)
     {
         const auto msg = metadata.getMessage();
 
         // Skip messages on SF-player- or SFZ-player-owned channels — they
-        // belong to one of the DY-SFP engines, not the slicer.
+        // belong to one of the DY-SFP engines, not the slicer. While trimming,
+        // however, note messages must reach the unsliced audition path on every
+        // channel; controller ownership remains unchanged.
         if (sfMask != 0 || sfz2Mask != 0)
         {
             const int ch = msg.getChannel();   // 1-based
-            if (ch >= 1 && ch <= 16 && (((sfMask & (1u << ch)) != 0) || ((sfz2Mask & (1u << ch)) != 0)))
+            const bool isNoteMessage = msg.isNoteOn() || msg.isNoteOff()
+                                    || msg.isAllNotesOff() || msg.isAllSoundOff();
+            const bool isPlayerChannel = ch >= 1 && ch <= 16
+                                      && (((sfMask & (1u << ch)) != 0)
+                                          || ((sfz2Mask & (1u << ch)) != 0));
+            if (isPlayerChannel && (! inTrimMode || ! isNoteMessage))
                 continue;
         }
 
