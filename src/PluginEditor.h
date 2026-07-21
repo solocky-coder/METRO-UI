@@ -186,7 +186,7 @@ private:
     static bool appendZoneToSfz (const juce::File& sfzFile, const juce::File& sampleFile,
                                   int loKey, int hiKey, int rootKey);
     void hideZoneBuilderOverlays();
-    void refreshZoneBuilderMatrix (const juce::File& sfzFile); // re-parse + push into zoneBuilderKeysPanel
+    void refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary = true); // re-parse + push into zoneBuilderKeysPanel
 
     void refreshZoneBuilderScratch();       // rebuild scratch file from pending zones, reload preview + matrix
     void commitZoneBuilderPendingZones();   // SAVE: write pending zones to zoneBuilderTargetSfz, clear staging

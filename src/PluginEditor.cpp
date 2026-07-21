@@ -208,7 +208,10 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
                                     rowIndex, z);
     sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
                                        z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
-    refreshZoneBuilderMatrix (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz);
+    // clearSummary=false — this is a live edit of the currently-selected row,
+    // not a fresh load/add/discard, so the SCB readout the line above just
+    // wrote should stay on screen instead of being wiped by the refresh.
+    refreshZoneBuilderMatrix (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz, false);
 };
  addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
@@ -2300,13 +2303,14 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // (see browserPanel.onLoadRequest, uiMode == 0 branch) and isn't a fit for
 // writing SFZ <region> blocks.
 
-void DysektEditor::refreshZoneBuilderMatrix (const juce::File& sfzFile)
+void DysektEditor::refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary)
 {
     if (sfzFile.existsAsFile())
         zoneBuilderKeysPanel.setKeyzones (SfzPlayerDropdownPanel::parseSfzZones (sfzFile));
     else
         zoneBuilderKeysPanel.clearKeyzones();
-    sliceControlBar.clearSfzZoneSummary();
+    if (clearSummary)
+        sliceControlBar.clearSfzZoneSummary();
 }
 
 void DysektEditor::openZoneBuilderAddZone()
