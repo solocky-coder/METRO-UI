@@ -2158,18 +2158,21 @@ void DysektEditor::ensureDefaultThemes()
  auto f = dir.getChildFile (name + ".dsk");
  if (! f.existsAsFile()) f.replaceWithText (t.toThemeFile());
  };
- write ("dark", ThemeData::darkTheme());
- write ("shell", ThemeData::shellTheme());
- write ("lazy", ThemeData::lazyTheme());
- write ("snow", ThemeData::snowTheme());
- write ("ghost", ThemeData::ghostTheme());
- write ("hack", ThemeData::hackTheme());
- write ("midnight", ThemeData::midnightTheme());
- write ("pigments", ThemeData::pigmentsTheme());
- write ("cr8",     ThemeData::cr8Theme());
- write ("dysekt",  ThemeData::dysektTheme());
- write ("serum",   ThemeData::serumTheme());
- write ("metro",   ThemeData::metroTheme());
+ // Metro is the only shipped/seeded theme now — everything else is
+ // user-created via the theme editor. Any of the old built-in preset
+ // files left over from a previous version are removed below so they
+ // don't linger in the picker after an update.
+ write ("metro", ThemeData::metroTheme());
+
+ static const char* kRetiredBuiltIns[] = {
+     "dark", "shell", "lazy", "snow", "ghost", "hack",
+     "midnight", "pigments", "cr8", "dysekt", "serum", "opendaw"
+ };
+ for (auto* name : kRetiredBuiltIns)
+ {
+     auto f = dir.getChildFile (juce::String (name) + ".dsk");
+     if (f.existsAsFile()) f.deleteFile();
+ }
 }
 
 juce::StringArray DysektEditor::getAvailableThemes()
@@ -2180,7 +2183,7 @@ juce::StringArray DysektEditor::getAvailableThemes()
  auto t = ThemeData::fromThemeFile (f.loadFileAsString());
  if (t.name.isNotEmpty()) names.add (t.name);
  }
- if (names.isEmpty()) { names.add ("dark"); names.add ("shell"); }
+ if (names.isEmpty()) { names.add ("metro"); }
  return names;
 }
 
@@ -2199,21 +2202,13 @@ void DysektEditor::applyTheme (const juce::String& themeName)
  repaint(); return;
  }
  }
- if (themeName == "shell") setTheme (ThemeData::shellTheme());
- else if (themeName == "lazy") setTheme (ThemeData::lazyTheme());
- else if (themeName == "snow") setTheme (ThemeData::snowTheme());
- else if (themeName == "ghost") setTheme (ThemeData::ghostTheme());
- else if (themeName == "hack") setTheme (ThemeData::hackTheme());
- else if (themeName == "midnight") setTheme (ThemeData::midnightTheme());
- else if (themeName == "pigments") setTheme (ThemeData::pigmentsTheme());
- else if (themeName == "cr8")      setTheme (ThemeData::cr8Theme());
- else if (themeName == "dysekt")   setTheme (ThemeData::dysektTheme());
- else if (themeName == "serum")    setTheme (ThemeData::serumTheme());
- else if (themeName == "metro")    setTheme (ThemeData::metroTheme());
- else setTheme (ThemeData::darkTheme());
- setLookAndFeel (getTheme().name == "metro" ? (juce::LookAndFeel*) &metroLnf : (juce::LookAndFeel*) &lnf);
+ // Metro is the only built-in theme now; any other name should already
+ // have matched a .dsk file above (a user-created theme). If not found,
+ // fall back to Metro rather than a retired built-in preset.
+ setTheme (ThemeData::metroTheme());
+ setLookAndFeel ((juce::LookAndFeel*) &metroLnf);
  processor.sliceManager.setSlicePalette (getTheme().slicePalette);
- saveUserSettings (themeName);
+ saveUserSettings ("metro");
  applyWindowIcon (this);
  repaint();
 }
