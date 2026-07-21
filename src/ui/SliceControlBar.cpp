@@ -166,15 +166,18 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
  const int textX = juce::roundToInt (14.0f * paintSf);
  const int textW = juce::roundToInt (60.0f * paintSf);
 
+ // Label+value block is 24px tall (11 + 13) inside a 28px cell, giving an
+ // even 2px margin top and bottom instead of running flush to the row
+ // divider below.
  g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf));
  g.setColour (locked ? getTheme().lockActive.withAlpha (0.8f)
  : getTheme().foreground.withAlpha (0.45f));
- g.drawText (label, x + textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText (label, x + textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
  g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * paintSf));
  g.setColour (locked ? getTheme().foreground
  : getTheme().foreground.withAlpha (0.4f));
- g.drawText (value, x + textX, y + juce::roundToInt (15.0f * paintSf), textW, juce::roundToInt (14.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText (value, x + textX, y + juce::roundToInt (13.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
 
  outWidth = cellW;
  cells.push_back ({ x, y, outWidth, cellH, lockBit, fieldId,
@@ -373,18 +376,21 @@ void SliceControlBar::drawKnobCell (juce::Graphics& g, int x, int y,
  const juce::Colour adsr = adsrTintForField (fieldId);
  const bool hasAdsr = ! adsr.isTransparent();
 
+ // Label+value block is 24px tall (11 + 13) inside a 28px cell, giving an
+ // even 2px margin top and bottom instead of running flush to the row
+ // divider below.
  g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
  // ADSR label always uses the fixed ADSR colour — even when locked.
  // Non-ADSR locked params use lockActive; everything else uses foreground.
  g.setColour (locked && ! hasAdsr ? getTheme().lockActive.withAlpha (0.8f)
  : hasAdsr ? adsr.withAlpha (0.70f)
  : getTheme().foreground.withAlpha (0.42f));
- g.drawText (label, textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText (label, textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
  g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
  g.setColour (locked ? getTheme().foreground
  : getTheme().foreground.withAlpha (0.38f));
- g.drawText (valueText, textX, y + juce::roundToInt (14.0f * paintSf), textW, juce::roundToInt (14.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText (valueText, textX, y + juce::roundToInt (13.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
 
  outWidth = cellW;
 
@@ -1360,13 +1366,16 @@ void SliceControlBar::drawSfzZoneCell (juce::Graphics& g, int x, int y,
     const int textX = juce::roundToInt (14.0f * paintSf);
     const int textW = juce::roundToInt (60.0f * paintSf);
 
+    // Label+value block is 24px tall (11 + 13) inside a 28px cell, giving an
+    // even 2px margin top and bottom instead of running flush to the row
+    // divider below — matches the drawParamCell/drawKnobCell centering fix.
     g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf));
     g.setColour (getTheme().foreground.withAlpha (0.45f));
-    g.drawText (label, x + textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
+    g.drawText (label, x + textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
     g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * paintSf));
     g.setColour (getTheme().foreground);
-    g.drawText (value, x + textX, y + juce::roundToInt (15.0f * paintSf), textW, juce::roundToInt (14.0f * paintSf), juce::Justification::centredLeft);
+    g.drawText (value, x + textX, y + juce::roundToInt (13.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
 
     const auto r = juce::Rectangle<int> (x, y, cellW, cellH);
     sfzZoneCells.push_back ({ r, field });
@@ -2315,10 +2324,11 @@ void SliceControlBar::drawChroBadgeCell (juce::Graphics& g, int x, int y,
     g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
     g.setColour (locked ? theme.lockActive.withAlpha (0.8f)
                         : theme.foreground.withAlpha (0.42f));
-    g.drawText ("CHRO", x + juce::roundToInt (4.0f * paintSf), y + juce::roundToInt (2.0f * paintSf), cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+    g.drawText ("CHRO", x + juce::roundToInt (4.0f * paintSf), y + juce::roundToInt (2.0f * paintSf), cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
-    // Badge
-    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (14.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (14.0f * paintSf);
+    // Badge — stops 2px short of the cell bottom so it doesn't run flush to
+    // the row divider below.
+    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (13.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (13.0f * paintSf);
     fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
                     active ? (locked ? theme.lockActive.withAlpha (0.15f)
                                      : theme.accent.withAlpha (0.15f))
@@ -2359,10 +2369,11 @@ void SliceControlBar::drawLegatoToggleCell (juce::Graphics& g, int x, int y,
     g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
     g.setColour (locked ? theme.lockActive.withAlpha (0.8f)
                         : theme.foreground.withAlpha (0.42f));
-    g.drawText ("LGTO", x + juce::roundToInt (4.0f * paintSf), y + juce::roundToInt (2.0f * paintSf), cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+    g.drawText ("LGTO", x + juce::roundToInt (4.0f * paintSf), y + juce::roundToInt (2.0f * paintSf), cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
-    // Toggle pill
-    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (14.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (14.0f * paintSf);
+    // Toggle pill — stops 2px short of the cell bottom so it doesn't run
+    // flush to the row divider below.
+    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (13.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (13.0f * paintSf);
     const juce::Colour col = on ? (locked ? theme.lockActive : theme.accent)
                                : (locked ? theme.lockActive.withAlpha (0.4f)
                                          : theme.foreground.withAlpha (0.18f));
