@@ -1351,18 +1351,26 @@ void SliceControlBar::drawSfzZoneCell (juce::Graphics& g, int x, int y,
                                           const juce::String& label, const juce::String& value,
                                           int field, int& outWidth)
 {
-    const int w = psCellW, h = psCellH;
-    const auto r = juce::Rectangle<int> (x, y, w, h);
-    g.setColour (getTheme().button.withAlpha (0.72f)); g.fillRect (r);
-    g.setColour (getTheme().separator.withAlpha (0.50f)); g.drawRect (r);
-    g.setFont (DysektLookAndFeel::makeFont (8.0f * paintSf, true));
+    // Match drawParamCell's flat, borderless layout so loKey/hiKey/ROOT/PITCH/
+    // PAN/VOLUME/RELEASE/LOOP read as the same kind of cell as PITCH/TUNE/
+    // STRETCH/GAIN/PAN/OUT to their left, instead of standing out as separate
+    // filled/bordered boxes.
+    const int cellH = psCellH;
+    const int cellW = psCellW;
+    const int textX = juce::roundToInt (14.0f * paintSf);
+    const int textW = juce::roundToInt (60.0f * paintSf);
+
+    g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf));
     g.setColour (getTheme().foreground.withAlpha (0.45f));
-    g.drawText (label, r.reduced (4, 2).removeFromTop (11), juce::Justification::centredLeft);
-    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
-    g.setColour (getTheme().foreground.withAlpha (0.92f));
-    g.drawText (value, r.reduced (4, 2), juce::Justification::centredBottom);
+    g.drawText (label, x + textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
+
+    g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * paintSf));
+    g.setColour (getTheme().foreground);
+    g.drawText (value, x + textX, y + juce::roundToInt (15.0f * paintSf), textW, juce::roundToInt (14.0f * paintSf), juce::Justification::centredLeft);
+
+    const auto r = juce::Rectangle<int> (x, y, cellW, cellH);
     sfzZoneCells.push_back ({ r, field });
-    outWidth = w;
+    outWidth = cellW;
 }
 
 void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int width, int height) const
