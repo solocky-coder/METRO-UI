@@ -1001,7 +1001,9 @@ void DysektEditor::toggleThemeEditor()
  themeEditorPanel->onDismiss = [this] { toggleThemeEditor(); };
 
  addAndMakeVisible (*themeEditorPanel);
- themeEditorPanel->setBounds (getLocalBounds());
+ constexpr int kThemeEditorRailWidth = 320;
+ auto railBounds = getLocalBounds();
+ themeEditorPanel->setBounds (railBounds.removeFromRight (juce::jmin (kThemeEditorRailWidth, railBounds.getWidth())));
  themeEditorPanel->toFront (true);
  themeEditorPanel->grabKeyboardFocus();
  repaint();
@@ -1664,7 +1666,11 @@ void DysektEditor::resized()
  if (messageOverlay != nullptr)
  messageOverlay->setBounds (getLocalBounds());
  if (themeEditorPanel != nullptr)
- themeEditorPanel->setBounds (getLocalBounds());
+ {
+ constexpr int kThemeEditorRailWidth = 320;
+ auto railBounds = getLocalBounds();
+ themeEditorPanel->setBounds (railBounds.removeFromRight (juce::jmin (kThemeEditorRailWidth, railBounds.getWidth())));
+ }
 }
 
 void DysektEditor::toggleMixerPanel()

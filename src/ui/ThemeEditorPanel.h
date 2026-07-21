@@ -1,10 +1,12 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_gui_extra/juce_gui_extra.h>
+#include <cmath>
 #include "DysektLookAndFeel.h"
 
 // ============================================================
 //  ThemeEditorPanel
-//  Full-screen modal overlay.  Lets the user create, modify
+//  Dockable live-preview rail. Lets the user create, modify
 //  and save .dsk theme files without leaving the plugin.
 //
 //  Callbacks the host (PluginEditor) must wire up:
@@ -29,6 +31,9 @@ public:
         : themesDir (themesDirectory)
     {
         setInterceptsMouseClicks (true, true);
+        setWantsKeyboardFocus (true);
+        scrollbar.addListener (this);
+        addAndMakeVisible (scrollbar);
 
         // ── Title bar ────────────────────────────────────────────────────
         titleLabel.setText ("THEME EDITOR", juce::dontSendNotification);
@@ -58,6 +63,8 @@ public:
         nameEditor.setMultiLine (false);
         nameEditor.setReturnKeyStartsNewLine (false);
         nameEditor.setText ("my-theme");
+        nameEditor.onReturnKey = [this] { liveApply(); };
+        nameEditor.onFocusLost = [this] { liveApply(); };
         addAndMakeVisible (nameEditor);
 
         // ── Colour rows ───────────────────────────────────────────────────
@@ -79,8 +86,8 @@ public:
         addRow ("LOCK ON",      "lockActive");
         addRow ("LOCK OFF",     "lockInactive");
 
-        // Slice palette (16 swatches, labelled 01-16)
-        for (int i = 1; i <= 16; ++i)
+        // Slice palette — one swatch per pad across both 16-pad banks.
+        for (int i = 1; i <= ThemeData::kSlicePaletteSize; ++i)
             addRow ("SLICE " + juce::String (i).paddedLeft ('0', 2),
                     "slice" + juce::String (i));
 
@@ -110,109 +117,94 @@ public:
     void resized() override
     {
         const auto& T = getTheme();
-        auto full  = getLocalBounds();
+        juce::ignoreUnused (T);
+        dialogBounds = getLocalBounds().reduced (4, 8);
+        auto db = dialogBounds;
 
-        // Dialog box centred in the overlay
-        dialogBounds = full.reduced (juce::jmax (20, (full.getWidth()  - 820) / 2),
-                                     juce::jmax (20, (full.getHeight() - 640) / 2));
-
-        auto db = dialogBounds.reduced (0);
-
-        // Title bar
         auto titleBar = db.removeFromTop (36);
         titleLabel.setBounds (titleBar.reduced (12, 0).withTrimmedRight (36));
-        closeBtn  .setBounds (titleBar.removeFromRight (36).reduced (4));
+        closeBtn.setBounds (titleBar.removeFromRight (36).reduced (4));
 
-        // Toolbar (base combo + name)
-        auto toolbar = db.removeFromTop (32).reduced (12, 4);
-        baseLabel.setBounds (toolbar.removeFromLeft (84));
-        baseCombo.setBounds (toolbar.removeFromLeft (140));
-        toolbar   .removeFromLeft (20);
-        nameLabel .setBounds (toolbar.removeFromLeft (50));
-        nameEditor.setBounds (toolbar.removeFromLeft (160));
+        // A rail is too narrow for the old one-line toolbar, so stack its fields.
+        auto toolbar = db.removeFromTop (58).reduced (12, 4);
+        auto baseRow = toolbar.removeFromTop (24);
+        baseLabel.setBounds (baseRow.removeFromLeft (66));
+        baseCombo.setBounds (baseRow);
+        auto nameRow = toolbar;
+        nameLabel.setBounds (nameRow.removeFromLeft (42));
+        nameEditor.setBounds (nameRow);
 
-        // Action buttons (bottom strip)
-        auto btnRow = db.removeFromBottom (44).reduced (12, 8);
-        const int bw = 90, btnGap = 8;
-        applyBtn.setBounds (btnRow.removeFromRight (bw));
-        btnRow.removeFromRight (btnGap);
-        saveBtn .setBounds (btnRow.removeFromRight (bw));
-        btnRow.removeFromRight (btnGap);
-        resetBtn.setBounds (btnRow.removeFromRight (bw));
+        auto btnRow = db.removeFromBottom (42).reduced (12, 7);
+        constexpr int buttonGap = 6;
+        const int buttonW = (btnRow.getWidth() - buttonGap * 3) / 4;
+        resetBtn.setBounds (btnRow.removeFromLeft (buttonW));
+        btnRow.removeFromLeft (buttonGap);
+        saveBtn.setBounds (btnRow.removeFromLeft (buttonW));
+        btnRow.removeFromLeft (buttonGap);
+        applyBtn.setBounds (btnRow.removeFromLeft (buttonW));
+        btnRow.removeFromLeft (buttonGap);
+        pickBtn.setBounds (btnRow);
 
-        // Preview strip
-        auto previewRow = db.removeFromBottom (44);
-        previewLabel.setBounds (previewRow.removeFromLeft (60).reduced (4, 0));
-        previewStripBounds = previewRow.reduced (8, 8);
+        auto previewRow = db.removeFromBottom (122).reduced (8, 6);
+        previewLabel.setBounds (previewRow.removeFromTop (16));
+        previewStripBounds = previewRow.reduced (0, 2);
 
-        // Scrollable colour rows
-        scrollArea = db.reduced (0, 4);
+        scrollArea = db.reduced (6, 4);
+        const int rowH = 26, gap = 2;
+        const int cols = dialogBounds.getWidth() > 500 ? 2 : 1;
+        const int colW = (scrollArea.getWidth() - 8 - 8 * (cols - 1)) / cols;
+        const int totalRows = (int) rows.size();
+        const int rowsPerCol = (totalRows + cols - 1) / cols;
+        const int contentH = rowsPerCol * (rowH + gap);
 
-        const int rowH  = 26;
-        const int gap   = 2;
-        const int cols  = 2;
-        const int colW  = (scrollArea.getWidth() - 12 - 8 * (cols - 1)) / cols;
-
-        int totalRows   = (int) rows.size();
-        int rowsPerCol  = (totalRows + cols - 1) / cols;
-        int contentH    = rowsPerCol * (rowH + gap);
-
-        scrollbar.setRangeLimits ({0.0, (double) juce::jmax (0, contentH - scrollArea.getHeight())});
+        scrollbar.setRangeLimits ({ 0.0, (double) juce::jmax (0, contentH - scrollArea.getHeight()) });
         scrollbar.setBounds (scrollArea.removeFromRight (8));
-        addAndMakeVisible (scrollbar);
-        scrollbar.addListener (this);
 
         rowLayoutW = colW;
         rowLayoutH = rowH;
         rowLayoutGap = gap;
         rowLayoutCols = cols;
         rowLayoutPerCol = rowsPerCol;
-        rowLayoutX0 = scrollArea.getX() + 6;
+        rowLayoutX0 = scrollArea.getX() + 2;
         rowLayoutY0 = scrollArea.getY();
-
         layoutRows();
     }
 
     void paint (juce::Graphics& g) override
     {
         const auto& T = getTheme();
-
-        // Dim the background
-        g.setColour (juce::Colours::black.withAlpha (0.65f));
-        g.fillRect  (getLocalBounds());
-
-        // Dialog background
         g.setColour (T.header);
-        g.fillRoundedRectangle (dialogBounds.toFloat(), 0.0f);
+        g.fillRect (dialogBounds);
 
-        // Title bar background
         auto titleBar = dialogBounds.withHeight (36);
         g.setColour (T.darkBar.darker (0.4f));
-        g.fillRoundedRectangle (titleBar.toFloat(), 0.0f);
-        g.fillRect             (titleBar.withTrimmedTop (6));
+        g.fillRect (titleBar);
 
-        // Border
         g.setColour (T.accent.withAlpha (0.55f));
-        g.drawRoundedRectangle (dialogBounds.toFloat().reduced (0.5f), 0.0f, 1.5f);
-
-        // Section dividers
+        g.drawRect (dialogBounds, 1);
         g.setColour (T.separator.withAlpha (0.5f));
-        g.drawHorizontalLine (dialogBounds.getY() + 36, (float)dialogBounds.getX(), (float)dialogBounds.getRight());
-        g.drawHorizontalLine (dialogBounds.getY() + 68, (float)dialogBounds.getX(), (float)dialogBounds.getRight());
+        g.drawHorizontalLine (dialogBounds.getY() + 36, (float) dialogBounds.getX(), (float) dialogBounds.getRight());
+        g.drawHorizontalLine (dialogBounds.getY() + 94, (float) dialogBounds.getX(), (float) dialogBounds.getRight());
 
-        // Preview strip
         paintPreviewStrip (g);
-
-        // Scroll area clip
         g.setColour (T.darkBar.darker (0.3f));
-        g.fillRect  (scrollArea);
+        g.fillRect (scrollArea);
     }
 
-    // ── Mouse: close on backdrop click ───────────────────────────────────
+    bool keyPressed (const juce::KeyPress& key) override
+    {
+        if (key == juce::KeyPress::escapeKey)
+        {
+            if (onDismiss) onDismiss();
+            return true;
+        }
+        return false;
+    }
+
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (! dialogBounds.contains (e.getPosition()))
-            if (onDismiss) onDismiss();
+        if (pickModeActive && previewStripBounds.contains (e.getPosition()))
+            pickPreviewTarget (e.getPosition());
     }
 
     // Expose working copy for external read
@@ -263,6 +255,8 @@ private:
             hexEditor.setText (colourToHex (c), juce::dontSendNotification);
             repaint();
         }
+
+        void openPicker() { launchColourPicker(); }
 
         void resized() override
         {
@@ -340,7 +334,8 @@ private:
 
     // Widgets
     juce::Label      titleLabel, baseLabel, nameLabel, previewLabel;
-    juce::TextButton closeBtn, applyBtn, saveBtn, resetBtn;
+    juce::TextButton closeBtn, applyBtn, saveBtn, resetBtn, pickBtn;
+    bool pickModeActive = false;
     juce::ComboBox   baseCombo;
     juce::TextEditor nameEditor;
 
@@ -352,7 +347,7 @@ private:
         row->onChange = [this] (const juce::String& k, juce::Colour c)
         {
             applyColourToWorking (k, c);
-            repaint();           // refresh preview strip
+            liveApply();
         };
         addAndMakeVisible (*row);
     }
@@ -438,10 +433,10 @@ private:
         set ("lockActive",     t.lockActive);
         set ("lockInactive",   t.lockInactive);
 
-        for (int i = 0; i < 16; ++i)
+        for (int i = 0; i < ThemeData::kSlicePaletteSize; ++i)
             set ("slice" + juce::String (i + 1), t.slicePalette[i]);
 
-        repaint();
+        liveApply();
     }
 
     // ── Write a changed colour back into working copy ─────────────────────
@@ -463,22 +458,25 @@ private:
         else if (key == "lockInactive")    working.lockInactive    = c;
         else
         {
-            // slice1..slice16
+            // slice1..slice32
             auto numStr = key.fromFirstOccurrenceOf ("slice", false, false);
             int idx = numStr.getIntValue() - 1;
-            if (idx >= 0 && idx < 16)
+            if (idx >= 0 && idx < ThemeData::kSlicePaletteSize)
                 working.slicePalette[idx] = c;
         }
     }
 
     // ── Apply preview to the live theme (without saving) ─────────────────
-    void applyToLive()
+    void liveApply()
     {
         working.name = nameEditor.getText().trim();
         if (working.name.isEmpty()) working.name = "my-theme";
         setTheme (working);
         if (onThemeChanged) onThemeChanged (working);
+        repaint();
     }
+
+    void applyToLive() { liveApply(); }
 
     // ── Save as .dsk file ─────────────────────────────────────────────────
     void saveTheme()
@@ -501,46 +499,100 @@ private:
         juce::Timer::callAfterDelay (1200, [this] { saveBtn.setButtonText ("SAVE"); });
     }
 
-    // ── Preview strip (mini palette bar + bg swatch) ──────────────────────
+    // ── Miniature widget preview ──────────────────────────────────────────
     void paintPreviewStrip (juce::Graphics& g)
     {
         if (previewStripBounds.isEmpty()) return;
-
-        auto strip = previewStripBounds;
-
-        // Background swatch
-        auto bgSwatch = strip.removeFromLeft (48);
+        auto area = previewStripBounds;
         g.setColour (working.background);
-        g.fillRoundedRectangle (bgSwatch.toFloat(), 0.0f);
-        g.setColour (working.accent.withAlpha (0.5f));
-        g.drawRoundedRectangle (bgSwatch.toFloat().reduced (0.5f), 0.0f, 1.0f);
-        g.setFont (DysektLookAndFeel::makeFont (8.0f));
-        g.setColour (working.foreground.withAlpha (0.7f));
-        g.drawText ("BG", bgSwatch, juce::Justification::centred, false);
+        g.fillRect (area);
+        g.setColour (working.separator.withAlpha (0.7f));
+        g.drawRect (area, 1);
 
-        strip.removeFromLeft (6);
+        // Waveform stamp: waveform background, grid and signal line.
+        auto wave = area.removeFromTop (42).reduced (4, 3);
+        g.setColour (working.waveformBg);
+        g.fillRect (wave);
+        g.setColour (working.gridLine.withAlpha (0.8f));
+        for (int x = wave.getX() + 8; x < wave.getRight(); x += 12) g.drawVerticalLine (x, (float) wave.getY(), (float) wave.getBottom());
+        g.drawHorizontalLine (wave.getCentreY(), (float) wave.getX(), (float) wave.getRight());
+        juce::Path signal;
+        signal.startNewSubPath ((float) wave.getX(), (float) wave.getCentreY());
+        for (int x = wave.getX(); x < wave.getRight(); x += 3)
+            signal.lineTo ((float) x, (float) wave.getCentreY() + std::sin ((float) (x - wave.getX()) * 0.22f) * wave.getHeight() * 0.31f);
+        g.setColour (working.waveform);
+        g.strokePath (signal, juce::PathStrokeType (1.5f));
 
-        // Accent bar
-        auto accentBar = strip.removeFromLeft (48);
+        auto bottom = area.reduced (4, 2);
+        auto knob = bottom.removeFromLeft (42).reduced (2);
+        auto knobBounds = knob.toFloat();
+        auto centre = knobBounds.getCentre();
+        auto radius = juce::jmin (knobBounds.getWidth(), knobBounds.getHeight()) * 0.38f;
+        g.setColour (working.darkBar);
+        g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+        juce::Path arc;
+        arc.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, 2.35f, 5.20f, true);
         g.setColour (working.accent);
-        g.fillRoundedRectangle (accentBar.toFloat(), 0.0f);
-        g.setColour (juce::Colours::black.withAlpha (0.3f));
-        g.setFont (DysektLookAndFeel::makeFont (8.0f));
-        g.drawText ("ACCENT", accentBar, juce::Justification::centred, false);
+        g.strokePath (arc, juce::PathStrokeType (2.5f));
+        g.setColour (working.foreground);
+        g.drawLine (centre.x, centre.y, centre.x + radius * 0.55f, centre.y - radius * 0.38f, 1.5f);
 
-        strip.removeFromLeft (6);
+        auto button = bottom.removeFromLeft (56).reduced (2, 5);
+        g.setColour (working.button);
+        g.fillRect (button);
+        g.setColour (working.lockActive);
+        g.drawRect (button, 1);
+        g.setColour (working.foreground);
+        g.setFont (DysektLookAndFeel::makeFont (8.0f, true));
+        g.drawText ("LOCK", button, juce::Justification::centred, false);
 
-        // 16 slice swatches
-        int paletteSize = 16;
-        const float sw = juce::jmin (20.0f, (float) strip.getWidth() / juce::jmax (1, paletteSize));
-        float x = (float) strip.getX();
-        for (int i = 0; i < paletteSize && i < 16; ++i)
+        // Two 16-pad banks: slices 01–16 above 17–32.
+        const auto paletteArea = bottom.reduced (0, 2);
+        const int bankH = juce::jmax (3, paletteArea.getHeight() / 2);
+        const int swatchW = juce::jmax (4, paletteArea.getWidth() / 16);
+        for (int i = 0; i < ThemeData::kSlicePaletteSize; ++i)
         {
-            juce::Rectangle<float> r (x, (float) strip.getY(), sw - 2.0f, (float) strip.getHeight());
+            const int bank = i / 16;
+            const int column = i % 16;
+            auto swatch = juce::Rectangle<int> (paletteArea.getX() + column * swatchW,
+                                                 paletteArea.getY() + bank * bankH,
+                                                 swatchW - 1, bankH - 1);
             g.setColour (working.slicePalette[i]);
-            g.fillRoundedRectangle (r, 0.0f);
-            x += sw;
+            g.fillRect (swatch);
         }
+
+        if (pickModeActive)
+        {
+            g.setColour (working.accent.withAlpha (0.8f));
+            g.drawRect (previewStripBounds, 2);
+        }
+    }
+
+    void pickPreviewTarget (juce::Point<int> point)
+    {
+        auto area = previewStripBounds;
+        const auto wave = area.removeFromTop (42).reduced (4, 3);
+        juce::String key = "accent";
+        if (wave.contains (point))
+            key = point.getY() < wave.getCentreY() - 4 ? "waveformBg" : "waveform";
+        else
+        {
+            auto bottom = area.reduced (4, 2);
+            const auto knob = bottom.removeFromLeft (42);
+            const auto button = bottom.removeFromLeft (56);
+            if (button.contains (point)) key = "lockActive";
+            else if (! knob.contains (point))
+            {
+                const auto paletteArea = bottom.reduced (0, 2);
+                const int bankH = juce::jmax (1, paletteArea.getHeight() / 2);
+                const int bank = juce::jlimit (0, 1, (point.y - paletteArea.getY()) / bankH);
+                const int column = juce::jlimit (0, 15, (point.x - paletteArea.getX()) * 16
+                                                      / juce::jmax (1, paletteArea.getWidth()));
+                key = "slice" + juce::String (bank * 16 + column + 1);
+            }
+        }
+        for (auto* row : rows)
+            if (row->key == key) { row->openPicker(); break; }
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ThemeEditorPanel)

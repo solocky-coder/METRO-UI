@@ -21,7 +21,18 @@ struct ThemeData
     juce::Colour buttonHover;
     juce::Colour separator;
 
-    juce::Colour slicePalette[16];
+    static constexpr int kSlicePaletteSize = 32;
+    juce::Colour slicePalette[kSlicePaletteSize] {};
+
+    // The second pad bank (17–32) inherits a slightly muted variation of the
+    // first bank by default. Themes may still override every swatch directly.
+    static void completeSlicePalette (ThemeData& theme)
+    {
+        for (int i = 16; i < kSlicePaletteSize; ++i)
+            theme.slicePalette[i] = theme.slicePalette[i - 16]
+                .withMultipliedSaturation (0.78f)
+                .withMultipliedBrightness (0.82f);
+    }
 
     static ThemeData darkTheme()
     {
@@ -57,6 +68,7 @@ struct ThemeData
         t.slicePalette[13]= juce::Colour (0xFF3ECEFF); // Steel Teal
         t.slicePalette[14]= juce::Colour (0xFFE3FF00); // Chartreuse
         t.slicePalette[15]= juce::Colour (0xFFA57CFF); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -96,6 +108,7 @@ struct ThemeData
         t.slicePalette[13] = juce::Colour (0xFF3CC8FF); // Steel Teal
         t.slicePalette[14] = juce::Colour (0xFFDBFF00); // Chartreuse
         t.slicePalette[15] = juce::Colour (0xFFA078FF); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -136,6 +149,7 @@ struct ThemeData
         t.slicePalette[13]= juce::Colour (0xFF38B8EA); // Steel Teal
         t.slicePalette[14]= juce::Colour (0xFFCAEA00); // Chartreuse
         t.slicePalette[15]= juce::Colour (0xFF9070EA); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -175,6 +189,7 @@ struct ThemeData
         t.slicePalette[13]= juce::Colour (0xFF3DC9FF); // Steel Teal
         t.slicePalette[14]= juce::Colour (0xFFDCFF00); // Chartreuse
         t.slicePalette[15]= juce::Colour (0xFF9C7BFF); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -214,6 +229,7 @@ struct ThemeData
         t.slicePalette[13]= juce::Colour (0xFF3DC9FF); // Steel Teal
         t.slicePalette[14]= juce::Colour (0xFFDFFF00); // Chartreuse
         t.slicePalette[15]= juce::Colour (0xFFA17BFF); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -253,6 +269,7 @@ struct ThemeData
         t.slicePalette[13]= juce::Colour (0xFF39C9FF); // Steel Teal
         t.slicePalette[14]= juce::Colour (0xFFDDFF00); // Chartreuse
         t.slicePalette[15]= juce::Colour (0xFF9573FF); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -294,6 +311,7 @@ struct ThemeData
         t.slicePalette[13] = juce::Colour (0xFF50C8FF); // Steel Teal
         t.slicePalette[14] = juce::Colour (0xFFD0FF00); // Chartreuse
         t.slicePalette[15] = juce::Colour (0xFFFF90D8); // Rose Quartz
+        completeSlicePalette (t);
         return t;
     }
 
@@ -333,6 +351,7 @@ struct ThemeData
         t.slicePalette[13] = juce::Colour (0xFF40A8D9); // Ice Blue
         t.slicePalette[14] = juce::Colour (0xFFA8D910); // Chartreuse
         t.slicePalette[15] = juce::Colour (0xFF9060D9); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -372,6 +391,7 @@ struct ThemeData
         t.slicePalette[13] = juce::Colour (0xFF5CFFCC); // Seafoam
         t.slicePalette[14] = juce::Colour (0xFFCCFF00); // Chartreuse
         t.slicePalette[15] = juce::Colour (0xFFAA70FF); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -414,6 +434,7 @@ struct ThemeData
         t.slicePalette[13] = juce::Colour (0xFF30B8FF); // Steel Teal
         t.slicePalette[14] = juce::Colour (0xFFC8FF00); // Chartreuse
         t.slicePalette[15] = juce::Colour (0xFF8060FF); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -453,6 +474,7 @@ struct ThemeData
         t.slicePalette[13] = juce::Colour (0xFF50D8FF); // Ice Blue
         t.slicePalette[14] = juce::Colour (0xFFC8FF00); // Chartreuse
         t.slicePalette[15] = juce::Colour (0xFFAA80FF); // Lavender
+        completeSlicePalette (t);
         return t;
     }
 
@@ -493,6 +515,7 @@ struct ThemeData
         t.slicePalette[13] = juce::Colour (0xFF50D8FF);
         t.slicePalette[14] = juce::Colour (0xFFC8FF00);
         t.slicePalette[15] = juce::Colour (0xFFAA80FF);
+        completeSlicePalette (t);
         return t;
     }
 
@@ -501,7 +524,12 @@ struct ThemeData
     // Palette lives in src/metro/MetroTheme.cpp; this just registers it with
     // the app's existing theme system so every panel picks it up via
     // getTheme(), same as every other theme below.
-    static ThemeData metroTheme() { return MetroTheme::build(); }
+    static ThemeData metroTheme()
+    {
+        auto t = MetroTheme::build();
+        completeSlicePalette (t);
+        return t;
+    }
 
     static juce::Colour parseHex (const juce::String& hex)
     {
@@ -555,7 +583,7 @@ struct ThemeData
             else if (key.startsWith ("slice"))
             {
                 int idx = key.substring (5).getIntValue() - 1;
-                if (idx >= 0 && idx < 16)
+                if (idx >= 0 && idx < kSlicePaletteSize)
                     t.slicePalette[idx] = parseHex (val);
             }
         }
@@ -585,7 +613,7 @@ struct ThemeData
         s << "button: " << colourToHex (button) << "\n";
         s << "buttonHover: " << colourToHex (buttonHover) << "\n";
         s << "separator: " << colourToHex (separator) << "\n";
-        for (int i = 0; i < 16; ++i)
+        for (int i = 0; i < kSlicePaletteSize; ++i)
             s << "slice" << (i + 1) << ": " << colourToHex (slicePalette[i]) << "\n";
         return s;
     }
