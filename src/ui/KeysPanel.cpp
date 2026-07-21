@@ -339,8 +339,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
         "        stroke-linecap='round'/>"
         "</svg>";
 
-    auto lockDrawable = std::unique_ptr<juce::Drawable> (
-        juce::Drawable::createFromSVG (*juce::XmlDocument::parse (kLockSvg)));
+    auto lockDrawable = juce::Drawable::createFromSVGString (kLockSvg);
     if (lockDrawable)
         lockDrawable->replaceColour (juce::Colours::white,
                                      theme.foreground.withAlpha (0.65f));
