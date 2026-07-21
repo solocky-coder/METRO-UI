@@ -221,6 +221,7 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
     };
     transport.setGain (0.8f);
     addChildComponent (volumeSlider);
+    volumeSlider.getProperties().set ("dysektThemeKey", "accent");
 
     // ── File name label ───────────────────────────────────────────────────────
     fileNameLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (19.5f)));
@@ -294,6 +295,7 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
             });
     };
     addAndMakeVisible (addBmBtn);
+    addBmBtn.getProperties().set ("dysektThemeKey", "button");
 
     // ── Internet Archive bookmarks ────────────────────────────────────────────
     addArchiveBtn.setButtonText ("IA");
@@ -303,6 +305,7 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
     addArchiveBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
     addArchiveBtn.onClick = [this] { showArchiveUrlDialog(); };
     addAndMakeVisible (addArchiveBtn);
+    addArchiveBtn.getProperties().set ("dysektThemeKey", "button");
 
     loadArchiveBookmarks();
     rebuildArchiveButtons();

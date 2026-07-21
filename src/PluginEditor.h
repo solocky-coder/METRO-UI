@@ -206,6 +206,28 @@ private:
     std::unique_ptr<MessageOverlay>    messageOverlay;   // themed replacement for AlertWindow::showMessageBoxAsync
     std::unique_ptr<ThemeEditorPanel>  themeEditorPanel;
 
+    // ── Theme Editor "PICK" mode ─────────────────────────────────────────
+    // A transparent, click-intercepting overlay covering the whole editor,
+    // shown only while the Theme Editor's PICK button is active. Lets the
+    // user click any widget in the *live* plugin UI to select the matching
+    // row in the Theme Editor's list, instead of only the small preview
+    // strip. Widgets opt in by tagging themselves with a "dysektThemeKey"
+    // component property (see components tagged in the constructor below).
+    struct ThemePickOverlay : public juce::Component
+    {
+        std::function<void (juce::Point<int>)> onPick;
+        ThemePickOverlay() { setMouseCursor (juce::MouseCursor::CrosshairCursor); }
+        void mouseDown (const juce::MouseEvent& e) override { if (onPick) onPick (e.getPosition()); }
+    };
+    std::unique_ptr<ThemePickOverlay> pickOverlay;
+
+    /// Resolves the theme key (e.g. "waveformBg", "slice7") represented by
+    /// whatever's under the given point, walking up from the hit-tested
+    /// component to find one tagged with a "dysektThemeKey" property.
+    /// PadGridView is special-cased so a click resolves to the specific
+    /// slice pad under the cursor rather than the whole grid.
+    juce::String resolveThemeKeyAt (juce::Component* hit, juce::Point<int> posInEditor);
+
     DysektLookAndFeel lnf;
     MetroLookAndFeel  metroLnf;   // swapped in via setLookAndFeel() only while theme == "metro"
 

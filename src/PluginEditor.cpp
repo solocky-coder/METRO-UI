@@ -49,7 +49,11 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  setLookAndFeel (&lnf);
 
  addAndMakeVisible (logoBar);
+ logoBar.getProperties().set ("dysektThemeKey", "header");
  addAndMakeVisible (headerBar);
+ headerBar.getProperties().set ("dysektThemeKey", "header");
+ for (auto* btn : { &headerBar.undoBtn, &headerBar.redoBtn, &headerBar.panicBtn, &headerBar.shortcutsBtn })
+ btn->getProperties().set ("dysektThemeKey", "button");
 
  addAndMakeVisible (sliceLcd);
  addAndMakeVisible (sliceWaveformLcd);
@@ -61,14 +65,19 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  addAndMakeVisible (*cf);
 
  addAndMakeVisible (sliceLane);
+ sliceLane.getProperties().set ("dysektThemeKey", "darkBar");
  addAndMakeVisible (waveformView);
+ waveformView.getProperties().set ("dysektThemeKey", "waveformBg");
  addAndMakeVisible (waveformOverview);
  addAndMakeVisible (sliceControlBar);
+ sliceControlBar.getProperties().set ("dysektThemeKey", "darkBar");
   browserPanel.setVisible (false);
  addChildComponent (browserPanel);
+ browserPanel.getProperties().set ("dysektThemeKey", "waveformBg");
  #if ! DYSEKT_STANDALONE
  mixerPanel.setVisible (false);
  addChildComponent (mixerPanel);
+ mixerPanel.getProperties().set ("dysektThemeKey", "waveformBg");
  eqPanel.setVisible (false);
  addChildComponent (eqPanel);
 #endif
@@ -973,11 +982,45 @@ void DysektEditor::toggleSeqPanel()
     repaint();
 }
 
+juce::String DysektEditor::resolveThemeKeyAt (juce::Component* hit, juce::Point<int> posInEditor)
+{
+    if (hit == nullptr || hit == this)
+        return "background";
+
+    if (hit == &padGridView || padGridView.isParentOf (hit))
+    {
+        const auto localPt = padGridView.getLocalPoint (this, posInEditor);
+        const int idx = padGridView.slicePadIndexAt (localPt);
+        if (idx >= 0)
+            return "slice" + juce::String (idx + 1);
+        return "darkBar"; // clicked the grid's own background, not a pad
+    }
+
+    if (hit == &mixerPanel || mixerPanel.isParentOf (hit))
+    {
+        const auto localPt = mixerPanel.getLocalPoint (this, posInEditor);
+        const auto key = mixerPanel.themeKeyAt (localPt);
+        if (key.isNotEmpty())
+            return key;
+        return "waveformBg"; // header / master row / outer shell — no specific cell
+    }
+
+    for (auto* c = hit; c != nullptr && c != this; c = c->getParentComponent())
+    {
+        const auto& key = c->getProperties()["dysektThemeKey"];
+        if (! key.isVoid())
+            return key.toString();
+    }
+    return {};
+}
+
 void DysektEditor::toggleThemeEditor()
 {
  if (themeEditorPanel != nullptr)
  {
  themeEditorPanel.reset();
+ if (pickOverlay != nullptr)
+ pickOverlay->setVisible (false);
  repaint();
  return;
  }
@@ -999,6 +1042,29 @@ void DysektEditor::toggleThemeEditor()
  };
 
  themeEditorPanel->onDismiss = [this] { toggleThemeEditor(); };
+
+ // PICK mode: let the user click a widget in the live plugin UI (not just
+ // the Theme Editor's own preview strip) to select the matching row.
+ themeEditorPanel->onPickModeChanged = [this] (bool active)
+ {
+ if (pickOverlay == nullptr)
+ {
+ pickOverlay = std::make_unique<ThemePickOverlay>();
+ addChildComponent (*pickOverlay);
+ pickOverlay->onPick = [this] (juce::Point<int> pos)
+ {
+ pickOverlay->setVisible (false);
+ auto* hit = getComponentAt (pos);
+ auto key = resolveThemeKeyAt (hit, pos);
+ pickOverlay->setVisible (true);
+ if (themeEditorPanel != nullptr && key.isNotEmpty())
+ themeEditorPanel->selectByKey (key);
+ };
+ }
+ pickOverlay->setBounds (getLocalBounds());
+ pickOverlay->setVisible (active);
+ if (active) pickOverlay->toFront (false);
+ };
 
  themeEditorPanel->show();
 }
@@ -1659,12 +1725,12 @@ void DysektEditor::resized()
  renameOverlay->setBounds (getLocalBounds());
  if (messageOverlay != nullptr)
  messageOverlay->setBounds (getLocalBounds());
- if (themeEditorPanel != nullptr)
- {
- constexpr int kThemeEditorRailWidth = 320;
- auto railBounds = getLocalBounds();
- themeEditorPanel->setBounds (railBounds.removeFromRight (juce::jmin (kThemeEditorRailWidth, railBounds.getWidth())));
- }
+ // ThemeEditorPanel is always a floating, independently-positioned and
+ // resizable desktop window (see ThemeEditorPanel::show()) — it manages
+ // its own bounds via restorePosition()/savePosition() and must not be
+ // resized/repositioned here using the editor's local coordinate space.
+ if (pickOverlay != nullptr)
+ pickOverlay->setBounds (getLocalBounds());
 }
 
 void DysektEditor::toggleMixerPanel()

@@ -205,6 +205,29 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
     return c;
 }
 
+juce::String MixerPanel::themeKeyAt (juce::Point<int> p) const
+{
+    const auto cell = hitTest (p);
+
+    // Knobs (drawKnobInRow) and the Mute/Chromatic badges are all drawn in
+    // the accent colour (see drawKnobInRow / drawMuteBadge / drawChroBadge).
+    switch (cell.col)
+    {
+        case ColGain: case ColPan: case ColFcut: case ColPres:
+        case ColMute: case ColChro: case ColLegato:
+            return "accent";
+        default:
+            break;
+    }
+
+    // A slice row's name/lane is tinted with that slice's own colour.
+    if (! cell.isMaster && ! cell.isSf2 && ! cell.isSf2Ch && ! cell.isSfz2
+        && cell.row >= 0 && cell.row < ThemeData::kSlicePaletteSize)
+        return "slice" + juce::String (cell.row + 1);
+
+    return {}; // master / SF-PLAYER rows / header — let the caller fall back
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Format helpers
 // ─────────────────────────────────────────────────────────────────────────────

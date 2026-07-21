@@ -99,6 +99,15 @@ public:
 
 private:
     // ── Column layout ─────────────────────────────────────────────────────
+public:
+    /// Resolves the theme colour key represented by whatever's under this
+    /// point (a slice row's colour tint, or a knob/badge drawn in accent),
+    /// for the Theme Editor's PICK mode (see PluginEditor::resolveThemeKeyAt).
+    /// Returns an empty string when nothing specific is identifiable, so the
+    /// caller can fall back to the panel's own general theme tag.
+    juce::String themeKeyAt (juce::Point<int> p) const;
+
+private:
     enum Col { ColGain=0, ColPan, ColFcut, ColPres, ColMute, ColChro, ColLegato, ColOut };
 
     // ── Hit-test cell ─────────────────────────────────────────────────────

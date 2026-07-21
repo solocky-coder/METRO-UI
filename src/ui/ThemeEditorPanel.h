@@ -25,6 +25,12 @@ public:
     std::function<void(const ThemeData&)>   onThemeChanged;
     std::function<void(const juce::String&)> onThemeSaved;
 
+    // Fired whenever PICK mode is toggled (true = active). The host
+    // (PluginEditor) wires this up so clicking a real widget in the live
+    // plugin UI — not just the preview strip — can select the matching
+    // row here via selectByKey().
+    std::function<void(bool)>               onPickModeChanged;
+
     // ctor takes the themes directory so it can enumerate existing themes
     // and write new .dsk files there.
     explicit ThemeEditorPanel (const juce::File& themesDirectory)
@@ -118,9 +124,19 @@ public:
             pickModeActive = pickBtn.getToggleState();
             setMouseCursor (pickModeActive ? juce::MouseCursor::CrosshairCursor
                                             : juce::MouseCursor::NormalCursor);
+            if (onPickModeChanged) onPickModeChanged (pickModeActive);
             repaint();
         };
         addAndMakeVisible (pickBtn);
+
+        // ── Resizing ───────────────────────────────────────────────────────
+        resizeConstrainer.setSizeLimits (kMinWidth, kMinHeight, kMaxWidth, kMaxHeight);
+
+        resizableBorder = std::make_unique<juce::ResizableBorderComponent> (this, &resizeConstrainer);
+        addAndMakeVisible (*resizableBorder);
+
+        resizableCorner = std::make_unique<juce::ResizableCornerComponent> (this, &resizeConstrainer);
+        addAndMakeVisible (*resizableCorner);
 
         // Seed with whatever theme is currently active
         loadFromTheme (getTheme());
@@ -129,6 +145,8 @@ public:
 
     ~ThemeEditorPanel() override
     {
+        if (pickModeActive && onPickModeChanged)
+            onPickModeChanged (false);
         if (isOnDesktop())
             savePosition();
     }
@@ -163,6 +181,20 @@ public:
     {
         const auto& T = getTheme();
         juce::ignoreUnused (T);
+
+        if (resizableBorder != nullptr)
+        {
+            resizableBorder->setBounds (getLocalBounds());
+            resizableBorder->toFront (false);
+        }
+        if (resizableCorner != nullptr)
+        {
+            constexpr int kCornerSize = 16;
+            resizableCorner->setBounds (getWidth() - kCornerSize, getHeight() - kCornerSize,
+                                         kCornerSize, kCornerSize);
+            resizableCorner->toFront (false);
+        }
+
         dialogBounds = getLocalBounds().reduced (4, 8);
         titleBarBounds = dialogBounds.withHeight (36);
         auto db = dialogBounds;
@@ -197,7 +229,11 @@ public:
 
         scrollArea = db.reduced (6, 4);
         const int rowH = 26, gap = 2;
-        const int cols = dialogBounds.getWidth() > 500 ? 2 : 1;
+        // Full-window mode can comfortably show several columns of rows —
+        // scale the column count with the available width rather than
+        // capping at 2, so resizing the window wider actually uses the space.
+        constexpr int kIdealColW = 260;
+        const int cols = juce::jlimit (1, 4, scrollArea.getWidth() / kIdealColW);
         const int colW = (scrollArea.getWidth() - 8 - 8 * (cols - 1)) / cols;
         const int totalRows = (int) rows.size();
         const int rowsPerCol = (totalRows + cols - 1) / cols;
@@ -279,6 +315,46 @@ public:
     // Expose working copy for external read
     ThemeData currentTheme() const { return working; }
 
+    // Select an element by its theme key — highlights the matching row and
+    // scrolls it into view. Called when the user clicks a row's name, or
+    // (via the host, in PICK mode) clicks the corresponding widget in the
+    // live plugin UI.
+    void selectByKey (const juce::String& key)
+    {
+        int foundIndex = -1;
+        for (int i = 0; i < rows.size(); ++i)
+        {
+            const bool match = rows[i]->key == key;
+            rows[i]->setSelected (match);
+            if (match) foundIndex = i;
+        }
+        if (foundIndex < 0) return;
+
+        // Scroll so the selected row is visible.
+        const int col      = foundIndex / juce::jmax (1, rowLayoutPerCol);
+        const int rowInCol  = foundIndex % juce::jmax (1, rowLayoutPerCol);
+        const int rowTop    = rowInCol * (rowLayoutH + rowLayoutGap);
+        const int rowBottom = rowTop + rowLayoutH;
+        juce::ignoreUnused (col);
+
+        const auto range = scrollbar.getCurrentRange();
+        double newStart = range.getStart();
+        if (rowTop < (int) range.getStart())
+            newStart = (double) rowTop;
+        else if (rowBottom > (int) range.getStart() + scrollArea.getHeight())
+            newStart = (double) (rowBottom - scrollArea.getHeight());
+
+        if (newStart != range.getStart())
+        {
+            scrollbar.setCurrentRangeStart (juce::jmax (0.0, newStart));
+            scrollOffset = scrollbar.getCurrentRangeStart();
+            layoutRows();
+        }
+
+        toFront (true);
+        repaint();
+    }
+
 private:
     // ── Inner types ───────────────────────────────────────────────────────
 
@@ -291,8 +367,10 @@ private:
         juce::Label     label;
         juce::TextButton swatch;
         juce::TextEditor hexEditor;
+        bool            selected = false;
 
         std::function<void(const juce::String&, juce::Colour)> onChange;
+        std::function<void(const juce::String&)>               onSelect;
 
         ColourRow (const juce::String& displayName, const juce::String& fieldKey)
             : key (fieldKey)
@@ -327,6 +405,13 @@ private:
 
         void openPicker() { launchColourPicker(); }
 
+        void setSelected (bool s)
+        {
+            if (selected == s) return;
+            selected = s;
+            repaint();
+        }
+
         void resized() override
         {
             auto area = getLocalBounds().reduced (2, 2);
@@ -339,8 +424,21 @@ private:
         void paint (juce::Graphics& g) override
         {
             const auto& T = getTheme();
-            g.setColour (T.button.withAlpha (0.4f));
+            g.setColour (T.button.withAlpha (selected ? 0.7f : 0.4f));
             g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
+            if (selected)
+            {
+                g.setColour (T.accent);
+                g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 0.0f, 1.5f);
+            }
+        }
+
+        // Clicking anywhere on the row that isn't the swatch or hex editor
+        // (i.e. the name/label area) selects this element so the user can
+        // see which one they're about to edit.
+        void mouseDown (const juce::MouseEvent&) override
+        {
+            if (onSelect) onSelect (key);
         }
 
     private:
@@ -388,8 +486,12 @@ private:
     };
 
     // ── Data ──────────────────────────────────────────────────────────────
-    static constexpr int kDefaultWidth = 340;
-    static constexpr int kDefaultHeight = 640;
+    static constexpr int kDefaultWidth  = 820;
+    static constexpr int kDefaultHeight = 760;
+    static constexpr int kMinWidth      = 380;
+    static constexpr int kMinHeight     = 420;
+    static constexpr int kMaxWidth      = 2200;
+    static constexpr int kMaxHeight     = 1800;
 
     juce::File   themesDir;
     ThemeData    working;
@@ -401,6 +503,10 @@ private:
     juce::Rectangle<int> dialogBounds, scrollArea, previewStripBounds, titleBarBounds;
     juce::ComponentDragger dragger;
     bool draggingTitleStrip = false;
+
+    juce::ComponentBoundsConstrainer  resizeConstrainer;
+    std::unique_ptr<juce::ResizableBorderComponent> resizableBorder;
+    std::unique_ptr<juce::ResizableCornerComponent> resizableCorner;
     int rowLayoutW = 200, rowLayoutH = 26, rowLayoutGap = 2;
     int rowLayoutCols = 2, rowLayoutPerCol = 15;
     int rowLayoutX0 = 0, rowLayoutY0 = 0;
@@ -421,6 +527,7 @@ private:
     void restorePosition()
     {
         int x = 120, y = 120;
+        int w = kDefaultWidth, h = kDefaultHeight;
         const auto file = getPositionFile();
 
         if (file.existsAsFile())
@@ -428,7 +535,13 @@ private:
             {
                 x = xml->getIntAttribute ("x", x);
                 y = xml->getIntAttribute ("y", y);
+                w = xml->getIntAttribute ("w", w);
+                h = xml->getIntAttribute ("h", h);
             }
+
+        w = juce::jlimit (kMinWidth, kMaxWidth, w);
+        h = juce::jlimit (kMinHeight, kMaxHeight, h);
+        setSize (w, h);
 
         const auto& displays = juce::Desktop::getInstance().getDisplays();
         const auto* display = displays.getDisplayForPoint (juce::Point<int> (x, y));
@@ -447,6 +560,8 @@ private:
         juce::XmlElement xml ("THEME_EDITOR_POSITION");
         xml.setAttribute ("x", getX());
         xml.setAttribute ("y", getY());
+        xml.setAttribute ("w", getWidth());
+        xml.setAttribute ("h", getHeight());
         xml.writeTo (file);
     }
 
@@ -459,6 +574,7 @@ private:
             applyColourToWorking (k, c);
             liveApply();
         };
+        row->onSelect = [this] (const juce::String& k) { selectByKey (k); };
         addAndMakeVisible (*row);
     }
 
@@ -469,15 +585,14 @@ private:
         const int cw  = rowLayoutW;
         const int x0  = rowLayoutX0;
         const int y0  = rowLayoutY0;
-        const int col1x = x0 + cw + 8;
-        int scroll = (int) scrollOffset;
+        const int scroll = (int) scrollOffset;
 
         for (int i = 0; i < rows.size(); ++i)
         {
             int col = i / rowLayoutPerCol;
             int row = i % rowLayoutPerCol;
-            int x   = (col == 0) ? x0 : col1x;
-            int y   = y0 + row * (rh + gap) - (col == 0 ? scroll : 0);
+            int x   = x0 + col * (cw + 8);
+            int y   = y0 + row * (rh + gap) - scroll;
             rows[i]->setBounds (x, y, cw, rh);
             rows[i]->setVisible (scrollArea.intersects (rows[i]->getBounds()));
         }

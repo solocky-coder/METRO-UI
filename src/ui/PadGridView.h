@@ -30,6 +30,11 @@ public:
     /// Call from the editor's timerCallback to refresh meters / selection.
     void repaintGrid();
 
+    /// Public wrapper around padIndexAt(), for the Theme Editor's PICK mode
+    /// (PluginEditor::resolveThemeKeyAt) so a click on a specific pad can be
+    /// mapped to its "sliceN" theme colour rather than the whole grid.
+    int slicePadIndexAt (juce::Point<int> p) const noexcept { return padIndexAt (p); }
+
     /// Mirror the editor's current waveformMode (0-7).
     void setWaveformMode (int mode) noexcept { waveformMode = mode; repaint(); }
 
