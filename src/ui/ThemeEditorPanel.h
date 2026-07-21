@@ -431,7 +431,7 @@ private:
             }
 
         const auto& displays = juce::Desktop::getInstance().getDisplays();
-        const auto* display = displays.getDisplayForPoint ({ x, y });
+        const auto* display = displays.getDisplayForPoint (juce::Point<int> (x, y));
         const auto area = display != nullptr ? display->userArea
                                              : juce::Rectangle<int> (0, 0, 1920, 1080);
         x = juce::jlimit (area.getX(), juce::jmax (area.getX(), area.getRight() - getWidth()), x);
