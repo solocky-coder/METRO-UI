@@ -258,21 +258,24 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
         const int key   = scanIntOpcode (chunk, "key");
         const int lokey = scanIntOpcode (chunk, "lokey");
         const int hikey = scanIntOpcode (chunk, "hikey");
-        const int pkc   = scanIntOpcode (chunk, "pitch_keycenter");
 
+        // NOTE: pitch_keycenter is deliberately NOT consulted here. It's a
+        // tuning/root-pitch opcode (where the sample plays back at its
+        // original recorded pitch), not a key-range limiter — a region can
+        // have pitch_keycenter=72 and still respond across the whole
+        // keyboard if no lokey/hikey/key opcode narrows it. An earlier
+        // version of this function used pitch_keycenter as a range fallback,
+        // which incorrectly collapsed such regions to a single matching
+        // note (e.g. "Scoop E1.wav" with only pitch_keycenter=72 present —
+        // matched note 72 alone instead of the correct full range),
+        // leaving every other note unmatched and stuck on the old
+        // random-per-slice colour. parseSfzZones() (ZONES view) never
+        // looked at pitch_keycenter either, so this keeps both parsers
+        // agreeing exactly on what "no key opcode" means.
         if (key >= 0)                       { rk.loKey = key;   rk.hiKey = key; }
         else if (lokey >= 0 || hikey >= 0)  { rk.loKey = lokey >= 0 ? lokey : 0;
                                                rk.hiKey = hikey >= 0 ? hikey : 127; }
-        else if (pkc >= 0)                   { rk.loKey = pkc;   rk.hiKey = pkc; }
         else                                  { rk.loKey = 0;     rk.hiKey = 127; }
-        // No key/lokey/hikey/pitch_keycenter opcode present — SFZ defaults
-        // this region to the full keyboard, same default parseSfzZones()
-        // uses for its ZONES-view row. Previously this branch left the
-        // range unset (-1), which meant a region relying on the full-range
-        // default (like a single-zone SFZ with no key opcodes at all) never
-        // matched any rendered note, so zoneColourArgb stayed 0 for every
-        // slice and the old random-per-slice colour silently won out —
-        // the exact bug this default fixes.
 
         result.push_back (rk);
     }
