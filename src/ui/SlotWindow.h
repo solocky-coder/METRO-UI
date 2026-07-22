@@ -4,6 +4,7 @@
 #include "MixerPanel.h"
 #include "GlobalEqPanel.h"
 #include "ArrangeView.h"
+#include "ThemePickOverlay.h"
 
 //==============================================================================
 //  SlotWindowContent  –  content component (no window chrome of its own)
@@ -24,6 +25,18 @@ public:
         addChildComponent (mixerPanel);
         addChildComponent (eqPanel);
         addChildComponent (arrangeView);
+
+        // Tag the two hosted panels that have a clear dominant background
+        // colour, for the Theme Editor's PICK mode (see resolveThemeKeyAt
+        // below and PluginEditor::resolveThemeKeyAt for the main-editor
+        // equivalent). mixerPanel additionally gets precise per-cell
+        // resolution via MixerPanel::themeKeyAt(), same as when it's docked
+        // in the main editor. arrangeView's track rows don't carry a theme
+        // colour distinct from waveformBg/accent/separator (which are all
+        // already reachable elsewhere), so it only gets the panel-level tag.
+        mixerPanel.getProperties().set  ("dysektThemeKey", "waveformBg");
+        eqPanel.getProperties().set     ("dysektThemeKey", "waveformBg");
+        arrangeView.getProperties().set ("dysektThemeKey", "waveformBg");
 
         configureViewButton (mixerButton, "MIXER");
         configureViewButton (arrangeButton, "ARRANGER");
@@ -68,6 +81,59 @@ public:
     /** Called only when the user selects a view from the window switcher. */
     std::function<void (Content)> onViewSelected;
 
+    // ── Theme Editor "PICK" mode ─────────────────────────────────────────
+    // slotWindow is a genuinely separate OS-level window (see SlotWindow's
+    // class comment), so it needs its own click-intercepting overlay — the
+    // main editor's pickOverlay can never see clicks landing in here.
+    // onKeyPicked is supplied once by the host (PluginEditor) and simply
+    // forwards to ThemeEditorPanel::selectByKey().
+    void setPickModeActive (bool active, std::function<void (const juce::String&)> onKeyPickedIn)
+    {
+        onKeyPicked = std::move (onKeyPickedIn);
+
+        if (pickOverlay == nullptr)
+        {
+            pickOverlay = std::make_unique<ThemePickOverlay>();
+            addChildComponent (*pickOverlay);
+            pickOverlay->onPick = [this] (juce::Point<int> pos)
+            {
+                pickOverlay->setVisible (false);
+                auto* hit = getComponentAt (pos);
+                auto key = resolveThemeKeyAt (hit, pos);
+                pickOverlay->setVisible (true);
+                if (onKeyPicked && key.isNotEmpty())
+                    onKeyPicked (key);
+            };
+        }
+
+        pickOverlay->setBounds (getLocalBounds());
+        pickOverlay->setVisible (active);
+        if (active) pickOverlay->toFront (false);
+    }
+
+    /// Resolves the theme key for whatever's under the point — mirrors
+    /// PluginEditor::resolveThemeKeyAt for the panels hosted in this window.
+    juce::String resolveThemeKeyAt (juce::Component* hit, juce::Point<int> posInEditor)
+    {
+        if (hit == nullptr || hit == this)
+            return {};
+
+        if (hit == &mixerPanel || mixerPanel.isParentOf (hit))
+        {
+            const auto localPt = mixerPanel.getLocalPoint (this, posInEditor);
+            const auto key = mixerPanel.themeKeyAt (localPt);
+            return key.isNotEmpty() ? key : "waveformBg";
+        }
+
+        for (auto* c = hit; c != nullptr && c != this; c = c->getParentComponent())
+        {
+            const auto& key = c->getProperties()["dysektThemeKey"];
+            if (! key.isVoid())
+                return key.toString();
+        }
+        return {};
+    }
+
     void resized() override
     {
         auto r = getLocalBounds();
@@ -93,6 +159,9 @@ public:
             switcher.removeFromLeft (4);
             arrangeButton.setBounds (switcher.removeFromLeft (arrangeWidth));
         }
+
+        if (pickOverlay != nullptr)
+            pickOverlay->setBounds (getLocalBounds());
     }
 
     void paint (juce::Graphics& g) override
@@ -138,6 +207,9 @@ private:
     juce::TextButton mixerButton;
     juce::TextButton arrangeButton;
     Content        current = Content::None;
+
+    std::unique_ptr<ThemePickOverlay> pickOverlay;
+    std::function<void (const juce::String&)> onKeyPicked;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SlotWindowContent)
 };
@@ -223,6 +295,12 @@ public:
     bool isShowingMixer()   const noexcept { return isVisible() && content.getContent() == SlotWindowContent::Content::Mixer; }
     bool isShowingEq()      const noexcept { return isVisible() && content.getContent() == SlotWindowContent::Content::Eq; }
     bool isShowingArrange() const noexcept { return isVisible() && content.getContent() == SlotWindowContent::Content::Arrange; }
+
+    /// Exposes the content component so the host can wire up the Theme
+    /// Editor's PICK mode (see SlotWindowContent::setPickModeActive) —
+    /// this window is a genuinely separate OS window, so it needs its own
+    /// independent pick overlay rather than sharing the main editor's.
+    SlotWindowContent& getContent() noexcept { return content; }
 
     /** Fired when the user hits the native X — lets PluginEditor reset
      *  activeSlot / header-button state to match (see PluginEditor.cpp). */

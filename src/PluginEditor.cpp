@@ -87,6 +87,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
 
  sfzPlayerDropdown.setVisible (false);
  addChildComponent (sfzPlayerDropdown);
+ sfzPlayerDropdown.keysPanel.getProperties().set ("dysektThemeKey", "accent");
  sfzPlayerDropdown.onFileLoaded = [this] (const juce::File&)
  {
      sfzPlayer2PanelRestored = false;
@@ -223,6 +224,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
     refreshZoneBuilderMatrix (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz, false);
 };
  addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
+ zoneBuilderKeysPanel.getProperties().set ("dysektThemeKey", "accent");
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
  // so the timer re-populates the zone matrix on the next completed load.
  sfzDropdown.onFileLoaded = [this] (const juce::File&)
@@ -1023,6 +1025,17 @@ juce::String DysektEditor::resolveThemeKeyAt (juce::Component* hit, juce::Point<
     return {};
 }
 
+#if DYSEKT_STANDALONE
+void DysektEditor::setSlotWindowPickModeActive (bool active)
+{
+    slotWindow.getContent().setPickModeActive (active, [this] (const juce::String& key)
+    {
+        if (themeEditorPanel != nullptr)
+            themeEditorPanel->selectByKey (key);
+    });
+}
+#endif
+
 void DysektEditor::toggleThemeEditor()
 {
  if (themeEditorPanel != nullptr)
@@ -1030,6 +1043,9 @@ void DysektEditor::toggleThemeEditor()
  themeEditorPanel.reset();
  if (pickOverlay != nullptr)
  pickOverlay->setVisible (false);
+ #if DYSEKT_STANDALONE
+ setSlotWindowPickModeActive (false);
+ #endif
  repaint();
  return;
  }
@@ -1073,6 +1089,10 @@ void DysektEditor::toggleThemeEditor()
  pickOverlay->setBounds (getLocalBounds());
  pickOverlay->setVisible (active);
  if (active) pickOverlay->toFront (false);
+
+ #if DYSEKT_STANDALONE
+ setSlotWindowPickModeActive (active);
+ #endif
  };
 
  themeEditorPanel->show();

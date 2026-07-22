@@ -20,6 +20,7 @@
 #include "ui/RenameOverlay.h"
 #include "ui/MessageOverlay.h"
 #include "ui/ThemeEditorPanel.h"
+#include "ui/ThemePickOverlay.h"
 #include "TrimSession.h"
 #include "ui/SliceLcdDisplay.h"
 #include "ui/SliceWaveformLcd.h"
@@ -213,12 +214,9 @@ private:
     // row in the Theme Editor's list, instead of only the small preview
     // strip. Widgets opt in by tagging themselves with a "dysektThemeKey"
     // component property (see components tagged in the constructor below).
-    struct ThemePickOverlay : public juce::Component
-    {
-        std::function<void (juce::Point<int>)> onPick;
-        ThemePickOverlay() { setMouseCursor (juce::MouseCursor::CrosshairCursor); }
-        void mouseDown (const juce::MouseEvent& e) override { if (onPick) onPick (e.getPosition()); }
-    };
+    // In standalone builds, slotWindow gets its own independent overlay
+    // (see SlotWindowContent) since it's a genuinely separate OS window —
+    // see wireUpPickModeForSlotWindow() in the .cpp.
     std::unique_ptr<ThemePickOverlay> pickOverlay;
 
     /// Resolves the theme key (e.g. "waveformBg", "slice7") represented by
@@ -227,6 +225,15 @@ private:
     /// PadGridView is special-cased so a click resolves to the specific
     /// slice pad under the cursor rather than the whole grid.
     juce::String resolveThemeKeyAt (juce::Component* hit, juce::Point<int> posInEditor);
+
+#if DYSEKT_STANDALONE
+    /// Mirrors the PICK-mode wiring above, but for slotWindow — a genuinely
+    /// separate OS-level window (Mixer/EQ/Arranger in standalone builds)
+    /// that the main editor's pickOverlay can never see clicks in. Installs
+    /// slotWindow.content's own pick overlay the first time PICK mode is
+    /// turned on, then just shows/hides it in step with the main one.
+    void setSlotWindowPickModeActive (bool active);
+#endif
 
     DysektLookAndFeel lnf;
     MetroLookAndFeel  metroLnf;   // swapped in via setLookAndFeel() only while theme == "metro"
