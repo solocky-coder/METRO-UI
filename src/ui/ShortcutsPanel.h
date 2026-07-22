@@ -21,6 +21,8 @@ public:
     void resized () override;
     bool keyPressed (const juce::KeyPress& key) override;
     void mouseDown  (const juce::MouseEvent& e) override;
+    void mouseWheelMove (const juce::MouseEvent& e,
+                         const juce::MouseWheelDetails& wheel) override;
 
     /// Called when the panel should be dismissed.
     std::function<void()> onDismiss;
@@ -57,6 +59,12 @@ private:
 
     std::vector<ShortcutCategory> categories;
     juce::String currentFilter;
+
+    // Shortcut reference viewport.  The reference remains readable at normal
+    // Windows sizes and can be scrolled when its full contents exceed the panel.
+    juce::Rectangle<int> shortcutsViewport;
+    int shortcutsScrollY = 0;
+    int shortcutsMaxScrollY = 0;
 
     juce::Rectangle<int> trimAlwaysRect, trimNeverRect, trimLongRect;
     juce::Rectangle<int> uiModeWaveRect, uiModeGridRect;
