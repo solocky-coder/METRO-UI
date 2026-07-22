@@ -43,7 +43,7 @@ public:
 
         // ── Title bar ────────────────────────────────────────────────────
         titleLabel.setText ("THEME EDITOR", juce::dontSendNotification);
-        titleLabel.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+        titleLabel.setFont (DysektLookAndFeel::makeFont (17.0f, true));
         titleLabel.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (titleLabel);
 
@@ -53,7 +53,7 @@ public:
 
         // ── Base theme selector ───────────────────────────────────────────
         baseLabel.setText ("BASE THEME:", juce::dontSendNotification);
-        baseLabel.setFont (DysektLookAndFeel::makeFont (10.0f));
+        baseLabel.setFont (DysektLookAndFeel::makeFont (13.0f));
         addAndMakeVisible (baseLabel);
 
         baseCombo.addItem ("(current)",  1);
@@ -64,11 +64,12 @@ public:
 
         // ── Theme name input ──────────────────────────────────────────────
         nameLabel.setText ("NAME:", juce::dontSendNotification);
-        nameLabel.setFont (DysektLookAndFeel::makeFont (10.0f));
+        nameLabel.setFont (DysektLookAndFeel::makeFont (13.0f));
         addAndMakeVisible (nameLabel);
 
         nameEditor.setMultiLine (false);
         nameEditor.setReturnKeyStartsNewLine (false);
+        nameEditor.setFont (DysektLookAndFeel::makeFont (13.0f));
         nameEditor.setText ("my-theme");
         nameEditor.onReturnKey = [this] { liveApply(); };
         nameEditor.onFocusLost = [this] { liveApply(); };
@@ -100,7 +101,7 @@ public:
 
         // ── Preview strip ─────────────────────────────────────────────────
         previewLabel.setText ("PREVIEW", juce::dontSendNotification);
-        previewLabel.setFont (DysektLookAndFeel::makeFont (10.0f));
+        previewLabel.setFont (DysektLookAndFeel::makeFont (13.0f));
         addAndMakeVisible (previewLabel);
 
         // ── Action buttons ────────────────────────────────────────────────
@@ -228,11 +229,11 @@ public:
         previewStripBounds = previewRow.reduced (0, 2);
 
         scrollArea = db.reduced (6, 4);
-        const int rowH = 26, gap = 2;
+        const int rowH = 34, gap = 3;
         // Full-window mode can comfortably show several columns of rows —
         // scale the column count with the available width rather than
         // capping at 2, so resizing the window wider actually uses the space.
-        constexpr int kIdealColW = 260;
+        constexpr int kIdealColW = 300;
         const int cols = juce::jlimit (1, 4, scrollArea.getWidth() / kIdealColW);
         const int colW = (scrollArea.getWidth() - 8 - 8 * (cols - 1)) / cols;
         const int totalRows = (int) rows.size();
@@ -376,7 +377,7 @@ private:
             : key (fieldKey)
         {
             label.setText (displayName, juce::dontSendNotification);
-            label.setFont (DysektLookAndFeel::makeFont (9.5f));
+            label.setFont (DysektLookAndFeel::makeFont (13.0f));
             label.setInterceptsMouseClicks (false, false);
             addAndMakeVisible (label);
 
@@ -386,7 +387,7 @@ private:
 
             hexEditor.setMultiLine (false);
             hexEditor.setInputRestrictions (7, "#0123456789abcdefABCDEF");
-            hexEditor.setFont (DysektLookAndFeel::makeFont (9.5f));
+            hexEditor.setFont (DysektLookAndFeel::makeFont (13.0f));
             hexEditor.onReturnKey = [this] { commitHex(); };
             hexEditor.onFocusLost = [this] { commitHex(); };
             addAndMakeVisible (hexEditor);
@@ -414,11 +415,11 @@ private:
 
         void resized() override
         {
-            auto area = getLocalBounds().reduced (2, 2);
-            label    .setBounds (area.removeFromLeft (90));
-            swatch   .setBounds (area.removeFromLeft (22));
-            area      .removeFromLeft (4);
-            hexEditor.setBounds (area.removeFromLeft (58));
+            auto area = getLocalBounds().reduced (3, 3);
+            label    .setBounds (area.removeFromLeft (108));
+            swatch   .setBounds (area.removeFromLeft (28));
+            area      .removeFromLeft (6);
+            hexEditor.setBounds (area.removeFromLeft (80));
         }
 
         void paint (juce::Graphics& g) override
@@ -488,7 +489,7 @@ private:
     // ── Data ──────────────────────────────────────────────────────────────
     static constexpr int kDefaultWidth  = 820;
     static constexpr int kDefaultHeight = 760;
-    static constexpr int kMinWidth      = 380;
+    static constexpr int kMinWidth      = 420;
     static constexpr int kMinHeight     = 420;
     static constexpr int kMaxWidth      = 2200;
     static constexpr int kMaxHeight     = 1800;
@@ -507,7 +508,7 @@ private:
     juce::ComponentBoundsConstrainer  resizeConstrainer;
     std::unique_ptr<juce::ResizableBorderComponent> resizableBorder;
     std::unique_ptr<juce::ResizableCornerComponent> resizableCorner;
-    int rowLayoutW = 200, rowLayoutH = 26, rowLayoutGap = 2;
+    int rowLayoutW = 240, rowLayoutH = 34, rowLayoutGap = 3;
     int rowLayoutCols = 2, rowLayoutPerCol = 15;
     int rowLayoutX0 = 0, rowLayoutY0 = 0;
     double scrollOffset = 0.0;
