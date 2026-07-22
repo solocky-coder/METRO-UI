@@ -264,8 +264,15 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
         else if (lokey >= 0 || hikey >= 0)  { rk.loKey = lokey >= 0 ? lokey : 0;
                                                rk.hiKey = hikey >= 0 ? hikey : 127; }
         else if (pkc >= 0)                   { rk.loKey = pkc;   rk.hiKey = pkc; }
-        // else: no key info — still keep this region's slot so index order
-        // matches parseSfzZones() exactly; it just won't match any note.
+        else                                  { rk.loKey = 0;     rk.hiKey = 127; }
+        // No key/lokey/hikey/pitch_keycenter opcode present — SFZ defaults
+        // this region to the full keyboard, same default parseSfzZones()
+        // uses for its ZONES-view row. Previously this branch left the
+        // range unset (-1), which meant a region relying on the full-range
+        // default (like a single-zone SFZ with no key opcodes at all) never
+        // matched any rendered note, so zoneColourArgb stayed 0 for every
+        // slice and the old random-per-slice colour silently won out —
+        // the exact bug this default fixes.
 
         result.push_back (rk);
     }
