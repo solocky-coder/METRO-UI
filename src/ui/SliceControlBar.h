@@ -45,6 +45,14 @@ public:
     /// Fired when the user clicks the SAVE button.
     std::function<void()> onZoneSaveRequested;
 
+    /// Resolves the theme colour key represented by whatever's under this
+    /// point (a knob's accent fill, the lock icon, a toggle badge...), for
+    /// the Theme Editor's PICK mode (see PluginEditor::resolveThemeKeyAt).
+    /// Returns an empty string when the cell under the point has no theme
+    /// colour of its own — e.g. the ADSR knobs are drawn in fixed, non-theme
+    /// colours by design — so the caller can fall back to a general tag.
+    juce::String themeKeyAt (juce::Point<int> p) const;
+
     // Selected-zone readout — SFZ-PLAYER ZONES view only. Driven externally
     // by the editor from KeysPanel::onRowClicked / onZoneEdited on the zone
     // builder matrix, since pending zones aren't slices and have no

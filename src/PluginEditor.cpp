@@ -1005,6 +1005,15 @@ juce::String DysektEditor::resolveThemeKeyAt (juce::Component* hit, juce::Point<
         return "waveformBg"; // header / master row / outer shell — no specific cell
     }
 
+    if (hit == &sliceControlBar || sliceControlBar.isParentOf (hit))
+    {
+        const auto localPt = sliceControlBar.getLocalPoint (this, posInEditor);
+        const auto key = sliceControlBar.themeKeyAt (localPt);
+        if (key.isNotEmpty())
+            return key;
+        return "darkBar"; // ADSR knobs, or empty space between cells
+    }
+
     for (auto* c = hit; c != nullptr && c != this; c = c->getParentComponent())
     {
         const auto& key = c->getProperties()["dysektThemeKey"];

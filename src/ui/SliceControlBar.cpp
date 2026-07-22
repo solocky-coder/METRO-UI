@@ -71,6 +71,39 @@ bool SliceControlBar::isSfzPlayer2Mode() const noexcept
     return processor.activeUiTab.load (std::memory_order_relaxed) == 1;
 }
 
+juce::String SliceControlBar::themeKeyAt (juce::Point<int> p) const
+{
+    // PADS/WAVE/ZONES/SAVE toggle buttons — drawn from theme.button (see
+    // drawViewToggleButtons) — aren't part of the `cells` vector below.
+    if (padToggleBtnArea.contains (p) || waveToggleBtnArea.contains (p)
+        || zoneToggleBtnArea.contains (p) || zoneSaveBtnArea.contains (p))
+        return "button";
+
+    for (const auto& c : cells)
+    {
+        if (! juce::Rectangle<int> (c.x, c.y, c.w, c.h).contains (p))
+            continue;
+
+        if (c.isLockIcon)
+            return "lockActive";
+
+        // ADSR/Hold knobs keep a fixed, non-theme identity colour by design
+        // (see adsrTintForField) — they have no theme colour to pick.
+        using F = DysektProcessor;
+        if (c.fieldId == F::FieldAttack || c.fieldId == F::FieldDecay
+            || c.fieldId == F::FieldSustain || c.fieldId == F::FieldRelease
+            || c.fieldId == F::FieldHold)
+            return {};
+
+        // Every other interactive cell — knobs (PITCH/TUNE/STRETCH/GAIN/PAN/
+        // OUT MAIN), the MARKER slider, the CHRO/LGTO badges, and the START/
+        // END MIDI-learn buttons — is drawn in theme.accent.
+        return "accent";
+    }
+
+    return {}; // empty space between cells — let the caller fall back
+}
+
 void SliceControlBar::setSfzZoneSummary (int zoneIndex, const juce::String& name,
                                          int loKey, int hiKey, int rootPitch,
                                          float tuneCents, float pan, float volDb, float releaseSec, bool isLooped)
