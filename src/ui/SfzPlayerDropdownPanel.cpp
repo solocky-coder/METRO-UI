@@ -5,6 +5,7 @@
 #include "DysektLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
+#include "../audio/SfzZoneColours.h"
 #include <set>
 #include <algorithm>
 
@@ -1476,12 +1477,11 @@ float SfzPlayerDropdownPanel::normToFine  (float n)        const { return n * 20
 
 static juce::Colour zoneColourDP (int index)
 {
-    static const juce::Colour palette[] = {
-        juce::Colour (0xFF4FC3F7), juce::Colour (0xFF81C784), juce::Colour (0xFFFFB74D),
-        juce::Colour (0xFFE57373), juce::Colour (0xFFBA68C8), juce::Colour (0xFF4DD0E1),
-        juce::Colour (0xFFF06292), juce::Colour (0xFFA1887F),
-    };
-    return palette[index % 8];
+    // Uses the same 32-colour palette (and the same per-index hash) as
+    // SoundFontLoader's note-slice colouring, so the ZONES list here and
+    // the waveform strip's slice colours always agree — see
+    // SfzZoneColours.h for why this can't just be "random per load".
+    return SfzZoneColours::zoneColour (index);
 }
 
 std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juce::File& f)

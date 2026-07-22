@@ -2915,12 +2915,21 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                       && desc.loopStart > desc.startSample
                                       && desc.loopEnd <= desc.endSample);
 
+                // Zero means "no region matched" (see SoundFontLoader Step 3d) —
+                // leave Slice's own random default colour in that case rather
+                // than painting everything black.
+                const bool hasZoneColour = (desc.zoneColourArgb != 0);
+
                 if (! hasLoop)
                 {
                     // No (valid) loop region for this note — plain one-shot slice.
                     int idx = sliceManager2.createSlice (desc.startSample, desc.endSample);
                     if (idx >= 0)
+                    {
                         sliceManager2.pinSliceMidiNote (idx, desc.midiNote);
+                        if (hasZoneColour)
+                            sliceManager2.getSlice (idx).colour = juce::Colour (desc.zoneColourArgb);
+                    }
                     continue;
                 }
 
@@ -2943,12 +2952,22 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // Tail is intentionally left unpinned (midiMap never
                     // points to it) and marked as the actual loop region.
                     sliceManager2.getSlice (tailIdx).loopMode = 1;   // forward loop, whole-slice
+
+                    if (hasZoneColour)
+                    {
+                        // Head + tail belong to the same zone — same colour
+                        // on both so the loop-split doesn't look like two zones.
+                        sliceManager2.getSlice (headIdx).colour = juce::Colour (desc.zoneColourArgb);
+                        sliceManager2.getSlice (tailIdx).colour = juce::Colour (desc.zoneColourArgb);
+                    }
                 }
                 else if (headIdx >= 0)
                 {
                     // Tail creation failed (cap reached) — fall back to a
                     // plain one-shot head so the note still plays something.
                     sliceManager2.pinSliceMidiNote (headIdx, desc.midiNote);
+                    if (hasZoneColour)
+                        sliceManager2.getSlice (headIdx).colour = juce::Colour (desc.zoneColourArgb);
                 }
             }
 

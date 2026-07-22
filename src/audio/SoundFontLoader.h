@@ -34,6 +34,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "SampleData.h"   // for INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+#include "SfzZoneColours.h"
 
 #if DYSEKT_HAS_SFIZZ
   #include "../../sfizz/src/sfizz.h"
@@ -106,6 +107,15 @@ struct SfzSliceDescriptor
     int midiNote    = 36;
     int loopStart   = -1;   // -1 = no loop; sample offset within the concatenated buffer
     int loopEnd     = -1;
+
+    // ARGB colour of the <region>/zone this note belongs to (SfzPlayer2
+    // target only; 0 = "unset", meaning the consumer should fall back to
+    // its own default). Populated in finishAndPost() via
+    // SfzZoneColours::zoneColourArgb(), matched by MIDI key range against
+    // parseSfzAllRegionKeyRanges(). Stored as a raw ARGB uint32 rather than
+    // juce::Colour so this POD struct stays trivially copyable across the
+    // background-thread → processBlock hand-off.
+    juce::uint32 zoneColourArgb = 0;
 };
 
 // Heap-allocated payload posted via pendingSfzSlices atomic.

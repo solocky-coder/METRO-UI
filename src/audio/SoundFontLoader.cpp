@@ -184,6 +184,95 @@ static std::vector<SfzRegionLoop> parseSfzPerRegionLoopPoints (const juce::File&
     return result;
 }
 
+// =============================================================================
+//  parseSfzAllRegionKeyRanges — like parseSfzPerRegionLoopPoints above, but
+//  keeps EVERY <region> block (not just ones defining a valid loop), since
+//  colouring needs to cover one-shot zones too. Regions are returned in the
+//  same top-to-bottom file order used by
+//  SfzPlayerDropdownPanel::parseSfzZones(), so index i here refers to the
+//  same region as index i there — which is what lets
+//  SfzZoneColours::zoneColour(i) produce matching colours in both places
+//  without the two parsers needing to talk to each other. See
+//  SfzZoneColours.h for the full rationale.
+// =============================================================================
+struct SfzRegionKeyRange
+{
+    int loKey = -1, hiKey = -1;   // inclusive MIDI key range this region covers
+};
+
+static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::File& sfzFile)
+{
+    std::vector<SfzRegionKeyRange> result;
+    if (sfzFile.getFileExtension().toLowerCase() != ".sfz")
+        return result;
+
+    const juce::String text = sfzFile.loadFileAsString();
+    if (text.isEmpty())
+        return result;
+
+    juce::Array<int> regionStarts;
+    {
+        int searchFrom = 0;
+        for (;;)
+        {
+            const int pos = text.indexOfIgnoreCase (searchFrom, "<region>");
+            if (pos < 0) break;
+            regionStarts.add (pos);
+            searchFrom = pos + 1;
+        }
+    }
+    if (regionStarts.isEmpty())
+        return result;
+
+    auto scanIntOpcode = [] (const juce::String& chunk, const char* name) -> int
+    {
+        juce::String key (name);
+        int searchFrom = 0;
+        for (;;)
+        {
+            int pos = chunk.indexOfIgnoreCase (searchFrom, key + "=");
+            if (pos < 0) return -1;
+            if (pos > 0 && juce::CharacterFunctions::isLetter (chunk[pos - 1]))
+            {
+                searchFrom = pos + 1;
+                continue;
+            }
+            int valStart = pos + key.length() + 1;
+            int valEnd   = valStart;
+            while (valEnd < chunk.length()
+                   && (juce::CharacterFunctions::isDigit (chunk[valEnd]) || chunk[valEnd] == '-'))
+                ++valEnd;
+            if (valEnd == valStart) return -1;
+            return chunk.substring (valStart, valEnd).getIntValue();
+        }
+    };
+
+    for (int i = 0; i < regionStarts.size(); ++i)
+    {
+        const int chunkStart = regionStarts[i];
+        const int chunkEnd   = (i + 1 < regionStarts.size()) ? regionStarts[i + 1] : text.length();
+        const juce::String chunk = text.substring (chunkStart, chunkEnd);
+
+        SfzRegionKeyRange rk;
+
+        const int key   = scanIntOpcode (chunk, "key");
+        const int lokey = scanIntOpcode (chunk, "lokey");
+        const int hikey = scanIntOpcode (chunk, "hikey");
+        const int pkc   = scanIntOpcode (chunk, "pitch_keycenter");
+
+        if (key >= 0)                       { rk.loKey = key;   rk.hiKey = key; }
+        else if (lokey >= 0 || hikey >= 0)  { rk.loKey = lokey >= 0 ? lokey : 0;
+                                               rk.hiKey = hikey >= 0 ? hikey : 127; }
+        else if (pkc >= 0)                   { rk.loKey = pkc;   rk.hiKey = pkc; }
+        // else: no key info — still keep this region's slot so index order
+        // matches parseSfzZones() exactly; it just won't match any note.
+
+        result.push_back (rk);
+    }
+
+    return result;
+}
+
 
 // =============================================================================
 //  SF2 binary SHDR parser  (SF2 files only)
@@ -835,6 +924,34 @@ private:
                         desc.loopEnd   = bufEnd;
                     }
                     break;   // first matching region wins
+                }
+            }
+        }
+
+        // ── Step 3d: per-zone colour for SfzPlayer2 target ──────────────────────
+        // Stamp each note-slice with the ARGB colour of the <region> it came
+        // from, so the SFZ-PLAYER waveform strip visually groups slices by
+        // zone the same way the ZONES view (KeysPanel, via
+        // SfzPlayerDropdownPanel::parseSfzZones) already colours its rows.
+        // Region index here must walk <region> blocks in the same top-to-
+        // bottom file order parseSfzZones() uses, so index i means the same
+        // region in both places — see SfzZoneColours.h for why colour is a
+        // pure function of that index rather than something handed across
+        // threads.
+        if (target == SoundFontLoadTarget::SfzPlayer2
+            && file.getFileExtension().toLowerCase() == ".sfz")
+        {
+            const auto regionRanges = parseSfzAllRegionKeyRanges (file);
+            for (auto& desc : payload->slices)
+            {
+                for (int i = 0; i < (int) regionRanges.size(); ++i)
+                {
+                    const auto& rk = regionRanges[(size_t) i];
+                    if (rk.loKey < 0 || desc.midiNote < rk.loKey || desc.midiNote > rk.hiKey)
+                        continue;
+
+                    desc.zoneColourArgb = SfzZoneColours::zoneColourArgb (i);
+                    break;   // first matching region wins (matches Step 3c's rule)
                 }
             }
         }
