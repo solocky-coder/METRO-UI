@@ -457,6 +457,66 @@ bool SfzFileBrowser::extractZipEntryToTemp (const juce::File& zipFile, const juc
     return true;
 }
 
+bool SfzFileBrowser::extractSfzFolderToTemp (const juce::File& zipFile, const juce::String& entryPath,
+                                              juce::File& outTempFile)
+{
+    juce::ZipFile zip (zipFile);
+
+    // Containing folder of the .sfz entry inside the archive, e.g.
+    // "Kits/Grand Piano/" for "Kits/Grand Piano/piano.sfz", or "" if the
+    // .sfz sits at the archive root. Every sample/#include reference in the
+    // .sfz is resolved relative to this folder, so everything under it needs
+    // to land on disk with the same relative layout for sfizz to find it.
+    const int lastSlash  = entryPath.lastIndexOfChar ('/');
+    const auto folderPfx = lastSlash >= 0 ? entryPath.substring (0, lastSlash + 1) : juce::String();
+
+    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                       .getChildFile ("DYSEKT-SF_zip_extract")
+                       .getChildFile ("sfz_" + juce::String (juce::Time::getCurrentTime().toMilliseconds()));
+    if (! tempDir.createDirectory())
+        return false;
+
+    bool sfzWritten = false;
+    juce::File sfzOut;
+
+    for (int i = 0; i < zip.getNumEntries(); ++i)
+    {
+        const auto* entry = zip.getEntry (i);
+        if (entry == nullptr) continue;
+
+        const auto path = entry->filename.replaceCharacter ('\\', '/');
+        if (! path.startsWith (folderPfx)) continue;      // outside this .sfz's folder
+        if (path.endsWithChar ('/')) continue;             // directory entry, nothing to write
+
+        const auto rel = path.substring (folderPfx.length());
+        if (rel.isEmpty()) continue;
+
+        const auto destFile = tempDir.getChildFile (rel);
+        if (! destFile.getParentDirectory().createDirectory())
+            continue;
+
+        std::unique_ptr<juce::InputStream> in (zip.createStreamForEntry (i));
+        if (in == nullptr) continue;
+
+        std::unique_ptr<juce::FileOutputStream> out (destFile.createOutputStream());
+        if (out == nullptr) continue;
+
+        out->writeFromInputStream (*in, -1);
+        out->flush();
+
+        if (path == entryPath)
+        {
+            sfzOut     = destFile;
+            sfzWritten = true;
+        }
+    }
+
+    if (! sfzWritten) return false;
+
+    outTempFile = sfzOut;
+    return true;
+}
+
 void SfzFileBrowser::setRootDirectory (const juce::File& dir)
 {
     navigateTo (dir);
@@ -610,7 +670,19 @@ void SfzFileBrowser::loadRow (int row)
         case BrowserRow::Kind::ZipFile:
         {
             juce::File extracted;
-            if (extractZipEntryToTemp (activeZipFile, r.zipPath, extracted) && onFileChosen)
+            const bool isSfz = r.zipPath.endsWithIgnoreCase (".sfz");
+
+            // .sfz files reference sample audio (and sometimes sibling .sfz
+            // fragments via #include) by path relative to their own folder,
+            // so the whole folder has to come out of the archive together —
+            // a lone .sfz text file with no samples next to it won't load
+            // anything. .sf2 is a single self-contained binary, so the plain
+            // single-entry extraction is still correct there.
+            const bool ok = isSfz
+                ? extractSfzFolderToTemp (activeZipFile, r.zipPath, extracted)
+                : extractZipEntryToTemp  (activeZipFile, r.zipPath, extracted);
+
+            if (ok && onFileChosen)
                 onFileChosen (extracted);
             return;
         }

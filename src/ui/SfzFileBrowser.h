@@ -83,6 +83,16 @@ private:
     bool extractZipEntryToTemp (const juce::File& zipFile, const juce::String& entryPath,
                                  juce::File& outTempFile);
 
+    // .sfz text files reference sample audio via paths relative to the .sfz
+    // file's own folder (and may #include sibling .sfz fragments). Extracting
+    // only the clicked entry (as extractZipEntryToTemp does) leaves those
+    // relative references dangling, so sfizz_load_file() finds no samples.
+    // This extracts every entry that shares the .sfz's containing folder in
+    // the archive, preserving relative layout, and returns the path to the
+    // re-homed .sfz inside that folder.
+    bool extractSfzFolderToTemp (const juce::File& zipFile, const juce::String& entryPath,
+                                  juce::File& outTempFile);
+
     struct BrowserRow
     {
         enum class Kind { Directory, File, ZipFolder, ZipFile };
