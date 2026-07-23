@@ -15,6 +15,7 @@
  * ───────────────────
  *   https://archive.org/details/IDENTIFIER          single item
  *   https://archive.org/details/COLLECTION_ID       collection
+ *   https://archive.org/download/IDENTIFIER          item download URL
  *   IDENTIFIER                                       bare identifier
  */
 class ArchiveIntegration
