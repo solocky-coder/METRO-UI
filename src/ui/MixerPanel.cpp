@@ -58,11 +58,27 @@ int MixerPanel::sf2ChRowY (int chRowIdx) const
 // ─────────────────────────────────────────────────────────────────────────────
 int MixerPanel::sfz2TotalH() const
 {
-    // A mixer track for the SFZ-Player (sfzPlayer2, the real .sfz-file engine)
-    // only takes up space once a .sfz file is actually loaded — this is what
-    // makes the row appear automatically the moment a file is loaded, and
-    // disappear again once nothing is loaded, matching the SF-PLAYER section.
-    return processor.sfzPlayer2.isLoaded() ? kSf2RowH : 0;
+    // A mixer track for the SFZ-Player row only takes up space once a .sfz
+    // file is actually loaded — this is what makes the row appear
+    // automatically the moment a file is loaded, and disappear again once
+    // nothing is loaded, matching the SF-PLAYER section.
+    //
+    // This used to gate on processor.sfzPlayer2.isLoaded(), but that flag
+    // is flipped inside SfzPlayer::applyPendingLoad(), which only runs at
+    // the top of SfzPlayer::process() -- and sfzPlayer2.process() is never
+    // called anywhere in DysektProcessor::processBlock(). The SFZ-PLAYER
+    // tab's actual playback path is sliceManager2 + voicePool2 (see
+    // PluginProcessor.h's note on sliceManager2/voicePool2 and
+    // browserPanel.onLoadRequest's "sfzPlayer2 (never .process()'d)"
+    // comment) -- sfzPlayer2.isLoaded() was therefore permanently false
+    // and this row could never appear. Gate on sliceManager2's own
+    // published slice count instead, which is what's actually populated
+    // once the async render (loadSoundFontAsync -> SoundFontLoader)
+    // completes.
+    const auto& snap2 = processor.getUiSliceSnapshot2();
+    const int   n     = snap2.numSlices;
+    processor.releaseUiSliceSnapshot2();
+    return n > 0 ? kSf2RowH : 0;
 }
 
 int MixerPanel::sfz2RowY() const
@@ -1258,7 +1274,7 @@ void MixerPanel::paint (juce::Graphics& g)
         drawSliceRow (g, rowY (i), i, i == snap.selectedSlice);
 
     drawSf2Row    (g, sf2RowY());
-    if (processor.sfzPlayer2.isLoaded())
+    if (sfz2TotalH() > 0)
         drawSfz2Row (g, sfz2RowY());
     drawMasterRow (g, masterRowY());
 
