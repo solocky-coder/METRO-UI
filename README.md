@@ -1,1 +1,12 @@
-[DYSEKT-SF_User_Manual_Expanded_color_matched.pdf](https://github.com/user-attachments/files/30316649/DYSEKT-SF_User_Manual_Expanded_color_matched.pdf)
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/e1f3b6ae-1dfa-465d-b2c9-d5a0f4472fde" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/e76e47a7-67bc-4a10-a849-9fb87793f6a4" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/67845658-6d44-498f-bb2f-c72e74c2c1d3" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/4568c61b-27bd-4b0f-9a19-58b86ce7daa4" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/e5efb07b-74ed-4478-b744-caab6b553868" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/69ee0a26-142e-4782-9221-cc410a26c3d7" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/5f775322-6cff-452d-a93a-7720d348ed0b" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/4861dffc-a8b3-4192-9250-b3ad75dacb49" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/4128f06d-f81c-4c7d-900b-85ca175d4654" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/90912bac-6c5b-49fe-9e94-5b5c87e28a4b" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/6969b2ca-10f7-4e34-af84-592695377f49" />
+<img width="1650" height="1275" alt="Image" src="https://github.com/user-attachments/assets/abcdc355-d3f8-4881-8db9-b89ad384799d" />
