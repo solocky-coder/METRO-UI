@@ -1507,7 +1507,10 @@ void WaveformView::filesDropped (const juce::StringArray& files, int, int)
         // SF2-PLAYER tab: only .sf2 accepted; routes to its own sampleData3/
         // previewZones3 pipeline via SoundFontLoadTarget::SfPlayer.
         if (isSfzPlayer2Tab && ext == ".sfz")
+        {
             processor.loadSoundFontAsync (f, SoundFontLoadTarget::SfzPlayer2);
+            if (onSfzPlayerFileDropped) onSfzPlayerFileDropped (f);
+        }
         else if (isSfPlayerTab && ext == ".sf2")
             processor.loadSoundFontAsync (f, SoundFontLoadTarget::SfPlayer);
  }

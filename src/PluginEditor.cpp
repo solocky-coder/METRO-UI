@@ -396,6 +396,8 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              processor.sfzPlayer2.loadFile (f, processor.fileLoadPool);
              processor.loadSoundFontAsync (f, SoundFontLoadTarget::SfzPlayer2);   // waveform preview -> sampleData2
 
+             offerDrumKitAutoRouting (f);
+
             #if DYSEKT_STANDALONE
              // Auto-create/update the SFZ-Player's Arranger sequencer track the
              // moment a file is loaded — mirrors the wiring already present on
@@ -444,6 +446,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      if (ext != ".sfz" && ext != ".sf2")
          showTrimDialog (f);
  };
+ waveformView.onSfzPlayerFileDropped = [this] (const juce::File& f) { offerDrumKitAutoRouting (f); };
  waveformView.onShortcutsToggle = [this] { toggleShortcutsPanel(); };
  waveformView.onRenameRequest = [this] (int sliceIdx, const juce::String& currentName)
  {
@@ -2401,6 +2404,46 @@ void DysektEditor::refreshZoneBuilderMatrix (const juce::File& sfzFile, bool cle
         zoneBuilderKeysPanel.clearKeyzones();
     if (clearSummary)
         sliceControlBar.clearSfzZoneSummary();
+}
+
+// Drum-kit detection: offer to auto-assign each zone its own output bus
+// (kick/snare/hats etc. to separate DAW channels) rather than leaving
+// everything summed into Main, which is only ever correct for a
+// single-instrument SFZ (piano, strings, layered patches). See
+// SfzLayoutClassifier.h for the heuristic and its caveats -- this is a
+// suggestion the user confirms, never a silent decision, since the
+// heuristic isn't airtight either way. Called from every load path that
+// can put a .sfz into sfzPlayer2: browserPanel.onLoadRequest (file
+// browser) and waveformView.onSfzPlayerFileDropped (drag-and-drop onto
+// the waveform view). Note: ui/SFZWaveformView.cpp has its own
+// filesDropped() -> loadSoundFontAsync(SfzPlayer2) call, but that
+// component isn't instantiated anywhere in the editor, so it's dead code
+// and not a live drop path -- nothing to wire there.
+void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
+{
+    const auto zones = SfzPlayerDropdownPanel::parseSfzZones (sfzFile);
+    const auto classification = SfzLayoutClassifier::classify (zones);
+    // Require a few zones before bothering the user -- a 2-zone "kit"
+    // isn't worth a prompt even if the heuristic fires.
+    if (! classification.isPercussive || classification.numZones < 3)
+        return;
+
+    confirmOverlay = std::make_unique<ConfirmOverlay> (
+        "Drum Kit Detected",
+        juce::String (classification.numZones) + " zones look like separate one-shot "
+        "hits (kick/snare/hats-style). Auto-assign each to its own output bus?",
+        "Assign",
+        "Skip");
+    addAndMakeVisible (*confirmOverlay);
+    confirmOverlay->setBounds (getLocalBounds());
+    confirmOverlay->toFront (true);
+    const int numZones = classification.numZones;
+    confirmOverlay->onResult = [this, numZones] (bool assign)
+    {
+        confirmOverlay.reset();
+        if (assign)
+            new SfzDrumKitBusApplier (processor, numZones);   // self-deleting, see header
+    };
 }
 
 void DysektEditor::openZoneBuilderAddZone()

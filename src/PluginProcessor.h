@@ -238,9 +238,9 @@ public:
          *  sliceManager2/voicePool2 (SFZ-PLAYER) instead of sliceManager/
          *  voicePool (the Slicer). Defaults to false so every pre-existing
          *  call site (which never sets this) is completely unaffected.
-         *  Only ADSR-related fields are meaningfully supported for engine 2
-         *  -- SFZ-PLAYER has no manual slicing, so slice-bounds/creation/
-         *  deletion commands are never sent with this flag set. */
+         *  ADSR fields and FieldOutputBus are meaningfully supported for
+         *  engine 2 -- SFZ-PLAYER has no manual slicing, so slice-bounds/
+         *  creation/deletion commands are never sent with this flag set. */
         bool targetEngine2 { false };
     };
 

@@ -17,6 +17,8 @@
 #include "ui/TrimDialog.h"
 #include "ui/MidiLearnDialog.h"
 #include "ui/ConfirmOverlay.h"
+#include "audio/SfzLayoutClassifier.h"
+#include "ui/SfzDrumKitBusApplier.h"
 #include "ui/RenameOverlay.h"
 #include "ui/MessageOverlay.h"
 #include "ui/ThemeEditorPanel.h"
@@ -188,6 +190,13 @@ private:
                                   int loKey, int hiKey, int rootKey);
     void hideZoneBuilderOverlays();
     void refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary = true); // re-parse + push into zoneBuilderKeysPanel
+    // Classifies an SFZ-PLAYER file's zones (see SfzLayoutClassifier.h) and,
+    // if it reads as a drum kit, shows a ConfirmOverlay offering to
+    // auto-assign each zone its own output bus. Shared by every load path
+    // that can put a .sfz into sfzPlayer2 (file browser, drag-and-drop onto
+    // the waveform view) so the prompt behaves identically regardless of how
+    // the file got loaded.
+    void offerDrumKitAutoRouting (const juce::File& sfzFile);
 
     void refreshZoneBuilderScratch();       // rebuild scratch file from pending zones, reload preview + matrix
     void commitZoneBuilderPendingZones();   // SAVE: write pending zones to zoneBuilderTargetSfz, clear staging

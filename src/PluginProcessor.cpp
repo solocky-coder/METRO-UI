@@ -198,7 +198,15 @@ DysektProcessor::DysektProcessor()
                           .withOutput ("Out 14", juce::AudioChannelSet::stereo(), false)
                           .withOutput ("Out 15", juce::AudioChannelSet::stereo(), false)
                           .withOutput ("Out 16", juce::AudioChannelSet::stereo(), false)
-                          .withOutput ("SF2 Player", juce::AudioChannelSet::stereo(), false)),
+                          .withOutput ("SF2 Player", juce::AudioChannelSet::stereo(), false)
+                          // Dedicated bus for the SFZ-PLAYER engine (sliceManager2/
+                          // voicePool2), mirroring "SF2 Player" above. Previously this
+                          // engine had no discrete output at all — every voice was
+                          // hardcoded into bus 0 regardless of its per-slice outputBus
+                          // field (which VoicePool::startVoice() already populates for
+                          // voicePool2, just like the main Slicer). See processBlock()'s
+                          // SFZ-PLAYER block for the routing logic.
+                          .withOutput ("SFZ Player", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "PARAMETERS", ParamLayout::createLayout())
 {
     masterVolParam = apvts.getRawParameterValue (ParamIds::masterVolume);
@@ -1278,11 +1286,13 @@ void DysektProcessor::handleCommand (const Command& cmd)
 
         case CmdSetSliceParam:
         {
-            // SFZ-PLAYER (targetEngine2): only ADSR fields are meaningfully
-            // supported, matching the per-zone ADSR editing already in use
-            // for SFZ-loaded files in the Slicer. Anything beyond ADSR sent
-            // with this flag set is a caller bug, but handled the same way
-            // (harmlessly mutates sliceManager2's slice) rather than crashing.
+            // SFZ-PLAYER (targetEngine2): ADSR fields and FieldOutputBus are
+            // meaningfully supported, matching the per-zone ADSR editing
+            // already in use for SFZ-loaded files in the Slicer, plus the
+            // per-voice output routing added for SFZ-PLAYER drum-kit layouts
+            // (see SfzLayoutClassifier.h). Anything else sent with this flag
+            // set is a caller bug, but handled the same way (harmlessly
+            // mutates sliceManager2's slice) rather than crashing.
             SliceManager& sm  = cmd.targetEngine2 ? sliceManager2 : sliceManager;
             int sel = sm.selectedSlice;
             if (sel >= 0 && sel < sm.getNumSlices())
@@ -1615,6 +1625,25 @@ void DysektProcessor::handleCommand (const Command& cmd)
 
         case CmdSelectSlice:
         {
+            // SFZ-PLAYER (targetEngine2): select on sliceManager2 directly.
+            // None of the Slicer-specific state reset below applies here --
+            // marker/CC-smoother pickup, live-drag tracking, etc. are all
+            // engine-1-only concepts (manual slice-bounds dragging and
+            // CC-driven start/end have no SFZ-PLAYER equivalent; see the
+            // note-on handler's identical unconditional
+            // sliceManager2.selectedSlice.store() a bit above for
+            // precedent). This branch was previously missing entirely --
+            // the Command struct's own doc comment claimed CmdSelectSlice
+            // honoured this flag, but the handler ignored it and always
+            // wrote to sliceManager, so no caller could ever select a
+            // sliceManager2 slice this way.
+            if (cmd.targetEngine2)
+            {
+                const int newSel2 = juce::jlimit (-1, juce::jmax (-1, sliceManager2.getNumSlices() - 1), cmd.intParam1);
+                sliceManager2.selectedSlice.store (newSel2, std::memory_order_relaxed);
+                break;
+            }
+
             const int newSel = juce::jlimit (-1, juce::jmax (-1, sliceManager.getNumSlices() - 1), cmd.intParam1);
             sliceManager.selectedSlice.store (newSel, std::memory_order_relaxed);
             // New slice selected — do NOT reset per-slice CC state.
@@ -3518,7 +3547,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     // Collect write pointers for all enabled output buses
-    static constexpr int kMaxBuses = 17;
+    static constexpr int kMaxBuses = 18;
     float* busL[kMaxBuses] = {};
     float* busR[kMaxBuses] = {};
     int numActiveBuses = 0;
@@ -3837,10 +3866,35 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     // no live synthesis engine, no chromatic mode, no manual slicing.
     // Note dispatch happens in processMidi2(); this block only renders
     // audio and updates peak meters.
+    //
+    // Per-voice outputBus routing: each Slice2/Voice2 already carries a real
+    // outputBus field (same Slice/Voice struct as the main Slicer; populated
+    // by VoicePool::startVoice() regardless of which SliceManager calls it —
+    // see VoicePool.cpp). Previously this block ignored it entirely and
+    // hardcoded every voice into bus 0. Routed properly now, matching the
+    // Slicer's own multi-out path: a voice whose target bus isn't active in
+    // the current host layout falls back to bus 0 rather than going silent.
+    // No per-zone UI currently sets outputBus for this engine (it defaults
+    // to 0 for every SFZ zone), so behaviour is unchanged until one exists —
+    // this just makes the engine capable of it.
+    //
+    // Engine-level bus parity with SF2-PLAYER: the whole engine's mix is
+    // also dual-written to the dedicated "SFZ Player" bus (index kSfz2Bus)
+    // when the host has it enabled, exactly like SF2-PLAYER's "SF2 Player"
+    // bus below — so SFZ-PLAYER can be pulled out to its own DAW channel
+    // even before any per-zone routing UI exists.
     {
         const int numSamples = buffer.getNumSamples();
         constexpr int previewIdx2 = VoicePool::kPreviewVoiceIndex;
+        constexpr int kSfz2Bus = 17;
         float pk2L = 0.0f, pk2R = 0.0f;   // block-max, for the overall SFZ-Player meter
+
+        // Render into a clean temp buffer first (needed for the dedicated-bus
+        // dual-write below) — mirrors the SF2-PLAYER/FluidSynth path's sfzBuf.
+        juce::AudioBuffer<float> sfz2Buf (2, numSamples);
+        sfz2Buf.clear();
+        float* sfz2L = sfz2Buf.getWritePointer (0);
+        float* sfz2R = sfz2Buf.getWritePointer (1);
 
         // Loop per-voice (instead of the batched processSample()) so each
         // voice's real rendered sample is available for metering — mirrors
@@ -3855,8 +3909,20 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             {
                 float vL = 0.0f, vR = 0.0f;
                 voicePool2.processVoiceSample (vi, sampleData2, currentSampleRate, vL, vR, &sliceManager2);
-                sL += vL;
-                sR += vR;
+
+                // Per-voice bus routing (see comment above the block).
+                int bus = voicePool2.getVoice (vi).outputBus;
+                if (bus < 0 || bus >= numActiveBuses || busL[bus] == nullptr) bus = 0;
+                if (bus == 0)
+                {
+                    sL += vL;
+                    sR += vR;
+                }
+                else
+                {
+                    if (busL[bus]) busL[bus][i] = sanitiseSample (busL[bus][i] + vL);
+                    if (busR[bus]) busR[bus][i] = sanitiseSample (busR[bus][i] + vR);
+                }
 
                 const float aL = std::abs (vL);
                 const float aR = std::abs (vR);
@@ -3877,7 +3943,8 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
 
             // Always process the preview voice, same as processSample() did
-            // internally — not included in metering.
+            // internally — not included in metering. Preview always plays on
+            // the main bus (auditioning shouldn't depend on a zone's routing).
             if (previewIdx2 >= voicePool2.getMaxActiveVoices() && voicePool2.getVoice (previewIdx2).active)
             {
                 float vL = 0.0f, vR = 0.0f;
@@ -3886,8 +3953,27 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 sR += vR;
             }
 
-            if (busL[0]) busL[0][i] += sanitiseSample (sL);
-            if (busR[0]) busR[0][i] += sanitiseSample (sR);
+            sfz2L[i] = sanitiseSample (sL);
+            sfz2R[i] = sanitiseSample (sR);
+        }
+
+        // Bus-0 voices (the common case today, since outputBus defaults to 0
+        // for every SFZ zone) — sum into main, same as before.
+        if (busL[0])
+            for (int i = 0; i < numSamples; ++i)
+                busL[0][i] += sfz2L[i];
+        if (busR[0])
+            for (int i = 0; i < numSamples; ++i)
+                busR[0][i] += sfz2R[i];
+
+        // Also write the full engine mix to the dedicated SFZ Player bus if
+        // active in the DAW — engine-level parity with SF2-PLAYER's bus 16.
+        if (kSfz2Bus < numActiveBuses && busL[kSfz2Bus] != nullptr)
+        {
+            for (int i = 0; i < numSamples; ++i)
+                busL[kSfz2Bus][i] += sfz2L[i];
+            for (int i = 0; i < numSamples; ++i)
+                busR[kSfz2Bus][i] += sfz2R[i];
         }
 
         // Update SFZ-PLAYER overall meter for UI, with decay against the

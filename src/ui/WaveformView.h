@@ -52,6 +52,11 @@ public:
     std::function<void()> onShortcutsToggle;
     // Callback invoked when the user requests a rename action on the waveform
     std::function<void(int sliceIdx, const juce::String& currentName)> onRenameRequest;
+    // Callback invoked after a .sfz is drag-and-dropped directly onto this
+    // view while the SFZ-PLAYER tab is active (filesDropped() dispatches the
+    // load itself and does not go through onLoadRequest) -- lets the owner
+    // offer drum-kit auto-routing the same way it does for file-browser loads.
+    std::function<void (const juce::File&)> onSfzPlayerFileDropped;
 
     // Legacy 2-state toggle (kept for any callers that still use it)
     void setSoftWaveform (bool soft) { setWaveformMode (soft ? 1 : 0); }
