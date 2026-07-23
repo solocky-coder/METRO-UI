@@ -119,7 +119,9 @@ private:
         bool isSf2     { false }; // true = SF-PLAYER header row
         bool isSf2Ch   { false }; // true = SF2 per-channel sub-row
         bool isSfz2    { false }; // true = SFZ-Player (sfzPlayer2 / real .sfz engine) row
+        bool isSfz2Ch  { false }; // true = per-zone sub-row under the SFZ-Player row
         int  sf2Channel{ -1 };    // FluidSynth channel index (0-based) when isSf2Ch
+        int  sfz2ZoneIdx{ -1 };   // sliceManager2 slice index (real, not display-row) when isSfz2Ch
     };
 
     // ── Drawing helpers ───────────────────────────────────────────────────
@@ -134,6 +136,11 @@ private:
         mixer track appears automatically as soon as the SFZ-Player has
         something to play. */
     void drawSfz2Row      (juce::Graphics&, int rowY) const;
+    /** Per-zone sub-row under the SFZ-Player row, for zones with
+        Slice::showInMixer set on sliceManager2 — mirrors drawSf2ChannelRow
+        (GAIN/PAN only) but reads/writes the zone's own slice fields instead
+        of a FluidSynth channel strip. */
+    void drawSfz2ChannelRow (juce::Graphics&, int ry, int zoneIdx) const;
     void drawKnobInRow (juce::Graphics&, int cx, int cy, float norm,
                         bool locked, bool isMaster = false,
                         bool isGain = false) const;
@@ -165,7 +172,8 @@ private:
     int   sf2ChRowY   (int chRowIdx) const;   // top Y of a per-channel sub-row (0-based index)
     int   sf2TotalH   () const;               // kSf2RowH + N * kSf2ChRowH
     int   sfz2RowY    () const;               // top Y of the sfzPlayer2 row, sits below the sf2 section
-    int   sfz2TotalH  () const;               // kSf2RowH when sfzPlayer2 has a file loaded, else 0
+    int   sfz2ChRowY  (int chRowIdx) const;   // top Y of a per-zone sub-row (0-based index into visible zones)
+    int   sfz2TotalH  () const;               // kSf2RowH (+ N * kSf2ChRowH for visible zones) when sfzPlayer2 has a file loaded, else 0
     Cell  hitTest     (juce::Point<int> pos) const;
 
     // ── Drag state ────────────────────────────────────────────────────────
@@ -175,8 +183,10 @@ private:
         bool   isSf2     { false };
         bool   isSf2Ch   { false };
         bool   isSfz2    { false };
+        bool   isSfz2Ch  { false };
         int    sf2Channel{ -1 };
         int    sliceIdx  { -1 };
+        int    sfz2ZoneIdx{ -1 };
         Col    col       { ColGain };
         int    startY    { 0 };
         float  startVal  { 0.f };
