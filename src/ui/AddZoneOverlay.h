@@ -208,10 +208,17 @@ private:
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    // Matches the app-wide convention (C3 == MIDI 60, octave = note/12 - 2)
+    // used by SliceLcdDisplay.cpp, SliceControlBar.cpp, KeysPanel.cpp,
+    // SfzLcdDisplay.cpp, and SfzPlayerDropdownPanel.cpp's noteStr()/
+    // parseSfzKey(). Was note/12-1 (one octave off from the rest of the
+    // app) -- this is a pure display readout in this overlay, so the fix
+    // only changes the label shown while adjusting lo/hi/root key, not any
+    // stored MIDI note value.
     static juce::String noteName (int n)
     {
         static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-        return juce::String (names[n % 12]) + juce::String (n / 12 - 1);
+        return juce::String (names[n % 12]) + juce::String (n / 12 - 2);
     }
 
     /** Adjust a key value, clamping and keeping lo <= hi. */

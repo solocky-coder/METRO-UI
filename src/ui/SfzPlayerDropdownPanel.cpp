@@ -1540,13 +1540,69 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
                 return sp >= 0 ? rest.substring (0, sp).trim() : rest.trim();
             };
 
+            // SFZ key opcodes (lokey=/hikey=/key=) accept EITHER a raw MIDI
+            // number (0-127) OR a note name like "a1", "c#3", "db-1". A plain
+            // .getIntValue() silently returns 0 for the note-name form, which
+            // previously made every zone in a note-named SFZ collapse to the
+            // same bogus default range -- see SfzLayoutClassifier.h: that broke
+            // both the ZONES view display and drum-kit auto-routing detection
+            // for any file using note names (which is most of them).
+            auto parseSfzKey = [] (const juce::String& raw) -> int
+            {
+                if (raw.isEmpty())
+                    return -1;
+                if (raw.containsOnly ("0123456789"))
+                    return juce::jlimit (0, 127, raw.getIntValue());
+
+                // Note-name form: <letter>[#|b]<octave>, octave may be negative.
+                int i = 0;
+                const auto letter = juce::CharacterFunctions::toLowerCase (raw[i]);
+                int semitone;
+                switch (letter)
+                {
+                    case 'c': semitone = 0;  break;
+                    case 'd': semitone = 2;  break;
+                    case 'e': semitone = 4;  break;
+                    case 'f': semitone = 5;  break;
+                    case 'g': semitone = 7;  break;
+                    case 'a': semitone = 9;  break;
+                    case 'b': semitone = 11; break;
+                    default:  return -1;   // not a recognised note letter
+                }
+                ++i;
+                if (raw[i] == '#')      { ++semitone; ++i; }
+                else if (raw[i] == 'b') { --semitone; ++i; }
+
+                const auto octaveStr = raw.substring (i);
+                if (octaveStr.isEmpty()
+                    || ! (octaveStr.containsOnly ("0123456789")
+                          || (octaveStr[0] == '-' && octaveStr.substring (1).containsOnly ("0123456789"))))
+                    return -1;
+
+                const int octave = octaveStr.getIntValue();
+                // DYSEKT convention: C3 == MIDI note 60 (octave = note/12 - 2),
+                // matching SliceLcdDisplay.cpp / SliceControlBar.cpp /
+                // KeysPanel.cpp / SfzLcdDisplay.cpp -- NOT the -1 offset used
+                // by this file's own noteStr() write helper below, which is
+                // the actual outlier (see note left on that function).
+                return juce::jlimit (0, 127, (octave + 2) * 12 + semitone);
+            };
+
             auto loRaw = getOpcodeValue (lineLower, "lokey=");
             if (loRaw.isNotEmpty())
-                loKey = juce::jlimit (0, 127, loRaw.getIntValue());
+            {
+                const int parsed = parseSfzKey (loRaw);
+                if (parsed >= 0)
+                    loKey = parsed;
+            }
 
             auto hiRaw = getOpcodeValue (lineLower, "hikey=");
             if (hiRaw.isNotEmpty())
-                hiKey = juce::jlimit (0, 127, hiRaw.getIntValue());
+            {
+                const int parsed = parseSfzKey (hiRaw);
+                if (parsed >= 0)
+                    hiKey = parsed;
+            }
 
             // key= only applies when neither lokey= nor hikey= present on this line
             if (loRaw.isEmpty() && hiRaw.isEmpty())
@@ -1554,8 +1610,9 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
                 auto kRaw = getOpcodeValue (lineLower, "key=");
                 if (kRaw.isNotEmpty())
                 {
-                    const int k = juce::jlimit (0, 127, kRaw.getIntValue());
-                    loKey = hiKey = k;
+                    const int k = parseSfzKey (kRaw);
+                    if (k >= 0)
+                        loKey = hiKey = k;
                 }
             }
             // Extract sample= value — strip directory and extension to get bare name.
@@ -1927,10 +1984,20 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
     if (regionLine < 0) return;  // region not found — bail
 
     // Patch each editable opcode
+    // Matches the app-wide convention (C3 == MIDI 60, octave = note/12 - 2)
+    // used by SliceLcdDisplay.cpp, SliceControlBar.cpp, KeysPanel.cpp,
+    // SfzLcdDisplay.cpp, and parseSfzKey() above. Previously used note/12-1
+    // (SFZ-spec default, C-1=0), one octave off from everything else in the
+    // app -- see the note that used to be here. Any .sfz zones written by
+    // Add Zone / Save SFZ *before* this fix will have their lokey/hikey/
+    // pitch_keycenter note-name text off by one octave from what this build
+    // now reads them as; re-saving the zone (Add Zone -> Save SFZ again) or
+    // manually correcting the octave digit in those existing .sfz files
+    // resolves it.
     auto noteStr = [] (int note) -> juce::String
     {
         static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-        return juce::String (names[note % 12]) + juce::String (note / 12 - 1);
+        return juce::String (names[note % 12]) + juce::String (note / 12 - 2);
     };
 
     setOpcode (lines, regionLine, "lokey",  noteStr (z.loKey));
