@@ -61,11 +61,44 @@ private:
 
     void timerCallback() override;
     void rebuildList();
+    void rebuildFsList();    // populates rows from currentDir (real filesystem)
+    void rebuildZipList();   // populates rows from inside activeZipFile at zipCurrentPath
+
+    // ── Zip-archive drill-in ──────────────────────────────────────────────────
+    // Lets the user double-click a .zip the same way they'd double-click a
+    // folder, browse its contents (one archive deep — nested zip-in-zip is not
+    // supported, per sf2-zip-loading-plan.md's open question), and pick a
+    // matching .sf2/.sfz entry from inside it.
+    //
+    // STOPGAP (plan Step 6, build-order item 1): picking an entry extracts it
+    // to a real temp file on disk and hands that off through the existing
+    // juce::File-based onFileChosen callback, unchanged — no changes anywhere
+    // downstream of this class (Command::fileParam, loadSoundFontAsync(), or
+    // any onLoadRequest/onFileChosen handler). This does NOT avoid the on-disk
+    // duplicate copy the full feature is meant to eliminate; that requires the
+    // FluidSynth memory-loader work in Step 3/4, not implemented here.
+    void enterZip      (const juce::File& zipFile);
+    void exitZip       ();
+    void navigateZipTo (const juce::String& innerPath);   // "" = zip root, else "Sub/Folder/"
+    bool extractZipEntryToTemp (const juce::File& zipFile, const juce::String& entryPath,
+                                 juce::File& outTempFile);
+
+    struct BrowserRow
+    {
+        enum class Kind { Directory, File, ZipFolder, ZipFile };
+        Kind         kind = Kind::File;
+        juce::File   file;          // real fs entry (Directory/File); owning .zip file (ZipFolder/ZipFile)
+        juce::String zipPath;       // full entry path inside the archive (ZipFolder/ZipFile only)
+        juce::String displayName;   // row label
+    };
 
     Mode       mode       { Mode::kSfz };
     juce::File currentDir;
 
-    juce::Array<juce::File> rows;
+    juce::File   activeZipFile;    // non-empty while browsing inside a zip
+    juce::String zipCurrentPath;   // "" = zip root, else "Sub/Folder/" prefix
+
+    juce::Array<BrowserRow> rows;
     juce::ListBox list;
 
     juce::Rectangle<int> breadcrumbZone;

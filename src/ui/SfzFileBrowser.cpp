@@ -3,14 +3,7 @@
 // =============================================================================
 #include "SfzFileBrowser.h"
 #include "DysektLookAndFeel.h"
-
-// NOTE: this file is not currently referenced in CMakeLists.txt. The
-// SfzFileBrowser class declared in SfzFileBrowser.h is actually implemented
-// (duplicated, line-for-line at time of writing) inside SfzPlayerDropdownPanel.cpp,
-// which is the copy that ends up in the compiled plugin. This file is kept in
-// sync so it isn't misleading, but changes here alone have no effect on the
-// built VST3 until it's added to CMakeLists.txt (and the duplicate definitions
-// in SfzPlayerDropdownPanel.cpp are removed to avoid an ODR/duplicate-symbol clash).
+#include <algorithm>
 
 // ── Themed folder glyph ───────────────────────────────────────────────────────
 // Colour-emoji glyphs (like U+1F4C1) render from their own embedded colour
@@ -72,13 +65,15 @@ void SfzFileBrowser::paint (juce::Graphics& g)
     const auto& theme = getTheme();
 
     // Self-computed scale factor — same pattern as SliceLcdDisplay/DualLcdControlFrame.
+    // Derived from the breadcrumb bar's actual height vs. its design height, so it
+    // tracks whatever resized() decided (which itself tracks overall UI scale).
     const float sf = breadcrumbZone.getHeight() > 0
                         ? (float) breadcrumbZone.getHeight() / (float) kBreadcrumbH
                         : 1.0f;
 
     // Background
     g.setColour (theme.darkBar.darker (0.45f));
-    g.fillRoundedRectangle(getLocalBounds().toFloat(), 0.0f);
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
 
     // Breadcrumb bar background
     g.setColour (theme.darkBar.darker (0.20f));
@@ -91,7 +86,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
         if (upHover)
         {
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle(upBtnZone.toFloat(), 0.0f);
+            g.fillRoundedRectangle (upBtnZone.toFloat(), 0.0f);
         }
         g.setFont (DysektLookAndFeel::makeFont (14.0f * sf));
         g.setColour (canGoUp ? theme.accent.withAlpha (0.90f)
@@ -106,11 +101,23 @@ void SfzFileBrowser::paint (juce::Graphics& g)
         g.setFont (DysektLookAndFeel::makeFont (12.0f * sf));
         g.setColour (theme.foreground.withAlpha (0.55f));
 
-        // Show last 2 path segments so it fits; show "Drives" in virtual-root mode
+        // Show last 2 path segments so it fits; show "Drives" in virtual-root mode;
+        // show "archive.zip › inner / path" while browsing inside a zip.
         juce::String display;
         if (atVirtualRoot)
         {
             display = "Drives";
+        }
+        else if (activeZipFile.existsAsFile())
+        {
+            display = activeZipFile.getFileName();
+            if (zipCurrentPath.isNotEmpty())
+            {
+                const auto segs = juce::StringArray::fromTokens (
+                    zipCurrentPath.dropLastCharacters (1), "/", "");
+                for (auto& seg : segs)
+                    display << "  \u203a  " << seg;
+            }
         }
         else
         {
@@ -137,6 +144,8 @@ void SfzFileBrowser::paint (juce::Graphics& g)
 void SfzFileBrowser::resized()
 {
     // Self-computed scale factor — same pattern as SliceLcdDisplay/DualLcdControlFrame.
+    // This browser fills the width of its parent module panel, which itself is laid
+    // out proportional to overall UI/window scale, so getWidth() tracks that scale.
     const float sf = juce::jlimit (0.75f, 2.5f, (float) getWidth() / 1114.0f);
 
     const int breadcrumbH = juce::roundToInt (kBreadcrumbH * sf);
@@ -150,7 +159,7 @@ void SfzFileBrowser::resized()
     list.setBounds (0, breadcrumbH + 1, getWidth(), getHeight() - breadcrumbH - 1);
 }
 
-// ── mouse ────────────────────────────────────────────────────────────────────
+// ── mouseDown ────────────────────────────────────────────────────────────────
 
 void SfzFileBrowser::mouseMove (const juce::MouseEvent&)
 {
@@ -172,6 +181,8 @@ void SfzFileBrowser::mouseDown (const juce::MouseEvent& e)
 void SfzFileBrowser::navigateTo (const juce::File& dir)
 {
     if (! dir.isDirectory()) return;
+    activeZipFile  = {};   // real-directory navigation always exits any zip view
+    zipCurrentPath = {};
     atVirtualRoot = false;
     navigated     = true;
     currentDir = dir;
@@ -182,6 +193,23 @@ void SfzFileBrowser::navigateTo (const juce::File& dir)
 void SfzFileBrowser::navigateUp()
 {
     if (! isVisible()) return;   // ignore if browser is closed
+
+    if (activeZipFile.existsAsFile())
+    {
+        if (zipCurrentPath.isNotEmpty())
+        {
+            // Pop one path segment inside the archive: "A/B/" -> "A/"
+            const auto trimmed   = zipCurrentPath.dropLastCharacters (1);   // drop trailing '/'
+            const auto lastSlash = trimmed.lastIndexOfChar ('/');
+            navigateZipTo (lastSlash >= 0 ? trimmed.substring (0, lastSlash + 1) : juce::String());
+        }
+        else
+        {
+            exitZip();   // already at the archive's own root — back out to the real folder
+        }
+        return;
+    }
+
     if (atVirtualRoot) return;
     const auto parent = currentDir.getParentDirectory();
     if (parent == currentDir)
@@ -193,6 +221,9 @@ void SfzFileBrowser::navigateUp()
 void SfzFileBrowser::navigateToRoots()
 {
     if (! isVisible()) return;   // ignore if browser is closed
+
+    activeZipFile  = {};   // drive picker always exits any zip view
+    zipCurrentPath = {};
 
     // Use JUCE's cross-platform API to enumerate all filesystem roots.
     // On Windows this yields every present drive letter (C:\, D:\, etc.).
@@ -235,7 +266,7 @@ void SfzFileBrowser::navigateToRoots()
 
     rows.clear();
     for (auto& r : roots)
-        rows.add (r);
+        rows.add ({ BrowserRow::Kind::Directory, r, {}, r.getFileName() });
 
     atVirtualRoot = true;   // breadcrumb shows "Drives" label instead of a path
     navigated     = true;
@@ -254,6 +285,18 @@ void SfzFileBrowser::rebuildList()
 {
     rows.clear();
 
+    if (activeZipFile.existsAsFile())
+        rebuildZipList();
+    else
+        rebuildFsList();
+
+    list.updateContent();
+    list.repaint();
+    repaint();   // breadcrumb path has changed
+}
+
+void SfzFileBrowser::rebuildFsList()
+{
     // Directories first (hidden files excluded)
     auto dirs = currentDir.findChildFiles (
         juce::File::findDirectories, false, "*");
@@ -265,19 +308,153 @@ void SfzFileBrowser::rebuildList()
                             ? "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3"
                             : (mode == Mode::kSf2)
                               ? "*.sf2"
-                              : "*.sfz";
+                              : "*.sfz";   // SFZ-Player: SFZ files only
 
     auto files = currentDir.findChildFiles (
         juce::File::findFiles, false, pattern);
     files.removeIf ([] (const juce::File& f) { return f.isHidden(); });
     files.sort();
 
-    rows.addArray (dirs);
-    rows.addArray (files);
+    // .zip archives are always listed too (independent of the mode's
+    // extension filter) so the user can drill into one and pick a matching
+    // .sf2/.sfz entry — see rebuildZipList(). Not offered in kAddZone mode
+    // (zone-builder sample picking), since that's plain audio files, not
+    // instrument archives.
+    juce::Array<juce::File> zips;
+    if (mode != Mode::kAddZone)
+    {
+        zips = currentDir.findChildFiles (juce::File::findFiles, false, "*.zip");
+        zips.removeIf ([] (const juce::File& f) { return f.isHidden(); });
+        zips.sort();
+    }
 
-    list.updateContent();
-    list.repaint();
-    repaint();   // breadcrumb path has changed
+    for (auto& d : dirs)
+        rows.add ({ BrowserRow::Kind::Directory, d, {}, d.getFileName() });
+    for (auto& z : zips)
+        rows.add ({ BrowserRow::Kind::File, z, {}, z.getFileName() });
+    for (auto& f : files)
+        rows.add ({ BrowserRow::Kind::File, f, {}, f.getFileName() });
+}
+
+void SfzFileBrowser::rebuildZipList()
+{
+    juce::ZipFile zip (activeZipFile);
+
+    const auto matchesMode = [this] (const juce::String& name) -> bool
+    {
+        if (mode == Mode::kAddZone)
+            return name.endsWithIgnoreCase (".wav")  || name.endsWithIgnoreCase (".aif")
+                || name.endsWithIgnoreCase (".aiff") || name.endsWithIgnoreCase (".flac")
+                || name.endsWithIgnoreCase (".ogg")  || name.endsWithIgnoreCase (".mp3");
+        if (mode == Mode::kSf2)
+            return name.endsWithIgnoreCase (".sf2");
+        return name.endsWithIgnoreCase (".sfz");
+    };
+
+    juce::StringArray        seenFolders;
+    juce::Array<BrowserRow>  folderRows, fileRows;
+
+    for (int i = 0; i < zip.getNumEntries(); ++i)
+    {
+        const auto* entry = zip.getEntry (i);
+        if (entry == nullptr) continue;
+
+        // Zip entry paths always use '/'; only look at entries under the
+        // directory level we're currently viewing inside the archive.
+        const auto path = entry->filename.replaceCharacter ('\\', '/');
+        if (! path.startsWith (zipCurrentPath)) continue;
+
+        const auto rel = path.substring (zipCurrentPath.length());
+        if (rel.isEmpty()) continue;   // the directory placeholder entry for this level itself
+
+        const int slash = rel.indexOfChar ('/');
+        if (slash >= 0)
+        {
+            // Immediate subfolder — collapse every entry under it into one row.
+            const auto folderName = rel.substring (0, slash);
+            if (folderName.isEmpty() || seenFolders.contains (folderName)) continue;
+            seenFolders.add (folderName);
+            folderRows.add ({ BrowserRow::Kind::ZipFolder, activeZipFile,
+                               zipCurrentPath + folderName + "/", folderName });
+        }
+        else
+        {
+            // A file directly inside the current directory level.
+            if (! matchesMode (rel)) continue;
+            fileRows.add ({ BrowserRow::Kind::ZipFile, activeZipFile, path, rel });
+        }
+    }
+
+    const auto byName = [] (const BrowserRow& a, const BrowserRow& b)
+    { return a.displayName.compareIgnoreCase (b.displayName) < 0; };
+    std::sort (folderRows.begin(), folderRows.end(), byName);
+    std::sort (fileRows.begin(),   fileRows.end(),   byName);
+
+    for (auto& r : folderRows) rows.add (r);
+    for (auto& r : fileRows)   rows.add (r);
+}
+
+void SfzFileBrowser::enterZip (const juce::File& zipFile)
+{
+    activeZipFile  = zipFile;
+    zipCurrentPath = {};
+    atVirtualRoot  = false;
+    navigated      = true;
+    rebuildList();
+    repaint();
+}
+
+void SfzFileBrowser::exitZip()
+{
+    activeZipFile  = {};
+    zipCurrentPath = {};
+    rebuildList();   // rebuilds from currentDir — the real folder that held the zip
+    repaint();
+}
+
+void SfzFileBrowser::navigateZipTo (const juce::String& innerPath)
+{
+    zipCurrentPath = innerPath;
+    rebuildList();
+    repaint();
+}
+
+bool SfzFileBrowser::extractZipEntryToTemp (const juce::File& zipFile, const juce::String& entryPath,
+                                             juce::File& outTempFile)
+{
+    juce::ZipFile zip (zipFile);
+    const int index = zip.getIndexOfFileName (entryPath);
+    if (index < 0) return false;
+
+    std::unique_ptr<juce::InputStream> in (zip.createStreamForEntry (index));
+    if (in == nullptr) return false;
+
+    // STOPGAP (see sf2-zip-loading-plan.md Step 6): extracts the full
+    // decompressed entry to a real temp file and hands that off through the
+    // existing juce::File-based load path unchanged. This still duplicates
+    // disk space for the extracted copy — avoiding that is the whole point
+    // of the eventual feature, via Step 3/4's in-memory FluidSynth loader,
+    // not implemented here. This only proves out the browsing UI (Step 1).
+    const auto entryName = juce::File (entryPath).getFileName();
+    const auto base       = juce::File (entryName).getFileNameWithoutExtension();
+    const auto ext        = juce::File (entryName).getFileExtension();   // includes leading '.'
+
+    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                       .getChildFile ("DYSEKT-SF_zip_extract");
+    tempDir.createDirectory();
+
+    const auto tempFile = tempDir.getChildFile (
+        base + "_" + juce::String (juce::Time::getCurrentTime().toMilliseconds()) + ext);
+
+    std::unique_ptr<juce::FileOutputStream> out (tempFile.createOutputStream());
+    if (out == nullptr) return false;
+
+    const auto written = out->writeFromInputStream (*in, -1);
+    out->flush();
+    if (written <= 0) return false;
+
+    outTempFile = tempFile;
+    return true;
 }
 
 void SfzFileBrowser::setRootDirectory (const juce::File& dir)
@@ -297,13 +474,14 @@ int SfzFileBrowser::getNumRows() { return rows.size(); }
 bool SfzFileBrowser::isDirectory (int row) const
 {
     if (row < 0 || row >= rows.size()) return false;
-    return rows[row].isDirectory();
+    const auto k = rows[row].kind;
+    return k == BrowserRow::Kind::Directory || k == BrowserRow::Kind::ZipFolder;
 }
 
 juce::File SfzFileBrowser::fileForRow (int row) const
 {
     if (row < 0 || row >= rows.size()) return {};
-    return rows[row];
+    return rows[row].file;   // real fs entry, or the owning .zip file for zip pseudo-rows
 }
 
 void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
@@ -312,10 +490,12 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
     if (row < 0 || row >= rows.size()) return;
 
     const auto& theme = getTheme();
-    const auto& f     = rows[row];
-    const bool  isDir = f.isDirectory();
+    const auto& r     = rows[row];
+    const bool  isDir = (r.kind == BrowserRow::Kind::Directory || r.kind == BrowserRow::Kind::ZipFolder);
 
     // Self-computed scale factor — same pattern as SliceLcdDisplay/DualLcdControlFrame.
+    // Derived straight from the actual row height JUCE gives us, so it always matches
+    // whatever resized() set via list.setRowHeight(), with no shared state needed.
     const float sf = (float) h / (float) kRowH;
 
     if (selected)
@@ -330,25 +510,30 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
     if (isDir)
     {
         // Vector folder glyph — replaces the color-emoji icon, which ignored
-        // setColour() and was stuck yellow regardless of theme.
+        // setColour() and was stuck yellow regardless of theme. Used for both
+        // real directories and zip subfolder rows.
         auto iconBox = juce::Rectangle<float> (3.0f * sf, (float) h * 0.28f,
                                                 (float) iconColW - 6.0f * sf, (float) h * 0.46f);
         drawFolderGlyph (g, iconBox, theme.accent.withAlpha (0.75f));
 
         g.setFont (DysektLookAndFeel::makeFont (textSize));
         g.setColour (selected ? theme.accent : theme.foreground.withAlpha (0.80f));
-        g.drawText (f.getFileName(), iconColW + 6, 0, w - iconColW - 10, h,
+        g.drawText (r.displayName, iconColW + 6, 0, w - iconColW - 10, h,
                     juce::Justification::centredLeft, true);
     }
     else
     {
-        // Extension badge (only for files with a known extension)
-        const auto ext = f.getFileExtension().toUpperCase().trimCharactersAtStart (".");
+        // Extension badge (only for files with a known extension). Parsed off
+        // displayName (pure string operation — safe for zip entries too, which
+        // have no real on-disk path to query) so real files and zip entries
+        // share the exact same painting logic.
+        const juce::File nameParser (r.displayName);
+        const auto ext = nameParser.getFileExtension().toUpperCase().trimCharactersAtStart (".");
         if (ext.isEmpty())
         {
             g.setFont (DysektLookAndFeel::makeFont (textSize));
             g.setColour (selected ? theme.accent : theme.foreground.withAlpha (0.80f));
-            g.drawText (f.getFileName(), juce::roundToInt (6 * sf), 0,
+            g.drawText (r.displayName, juce::roundToInt (6 * sf), 0,
                         w - juce::roundToInt (10 * sf), h,
                         juce::Justification::centredLeft, true);
         }
@@ -359,7 +544,7 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
             const auto badgeRect = juce::Rectangle<int> (w - badgeW - juce::roundToInt (4 * sf),
                                                           (h - badgeH) / 2, badgeW, badgeH);
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle(badgeRect.toFloat(), 0.0f);
+            g.fillRoundedRectangle (badgeRect.toFloat(), 0.0f);
             g.setFont (DysektLookAndFeel::makeFont (10.0f * sf));
             g.setColour (theme.accent.withAlpha (0.80f));
             g.drawText (ext, badgeRect, juce::Justification::centred, false);
@@ -367,21 +552,27 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
             // Filename
             g.setFont (DysektLookAndFeel::makeFont (textSize));
             g.setColour (selected ? theme.accent : theme.foreground.withAlpha (0.80f));
-            g.drawText (f.getFileNameWithoutExtension(), juce::roundToInt (6 * sf), 0,
+            g.drawText (nameParser.getFileNameWithoutExtension(), juce::roundToInt (6 * sf), 0,
                         w - badgeW - juce::roundToInt (14 * sf), h,
                         juce::Justification::centredLeft, true);
         }
     }
 }
 
-void SfzFileBrowser::listBoxItemClicked (int row, const juce::MouseEvent& e)
+void SfzFileBrowser::listBoxItemClicked (int row, const juce::MouseEvent&)
 {
+    // Single-click preview only applies to plain on-disk files. A zip entry
+    // would need extracting to preview, which isn't worth doing on every
+    // click/scroll-selection — preview for zip entries is skipped in this
+    // stopgap; double-click still extracts and loads normally via loadRow().
+    if (row >= 0 && row < rows.size())
+    {
+        const auto& r = rows[row];
+        if (r.kind == BrowserRow::Kind::File && ! r.file.hasFileExtension ("zip") && onFileSingleClicked)
+            onFileSingleClicked (r.file);
+    }
+
     repaint();
-    if (row < 0 || row >= rows.size()) return;
-    if (rows[row].isDirectory())
-        navigateTo (rows[row]);
-    else if (onFileSingleClicked)
-        onFileSingleClicked (rows[row]);
 }
 
 void SfzFileBrowser::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
@@ -397,15 +588,32 @@ juce::String SfzFileBrowser::getTooltipForRow (int /*row*/)
 void SfzFileBrowser::loadRow (int row)
 {
     if (row < 0 || row >= rows.size()) return;
-    const auto& f = rows[row];
+    const auto& r = rows[row];
 
-    if (f.isDirectory())
+    switch (r.kind)
     {
-        navigateTo (f);
-    }
-    else if (onFileChosen)
-    {
-        onFileChosen (f);
+        case BrowserRow::Kind::Directory:
+            navigateTo (r.file);
+            return;
+
+        case BrowserRow::Kind::File:
+            if (r.file.hasFileExtension ("zip"))
+                enterZip (r.file);
+            else if (onFileChosen)
+                onFileChosen (r.file);
+            return;
+
+        case BrowserRow::Kind::ZipFolder:
+            navigateZipTo (r.zipPath);
+            return;
+
+        case BrowserRow::Kind::ZipFile:
+        {
+            juce::File extracted;
+            if (extractZipEntryToTemp (activeZipFile, r.zipPath, extracted) && onFileChosen)
+                onFileChosen (extracted);
+            return;
+        }
     }
 }
 

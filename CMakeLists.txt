@@ -179,6 +179,7 @@ target_sources(Dysekt PRIVATE
     src/ui/LogoBar.cpp
     src/ui/KeysPanel.cpp
     src/ui/FileBrowserPanel.cpp
+    src/ui/SfzFileBrowser.cpp
     src/ui/SliceLcdDisplay.cpp
     src/ui/TrimDialog.cpp
     src/ui/MidiLearnDialog.cpp
@@ -276,6 +277,7 @@ target_sources(DysektStandalone PRIVATE
     src/ui/LogoBar.cpp
     src/ui/KeysPanel.cpp
     src/ui/FileBrowserPanel.cpp
+    src/ui/SfzFileBrowser.cpp
     src/ui/SliceLcdDisplay.cpp
     src/ui/TrimDialog.cpp
     src/ui/MidiLearnDialog.cpp
