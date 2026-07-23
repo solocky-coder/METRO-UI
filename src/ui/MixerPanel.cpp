@@ -7,6 +7,35 @@ static constexpr int kMaxMeterSlices = DysektProcessor::kMaxMeterSlices;
 #include "../params/ParamIds.h"
 #include <cmath>
 
+namespace
+{
+    // v26: only slices with showInMixer set get their own MixerPanel row —
+    // with kMaxSlices=128 per engine, showing every slice unconditionally
+    // would flood the mixer. This maps "display row position" <-> "real
+    // slice index" everywhere the mixer lays out/hit-tests its slice rows.
+    // See Slice::showInMixer's doc comment for how it gets set (auto-on
+    // when routed off Main, or manually pinned from SliceLane/ZONES).
+    std::vector<int> collectVisibleSlices (const UiSliceSnapshot& snap)
+    {
+        std::vector<int> out;
+        out.reserve ((size_t) snap.numSlices);
+        for (int i = 0; i < snap.numSlices; ++i)
+            if (snap.slices[(size_t) i].showInMixer)
+                out.push_back (i);
+        return out;
+    }
+
+    // Display row position of a real slice index within the visible list,
+    // or -1 if that slice currently has no row (not shown in the mixer).
+    int visibleRowOf (const std::vector<int>& visible, int realIdx)
+    {
+        for (int r = 0; r < (int) visible.size(); ++r)
+            if (visible[(size_t) r] == realIdx)
+                return r;
+        return -1;
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Ctor / Dtor
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,22 +131,30 @@ void MixerPanel::updateFromSnapshot()
         const auto& snap = processor.getUiSliceSnapshot();
         if (snap.selectedSlice >= 0 && snap.selectedSlice != cachedNumSlices)
         {
-            const int visTop    = kHeaderH;
-            const int visBottom = getHeight() - sf2TotalH() - sfz2TotalH() - kMasterH;
-            const int visH      = visBottom - visTop;
+            const auto visible = collectVisibleSlices (snap);
+            const int  visRow  = visibleRowOf (visible, snap.selectedSlice);
 
-            const int rowTop    = kHeaderH + snap.selectedSlice * kRowH - scrollPixels;
-            const int rowBottom = rowTop + kRowH;
+            // Selected slice isn't shown in the mixer at all (showInMixer
+            // false) — nothing to scroll to.
+            if (visRow >= 0)
+            {
+                const int visTop    = kHeaderH;
+                const int visBottom = getHeight() - sf2TotalH() - sfz2TotalH() - kMasterH;
+                const int visH      = visBottom - visTop;
 
-            if (rowTop < visTop)
-                scrollPixels = kHeaderH + snap.selectedSlice * kRowH - visTop;
-            else if (rowBottom > visBottom)
-                scrollPixels = kHeaderH + snap.selectedSlice * kRowH - (visH - kRowH);
+                const int rowTop    = kHeaderH + visRow * kRowH - scrollPixels;
+                const int rowBottom = rowTop + kRowH;
 
-            // Clamp to valid scroll range
-            const int totalH  = snap.numSlices * kRowH + kMasterH + sf2TotalH() + sfz2TotalH();
-            const int maxScroll = juce::jmax (0, totalH - (getHeight() - kHeaderH));
-            scrollPixels = juce::jlimit (0, maxScroll, scrollPixels);
+                if (rowTop < visTop)
+                    scrollPixels = kHeaderH + visRow * kRowH - visTop;
+                else if (rowBottom > visBottom)
+                    scrollPixels = kHeaderH + visRow * kRowH - (visH - kRowH);
+
+                // Clamp to valid scroll range
+                const int totalH  = (int) visible.size() * kRowH + kMasterH + sf2TotalH() + sfz2TotalH();
+                const int maxScroll = juce::jmax (0, totalH - (getHeight() - kHeaderH));
+                scrollPixels = juce::jlimit (0, maxScroll, scrollPixels);
+            }
         }
         cachedNumSlices = snap.selectedSlice;
 
@@ -142,7 +179,8 @@ int MixerPanel::sf2RowY() const
 {
     // SF-PLAYER row sits immediately below the slice rows, above Master.
     const auto& snap = processor.getUiSliceSnapshot();
-    return kHeaderH + snap.numSlices * kRowH - scrollPixels;
+    const int visibleCount = (int) collectVisibleSlices (snap).size();
+    return kHeaderH + visibleCount * kRowH - scrollPixels;
 }
 
 int MixerPanel::masterRowY() const
@@ -150,7 +188,8 @@ int MixerPanel::masterRowY() const
     // Master row is at the very bottom, below the full SF section (header + channel rows)
     // and below the SFZ-Player row (if a .sfz file is loaded).
     const auto& snap = processor.getUiSliceSnapshot();
-    return kHeaderH + snap.numSlices * kRowH + sf2TotalH() + sfz2TotalH() - scrollPixels;
+    const int visibleCount = (int) collectVisibleSlices (snap).size();
+    return kHeaderH + visibleCount * kRowH + sf2TotalH() + sfz2TotalH() - scrollPixels;
 }
 
 MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
@@ -159,29 +198,31 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
     if (pos.y < kHeaderH) return c;          // header — no hit
 
     const auto& snap = processor.getUiSliceSnapshot();
-    [[maybe_unused]] const int totalRowsH = snap.numSlices * kRowH + kMasterH;
+    const auto  visible = collectVisibleSlices (snap);
+    const int   visibleCount = (int) visible.size();
+    [[maybe_unused]] const int totalRowsH = visibleCount * kRowH + kMasterH;
     const int contentTop = kHeaderH;
 
-    // Which logical row?
+    // Which logical (display) row?
     const int relY = pos.y - contentTop + scrollPixels;
     const int logicalRow = relY / kRowH;
 
-    if (logicalRow < snap.numSlices)
+    if (logicalRow < visibleCount)
     {
-        c.row = logicalRow;
+        c.row = visible[(size_t) logicalRow];   // map display row -> real slice index
         c.isMaster = false;
     }
-    else if (relY >= snap.numSlices * kRowH &&
-             relY <  snap.numSlices * kRowH + kSf2RowH)
+    else if (relY >= visibleCount * kRowH &&
+             relY <  visibleCount * kRowH + kSf2RowH)
     {
         c.row = -2;
         c.isSf2 = true;
     }
-    else if (relY >= snap.numSlices * kRowH + kSf2RowH &&
-             relY <  snap.numSlices * kRowH + sf2TotalH())
+    else if (relY >= visibleCount * kRowH + kSf2RowH &&
+             relY <  visibleCount * kRowH + sf2TotalH())
     {
         // Which channel sub-row?
-        const int chIdx = (relY - snap.numSlices * kRowH - kSf2RowH) / kSf2ChRowH;
+        const int chIdx = (relY - visibleCount * kRowH - kSf2RowH) / kSf2ChRowH;
         if (chIdx >= 0 && chIdx < (int) sf2Channels.size())
         {
             c.isSf2Ch   = true;
@@ -190,14 +231,14 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
         }
         else return c;
     }
-    else if (relY >= snap.numSlices * kRowH + sf2TotalH() &&
-             relY <  snap.numSlices * kRowH + sf2TotalH() + sfz2TotalH())
+    else if (relY >= visibleCount * kRowH + sf2TotalH() &&
+             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH())
     {
         c.row = -3;
         c.isSfz2 = true;
     }
-    else if (relY >= snap.numSlices * kRowH + sf2TotalH() + sfz2TotalH() &&
-             relY <  snap.numSlices * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH)
+    else if (relY >= visibleCount * kRowH + sf2TotalH() + sfz2TotalH() &&
+             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH)
     {
         c.row = -1;
         c.isMaster = true;
@@ -215,7 +256,7 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
                         : c.isSf2    ? sf2RowY()
                         : c.isSfz2   ? sfz2RowY()
                         : c.isMaster ? masterRowY()
-                                     : rowY (c.row);
+                                     : rowY (logicalRow);
     const int rowHt   = c.isSf2Ch ? kSf2ChRowH : c.isSf2 ? kSf2RowH : c.isSfz2 ? kSf2RowH : c.isMaster ? kMasterH : kRowH;
     c.bounds = { kNameColW + colIdx * kKnobColW, rowTop, kKnobColW, rowHt };
     return c;
@@ -1270,8 +1311,14 @@ void MixerPanel::paint (juce::Graphics& g)
     g.saveState();
     g.reduceClipRegion (getLocalBounds().reduced (4));
 
-    for (int i = 0; i < snap.numSlices; ++i)
-        drawSliceRow (g, rowY (i), i, i == snap.selectedSlice);
+    {
+        const auto visible = collectVisibleSlices (snap);
+        for (int r = 0; r < (int) visible.size(); ++r)
+        {
+            const int realIdx = visible[(size_t) r];
+            drawSliceRow (g, rowY (r), realIdx, realIdx == snap.selectedSlice);
+        }
+    }
 
     drawSf2Row    (g, sf2RowY());
     if (sfz2TotalH() > 0)
@@ -1616,7 +1663,8 @@ void MixerPanel::mouseDoubleClick (const juce::MouseEvent& e)
         {
             const auto& sl = snap.slices[(size_t) c.row];
             const auto& theme = getTheme();
-            const int ry = kHeaderH + c.row * kRowH;
+            const int displayRow = visibleRowOf (collectVisibleSlices (snap), c.row);
+            const int ry = rowY (displayRow >= 0 ? displayRow : 0);
             const juce::Rectangle<int> nameArea (3, ry + 2, kNameColW - 6, kRowH - 4);
 
             // Select the row first
@@ -1809,7 +1857,8 @@ void MixerPanel::mouseWheelMove (const juce::MouseEvent&,
                                    const juce::MouseWheelDetails& wheel)
 {
     const auto& snap = processor.getUiSliceSnapshot();
-    const int contentH = snap.numSlices * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH;
+    const int visibleCount = (int) collectVisibleSlices (snap).size();
+    const int contentH = visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH;
     const int visibleH = getHeight() - kHeaderH;
     const int maxScroll = juce::jmax (0, contentH - visibleH);
 

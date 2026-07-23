@@ -153,6 +153,11 @@ private:
     void drawLegatoToggleCell (juce::Graphics& g, int x, int y,
                                bool on, bool locked, int& outWidth);
 
+    // Per-slice "show in MixerPanel" pin/hide toggle — applies in both
+    // Slicer and SFZ-PLAYER modes (unlike CHRO/LEGATO, which are Slicer-only).
+    void drawMixerToggleCell (juce::Graphics& g, int x, int y,
+                              bool on, bool locked, int& outWidth);
+
     // Horizontal bipolar slider — used for PAN
     void drawPanSliderCell (juce::Graphics& g, int x, int y,
                             float panValue, bool locked, int& outWidth);

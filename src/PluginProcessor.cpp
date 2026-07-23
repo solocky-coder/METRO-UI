@@ -1330,7 +1330,24 @@ void DysektProcessor::handleCommand (const Command& cmd)
                     case FieldVolume:     s.volume = val;            if (!skipLock) s.lockMask |= kLockVolume;    break;
                     case FieldReleaseTail: s.releaseTail = val > 0.5f; if (!skipLock) s.lockMask |= kLockReleaseTail; break;
                     case FieldReverse:    s.reverse = val > 0.5f;    if (!skipLock) s.lockMask |= kLockReverse;    break;
-                    case FieldOutputBus:  s.outputBus = juce::jlimit (0, 15, (int) val); if (!skipLock) s.lockMask |= kLockOutputBus; break;
+                    case FieldOutputBus:
+                        s.outputBus = juce::jlimit (0, 15, (int) val);
+                        if (!skipLock) s.lockMask |= kLockOutputBus;
+                        // Routing a slice off Main is a strong enough signal
+                        // that it needs its own mixer fader — surface it
+                        // automatically rather than making the user also
+                        // remember to pin it (e.g. right after the drum-kit
+                        // auto-routing prompt assigns buses 1-15). Only ever
+                        // turns this on, never off — a slice explicitly
+                        // hidden via FieldShowInMixer stays hidden only as
+                        // long as it's back on Main; rerouting it off Main
+                        // again re-shows it, which matches "this slice now
+                        // needs attention" rather than fighting a user's
+                        // earlier explicit hide.
+                        if (s.outputBus != 0)
+                            s.showInMixer = true;
+                        break;
+                    case FieldShowInMixer: s.showInMixer = val > 0.5f; break;
                     case FieldLoop:       s.loopMode = (int) val;    if (!skipLock) s.lockMask |= kLockLoop;      break;
                     case FieldOneShot:    s.oneShot = val > 0.5f;    if (!skipLock) s.lockMask |= kLockOneShot;   break;
                     case FieldCentsDetune:   s.centsDetune    = val;       if (!skipLock) s.lockMask |= kLockCentsDetune; break;
@@ -4059,7 +4076,7 @@ void DysektProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (25);
+    stream.writeInt (26);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -4129,6 +4146,8 @@ void DysektProcessor::getStateInformation (juce::MemoryBlock& destData)
         stream.writeFloat (s.eqMidFreq);
         stream.writeFloat (s.eqMidQ);
         stream.writeFloat (s.eqHighGain);
+        // v26 fields
+        stream.writeBool (s.showInMixer);
     }
 
     // v9: store file path only (no PCM)
@@ -4267,6 +4286,8 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
         parsed.eqMidFreq         = (version >= 24) ? stream.readFloat() : 1000.0f;
         parsed.eqMidQ            = (version >= 24) ? stream.readFloat() : 1.0f;
         parsed.eqHighGain        = (version >= 24) ? stream.readFloat() : 0.0f;
+        // v26 fields
+        parsed.showInMixer       = (version >= 26) ? stream.readBool() : false;
 
         if (i < validatedNumSlices)
             sliceManager.getSlice (i) = sanitiseRestoredSlice (parsed);

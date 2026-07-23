@@ -174,6 +174,8 @@ public:
         FieldEqMidFreq    = 47,  // Hz  200..8000
         FieldEqMidQ       = 48,  // Q   0.5..4.0
         FieldEqHighGain   = 49,  // dB  -18..+18
+        // v25: per-slice mixer track visibility
+        FieldShowInMixer  = 50,  // bool - whether this slice gets its own MixerPanel row
     };
 
     // ── Command types ─────────────────────────────────────────────────────────

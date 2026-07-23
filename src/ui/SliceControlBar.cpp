@@ -1103,6 +1103,16 @@ void SliceControlBar::paint (juce::Graphics& g)
  x += cw + si (4);
  }
 
+ // MIX — show-in-MixerPanel pin/hide toggle (per-slice, no lock).
+ // Unlike CHRO/LEGATO below, this applies in both Slicer and SFZ-PLAYER
+ // modes, since both engines' slices can independently be routed off
+ // Main and need mixer visibility.
+ {
+ const bool showInMixer = s.showInMixer;  // always read from slice
+ drawMixerToggleCell (g, x, row1y, showInMixer, true, cw);
+ x += cw + si (4);
+ }
+
  // Selected-zone readout — SFZ-PLAYER ZONES view only, appended after OUT
  // MAIN in the same row rather than replacing anything. See
  // setSfzZoneSummary() doc comment.
@@ -1848,6 +1858,7 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
  else if (cell.fieldId == F::FieldReleaseTail) currentVal = sliceLocked ? sl.releaseTail : (processor.apvts.getRawParameterValue (ParamIds::defaultReleaseTail)->load() > 0.5f);
  else if (cell.fieldId == F::FieldReverse) currentVal = sliceLocked ? sl.reverse : (processor.apvts.getRawParameterValue (ParamIds::defaultReverse)->load() > 0.5f);
  else if (cell.fieldId == F::FieldChromaticLegato) currentVal = sl.chromaticLegato;
+ else if (cell.fieldId == F::FieldShowInMixer) currentVal = sl.showInMixer;
  else if (cell.fieldId == F::FieldOneShot)
  {
  // Two-pill: left=ONE SHOT(1), right=HOLD(0) — pick by click X vs cell centre
@@ -2385,6 +2396,50 @@ void SliceControlBar::drawChroBadgeCell (juce::Graphics& g, int x, int y,
     c.fieldId = DysektProcessor::FieldChromaticChannel;
     c.minVal = 0.f; c.maxVal = 16.f; c.step = 1.f;
     c.isChoice = true;   // click cycles values
+    cells.push_back (c);
+}
+
+// =============================================================================
+// drawMixerToggleCell — per-slice "show in MixerPanel" pin/hide toggle
+// =============================================================================
+void SliceControlBar::drawMixerToggleCell (juce::Graphics& g, int x, int y,
+                                            bool on, bool locked, int& outWidth)
+{
+    const int cellW = psCellW;
+    const int cellH = psCellH;
+    const auto& theme = getTheme();
+
+    // Label
+    g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
+    g.setColour (locked ? theme.lockActive.withAlpha (0.8f)
+                        : theme.foreground.withAlpha (0.42f));
+    g.drawText ("MIX", x + juce::roundToInt (4.0f * paintSf), y + juce::roundToInt (2.0f * paintSf), cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
+
+    // Toggle pill — same visual language as LGTO/other boolean toggles.
+    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (13.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (13.0f * paintSf);
+    const juce::Colour col = on ? (locked ? theme.lockActive : theme.accent)
+                               : (locked ? theme.lockActive.withAlpha (0.4f)
+                                         : theme.foreground.withAlpha (0.18f));
+    fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
+                    col.withAlpha (on ? 0.15f : 0.08f), 0.0f);
+    g.setColour (col);
+    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
+
+    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
+    g.setColour (col);
+    // "PINNED" reads clearer than ON here, since this isn't an audio param —
+    // it's whether the slice has a row in MixerPanel at all. "AUTO" would be
+    // misleading once the user has manually toggled it, so this just shows
+    // the current on/off state plainly, same as LGTO.
+    g.drawText (on ? "SHOWN" : "HIDDEN", bx, by, bw, bh, juce::Justification::centred);
+
+    outWidth = cellW;
+    ParamCell c {};
+    c.x = x; c.y = y; c.w = cellW; c.h = cellH;
+    c.lockBit = 0;   // no lock concept — always per-slice, like LEGATO
+    c.fieldId = DysektProcessor::FieldShowInMixer;
+    c.minVal = 0.f; c.maxVal = 1.f; c.step = 1.f;
+    c.isBoolean = true;
     cells.push_back (c);
 }
 

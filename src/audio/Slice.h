@@ -81,6 +81,17 @@ struct Slice
     bool     chromaticLegato  = false; // when true: pitch-only (no speed change), monophonic voice steal
     int      rrCounter      = 0;        // round-robin playback counter (not saved)
 
+    // v25: whether this slice gets its own row in MixerPanel. Defaults off —
+    // with up to kMaxSlices (128) slices per engine and two engines
+    // (Slicer + SFZ-PLAYER), showing every slice unconditionally would
+    // flood the mixer. Auto-set true the moment outputBus is routed away
+    // from Main (see DysektProcessor::handleCommand's FieldOutputBus case),
+    // and independently toggleable per-slice from SliceLane / the ZONES
+    // summary so a user can still pin an unrouted slice for manual
+    // gain/pan access, or hide a routed one they don't want cluttering
+    // the mixer.
+    bool     showInMixer    = false;
+
     /** -1 = no chain. Otherwise, the index of a slice to retrigger (looping)
      *  the instant this one-shot slice's voice naturally reaches its end.
      *  Used exclusively by the SFZ-PLAYER engine to approximate SFZ
