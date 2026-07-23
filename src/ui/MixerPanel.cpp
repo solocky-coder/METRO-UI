@@ -15,7 +15,7 @@ namespace
     // slice index" everywhere the mixer lays out/hit-tests its slice rows.
     // See Slice::showInMixer's doc comment for how it gets set (auto-on
     // when routed off Main, or manually pinned from SliceLane/ZONES).
-    std::vector<int> collectVisibleSlices (const UiSliceSnapshot& snap)
+    std::vector<int> collectVisibleSlices (const DysektProcessor::UiSliceSnapshot& snap)
     {
         std::vector<int> out;
         out.reserve ((size_t) snap.numSlices);
