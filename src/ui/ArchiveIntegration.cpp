@@ -255,8 +255,10 @@ void ArchiveIntegration::fetchItem (const juce::String& url,
             item.title = identifier;
 
         // ── 2. Parse audio files ────────────────────────────────────────────
+        // SoundFonts are included alongside previewable audio formats: they can be
+        // downloaded and loaded into the appropriate SF2/SFZ player.
         static const juce::StringArray kAudioFormats {
-            "wav", "flac", "mp3", "ogg", "aiff", "aif"
+            "wav", "flac", "mp3", "ogg", "aiff", "aif", "sf2", "sfz"
         };
 
         auto files = root["files"];
