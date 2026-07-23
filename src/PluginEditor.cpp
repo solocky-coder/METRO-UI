@@ -2394,6 +2394,24 @@ void DysektEditor::toggleZoneBuilder (bool on)
     headerBar.dualFrame().setZoneBuilderActive (on);
     if (on)
     {
+        // initBrowserOpen ("no real sample yet, show the picker") is only
+        // ever auto-cleared against the Slicer's own sampleData (see the
+        // hasRealSampleNow check in the timer callback) — it has no idea
+        // sampleData2/the SFZ-Player exists. If the user jumps straight to
+        // the SFZ-Player tab and opens the zone builder without ever having
+        // loaded a Slicer sample, that flag is still true, and resized()
+        // checks it BEFORE the uiMode == 1 branch — so it force-hides
+        // zoneBuilderKeysPanel (along with everything else) regardless of
+        // showZoneBuilder, leaving only the SCB visible. Opening the zone
+        // builder is itself an explicit "I'm working with the SFZ-Player"
+        // action, so treat it the same as the existing auto-close path.
+        if (initBrowserOpen)
+        {
+            initBrowserOpen = false;
+            browserPanel.setVisible (false);
+            headerBar.setBrowserActive (false);
+        }
+
         // zoneBuilderTargetSfz is set synchronously in onLoadRequest at
         // load time (see comment there) — just reflect it here, no engine
         // query needed. Staged pending zones (if any survived a tab switch
