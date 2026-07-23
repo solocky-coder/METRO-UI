@@ -25,11 +25,11 @@ public:
     // Data types
     // ═══════════════════════════════════════════════════════════════════════
 
-    /** One audio file within an archive item. */
+    /** One supported audio or SoundFont file within an archive item. */
     struct AudioFile
     {
         juce::String name;           ///< Original filename on archive.org
-        juce::String format;         ///< "MP3", "FLAC", "WAV", etc.
+        juce::String format;         ///< "MP3", "FLAC", "WAV", "SF2", "SFZ", etc.
         juce::String downloadUrl;    ///< Full https:// download URL
         juce::int64  sizeBytes = 0;
     };

@@ -1217,8 +1217,8 @@ void FileBrowserPanel::resolveAndAddArchiveBookmark (const juce::String& url)
             resized();
 
             showArchiveMessage ("No Audio Found",
-                "No supported audio files were found at that URL.\n\n"
-                "Only WAV, FLAC, MP3, OGG, and AIFF files are supported.");
+                "No supported audio or SoundFont files were found at that URL.\n\n"
+                "Supported: WAV, FLAC, MP3, OGG, AIFF, SF2, and SFZ.");
         }
         else
         {
