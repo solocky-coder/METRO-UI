@@ -15,7 +15,7 @@ ShortcutsPanel::ShortcutsPanel (DysektProcessor& proc)
 
     // ── Title label ───────────────────────────────────────────────────────────
     titleLabel.setText ("Settings & Shortcuts", juce::dontSendNotification);
-    titleLabel.setFont (DysektLookAndFeel::makeFont (19.0f, true));
+    titleLabel.setFont (DysektLookAndFeel::makeFont (21.0f, true));
     titleLabel.setColour (juce::Label::textColourId, getTheme().foreground);
     titleLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (titleLabel);
@@ -35,7 +35,7 @@ ShortcutsPanel::ShortcutsPanel (DysektProcessor& proc)
 
     // ── Search box ────────────────────────────────────────────────────────────
     searchBox.setTextToShowWhenEmpty ("Search shortcuts...", getTheme().foreground.withAlpha (0.4f));
-    searchBox.setFont (DysektLookAndFeel::makeFont (14.0f));
+    searchBox.setFont (DysektLookAndFeel::makeFont (15.0f));
     searchBox.setColour (juce::TextEditor::backgroundColourId, getTheme().background.withAlpha (0.6f));
     searchBox.setColour (juce::TextEditor::textColourId,       getTheme().foreground);
     searchBox.setColour (juce::TextEditor::outlineColourId,    getTheme().accent.withAlpha (0.4f));
@@ -226,15 +226,17 @@ void ShortcutsPanel::mouseWheelMove (const juce::MouseEvent& e,
 
 void ShortcutsPanel::drawTrimPrefsSection (juce::Graphics& g, juce::Rectangle<int>& area)
 {
-    const int pref  = processor.trimPreference.load (std::memory_order_relaxed);
-    const int rowH  = 28;
-    const int btnH  = 22;
-    const int gap   = 7;
-
-    g.setFont (DysektLookAndFeel::makeFont (13.5f, true));
+    const int pref = processor.trimPreference.load (std::memory_order_relaxed);
+    auto card = area;
+    g.setColour (getTheme().button.withAlpha (0.30f));
+    g.fillRect (card);
     g.setColour (getTheme().accent);
-    g.drawText ("TRIM ON LOAD", area.removeFromTop (rowH), juce::Justification::centredLeft);
-    area.removeFromTop (2);
+    g.fillRect (card.removeFromLeft (3));
+    area.reduce (13, 8);
+
+    g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+    g.setColour (getTheme().accent);
+    g.drawText ("TRIM ON LOAD", area.removeFromTop (20), juce::Justification::centredLeft);
 
     struct Option { juce::String label; int value; juce::Rectangle<int>* rect; };
     Option opts[] = {
@@ -243,36 +245,30 @@ void ShortcutsPanel::drawTrimPrefsSection (juce::Graphics& g, juce::Rectangle<in
         { "Never Trim",            DysektProcessor::TrimPrefNever,  &trimNeverRect  },
     };
 
+    auto row = area.removeFromTop (26);
+    const int gap = 8;
     for (auto& opt : opts)
     {
-        auto row = area.removeFromTop (btnH);
-        area.removeFromTop (gap);
-
-        const bool active = (pref == opt.value);
-        *opt.rect = row;
-
-        const int dotR = 5;
-        auto dotArea = row.removeFromLeft (dotR * 2 + 6);
-        juce::Rectangle<float> dot (dotArea.getX() + 2.0f,
-                                    dotArea.getCentreY() - (float) dotR,
-                                    (float) dotR * 2.0f, (float) dotR * 2.0f);
-
-        g.setColour (active ? getTheme().accent : getTheme().button);
-        g.fillEllipse (dot);
-        g.setColour (getTheme().accent.withAlpha (active ? 1.0f : 0.35f));
-        g.drawEllipse (dot.reduced (0.5f), 1.0f);
+        const int textW = juce::GlyphArrangement::getStringWidthInt (
+            DysektLookAndFeel::makeFont (13.5f), opt.label);
+        auto option = row.removeFromLeft (textW + 24);
+        *opt.rect = option;
+        const bool active = pref == opt.value;
+        auto dot = option.removeFromLeft (16).withSizeKeepingCentre (11, 11);
+        g.setColour (active ? getTheme().accent : getTheme().separator);
+        g.fillEllipse (dot.toFloat());
+        g.setColour (getTheme().accent.withAlpha (active ? 1.0f : 0.55f));
+        g.drawEllipse (dot.toFloat().reduced (0.5f), 1.0f);
         if (active)
         {
             g.setColour (getTheme().header);
-            g.fillEllipse (dot.reduced (3.0f));
+            g.fillEllipse (dot.toFloat().reduced (3.0f));
         }
-
-        g.setFont (DysektLookAndFeel::makeFont (13.0f));
-        g.setColour (active ? getTheme().foreground : getTheme().foreground.withAlpha (0.6f));
-        g.drawText (opt.label, row.removeFromLeft (200), juce::Justification::centredLeft);
+        g.setFont (DysektLookAndFeel::makeFont (13.5f));
+        g.setColour (active ? getTheme().foreground : getTheme().foreground.withAlpha (0.72f));
+        g.drawText (opt.label, option, juce::Justification::centredLeft);
+        row.removeFromLeft (gap);
     }
-
-    area.removeFromTop (4);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,14 +277,16 @@ void ShortcutsPanel::drawTrimPrefsSection (juce::Graphics& g, juce::Rectangle<in
 
 void ShortcutsPanel::drawInterfaceSection (juce::Graphics& g, juce::Rectangle<int>& area)
 {
-    const int rowH = 28;
-    const int btnH = 22;
-    const int gap  = 7;
-
-    g.setFont (DysektLookAndFeel::makeFont (13.5f, true));
+    auto card = area;
+    g.setColour (getTheme().button.withAlpha (0.30f));
+    g.fillRect (card);
     g.setColour (getTheme().accent);
-    g.drawText ("INTERFACE", area.removeFromTop (rowH), juce::Justification::centredLeft);
-    area.removeFromTop (2);
+    g.fillRect (card.removeFromLeft (3));
+    area.reduce (13, 8);
+
+    g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+    g.setColour (getTheme().accent);
+    g.drawText ("INTERFACE", area.removeFromTop (20), juce::Justification::centredLeft);
 
     struct Option { juce::String label; int value; juce::Rectangle<int>* rect; };
     Option opts[] = {
@@ -296,36 +294,30 @@ void ShortcutsPanel::drawInterfaceSection (juce::Graphics& g, juce::Rectangle<in
         { "Pad Grid",      1, &uiModeGridRect },
     };
 
+    auto row = area.removeFromTop (26);
+    const int gap = 18;
     for (auto& opt : opts)
     {
-        auto row = area.removeFromTop (btnH);
-        area.removeFromTop (gap);
-
-        const bool active = (currentUiMode == opt.value);
-        *opt.rect = row;
-
-        const int dotR = 5;
-        auto dotArea = row.removeFromLeft (dotR * 2 + 6);
-        juce::Rectangle<float> dot (dotArea.getX() + 2.0f,
-                                    dotArea.getCentreY() - (float) dotR,
-                                    (float) dotR * 2.0f, (float) dotR * 2.0f);
-
-        g.setColour (active ? getTheme().accent : getTheme().button);
-        g.fillEllipse (dot);
-        g.setColour (getTheme().accent.withAlpha (active ? 1.0f : 0.35f));
-        g.drawEllipse (dot.reduced (0.5f), 1.0f);
+        const int textW = juce::GlyphArrangement::getStringWidthInt (
+            DysektLookAndFeel::makeFont (14.0f), opt.label);
+        auto option = row.removeFromLeft (textW + 24);
+        *opt.rect = option;
+        const bool active = currentUiMode == opt.value;
+        auto dot = option.removeFromLeft (16).withSizeKeepingCentre (11, 11);
+        g.setColour (active ? getTheme().accent : getTheme().separator);
+        g.fillEllipse (dot.toFloat());
+        g.setColour (getTheme().accent.withAlpha (active ? 1.0f : 0.55f));
+        g.drawEllipse (dot.toFloat().reduced (0.5f), 1.0f);
         if (active)
         {
             g.setColour (getTheme().header);
-            g.fillEllipse (dot.reduced (3.0f));
+            g.fillEllipse (dot.toFloat().reduced (3.0f));
         }
-
-        g.setFont (DysektLookAndFeel::makeFont (13.0f));
-        g.setColour (active ? getTheme().foreground : getTheme().foreground.withAlpha (0.6f));
-        g.drawText (opt.label, row.removeFromLeft (200), juce::Justification::centredLeft);
+        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setColour (active ? getTheme().foreground : getTheme().foreground.withAlpha (0.72f));
+        g.drawText (opt.label, option, juce::Justification::centredLeft);
+        row.removeFromLeft (gap);
     }
-
-    area.removeFromTop (4);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -347,9 +339,9 @@ void ShortcutsPanel::paint (juce::Graphics& g)
     content.removeFromTop (38 + 10 + 32 + 12);
 
     // Keep the actual preferences prominent and separate from the reference.
-    auto preferences = content.removeFromTop (126);
+    auto preferences = content.removeFromTop (72);
     auto trimArea = preferences.removeFromLeft (preferences.getWidth() / 2).reduced (0, 0);
-    preferences.removeFromLeft (18);
+    preferences.removeFromLeft (22);
     drawTrimPrefsSection (g, trimArea);
     drawInterfaceSection (g, preferences);
     content.removeFromTop (8);
@@ -358,7 +350,7 @@ void ShortcutsPanel::paint (juce::Graphics& g)
     content.removeFromTop (10);
 
     shortcutsViewport = content;
-    const int rowH = 26, catGap = 12, titleH = 24;
+    const int rowH = 30, catGap = 16, titleH = 27;
     const auto matches = [this] (const ShortcutCategory& cat)
     {
         if (currentFilter.isEmpty()) return true;
@@ -379,31 +371,30 @@ void ShortcutsPanel::paint (juce::Graphics& g)
         return count;
     };
 
-    std::vector<const ShortcutCategory*> columns[3];
-    int heights[3] = { 0, 0, 0 };
+    std::vector<const ShortcutCategory*> columns[2];
+    int heights[2] = { 0, 0 };
     for (const auto& cat : categories)
     {
         if (! matches (cat)) continue;
         int target = 0;
         if (heights[1] < heights[target]) target = 1;
-        if (heights[2] < heights[target]) target = 2;
         columns[target].push_back (&cat);
         heights[target] += titleH + 3 + visibleRows (cat) * rowH + catGap;
     }
 
-    shortcutsMaxScrollY = juce::jmax (0, juce::jmax (heights[0], juce::jmax (heights[1], heights[2]))
+    shortcutsMaxScrollY = juce::jmax (0, juce::jmax (heights[0], heights[1])
                                          - shortcutsViewport.getHeight());
     shortcutsScrollY = juce::jlimit (0, shortcutsMaxScrollY, shortcutsScrollY);
 
     g.saveState();
     g.reduceClipRegion (shortcutsViewport);
-    const int colGap = 16;
-    const int colW = (shortcutsViewport.getWidth() - colGap * 2) / 3;
-    const juce::Font titleFont = DysektLookAndFeel::makeFont (13.5f, true);
-    const juce::Font keyFont = DysektLookAndFeel::makeFont (12.5f, true);
-    const juce::Font descriptionFont = DysektLookAndFeel::makeFont (13.0f);
+    const int colGap = 22;
+    const int colW = (shortcutsViewport.getWidth() - colGap) / 2;
+    const juce::Font titleFont = DysektLookAndFeel::makeFont (14.5f, true);
+    const juce::Font keyFont = DysektLookAndFeel::makeFont (14.0f, true);
+    const juce::Font descriptionFont = DysektLookAndFeel::makeFont (14.5f);
 
-    for (int c = 0; c < 3; ++c)
+    for (int c = 0; c < 2; ++c)
     {
         auto col = juce::Rectangle<int> (shortcutsViewport.getX() + c * (colW + colGap),
                                          shortcutsViewport.getY() - shortcutsScrollY,
@@ -424,15 +415,15 @@ void ShortcutsPanel::paint (juce::Graphics& g)
                     continue;
 
                 auto row = col.removeFromTop (rowH);
-                const int keyW = juce::jlimit (72, 162,
+                const int keyW = juce::jlimit (96, 190,
                     juce::GlyphArrangement::getStringWidthInt (keyFont, entry.keys) + 18);
                 auto keyRect = row.removeFromLeft (keyW);
                 g.setColour (getTheme().button.withAlpha (0.95f));
-                g.fillRect (keyRect.reduced (0, 2));
+                g.fillRect (keyRect.reduced (0, 3));
                 g.setFont (keyFont);
                 g.setColour (getTheme().accent);
                 g.drawText (entry.keys, keyRect, juce::Justification::centred);
-                row.removeFromLeft (8);
+                row.removeFromLeft (10);
                 g.setFont (descriptionFont);
                 g.setColour (getTheme().foreground.withAlpha (0.96f));
                 g.drawFittedText (entry.description, row, juce::Justification::centredLeft, 2);
