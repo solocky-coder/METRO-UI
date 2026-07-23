@@ -198,6 +198,11 @@ private:
     // the file got loaded.
     void offerDrumKitAutoRouting (const juce::File& sfzFile);
 
+    // Opens/closes the zone builder. Shared by SliceControlBar's ZONES toggle
+    // and DualLcdControlFrame's ZONES tab-icon, so both entry points behave
+    // identically (including the unsaved-zones confirm prompt on close).
+    void toggleZoneBuilder (bool on);
+
     void refreshZoneBuilderScratch();       // rebuild scratch file from pending zones, reload preview + matrix
     void commitZoneBuilderPendingZones();   // SAVE: write pending zones to zoneBuilderTargetSfz, clear staging
     void discardZoneBuilderPendingZones();  // DISCARD: drop pending zones, restore preview to on-disk state

@@ -119,56 +119,11 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      resized();
      repaint(); // clear waveform/overview areas vacated by the old view
  };
- sliceControlBar.onZoneViewToggle = [this] (bool on)
- {
-     if (! on && zoneBuilderDirty)
-     {
-         // SliceControlBar already flipped its own zoneViewActive to false
-         // before calling us (see its mouseDown) — put it back to true until
-         // the user actually resolves the prompt below, so the toggle keeps
-         // reading as "on" while Save/Discard is pending.
-         sliceControlBar.setZoneViewActive (true);
-
-         confirmOverlay = std::make_unique<ConfirmOverlay> (
-             "Unsaved Zones",
-             "You have zones staged that haven't been saved yet. Save them before leaving?",
-             "Save",
-             "Discard");
-         addAndMakeVisible (*confirmOverlay);
-         confirmOverlay->setBounds (getLocalBounds());
-         confirmOverlay->toFront (true);
-         confirmOverlay->onResult = [this] (bool save)
-         {
-             confirmOverlay.reset();
-             if (save)
-                 commitZoneBuilderPendingZones();
-             else
-                 discardZoneBuilderPendingZones();
-
-             showZoneBuilder = false;
-             sliceControlBar.setZoneViewActive (false);
-             sliceControlBar.clearSfzZoneSummary();
-             resized();
-             repaint();
-         };
-         return;
-     }
-
-     showZoneBuilder = on;
-     if (on)
-     {
-         // zoneBuilderTargetSfz is set synchronously in onLoadRequest at
-         // load time (see comment there) — just reflect it here, no engine
-         // query needed. Staged pending zones (if any survived a tab switch
-         // back in) still need the scratch preview, not the raw on-disk file.
-         if (zoneBuilderDirty)
-             refreshZoneBuilderScratch();
-         else
-             refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
-     }
-     resized();
-     repaint(); // clear waveform/overview areas vacated by the old view
- };
+ sliceControlBar.onZoneViewToggle = [this] (bool on) { toggleZoneBuilder (on); };
+ // ZONES tab-icon (DualLcdControlFrame) — same logic, second entry point.
+ // See toggleZoneBuilder() for why this needs to exist independently of
+ // SliceControlBar's own ZONES toggle.
+ headerBar.dualFrame().onZoneBuilderToggle = [this] { toggleZoneBuilder (! showZoneBuilder); };
  sliceControlBar.onZoneSaveRequested = [this] { commitZoneBuilderPendingZones(); };
  // SFZ-PLAYER Zones view previews/highlights sfzPlayer2's notes, not the
  // legacy SF-Player's — must be set before any note requests are made.
@@ -686,6 +641,7 @@ void DysektEditor::setUiMode (int mode)
  {
      showZoneBuilder = false;
      sliceControlBar.setZoneViewActive (false);
+     headerBar.dualFrame().setZoneBuilderActive (false);
      sliceControlBar.clearSfzZoneSummary();
 
      // Known limitation: unlike the ZONES toggle-off gate (onZoneViewToggle),
@@ -1578,19 +1534,15 @@ void DysektEditor::resized()
  } else {
  // SCB first (bottommost), then overview row sits immediately above it.
  //
- // uiMode == 1 makes SFZ-PLAYER's SCB always reachable, regardless of
- // hasRealSample: for SFZ-PLAYER, hasRealSample requires sampleData2 to
- // already contain decoded sample data, and with nothing loaded yet that's
- // false — so without this, the SCB (the only way to reach the ZONES toggle
- // and enter add-zone mode) was hidden entirely and there was no way in.
- // Slicer (uiMode == 0) keeps the original hasRealSample-only gate — that
- // tab's SCB genuinely has nothing useful to do until a sample is loaded.
- // NOTE: showZoneBuilder is deliberately NOT included here — uiMode == 1
- // already covers reachability while zone-builder view is active, and
- // showZoneBuilder is never reset on tab switch (see setUiMode), so
- // including it here let a stale showZoneBuilder=true from a prior
- // SFZ-PLAYER session keep the SCB visible after switching to Slicer.
- if ((hasRealSample || uiMode == 1) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
+ // Hidden until there's actually something for it to control: either a real
+ // sample/kit is loaded (hasRealSample), or the zone builder is open and
+ // needs the SCB's SAVE button + selected-zone readout (showZoneBuilder).
+ // ZONES itself no longer needs the SCB just to be reachable — the
+ // DualLcdControlFrame ZONES tab-icon (SFZ-PLAYER only) opens the zone
+ // builder directly, so an empty SFZ-PLAYER tab no longer shows the SCB.
+ // showZoneBuilder is always reset to false on leaving uiMode 1 (see
+ // setUiMode), so it can't leak a stale SCB into the Slicer tab.
+ if ((hasRealSample || showZoneBuilder) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);
@@ -2395,6 +2347,65 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // kAddZone mode is wired specifically for the Slicer's showTrimDialog flow
 // (see browserPanel.onLoadRequest, uiMode == 0 branch) and isn't a fit for
 // writing SFZ <region> blocks.
+
+// Opens/closes the zone builder. Shared by SliceControlBar's ZONES toggle
+// and DualLcdControlFrame's ZONES tab-icon (see wiring in the constructor)
+// so both entry points — including the SCB one that's hidden until a real
+// kit is loaded — behave identically, unsaved-zones prompt included.
+void DysektEditor::toggleZoneBuilder (bool on)
+{
+    if (! on && zoneBuilderDirty)
+    {
+        // Whichever control fired this (SCB toggle or tab-icon) may already
+        // have flipped its own "active" look before calling us — put both
+        // back to "on" until the user actually resolves the prompt below, so
+        // neither reads as closed while Save/Discard is still pending.
+        sliceControlBar.setZoneViewActive (true);
+        headerBar.dualFrame().setZoneBuilderActive (true);
+
+        confirmOverlay = std::make_unique<ConfirmOverlay> (
+            "Unsaved Zones",
+            "You have zones staged that haven't been saved yet. Save them before leaving?",
+            "Save",
+            "Discard");
+        addAndMakeVisible (*confirmOverlay);
+        confirmOverlay->setBounds (getLocalBounds());
+        confirmOverlay->toFront (true);
+        confirmOverlay->onResult = [this] (bool save)
+        {
+            confirmOverlay.reset();
+            if (save)
+                commitZoneBuilderPendingZones();
+            else
+                discardZoneBuilderPendingZones();
+
+            showZoneBuilder = false;
+            sliceControlBar.setZoneViewActive (false);
+            headerBar.dualFrame().setZoneBuilderActive (false);
+            sliceControlBar.clearSfzZoneSummary();
+            resized();
+            repaint();
+        };
+        return;
+    }
+
+    showZoneBuilder = on;
+    sliceControlBar.setZoneViewActive (on);
+    headerBar.dualFrame().setZoneBuilderActive (on);
+    if (on)
+    {
+        // zoneBuilderTargetSfz is set synchronously in onLoadRequest at
+        // load time (see comment there) — just reflect it here, no engine
+        // query needed. Staged pending zones (if any survived a tab switch
+        // back in) still need the scratch preview, not the raw on-disk file.
+        if (zoneBuilderDirty)
+            refreshZoneBuilderScratch();
+        else
+            refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
+    }
+    resized();
+    repaint(); // clear waveform/overview areas vacated by the old view
+}
 
 void DysektEditor::refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary)
 {

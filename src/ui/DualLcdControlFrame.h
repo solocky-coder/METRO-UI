@@ -31,6 +31,13 @@ public:
     std::function<void()>    onSeqToggle;
     std::function<void(int)> onUiModeChanged;   // 0 = Edit, 1 = SFZ Player
 
+    // ZONES entry point — small icon shown only while the SFZ-PLAYER tab
+    // (uiTab == 1) is active. Lives here rather than only on SliceControlBar
+    // so the zone builder stays reachable even when the SCB itself is hidden
+    // (e.g. no kit loaded yet). See PluginEditor::toggleZoneBuilder.
+    std::function<void()> onZoneBuilderToggle;
+    void setZoneBuilderActive (bool v) { zoneBuilderActive = v; repaint(); }
+
     void setBrowserActive    (bool v) { browserActive    = v; repaint(); }
 
     /** Legacy bool helper — kept for backward compat; mode 0 = inactive. */
@@ -61,6 +68,7 @@ private:
     bool eqActive         = false;
     int  uiTab            = 0;   // 0=SLICER, 1=SFZ-PLAYER, 2=SF2-PLAYER
     bool seqActive        = false;
+    bool zoneBuilderActive = false;   // mirrors editor showZoneBuilder — highlights the ZONES tab-icon
 
     // Hit areas (set during paint, used in mouseDown)
     juce::Rectangle<int> filIconArea;
@@ -73,6 +81,10 @@ private:
     juce::Rectangle<int> editTabArea;
     juce::Rectangle<int> padTabArea;
     juce::Rectangle<int> sfzPlayerTabArea;   // third tab: SFZ-PLAYER
+    // ZONES tab-icon — space is always reserved between the SFZ-PLAYER and
+    // SF2-PLAYER tabs (so tab positions don't shift when switching modes),
+    // but it's only drawn/hit-tested while uiTab == 1.
+    juce::Rectangle<int> zoneBuilderIconArea;
     juce::Rectangle<int> pitchKnobArea;
     juce::Rectangle<int> volKnobArea;
 

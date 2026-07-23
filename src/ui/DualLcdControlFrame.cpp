@@ -430,13 +430,17 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         const int tabH    = si (17);
         const int tabW    = si (50);
         const int tabGap  = si (3);
-        const int totalTW = tabW * 3 + tabGap * 2;
+        const int iconW   = si (17);   // ZONES tab-icon — square, matches tabH
+        // Space for the icon is reserved in the total width regardless of
+        // uiTab, so switching tabs never shifts the other tabs' positions.
+        const int totalTW = tabW * 3 + tabGap * 3 + iconW;
         const int tabX    = (w - totalTW) / 2;
         const int tabY    = half - tabH / 2;
 
-        editTabArea      = { tabX,                          tabY, tabW, tabH };
-        padTabArea       = { tabX + tabW + tabGap,          tabY, tabW, tabH };
-        sfzPlayerTabArea = { tabX + (tabW + tabGap) * 2,    tabY, tabW, tabH };
+        editTabArea        = { tabX,                                      tabY, tabW, tabH };
+        padTabArea         = { tabX + tabW + tabGap,                       tabY, tabW, tabH };
+        zoneBuilderIconArea = { tabX + (tabW + tabGap) * 2,                tabY, iconW, tabH };
+        sfzPlayerTabArea   = { tabX + (tabW + tabGap) * 2 + iconW + tabGap, tabY, tabW, tabH };
 
         // Erase the divider line behind the tabs so they float cleanly
         {
@@ -485,6 +489,34 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         drawTab (editTabArea,      "SLICER",      uiTab == 0);
         drawTab (padTabArea,       "SFZ-PLAYER",  uiTab == 1);
         drawTab (sfzPlayerTabArea, "SF2-PLAYER",  uiTab == 2);
+
+        // ZONES tab-icon — SFZ-PLAYER only. Lets the zone builder be opened
+        // even when nothing is loaded yet, since SliceControlBar (the only
+        // other place ZONES lives) is hidden until a real kit is loaded.
+        if (uiTab == 1)
+        {
+            juce::Rectangle<float> rf = zoneBuilderIconArea.toFloat().reduced (0.5f);
+            auto baseBg  = getTheme().button;
+            auto fillCol = zoneBuilderActive ? baseBg.interpolatedWith (accent, 0.18f) : baseBg;
+            g.setColour (fillCol);
+            g.fillRoundedRectangle (rf, 0.0f);
+            g.setColour (zoneBuilderActive ? accent.withAlpha (0.70f) : getTheme().separator.withAlpha (0.60f));
+            g.drawRoundedRectangle (rf, 0.0f, 1.0f);
+
+            g.setColour (zoneBuilderActive ? accent : fg.withAlpha (0.85f));
+            const float gr = rf.reduced (rf.getWidth() * 0.28f).getWidth() * 0.5f;
+            const auto  c  = rf.getCentre();
+            // Simple 2x2 grid glyph — stands in for "zones"/keyzone matrix.
+            for (int gx = 0; gx < 2; ++gx)
+                for (int gy = 0; gy < 2; ++gy)
+                    g.fillRoundedRectangle (c.x + (gx == 0 ? -gr - 1.0f : 1.0f),
+                                            c.y + (gy == 0 ? -gr - 1.0f : 1.0f),
+                                            gr, gr, 0.5f);
+        }
+        else
+        {
+            zoneBuilderIconArea = {};   // not hit-testable outside SFZ-PLAYER tab
+        }
     }
 
     // ── Top row: five icons evenly spread across full width ─────────────────
@@ -743,6 +775,11 @@ void DualLcdControlFrame::mouseDown (const juce::MouseEvent& e)
             repaint();
             if (onUiModeChanged) onUiModeChanged (2);
         }
+        return;
+    }
+    if (uiTab == 1 && ! zoneBuilderIconArea.isEmpty() && zoneBuilderIconArea.contains (pos))
+    {
+        if (onZoneBuilderToggle) onZoneBuilderToggle();
         return;
     }
 
