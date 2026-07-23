@@ -95,7 +95,7 @@ public:
     {
         const auto& T = getTheme();
 
-        editor.setTextToShowWhenEmpty ("https://archive.org/details/IDENTIFIER  or  IDENTIFIER",
+        editor.setTextToShowWhenEmpty ("https://archive.org/details/IDENTIFIER or /download/IDENTIFIER",
                                        T.foreground.withAlpha (0.35f));
         editor.setColour (juce::TextEditor::backgroundColourId,     T.darkBar);
         editor.setColour (juce::TextEditor::textColourId,           T.foreground);

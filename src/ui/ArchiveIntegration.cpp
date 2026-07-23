@@ -11,15 +11,22 @@ juce::ThreadPool& ArchiveIntegration::pool()
 
 juce::String ArchiveIntegration::identifierFromUrl (const juce::String& url)
 {
-    const juce::String prefix = "archive.org/details/";
-    int idx = url.indexOf (prefix);
-    if (idx >= 0)
+    static const juce::String prefixes[] = {
+        "archive.org/details/",
+        "archive.org/download/"
+    };
+
+    for (const auto& prefix : prefixes)
     {
-        auto id = url.substring (idx + prefix.length())
-                     .upToFirstOccurrenceOf ("/", false, false)
-                     .upToFirstOccurrenceOf ("?", false, false)
-                     .trim();
-        return id;
+        const int idx = url.indexOfIgnoreCase (prefix);
+        if (idx >= 0)
+        {
+            auto id = url.substring (idx + prefix.length())
+                         .upToFirstOccurrenceOf ("/", false, false)
+                         .upToFirstOccurrenceOf ("?", false, false)
+                         .trim();
+            return id;
+        }
     }
 
     // Bare identifier — no slashes, no scheme
@@ -36,7 +43,8 @@ bool ArchiveIntegration::isValidArchiveUrl (const juce::String& url)
     if (trimmed.isEmpty()) return false;
 
     // Full archive.org URL
-    if (trimmed.containsIgnoreCase ("archive.org/details/"))
+    if (trimmed.containsIgnoreCase ("archive.org/details/")
+        || trimmed.containsIgnoreCase ("archive.org/download/"))
     {
         auto id = identifierFromUrl (trimmed);
         return id.isNotEmpty();
