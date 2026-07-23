@@ -1199,6 +1199,12 @@ private:
         if (target == SoundFontLoadTarget::SfPlayer)
             processor.sf2PreviewRenderInFlight.store (false, std::memory_order_release);
 
+        // Slicer/SfzPlayer2 mirror the same "clear in-flight on any bail-out
+        // path" requirement — otherwise SliceWaveformLcd would show its
+        // loading state forever if a kit load fails partway through.
+        if (target == SoundFontLoadTarget::Slicer || target == SoundFontLoadTarget::SfzPlayer2)
+            processor.mainLoadInFlight.store (false, std::memory_order_release);
+
         // SFZ-PLAYER preview is visual-only and has no failure-state UI of its
         // own (sfzPlayer2's live engine handles its own failure reporting
         // separately) — so for that target we simply no-op rather than add a
@@ -1246,6 +1252,12 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         processor.exchangeCompletedLoadData (nullptr);
         delete processor.completedLoadFailure.exchange(nullptr, std::memory_order_acq_rel);
         delete processor.pendingSfzSlices.exchange   (nullptr, std::memory_order_acq_rel);
+
+        // Flag the load as in-flight so SliceWaveformLcd::drawNoData() can
+        // show a loading state instead of "EMPTY" while a kit is decoding in
+        // the background. Cleared in processBlock once completedLoadData is
+        // consumed, or in postFailure() if the job bails out early.
+        processor.mainLoadInFlight.store (true, std::memory_order_release);
     }
     else if (target == SoundFontLoadTarget::SfzPlayer2)
     {
@@ -1254,6 +1266,10 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         // Just discard any stale preview payload from a previous preview load.
         processor.exchangeCompletedLoadData2 (nullptr);
         delete processor.pendingPreviewZones2.exchange (nullptr, std::memory_order_acq_rel);
+
+        // Mirrors the Slicer branch above — same flag, same consumer
+        // (SliceWaveformLcd is shared by both the Slicer and SFZ-PLAYER tabs).
+        processor.mainLoadInFlight.store (true, std::memory_order_release);
     }
     else // SoundFontLoadTarget::SfPlayer
     {

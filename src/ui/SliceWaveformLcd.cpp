@@ -1037,6 +1037,19 @@ void SliceWaveformLcd::drawNoData (juce::Graphics& g)
 {
  auto b = getLocalBounds().reduced (4);
 
+ // A Slicer/SFZ-PLAYER kit (SF2/SFZ) is decoding in the background — see
+ // DysektProcessor::mainLoadInFlight, set in SoundFontLoader::load() and
+ // cleared once processBlock consumes the result (or the load fails).
+ // Without this, drawNoData only ever checks data.hasSample, so a kit
+ // loading in the background just kept showing "EMPTY" with zero feedback.
+ if (processor.mainLoadInFlight.load (std::memory_order_relaxed))
+ {
+ g.setFont (DysektLookAndFeel::makeFont (13.0f, true));
+ g.setColour (lcd2Phosphor().withAlpha (0.45f));
+ g.drawText ("LOADING...", b, juce::Justification::centred);
+ return;
+ }
+
  if (! data.hasSample || data.isDefault)
  {
  // Show "EMPTY" prominently when no real sample is loaded

@@ -2846,6 +2846,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         SampleData::SnapshotPtr decoded = exchangeCompletedLoadData (nullptr);
         if (decoded != nullptr)
         {
+            mainLoadInFlight.store (false, std::memory_order_release);
             clearVoicesBeforeSampleSwap();
             sampleData.applyDecodedSample (decoded);
             sampleMissing.store (false);
@@ -2939,6 +2940,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         SampleData::SnapshotPtr decoded2 = exchangeCompletedLoadData2 (nullptr);
         if (decoded2 != nullptr)
         {
+            mainLoadInFlight.store (false, std::memory_order_release);
             clearVoicesBeforeSampleSwap2();
             sampleData2.applyDecodedSample (decoded2);
             sliceManager2.clearAll();

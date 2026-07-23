@@ -884,6 +884,16 @@ public:
     std::atomic<int>  sf2PreviewRequestedProgram { -1 };
     std::atomic<bool> sf2PreviewRenderInFlight   { false };
 
+    /** Mirrors sf2PreviewRenderInFlight, but for the Slicer/SFZ-PLAYER kit
+     *  load pipeline (completedLoadData / completedLoadData2). Set true in
+     *  SoundFontLoader::load() for the Slicer and SfzPlayer2 targets;
+     *  cleared in processBlock once the corresponding completedLoadData/
+     *  completedLoadData2 result is consumed, or in postFailure() if the
+     *  load bails out early. Checked by SliceWaveformLcd::drawNoData() so a
+     *  kit loading in the background shows a loading state instead of the
+     *  stale/empty "EMPTY" view. */
+    std::atomic<bool> mainLoadInFlight           { false };
+
 
     // =========================================================================
     // APVTS parameter pointers (assigned in constructor, constant thereafter)

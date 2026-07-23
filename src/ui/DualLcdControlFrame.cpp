@@ -431,16 +431,32 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         const int tabW    = si (50);
         const int tabGap  = si (3);
         const int iconW   = si (17);   // ZONES tab-icon — square, matches tabH
-        // Space for the icon is reserved in the total width regardless of
-        // uiTab, so switching tabs never shifts the other tabs' positions.
-        const int totalTW = tabW * 3 + tabGap * 3 + iconW;
+        // No horizontal slot reserved for the icon any more — it now lives
+        // in its own row below the tabs (see zoneBuilderIconArea placement
+        // further down), so the tab row is just the three tabs + two gaps.
+        const int totalTW = tabW * 3 + tabGap * 2;
         const int tabX    = (w - totalTW) / 2;
         const int tabY    = half - tabH / 2;
 
-        editTabArea        = { tabX,                                      tabY, tabW, tabH };
-        padTabArea         = { tabX + tabW + tabGap,                       tabY, tabW, tabH };
-        zoneBuilderIconArea = { tabX + (tabW + tabGap) * 2,                tabY, iconW, tabH };
-        sfzPlayerTabArea   = { tabX + (tabW + tabGap) * 2 + iconW + tabGap, tabY, tabW, tabH };
+        editTabArea      = { tabX,                          tabY, tabW, tabH };
+        padTabArea       = { tabX + tabW + tabGap,           tabY, tabW, tabH };
+        sfzPlayerTabArea = { tabX + (tabW + tabGap) * 2,     tabY, tabW, tabH };
+
+        // ZONES tab-icon — centred directly beneath padTabArea (SFZ-PLAYER
+        // tab), sitting in the gap between the tab row and the GLOBAL PITCH/
+        // EQ/VOL knob row below. Mirrors the knob-row geometry computed in
+        // the "Bottom row" block further down so the icon lands centred in
+        // whatever vertical space is actually free between the two rows.
+        const int gapTop      = tabY + tabH;
+        const int knobRowTop  = half + si (4);
+        const int knobRowBot  = h - si (20);
+        const int knobCy      = knobRowTop + (knobRowBot - knobRowTop) / 2;
+        const int knobR       = si (12);
+        const int gapBottom   = knobCy - knobR;
+
+        const int iconY = gapTop + juce::jmax (0, (gapBottom - gapTop - iconW) / 2);
+        const int iconX = padTabArea.getCentreX() - iconW / 2;
+        zoneBuilderIconArea = { iconX, iconY, iconW, iconW };
 
         // Erase the divider line behind the tabs so they float cleanly
         {
