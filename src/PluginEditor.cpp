@@ -150,6 +150,29 @@ zoneBuilderKeysPanel.onZoneEdited = [this] (int rowIndex, const KeysPanel::Keyzo
     sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
                                        z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
 };
+// Right-click a zone-matrix row -> small "Delete Zone" popup, staged through
+// the same scratch-mutation path as field edits and Add Zone.
+zoneBuilderKeysPanel.onRowRightClicked = [this] (int rowIndex, juce::Point<int> screenPos)
+{
+    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
+    if (rowIndex < 0 || rowIndex >= (int) zones.size())
+        return;
+
+    auto* topLvl = getTopLevelComponent();
+    float ms = DysektLookAndFeel::getMenuScale();
+    juce::PopupMenu menu;
+    menu.addItem (1, "Delete Zone");
+    menu.showMenuAsync (
+        juce::PopupMenu::Options()
+            .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
+            .withParentComponent (topLvl)
+            .withStandardItemHeight ((int) (24 * ms)),
+        [this, rowIndex] (int result)
+        {
+            if (result == 1)
+                deleteZoneBuilderZone (rowIndex);
+        });
+};
 sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float value)
 {
     const auto& zones = zoneBuilderKeysPanel.getKeyzones();
@@ -167,8 +190,11 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
         case SliceControlBar::ZoneLoop:    z.isLooped = value > 0.5f; break;
         default: return;
     }
-    // Use the established zone-matrix writer, so SCB edits persist and reload
-    // into the SFZ player just like edits made in the matrix itself.
+    // Field edits now stage through the scratch file too (instead of writing
+    // straight to the target on the first edit) -- makes SAVE appear
+    // consistently and gives an undo path via DISCARD, matching Add Zone and
+    // Delete Zone.
+    ensureZoneBuilderScratchExists();
     sfzPlayerDropdown.writeSfzZoneChange (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz,
                                     rowIndex, z);
     sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
@@ -373,7 +399,6 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              // against the previous target no longer apply. Drop them rather
              // than silently carrying them (and their scratch file, which was
              // built against the old file's contents) across the switch.
-             zoneBuilderPendingZones.clear();
              zoneBuilderDirty = false;
              sliceControlBar.setZoneDirty (false);
              if (zoneBuilderScratchFile.existsAsFile())
@@ -650,7 +675,6 @@ void DysektEditor::setUiMode (int mode)
      // the ZONES button is, so silently discarding here (rather than leaving
      // stale pending zones pointed at a scratch file the user can no longer
      // reach) is the safer of the two bad options.
-     zoneBuilderPendingZones.clear();
      zoneBuilderDirty = false;
      sliceControlBar.setZoneDirty (false);
      if (zoneBuilderScratchFile.existsAsFile())
@@ -2414,12 +2438,10 @@ void DysektEditor::toggleZoneBuilder (bool on)
 
         // zoneBuilderTargetSfz is set synchronously in onLoadRequest at
         // load time (see comment there) — just reflect it here, no engine
-        // query needed. Staged pending zones (if any survived a tab switch
-        // back in) still need the scratch preview, not the raw on-disk file.
-        if (zoneBuilderDirty)
-            refreshZoneBuilderScratch();
-        else
-            refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
+        // query needed. refreshZoneBuilderPreview() picks whichever file is
+        // currently authoritative (the scratch file if a staged session
+        // survived a tab switch back in, otherwise the raw on-disk target).
+        refreshZoneBuilderPreview();
     }
     resized();
     repaint(); // clear waveform/overview areas vacated by the old view
@@ -2484,19 +2506,20 @@ void DysektEditor::openZoneBuilderAddZone()
     // onZoneViewToggle — reuse it rather than re-querying engine state.
     const juce::File targetSfz = zoneBuilderTargetSfz;
 
-    int prevHiKey = -1;
-    if (targetSfz.existsAsFile())
-    {
-        const auto existing = SfzPlayerDropdownPanel::parseSfzZones (targetSfz);
-        for (const auto& z : existing)
-            prevHiKey = juce::jmax (prevHiKey, z.hiKey);
-    }
     // Zones staged-but-not-yet-saved won't appear in targetSfz's on-disk
     // content yet, but the new zone's default range still needs to start
     // above them, or a second staged Add Zone would silently overlap the
-    // first.
-    for (const auto& pz : zoneBuilderPendingZones)
-        prevHiKey = juce::jmax (prevHiKey, pz.hiKey);
+    // first (or a staged edit/delete of an existing zone). Read from
+    // whichever file is currently authoritative rather than always targetSfz.
+    int prevHiKey = -1;
+    const juce::File authoritative = (zoneBuilderDirty && zoneBuilderScratchFile.existsAsFile())
+                                    ? zoneBuilderScratchFile : targetSfz;
+    if (authoritative.existsAsFile())
+    {
+        const auto existing = SfzPlayerDropdownPanel::parseSfzZones (authoritative);
+        for (const auto& z : existing)
+            prevHiKey = juce::jmax (prevHiKey, z.hiKey);
+    }
 
     zoneBuilderTargetSfz  = targetSfz;
     zoneBuilderPrevHiKey  = prevHiKey;
@@ -2547,12 +2570,13 @@ void DysektEditor::showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
         if (! confirmed)
             return;
 
-        // Stage rather than write straight to sfzFile — appendZoneToSfz is
-        // now only called from commitZoneBuilderPendingZones (SAVE), so
-        // several zones can be added/auditioned before deciding to keep them.
-        zoneBuilderPendingZones.push_back ({ sampleFile, lo, hi, root });
-        zoneBuilderDirty = true;
-        sliceControlBar.setZoneDirty (true);
+        // Stage rather than write straight to sfzFile — appendZoneToSfz now
+        // writes into the scratch file (created on first touch), so several
+        // zones can be added/auditioned, alongside edits and deletes, before
+        // deciding to keep any of it.
+        ensureZoneBuilderScratchExists();
+        if (! zoneBuilderScratchFile.existsAsFile())
+            return;
 
         // A bad/unresolvable sample= path parses fine in sfizz (regions=1,
         // load "OK") but renders total silence, which looks identical to a
@@ -2563,15 +2587,17 @@ void DysektEditor::showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
         // from the log alone instead of requiring a manual file dump.
         processor.crashLogger.log ("Zone-builder stage: sampleFile=\"" + sampleFile.getFullPathName()
             + "\" exists=" + (sampleFile.existsAsFile() ? "YES" : "NO")
-            + "  will write sample=\"" + buildZoneRegionText (zoneBuilderTargetSfz, sampleFile, lo, hi, root)
+            + "  will write sample=\"" + buildZoneRegionText (zoneBuilderScratchFile, sampleFile, lo, hi, root)
                   .fromFirstOccurrenceOf ("sample=", false, false)
                   .upToFirstOccurrenceOf ("\n", false, false) + "\"");
 
-        // refreshZoneBuilderScratch() drives both the matrix and the
-        // sliceManager2/sampleData2 preview from the rebuilt scratch file —
-        // see its doc comment for why sfzPlayer2.loadFile() alone isn't
-        // enough to reach the slice view.
-        refreshZoneBuilderScratch();
+        appendZoneToSfz (zoneBuilderScratchFile, sampleFile, lo, hi, root);
+
+        // refreshZoneBuilderPreview() drives both the matrix and the
+        // sliceManager2/sampleData2 preview from the already-mutated scratch
+        // file — see its doc comment for why sfzPlayer2.loadFile() alone
+        // isn't enough to reach the slice view.
+        refreshZoneBuilderPreview();
         zoneBuilderKeysPanel.autoScrollToZones();
         repaint();
     };
@@ -2582,9 +2608,9 @@ void DysektEditor::showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
 }
 
 // Builds the raw "<region>...</region>"-style text block for one zone.
-// Shared by appendZoneToSfz (the real on-disk write, at SAVE time) and
-// refreshZoneBuilderScratch (the in-memory preview) so the two paths can
-// never drift out of sync with each other.
+// Used by appendZoneToSfz, which now only ever writes into the scratch file
+// during staging (SAVE itself is a plain scratch->target file copy — see
+// commitZoneBuilderPendingZones).
 juce::String DysektEditor::buildZoneRegionText (const juce::File& sfzFile, const juce::File& sampleFile,
                                                  int loKey, int hiKey, int rootKey)
 {
@@ -2621,13 +2647,17 @@ bool DysektEditor::appendZoneToSfz (const juce::File& sfzFile, const juce::File&
     return ! stream.getStatus().failed();
 }
 
-// Rebuilds the scratch preview file — zoneBuilderTargetSfz's real on-disk
-// content plus one <region> block per staged-but-unsaved pending zone — and
-// points sfzPlayer2/the zone matrix at it. Called every time a zone is
-// staged so the KeysPanel matrix and the slice/waveform preview both reflect
-// all pending zones without ever touching zoneBuilderTargetSfz itself.
-void DysektEditor::refreshZoneBuilderScratch()
+// Lazily creates the scratch file — a byte-for-byte copy of the real
+// on-disk target — the first time any change is staged in a zone-builder
+// session, and marks the session dirty. A no-op once the scratch file
+// already exists for the current staged session, so every staged mutation
+// (field edit / Add Zone / Delete Zone) can call this unconditionally
+// before writing.
+void DysektEditor::ensureZoneBuilderScratchExists()
 {
+    if (zoneBuilderDirty && zoneBuilderScratchFile.existsAsFile())
+        return; // already staged this session
+
     if (! zoneBuilderTargetSfz.existsAsFile())
         return;
 
@@ -2638,57 +2668,77 @@ void DysektEditor::refreshZoneBuilderScratch()
     zoneBuilderScratchFile = zoneBuilderTargetSfz.getSiblingFile (
         "." + zoneBuilderTargetSfz.getFileNameWithoutExtension() + ".zonebuilder_scratch.sfz");
 
-    // Start from a byte-for-byte copy of the real on-disk target — NOT a
-    // loadFileAsString() + juce::String concatenation + replaceWithText
-    // rebuild — then append each staged zone through the exact same
-    // FileOutputStream-based appendZoneToSfz() that SAVE itself uses. That
-    // keeps the preview's bytes and the eventual real commit's bytes
-    // mechanically identical, so a sfizz-strict-parser-vs-app-lenient-parser
-    // mismatch (matrix shows zones sfizz refuses to load) can't be introduced
-    // by the scratch-rebuild step itself.
     zoneBuilderTargetSfz.copyFileTo (zoneBuilderScratchFile);
 
-    for (const auto& pz : zoneBuilderPendingZones)
-        appendZoneToSfz (zoneBuilderScratchFile, pz.sampleFile, pz.loKey, pz.hiKey, pz.rootKey);
-
-    processor.sfzPlayer2.loadFile (zoneBuilderScratchFile, processor.fileLoadPool);
-    processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
-    // See showZoneBuilderAddZoneOverlay's onResult (and the older comment
-    // that used to live there) for why this call is required: sliceManager2/
-    // sampleData2 are only populated by the async soundfont decode, not by
-    // sfzPlayer2.loadFile() alone.
-    processor.loadSoundFontAsync (zoneBuilderScratchFile, SoundFontLoadTarget::SfzPlayer2);
-    refreshZoneBuilderMatrix (zoneBuilderScratchFile);
+    zoneBuilderDirty = true;
+    sliceControlBar.setZoneDirty (true);
 }
 
-// SAVE — commit every staged pending zone to the real zoneBuilderTargetSfz
-// on disk (via the same appendZoneToSfz used before staging existed), then
-// clear staging state and point the live preview back at the real file.
+// Points the live engine + zone matrix at whichever file is currently
+// authoritative — the scratch file if a staged session is in progress
+// (already mutated in place by whatever field edit / Add Zone / Delete Zone
+// just ran), otherwise the real on-disk target. Called after every staged
+// operation so the matrix and slice/waveform preview immediately reflect
+// what was just written to disk.
+void DysektEditor::refreshZoneBuilderPreview()
+{
+    const juce::File previewFile = (zoneBuilderDirty && zoneBuilderScratchFile.existsAsFile())
+                                  ? zoneBuilderScratchFile : zoneBuilderTargetSfz;
+    if (! previewFile.existsAsFile())
+        return;
+
+    processor.sfzPlayer2.loadFile (previewFile, processor.fileLoadPool);
+    processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
+    // See writeSfzZoneChange's comment for why this call is required:
+    // sliceManager2/sampleData2 are only populated by the async soundfont
+    // decode, not by sfzPlayer2.loadFile() alone.
+    processor.loadSoundFontAsync (previewFile, SoundFontLoadTarget::SfzPlayer2);
+    refreshZoneBuilderMatrix (previewFile);
+}
+
+// Right-click "Delete Zone" -> stage removal of one <region> block, via the
+// same scratch-mutation path as field edits and Add Zone.
+void DysektEditor::deleteZoneBuilderZone (int rowIndex)
+{
+    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
+    if (rowIndex < 0 || rowIndex >= (int) zones.size())
+        return;
+
+    ensureZoneBuilderScratchExists();
+    if (! zoneBuilderScratchFile.existsAsFile())
+        return;
+
+    SfzPlayerDropdownPanel::deleteSfzZone (zoneBuilderScratchFile, rowIndex);
+
+    refreshZoneBuilderPreview();
+    repaint();
+}
+
+// SAVE — copies the (already-mutated) scratch file straight over the real
+// target, then clears staging state. Correctly commits any mix of staged
+// edits/adds/deletes in one shot, since the scratch file already reflects
+// all of them — no per-operation replay needed.
 void DysektEditor::commitZoneBuilderPendingZones()
 {
-    if (zoneBuilderPendingZones.empty())
+    if (! zoneBuilderDirty)
         return;
 
-    if (! zoneBuilderTargetSfz.existsAsFile())
+    if (! zoneBuilderScratchFile.existsAsFile() || ! zoneBuilderTargetSfz.existsAsFile())
         return;
 
-    for (const auto& pz : zoneBuilderPendingZones)
+    if (! zoneBuilderScratchFile.copyFileTo (zoneBuilderTargetSfz))
     {
-        if (! appendZoneToSfz (zoneBuilderTargetSfz, pz.sampleFile, pz.loKey, pz.hiKey, pz.rootKey))
-        {
-            messageOverlay = std::make_unique<MessageOverlay> (
-                "Save Failed",
-                "Could not write to:\n" + zoneBuilderTargetSfz.getFullPathName(),
-                MessageOverlay::Kind::Warning);
-            addAndMakeVisible (*messageOverlay);
-            messageOverlay->setBounds (getLocalBounds());
-            messageOverlay->toFront (true);
-            messageOverlay->onDismiss = [this] { messageOverlay.reset(); };
-            return; // leave everything staged so the user can retry SAVE
-        }
+        messageOverlay = std::make_unique<MessageOverlay> (
+            "Save Failed",
+            "Could not write to:\n" + zoneBuilderTargetSfz.getFullPathName(),
+            MessageOverlay::Kind::Warning);
+        addAndMakeVisible (*messageOverlay);
+        messageOverlay->setBounds (getLocalBounds());
+        messageOverlay->toFront (true);
+        messageOverlay->onDismiss = [this] { messageOverlay.reset(); };
+        return; // leave everything staged so the user can retry SAVE
     }
 
-    zoneBuilderPendingZones.clear();
     zoneBuilderDirty = false;
     sliceControlBar.setZoneDirty (false);
 
@@ -2708,12 +2758,11 @@ void DysektEditor::commitZoneBuilderPendingZones()
     repaint();
 }
 
-// DISCARD — drop every staged pending zone without writing anything, and
+// DISCARD — drop the staged scratch file without writing anything, and
 // restore the live preview back to zoneBuilderTargetSfz's actual on-disk
 // state.
 void DysektEditor::discardZoneBuilderPendingZones()
 {
-    zoneBuilderPendingZones.clear();
     zoneBuilderDirty = false;
     sliceControlBar.setZoneDirty (false);
 
@@ -2757,7 +2806,6 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
         zoneBuilderTargetSfz = dest;
 
         // Brand-new target — nothing can possibly be staged against it yet.
-        zoneBuilderPendingZones.clear();
         zoneBuilderDirty = false;
         sliceControlBar.setZoneDirty (false);
         if (zoneBuilderScratchFile.existsAsFile())
