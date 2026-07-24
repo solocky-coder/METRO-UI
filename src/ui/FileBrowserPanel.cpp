@@ -1241,6 +1241,40 @@ void FileBrowserPanel::resolveAndAddArchiveBookmark (const juce::String& url)
 
 // ── Archive list view ─────────────────────────────────────────────────────────
 
+void FileBrowserPanel::setBrowserMode (SfzFileBrowser::Mode m)
+{
+    sfzBrowser.setMode (m);
+
+    // If an archive.org item's file list is already on screen, it was built
+    // under the previous mode's filter. Re-apply the new one against the
+    // cached (unfiltered) results rather than leaving stale rows visible or
+    // requiring the user to re-open the item.
+    refilterArchiveRows();
+}
+
+void FileBrowserPanel::refilterArchiveRows()
+{
+    if (! archiveShowingFileList) return;   // currently showing folders/collection entries, nothing to re-filter
+
+    archiveRows.clear();
+    for (auto& af : lastArchiveAudioFiles)
+    {
+        if (! SfzFileBrowser::matchesMode (sfzBrowser.getMode(), af.name))
+            continue;
+
+        ArchiveRow r;
+        r.name        = af.name;
+        r.format      = af.format;
+        r.downloadUrl = af.downloadUrl;
+        r.sizeBytes   = af.sizeBytes;
+        r.isFolder    = false;
+        archiveRows.add (r);
+    }
+    archiveList.updateContent();
+    resized();
+    repaint();
+}
+
 void FileBrowserPanel::showArchiveItem (int bookmarkIndex)
 {
     if (bookmarkIndex < 0 || bookmarkIndex >= archiveBookmarks.size()) return;
@@ -1262,6 +1296,8 @@ void FileBrowserPanel::showArchiveItem (int bookmarkIndex)
             [this] (bool ok, juce::Array<ArchiveIntegration::CollectionEntry> entries)
             {
                 archiveRows.clear();
+                archiveShowingFileList = false;   // folder/collection entries aren't extension-filtered
+                lastArchiveAudioFiles.clear();
                 if (ok)
                 {
                     archiveListTitle = juce::String (entries.size()) + " items";
@@ -1299,19 +1335,21 @@ void FileBrowserPanel::showArchiveItem (int bookmarkIndex)
                 if (ok)
                 {
                     archiveListTitle = item.title;
-                    for (auto& af : item.audioFiles)
-                    {
-                        ArchiveRow r;
-                        r.name        = af.name;
-                        r.format      = af.format;
-                        r.downloadUrl = af.downloadUrl;
-                        r.sizeBytes   = af.sizeBytes;
-                        r.isFolder    = false;
-                        archiveRows.add (r);
-                    }
+
+                    // Cache the unfiltered list and apply the local browser's
+                    // active mode (Slicer/kAddZone -> audio only, kSf2 -> .sf2
+                    // only, SFZ-Player -> .sfz only) — same rule the local
+                    // filesystem tree already enforces, and re-appliable later
+                    // if the mode changes without re-fetching.
+                    lastArchiveAudioFiles = item.audioFiles;
+                    archiveShowingFileList = true;
+                    refilterArchiveRows();
+                    return;   // refilterArchiveRows() already updates/resizes/repaints
                 }
                 else
                 {
+                    lastArchiveAudioFiles.clear();
+                    archiveShowingFileList = false;
                     archiveListTitle = "Failed to load";
                 }
                 archiveList.updateContent();
@@ -1337,19 +1375,18 @@ void FileBrowserPanel::showCollectionItem (const juce::String& collectionId)
             if (ok)
             {
                 archiveListTitle = item.title;
-                for (auto& af : item.audioFiles)
-                {
-                    ArchiveRow r;
-                    r.name        = af.name;
-                    r.format      = af.format;
-                    r.downloadUrl = af.downloadUrl;
-                    r.sizeBytes   = af.sizeBytes;
-                    r.isFolder    = false;
-                    archiveRows.add (r);
-                }
+
+                // Same cache-and-filter approach as showArchiveItem() above —
+                // keeps collection drill-in consistent with the top-level view.
+                lastArchiveAudioFiles = item.audioFiles;
+                archiveShowingFileList = true;
+                refilterArchiveRows();
+                return;   // refilterArchiveRows() already updates/resizes/repaints
             }
             else
             {
+                lastArchiveAudioFiles.clear();
+                archiveShowingFileList = false;
                 archiveListTitle = "Failed to load";
             }
             archiveList.updateContent();
@@ -1417,6 +1454,8 @@ void FileBrowserPanel::exitArchiveView()
     activeArchiveIndex = -1;
     archiveRows.clear();
     archiveListTitle.clear();
+    archiveShowingFileList = false;
+    lastArchiveAudioFiles.clear();
     archiveList.updateContent();
     resized();
     repaint();

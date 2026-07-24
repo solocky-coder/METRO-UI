@@ -232,7 +232,7 @@ public:
     std::function<void()> onFileLoaded;
     std::function<void (const juce::File&)> onLoadRequest;
 
-    void setBrowserMode (SfzFileBrowser::Mode m) { sfzBrowser.setMode (m); }
+    void setBrowserMode (SfzFileBrowser::Mode m);
 
 private:
     // ── ChangeListener ────────────────────────────────────────────────────────
@@ -320,6 +320,14 @@ private:
     void showCollectionItem (const juce::String& collectionId);
     void loadArchiveFile (const ArchiveRow& row);
     void exitArchiveView();
+
+    // Unfiltered results from the most recent successful item fetch (kept so
+    // a later mode switch can re-filter without re-hitting the network), plus
+    // whether archiveRows currently holds a file list at all (as opposed to
+    // folder/collection entries, which aren't extension-filtered).
+    juce::Array<ArchiveIntegration::AudioFile> lastArchiveAudioFiles;
+    bool                                       archiveShowingFileList = false;
+    void refilterArchiveRows();   ///< Re-applies sfzBrowser's current mode filter to lastArchiveAudioFiles
 
     // ── File browser (SfzFileBrowser — matches SFZ-Player panel style) ───────
     SfzFileBrowser             sfzBrowser;

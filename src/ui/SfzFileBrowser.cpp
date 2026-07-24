@@ -275,6 +275,17 @@ void SfzFileBrowser::navigateToRoots()
     repaint();
 }
 
+bool SfzFileBrowser::matchesMode (Mode m, const juce::String& fileNameOrPath)
+{
+    if (m == Mode::kAddZone)
+        return fileNameOrPath.endsWithIgnoreCase (".wav")  || fileNameOrPath.endsWithIgnoreCase (".aif")
+            || fileNameOrPath.endsWithIgnoreCase (".aiff") || fileNameOrPath.endsWithIgnoreCase (".flac")
+            || fileNameOrPath.endsWithIgnoreCase (".ogg")  || fileNameOrPath.endsWithIgnoreCase (".mp3");
+    if (m == Mode::kSf2)
+        return fileNameOrPath.endsWithIgnoreCase (".sf2");
+    return fileNameOrPath.endsWithIgnoreCase (".sfz");
+}
+
 void SfzFileBrowser::setMode (Mode m)
 {
     mode = m;
@@ -340,17 +351,6 @@ void SfzFileBrowser::rebuildZipList()
 {
     juce::ZipFile zip (activeZipFile);
 
-    const auto matchesMode = [this] (const juce::String& name) -> bool
-    {
-        if (mode == Mode::kAddZone)
-            return name.endsWithIgnoreCase (".wav")  || name.endsWithIgnoreCase (".aif")
-                || name.endsWithIgnoreCase (".aiff") || name.endsWithIgnoreCase (".flac")
-                || name.endsWithIgnoreCase (".ogg")  || name.endsWithIgnoreCase (".mp3");
-        if (mode == Mode::kSf2)
-            return name.endsWithIgnoreCase (".sf2");
-        return name.endsWithIgnoreCase (".sfz");
-    };
-
     juce::StringArray        seenFolders;
     juce::Array<BrowserRow>  folderRows, fileRows;
 
@@ -380,7 +380,7 @@ void SfzFileBrowser::rebuildZipList()
         else
         {
             // A file directly inside the current directory level.
-            if (! matchesMode (rel)) continue;
+            if (! matchesMode (mode, rel)) continue;
             fileRows.add ({ BrowserRow::Kind::ZipFile, activeZipFile, path, rel });
         }
     }

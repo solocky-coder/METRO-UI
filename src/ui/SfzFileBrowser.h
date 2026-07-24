@@ -30,6 +30,22 @@ public:
     Mode getMode () const { return mode; }
     ~SfzFileBrowser() override;
 
+    /**
+     * Returns true if a file (identified by its name/extension — a full path,
+     * bare filename, or archive entry name all work) belongs in the given
+     * mode's listing:
+     *   kAddZone -> wav/aif/aiff/flac/ogg/mp3
+     *   kSf2     -> sf2
+     *   kSfz     -> sfz
+     *
+     * This is the single source of truth for "does this extension belong in
+     * this mode", shared with anything that lists files alongside the local
+     * filesystem browser (e.g. ArchiveIntegration results in FileBrowserPanel)
+     * so those listings can't drift out of sync with what the local tree
+     * shows for the same mode.
+     */
+    static bool matchesMode (Mode m, const juce::String& fileNameOrPath);
+
     // juce::Component overrides
     void paint   (juce::Graphics&) override;
     void resized () override;
