@@ -454,6 +454,61 @@ public:
     SliceManager     sliceManager2;
     VoicePool        voicePool2;
 
+    /** Zone Builder edits (loKey/hiKey/root/pitch/pan/volume/release/loop --
+     *  see SliceControlBar::SfzZoneField) work by patching the .sfz text and
+     *  triggering a full sliceManager2 rebuild via loadSoundFontAsync, same
+     *  as a fresh file load (see SfzPlayerDropdownPanel::writeSfzZoneChange).
+     *  A fresh load SHOULD wipe every slice clean. A Zone Builder edit
+     *  should not -- it should only touch the region-defining fields the
+     *  edit actually concerns, and preserve anything the user has separately
+     *  dialed in via the SFZ-PLAYER's own SliceLcdDisplay/SliceControlBar
+     *  (custom ADSR, per-slice EQ, filter, chromatic channel, mute group,
+     *  etc.) -- none of which have any SFZ opcode equivalent and would
+     *  otherwise silently reset to Slice's defaults on every zone edit.
+     *
+     *  zoneBuilderReloadPending is set true (by writeSfzZoneChange) just
+     *  before kicking off the loadSoundFontAsync that a zone edit causes.
+     *  processBlock checks it immediately before sliceManager2.clearAll():
+     *  if set, every current slice's DYSEKT-only fields are captured here
+     *  first, keyed by MIDI note, then reapplied to the matching rebuilt
+     *  slice afterward. The flag is consumed (reset false) once used, so an
+     *  unrelated/fresh load right after still gets the normal clean slate. */
+    std::atomic<bool> zoneBuilderReloadPending { false };
+    struct SliceOverrideSnapshot
+    {
+        bool  valid           = false;
+        float attackSec       = 0.0f;
+        float holdSec         = 0.0f;
+        float decaySec        = 0.0f;
+        float sustainLevel    = 1.0f;
+        int   algorithm       = 0;
+        float bpm             = 120.0f;
+        int   muteGroup       = 1;
+        bool  stretchEnabled  = false;
+        float tonalityHz      = 0.0f;
+        float formantSemitones = 0.0f;
+        bool  formantComp     = false;
+        int   grainMode       = 0;
+        bool  releaseTail     = false;
+        bool  reverse         = false;
+        int   outputBus       = 0;
+        bool  oneShot         = false;
+        float centsDetune     = 0.0f;
+        float filterCutoff    = 20000.0f;
+        float filterRes       = 0.0f;
+        float eqLowGain       = 0.0f;
+        float eqMidGain       = 0.0f;
+        float eqMidFreq       = 1000.0f;
+        float eqMidQ          = 1.0f;
+        float eqHighGain      = 0.0f;
+        int   chromaticChannel = 0;
+        bool  chromaticLegato  = false;
+        bool  showInMixer      = false;
+        juce::String name;
+        uint32_t lockMask      = 0;
+    };
+    std::array<SliceOverrideSnapshot, SliceManager::kMaxSlices> zoneBuilderSliceSnapshot;
+
     /** The SFZ-PLAYER tab's own independent preview waveform buffer.
      *  Purely visual — never touched by any audio engine (sfzPlayer2 has its
      *  own internal sfizz state for actual playback) and decoupled from the

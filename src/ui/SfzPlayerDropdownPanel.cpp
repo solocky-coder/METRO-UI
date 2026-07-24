@@ -1632,6 +1632,25 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
     // Hot-reload the SFZ player so changes take effect immediately
     processor.sfzPlayer2.loadFile (f, processor.fileLoadPool);
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
+
+    // Tell processBlock the rebuild this triggers is a Zone Builder edit,
+    // not a fresh file load — see zoneBuilderReloadPending's declaration in
+    // PluginProcessor.h. Must be set before loadSoundFontAsync below so it's
+    // already true by the time the render completes and sliceManager2 gets
+    // rebuilt, however many blocks that takes.
+    processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
+
+    // The line above only updates sfzPlayer2 — the live sfizz/FluidSynth
+    // engine — but sfzPlayer2.process() is never called anywhere in
+    // DysektProcessor::processBlock() (see MixerPanel::sfz2TotalH()'s note
+    // on this). What voicePool2 actually plays back is the pre-rendered
+    // slice data in sliceManager2/sampleData2, populated by SoundFontLoader
+    // via loadSoundFontAsync(..., SoundFontLoadTarget::SfzPlayer2). Without
+    // re-running that render here, every zone-view edit (loKey/hiKey/root/
+    // pitch/pan/volume/release/loop) patches the .sfz text correctly but
+    // never reaches the samples that are actually heard — same async path
+    // browserPanel.onLoadRequest uses for a fresh load.
+    processor.loadSoundFontAsync (f, SoundFontLoadTarget::SfzPlayer2);
 }
 
 // =============================================================================

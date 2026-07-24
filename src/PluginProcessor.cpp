@@ -2943,6 +2943,53 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             mainLoadInFlight.store (false, std::memory_order_release);
             clearVoicesBeforeSampleSwap2();
             sampleData2.applyDecodedSample (decoded2);
+
+            // See zoneBuilderReloadPending's declaration: capture DYSEKT-only
+            // per-slice fields (no SFZ opcode equivalent) before they're
+            // wiped, keyed by MIDI note, so a Zone Builder edit doesn't
+            // silently discard unrelated SliceLcdDisplay customisation.
+            // Plain fresh loads leave the flag false and get the normal
+            // clean slate -- no snapshot taken, nothing to restore below.
+            if (zoneBuilderReloadPending.load (std::memory_order_acquire))
+            {
+                for (int i = 0; i < sliceManager2.getNumSlices(); ++i)
+                {
+                    const auto& s = sliceManager2.getSlice (i);
+                    if (! s.active || s.midiNote < 0 || s.midiNote > 127) continue;
+                    auto& snap = zoneBuilderSliceSnapshot[(size_t) s.midiNote];
+                    snap.valid             = true;
+                    snap.attackSec         = s.attackSec;
+                    snap.holdSec           = s.holdSec;
+                    snap.decaySec          = s.decaySec;
+                    snap.sustainLevel      = s.sustainLevel;
+                    snap.algorithm         = s.algorithm;
+                    snap.bpm               = s.bpm;
+                    snap.muteGroup         = s.muteGroup;
+                    snap.stretchEnabled    = s.stretchEnabled;
+                    snap.tonalityHz        = s.tonalityHz;
+                    snap.formantSemitones  = s.formantSemitones;
+                    snap.formantComp       = s.formantComp;
+                    snap.grainMode         = s.grainMode;
+                    snap.releaseTail       = s.releaseTail;
+                    snap.reverse           = s.reverse;
+                    snap.outputBus         = s.outputBus;
+                    snap.oneShot           = s.oneShot;
+                    snap.centsDetune       = s.centsDetune;
+                    snap.filterCutoff      = s.filterCutoff;
+                    snap.filterRes         = s.filterRes;
+                    snap.eqLowGain         = s.eqLowGain;
+                    snap.eqMidGain         = s.eqMidGain;
+                    snap.eqMidFreq         = s.eqMidFreq;
+                    snap.eqMidQ            = s.eqMidQ;
+                    snap.eqHighGain        = s.eqHighGain;
+                    snap.chromaticChannel  = s.chromaticChannel;
+                    snap.chromaticLegato   = s.chromaticLegato;
+                    snap.showInMixer       = s.showInMixer;
+                    snap.name              = s.name;
+                    snap.lockMask          = s.lockMask;
+                }
+            }
+
             sliceManager2.clearAll();
             uiSnapshotDirty.store (true, std::memory_order_release);
         }
@@ -3017,6 +3064,58 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (hasZoneColour)
                         sliceManager2.getSlice (headIdx).colour = juce::Colour (desc.zoneColourArgb);
                 }
+            }
+
+            // Reapply anything captured above, just before clearAll(), for
+            // whichever MIDI notes still exist in the rebuilt layout. Region-
+            // defining fields (bounds, midiNote, loopMode, pan, volume,
+            // release, pitch/root) are deliberately left alone here -- those
+            // come from the fresh render / the zone edit that triggered this
+            // reload, not the snapshot.
+            if (zoneBuilderReloadPending.exchange (false, std::memory_order_acq_rel))
+            {
+                for (int i = 0; i < sliceManager2.getNumSlices(); ++i)
+                {
+                    auto& s = sliceManager2.getSlice (i);
+                    if (! s.active || s.midiNote < 0 || s.midiNote > 127) continue;
+                    const auto& snap = zoneBuilderSliceSnapshot[(size_t) s.midiNote];
+                    if (! snap.valid) continue;
+
+                    s.attackSec        = snap.attackSec;
+                    s.holdSec          = snap.holdSec;
+                    s.decaySec         = snap.decaySec;
+                    s.sustainLevel     = snap.sustainLevel;
+                    s.algorithm        = snap.algorithm;
+                    s.bpm              = snap.bpm;
+                    s.muteGroup        = snap.muteGroup;
+                    s.stretchEnabled   = snap.stretchEnabled;
+                    s.tonalityHz       = snap.tonalityHz;
+                    s.formantSemitones = snap.formantSemitones;
+                    s.formantComp      = snap.formantComp;
+                    s.grainMode        = snap.grainMode;
+                    s.releaseTail      = snap.releaseTail;
+                    s.reverse          = snap.reverse;
+                    s.outputBus        = snap.outputBus;
+                    s.oneShot          = snap.oneShot;
+                    s.centsDetune      = snap.centsDetune;
+                    s.filterCutoff     = snap.filterCutoff;
+                    s.filterRes        = snap.filterRes;
+                    s.eqLowGain        = snap.eqLowGain;
+                    s.eqMidGain        = snap.eqMidGain;
+                    s.eqMidFreq        = snap.eqMidFreq;
+                    s.eqMidQ           = snap.eqMidQ;
+                    s.eqHighGain       = snap.eqHighGain;
+                    s.chromaticChannel = snap.chromaticChannel;
+                    s.chromaticLegato  = snap.chromaticLegato;
+                    s.showInMixer      = snap.showInMixer;
+                    s.name             = snap.name;
+                    s.lockMask         = snap.lockMask;
+                }
+                // Clear so a later unrelated reload (fresh load with the
+                // flag legitimately false) never sees stale entries from
+                // this edit reapplied to the wrong slice.
+                for (auto& snap : zoneBuilderSliceSnapshot)
+                    snap.valid = false;
             }
 
             uiSnapshotDirty.store (true, std::memory_order_release);
