@@ -52,6 +52,10 @@ public:
     void writeSfzZoneChange (const juce::File& f, int rowIndex,
                              const KeysPanel::Keyzone& updated);
 
+    /// Remove the Nth <region> block (rowIndex is 0-based, same indexing as
+    /// writeSfzZoneChange / parseSfzZones) from an SFZ text file in place.
+    static void deleteSfzZone (const juce::File& f, int rowIndex);
+
     // ── FileDragAndDropTarget ─────────────────────────────────────────────────
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;

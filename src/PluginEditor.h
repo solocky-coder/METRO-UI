@@ -203,7 +203,9 @@ private:
     // identically (including the unsaved-zones confirm prompt on close).
     void toggleZoneBuilder (bool on);
 
-    void refreshZoneBuilderScratch();       // rebuild scratch file from pending zones, reload preview + matrix
+    void ensureZoneBuilderScratchExists();   // rebuild scratch file from pending zones, reload preview + matrix
+    void refreshZoneBuilderPreview();       // re-derive + load whichever file (scratch/target) is current, refresh matrix
+    void deleteZoneBuilderZone (int rowIndex); // remove a zone from the scratch file and refresh
     void commitZoneBuilderPendingZones();   // SAVE: write pending zones to zoneBuilderTargetSfz, clear staging
     void discardZoneBuilderPendingZones();  // DISCARD: drop pending zones, restore preview to on-disk state
 

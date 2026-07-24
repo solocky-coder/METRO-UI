@@ -1561,6 +1561,48 @@ static void setOpcode (juce::StringArray& lines, int regionStart,
     lines.set (regionStart, lines[regionStart].trimEnd() + " " + target + value);
 }
 
+void SfzPlayerDropdownPanel::deleteSfzZone (const juce::File& f, int rowIndex)
+{
+    if (! f.existsAsFile()) return;
+
+    auto lines = juce::StringArray::fromLines (f.loadFileAsString());
+
+    // Find the Nth <region> block (same 0-based indexing as writeSfzZoneChange).
+    int regionCount = -1;
+    int regionStart = -1;
+
+    for (int i = 0; i < lines.size(); ++i)
+    {
+        if (lines[i].trim().toLowerCase().startsWith ("<region>"))
+        {
+            ++regionCount;
+            if (regionCount == rowIndex)
+            {
+                regionStart = i;
+                break;
+            }
+        }
+    }
+
+    if (regionStart < 0) return;  // region not found — bail
+
+    // Block runs until the next <region>/<group>/<global> header or EOF.
+    int regionEnd = lines.size();
+    for (int i = regionStart + 1; i < lines.size(); ++i)
+    {
+        const auto lower = lines[i].trim().toLowerCase();
+        if (lower.startsWith ("<region>") || lower.startsWith ("<group>") ||
+            lower.startsWith ("<global>"))
+        {
+            regionEnd = i;
+            break;
+        }
+    }
+
+    lines.removeRange (regionStart, regionEnd - regionStart);
+    f.replaceWithText (lines.joinIntoString ("\n"));
+}
+
 void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
                                             int rowIndex,
                                             const KeysPanel::Keyzone& z)
