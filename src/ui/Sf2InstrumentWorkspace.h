@@ -1,38 +1,79 @@
 #pragma once
 // =============================================================================
-//  Sf2InstrumentWorkspace.h  —  persistent 3-column SF2 instrument workspace
+//  Sf2InstrumentWorkspace.h  —  3-column SF2 instrument workspace
 // =============================================================================
-//  Rebuilt replacement for SfzDropdownPanel's strip+popup UI. Instead of a
-//  thin header strip that pops a program grid overlay on top of everything
-//  else, this is a permanently-docked 3-column layout:
+//  Full rewrite, drafted literally against sf2-metro-reference-keyboard.svg
+//  (the approved mockup), NOT against the previous "reflow the old panel into
+//  three columns" build. Layout, per the mockup's 1370x414 reference panel:
 //
-//    [ 26% Presets ] [ 36% Voice / Reverb / Keyboard ] [ 38% Channel mixer ]
+//    [ Col 1 ~25.5% ] [ Col 2 ~34.8% ] [ Col 3 ~34.1% ]
+//     Preset browser    Active preset      Performance & FX
+//                        + Amp envelope
 //
-//  Below ~760 px wide the columns stack top-to-bottom instead (narrow-width
-//  stacking) so the workspace stays usable in a squeezed VST3 host window.
+//  Docked top bar (36px): title, "PRESET BROWSER / PERFORMANCE / ENVELOPE"
+//  caption, and a SOUNDFONT LOADED status pill (green dot when a file is
+//  loaded, per Sf2ProgramGrid's existing load-state signal).
 //
-//  Column 1 — Preset browser: Sf2ProgramGrid, always visible (no more
-//  open/close popup state). Left-click auditions, right-click assigns a
-//  MIDI channel. This channel-assignment/collision/audition logic is ported
-//  directly from SfzDropdownPanel's constructor (same rules: channels 1-2
-//  reserved, chromatic-slice/SFZ-Player channels blocked).
+//  Column 1 — Preset browser (mockup: no more 8-col grid):
+//    • Search box (juce::TextEditor, "⌕  Search presets" placeholder)
+//    • Single-column preset list, selected row highlighted with the accent
+//      left-bar treatment shown in the mockup (#22c3ee), bank/program badge
+//      right-aligned per row
+//    • "BANK 000  ·  GENERAL MIDI" footer + "BROWSE SF2" button (opens the
+//      shared FileBrowserPanel, same as SfzDropdownPanel's old file-open path)
+//    Left-click auditions a program change; right-click assigns a MIDI
+//    channel — channel-assignment/collision rules ported unchanged from
+//    SfzDropdownPanel (channels 1-2 reserved, chromatic-slice/SFZ-Player
+//    channels blocked). List/search state is presentation-only; the
+//    underlying assignment bookkeeping still goes through Sf2ProgramGrid's
+//    existing data, so getProgramGrid() keeps returning real state even
+//    though the grid itself is no longer painted.
 //
-//  Column 2 — Voice controls: TRN / FINE / PAN / VOL knobs and REV MIX /
-//  REV SIZE knobs, wired straight to the real SfzPlayer setters (no
-//  pushCommand/MIDI-learn indirection needed for the values themselves —
-//  right-click still opens the MIDI-learn menu on the global SliceParamField
-//  IDs, exactly as SfzDropdownPanel did). Below the knobs: a MIDI channel
-//  range spinner (same lo/hi sfPlayerChannelMask logic as before), a decaying
-//  note-activity meter driven by processor.sfzActiveNotes, and an embedded
-//  KeysPanel (EngineSource::SfPlayer) for on-screen play + live note
-//  highlighting.
+//  Column 2 top — Active preset + 3 knobs (LEVEL / TRANSPOSE / PAN):
+//    Wired straight to SfzPlayer::setVolume/setTranspose/setPan (no
+//    pushCommand/MIDI-learn indirection for the value itself; right-click
+//    still opens the MIDI-learn menu on the global SliceParamField IDs,
+//    exactly as SfzDropdownPanel did).
 //
-//  Column 3 — Sf2ChannelFxPanel, shown once more than one MIDI channel has
-//  an assigned preset (i.e. true multitimbral use); otherwise a single-
-//  channel hint is drawn instead, since the per-channel mixer has nothing
-//  useful to show for exactly one channel.
+//    ⚠ DEVIATION FROM THE LITERAL MOCKUP: the SVG's knob row has only 3
+//    knobs and drops FineTune entirely — it is not present anywhere in the
+//    mockup. Silently deleting fine-tune access would be a functionality
+//    regression the SVG doesn't call out, so it is kept as a small secondary
+//    stepper docked under the Transpose knob (fineZone), visually
+//    subordinate to the 3 primary knobs so the mockup's proportions and
+//    reading order are preserved. Flagging this here rather than baking it
+//    in silently — worth confirming against the design before shipping.
 //
-//  Public API mirrors SfzDropdownPanel so the PluginEditor swap is
+//  Column 2 bottom — Amp envelope: a real A/D/S/R curve (polyline + gridlines
+//    + per-stage labels), replacing the old 6-knob row's implicit envelope.
+//    Values come from SfzPlayer::getSfzAttack/Decay/Sustain/Release (seconds/
+//    seconds/percent/seconds) via the existing FieldSfzAttack..FieldSfzRelease
+//    SliceParamField path. Draggable per-stage handles, not knobs.
+//
+//  Column 3 — Performance & FX:
+//    • REVERB SEND slider (SfzPlayer::getReverbMix/setReverbMix, 0-100%)
+//    • REVERB DAMP  slider (SfzPlayer::getReverbDamp/setReverbDamp, 0-100%)
+//    • MIDI INPUT: channel readout + decaying note-activity meter (bars),
+//      driven by processor.sfzActiveNotes, matching the mockup's bar-meter
+//      treatment (not the old panel's continuous VU-style meter)
+//    • OUTPUT: "MASTER BUS" label + SETTINGS button (opens the same
+//      MIDI-learn / routing menu the old panel used)
+//    • Embedded compact KeysPanel (EngineSource::SfPlayer), C3-C5 range,
+//      docked at the bottom of column 3 per the mockup's keyboard strip
+//      (not full-width across all 3 columns)
+//
+//    Column 3 ALSO carries the explicit mixer-toggle decided in the prior
+//    review: a small tab pair — "Performance & FX" (this literal-mockup
+//    state, shown whenever <=1 MIDI channel has an assigned preset) vs.
+//    "Channel Mixer" (Sf2ChannelFxPanel, shown once more than one channel is
+//    multitimbral-assigned). The mockup only depicts the single-preset
+//    state; the toggle is new UI not present in the SVG, added deliberately
+//    instead of silently keeping a 4th de-facto column.
+//
+//  Below ~760 px wide, columns stack top-to-bottom instead of side-by-side
+//  (kNarrowThreshold), same responsive behaviour as before.
+//
+//  Public API mirrors SfzDropdownPanel so the PluginEditor swap stays
 //  mechanical: onFileChosen(), panelDidShow(), onFileLoaded,
 //  onPresetChannelAssigned, notifyPresetChannelChanged(), getProgramGrid().
 // =============================================================================
@@ -73,21 +114,24 @@ public:
      *  shared FileBrowserPanel::onLoadRequest when uiMode == SF2-PLAYER). */
     void onFileChosen (const juce::File& f);
 
-    /** Fired when the user right-clicks a preset cell and assigns a MIDI channel. */
+    /** Fired when the user right-clicks a preset row and assigns a MIDI channel. */
     std::function<void (const Sf2PresetInfo&, int midiChannel1Based)> onPresetChannelAssigned;
 
     /** Called by PluginEditor whenever a preset<->channel mapping changes. */
     void notifyPresetChannelChanged (const juce::String& presetName, int midiCh1Based);
 
-    /** Direct access to the SF2 program grid (read-only) for PluginEditor. */
+    /** Direct access to the SF2 program grid (read-only) for PluginEditor.
+     *  Still backs the preset list even though Sf2ProgramGrid's own grid
+     *  paint route is no longer used in column 1. */
     const Sf2ProgramGrid& getProgramGrid() const noexcept { return programGrid; }
 
 private:
-    // ── Layout ────────────────────────────────────────────────────────────────
-    static constexpr float kColPresetsFrac = 0.26f;
-    static constexpr float kColVoiceFrac   = 0.36f;
-    // Column 3 (mixer) gets whatever remains (~0.38).
+    // ── Layout — proportions taken from the 1370x414 reference panel ─────────
+    static constexpr float kColPresetsFrac = 350.0f / 1370.0f;   // ~0.2555
+    static constexpr float kColVoiceFrac   = 477.0f / 1370.0f;   // ~0.3482
+    // Column 3 (Performance & FX / Channel Mixer) gets the remainder (~0.396).
     static constexpr int   kNarrowThreshold = 760;   // px — below this, stack columns
+    static constexpr int   kTopBarH         = 36;
     static constexpr int   kKnobW  = 56;
     static constexpr int   kKnobH  = 56;
     static constexpr int   kPad    = 8;
@@ -95,31 +139,63 @@ private:
     void layoutWide   (juce::Rectangle<int> bounds);
     void layoutNarrow (juce::Rectangle<int> bounds);
 
-    // ── Column 1 — preset browser ─────────────────────────────────────────────
-    Sf2ProgramGrid programGrid;
+    // ── Top bar ────────────────────────────────────────────────────────────
+    juce::Rectangle<int> topBarZone, loadedPillZone;
+
+    // ── Column 1 — preset browser (search + list, no grid) ────────────────
+    Sf2ProgramGrid programGrid;   // data model retained; not painted directly
     std::vector<Sf2PresetInfo> presetList;
+    juce::TextEditor searchBox;
+    juce::ListBox    presetListBox;
+    juce::TextButton browseButton { "BROWSE SF2" };
+    juce::Rectangle<int> col1Zone, searchZone, listZone, bankFooterZone, browseButtonZone;
+    juce::String currentSearchFilter;
     void restoreGridChannelAssignments();
+    void rebuildFilteredPresetRows();
 
     struct AssignedPreset { juce::String name; int ch { 0 }; };
     std::vector<AssignedPreset> sf2Presets;
 
-    // ── Column 2 — voice controls ─────────────────────────────────────────────
-    juce::Rectangle<int> transZone, fineZone, panZone, volZone, rvMixZone, rvSizeZone;
-    juce::Rectangle<int> chLowDec,  chLowLabel,  chLowInc;
-    juce::Rectangle<int> chHighDec, chHighLabel, chHighInc;
-    juce::Rectangle<int> chRangeLabelZone;
-    juce::Rectangle<int> noteMeterZone;
+    // ── Column 2 top — active preset + 3 knobs ─────────────────────────────
+    juce::Rectangle<int> col2Zone, activePresetHeaderZone;
+    juce::Rectangle<int> levelZone, transZone, panZone;
+    // Secondary fine-tune stepper — deliberate deviation from the literal
+    // mockup (see header comment above); visually subordinate to the 3
+    // primary knobs.
+    juce::Rectangle<int> fineZone;
+
+    // ── Column 2 bottom — amp envelope graph ───────────────────────────────
+    juce::Rectangle<int> envelopeZone, envelopeGraphZone;
+    juce::Rectangle<int> envAttackLabelZone, envDecayLabelZone,
+                          envSustainLabelZone, envReleaseLabelZone;
+    void drawEnvelopeGraph (juce::Graphics& g, juce::Rectangle<int> bounds) const;
+
+    // ── Column 3 — Performance & FX / Channel Mixer toggle ─────────────────
+    enum class Col3Mode { PerformanceFx, ChannelMixer };
+    Col3Mode col3Mode { Col3Mode::PerformanceFx };
+    juce::Rectangle<int> col3Zone, col3TabZone;
+    juce::Rectangle<int> perfFxTabZone, channelMixerTabZone;
+    bool channelMixerTabEnabled() const noexcept { return countAssignedChannels() > 1; }
+
+    juce::Rectangle<int> reverbSendZone, reverbDampZone;
+    juce::Rectangle<int> midiInputHeaderZone, midiChannelReadoutZone, noteMeterZone;
+    juce::Rectangle<int> outputHeaderZone, masterBusLabelZone, settingsButtonZone;
     juce::Rectangle<int> keyboardZone;
+    juce::TextButton settingsButton { "SETTINGS" };
 
     KeysPanel keysPanel;
+    Sf2ChannelFxPanel channelFxPanel;   // shown only in Col3Mode::ChannelMixer
+    uint16_t assignedChannelMask { 0 }; ///< bit N set = MIDI channel N (0-based bit) has a preset
+    int      countAssignedChannels() const noexcept;
+    void     refreshChannelFxLabels();
 
-    int cachedChLow  { 0 };
-    int cachedChHigh { 0 };
-
-    void drawKnob (juce::Graphics& g, juce::Rectangle<int> bounds,
-                   float normalised, const juce::String& label,
-                   const juce::String& valueStr) const;
-    void drawNoteMeter (juce::Graphics& g, juce::Rectangle<int> bounds) const;
+    void drawKnob      (juce::Graphics& g, juce::Rectangle<int> bounds,
+                         float normalised, const juce::String& label,
+                         const juce::String& valueStr) const;
+    void drawSlider     (juce::Graphics& g, juce::Rectangle<int> bounds,
+                         float normalised, const juce::String& label,
+                         const juce::String& valueStr) const;
+    void drawNoteMeter  (juce::Graphics& g, juce::Rectangle<int> bounds) const;
 
     // Decaying note-activity meter — derived from processor.sfzActiveNotes,
     // throttles its own repaint rate down when idle rather than repainting
@@ -127,7 +203,9 @@ private:
     float noteActivityLevel { 0.f };
     int   idleTicks         { 0 };
 
-    enum class ActiveKnob { None, Transpose, FineTune, Pan, Volume, ReverbMix, ReverbSize };
+    enum class ActiveKnob { None, Level, Transpose, FineTune, Pan,
+                             ReverbSend, ReverbDamp,
+                             EnvAttack, EnvDecay, EnvSustain, EnvRelease };
     ActiveKnob activeKnob   { ActiveKnob::None };
     int        dragStartY   { 0 };
     float      dragStartVal { 0.f };
@@ -142,13 +220,6 @@ private:
     float normToFine   (float n)      const;
 
     void showMidiLearnMenu (int fieldId, juce::Point<int> screenPos);
-
-    // ── Column 3 — per-channel mixer ──────────────────────────────────────────
-    Sf2ChannelFxPanel channelFxPanel;
-    juce::Rectangle<int> singleChannelHintZone;
-    uint16_t assignedChannelMask { 0 };   ///< bit N set = MIDI channel N (0-based bit) has a preset
-    int      countAssignedChannels() const noexcept;
-    void     refreshChannelFxLabels();
 
     // ── Mouse events ──────────────────────────────────────────────────────────
     void mouseDown        (const juce::MouseEvent&) override;
