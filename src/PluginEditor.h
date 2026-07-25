@@ -29,7 +29,7 @@
 #include "ui/Sf2LcdDisplay.h"
 #include "ui/Sf2WaveformLcd.h"
 #include "ui/WaveformOverview.h"
-#include "ui/SfzDropdownPanel.h"
+#include "ui/Sf2InstrumentWorkspace.h"
 #include "ui/SfzPlayerDropdownPanel.h"
 #include "ui/GlobalEqPanel.h"
 #include "ui/PadGridView.h"
@@ -271,7 +271,7 @@ private:
     MixerPanel       mixerPanel;
     PadGridView      padGridView;
     KeysPanel        zoneBuilderKeysPanel { processor }; // SFZ-PLAYER ZONES view — standalone, NOT sfzPlayerDropdown.keysPanel
-    SfzDropdownPanel       sfzDropdown;
+    Sf2InstrumentWorkspace sfzDropdown;   // name kept — see all call sites below
     SfzPlayerDropdownPanel sfzPlayerDropdown;
     ShortcutsPanel   shortcutsPanel { processor };
     GlobalEqPanel    eqPanel;

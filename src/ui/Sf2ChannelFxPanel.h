@@ -1,27 +1,37 @@
 #pragma once
 // =============================================================================
-//  Sf2ChannelFxPanel.h  —  Per-channel (per-preset) SF2 reverb + gain strip
+//  Sf2ChannelFxPanel.h  —  Per-channel (per-preset) SF2 mixer strip
 // =============================================================================
 //  Displays one column per active FluidSynth channel.  Each column shows:
-//    • Preset name (from the sequencer track list or sfzPlayer preset list)
-//    • Reverb-mix knob  (0–100 %)
-//    • Reverb-size knob (0–100 %)
-//    • Reverb-damp knob (0–100 %)
-//    • Gain knob        (0–200 %, 100 = unity)
+//    • Preset name (set via setChannelLabel(), from the SF2 program grid)
+//    • Volume knob      (0–100 %,  SfzPlayer::ChannelStrip::volume, 0..1)
+//    • Pan knob         (-100..+100 %, ChannelStrip::pan, -1..+1)
+//    • Reverb-send knob (0–100 %,  ChannelStrip::reverbSend, 0..1)
+//    • Mute toggle       (click the label to mute/unmute; muted columns dim)
 //
 //  Thread safety:
-//    All knob mutations call sfzPlayer.setChannel*() directly (atomic stores,
-//    UI-thread safe) and also push a CmdSetSliceParam so MIDI-learn can track
-//    the field.  The panel polls on its Timer (30 Hz) to refresh display.
+//    This is the real, already audio-thread-wired per-channel API. All knob
+//    mutations call SfzPlayer::setChannelVolume/setChannelPan/
+//    setChannelReverbSend/setChannelMuted() directly — these write to
+//    lock-free atomics (SfzPlayer::ChannelStripAtomics) that are read on the
+//    audio thread in SfzPlayer::process(). No pushCommand()/MIDI-learn path
+//    exists for per-channel SF2 mixer fields (that path is reserved for the
+//    global SliceParamField knobs), so none is invoked here. The panel polls
+//    on its Timer (30 Hz) to refresh the display from getChannelStrip().
 //
 //  Integration:
-//    1. Instantiate in PluginEditor, add as child, lay out below SfzModulePanel.
-//    2. Call setActiveChannelMask() whenever the set of active SF2 tracks changes.
-//    3. The panel auto-hides when no SF2 file is loaded (isVisible() = false).
+//    1. Instantiate in PluginEditor (or Sf2InstrumentWorkspace), add as
+//       child, lay out below the preset grid / voice controls.
+//    2. Call setActiveChannelMask() whenever the set of assigned SF2
+//       channels changes (e.g. from Sf2ProgramGrid::onChannelChanged).
+//    3. Call setChannelLabel() with the preset name whenever a channel's
+//       assignment changes.
+//    4. The panel auto-hides when no SF2 file is loaded (isVisible() = false).
 // =============================================================================
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../PluginProcessor.h"
+#include "../audio/SfzPlayer.h"
 #include "ThemeData.h"
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
@@ -38,10 +48,10 @@ public:
 
     ~Sf2ChannelFxPanel() override { stopTimer(); }
 
-    // ── Called from editor / sequencer callbacks ──────────────────────────────
+    // ── Called from editor / program-grid callbacks ───────────────────────────
 
     /** Set which FluidSynth channels (0-15) to display.  Pass the bitmask
-     *  that matches the active SF2 tracks (same mask as liveInputChannelMask). */
+     *  that matches the currently-assigned SF2 preset channels. */
     void setActiveChannelMask (uint16_t mask)
     {
         if (mask == activeMask) return;
@@ -50,8 +60,8 @@ public:
     }
 
     /** Update the label shown above channel `ch` (0-15).  Typically the SF2
-     *  preset name taken from the sequencer track.  Call from the message thread
-     *  whenever a new preset is assigned to a channel. */
+     *  preset name.  Call from the message thread whenever a new preset is
+     *  assigned to a channel. */
     void setChannelLabel (int ch, const juce::String& label)
     {
         if (ch < 0 || ch >= 16) return;
@@ -105,10 +115,25 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
+        // Click on a channel's label toggles mute.
+        for (int ch = 0; ch < 16; ++ch)
+        {
+            if (! (activeMask & (1u << ch))) continue;
+            const auto col = colRectFor (ch);
+            const auto labelRect = col.withHeight (kLabelH);
+            if (labelRect.contains (e.position))
+            {
+                const auto strip = processor.sfzPlayer.getChannelStrip (ch);
+                processor.sfzPlayer.setChannelMuted (ch, ! strip.muted);
+                repaint();
+                return;
+            }
+        }
+
         dragState = findKnobAt (e.getPosition());
         if (dragState.ch < 0) return;
         dragStartY   = e.getScreenY();
-        dragStartVal = getCurrentVal (dragState.ch, dragState.knob);
+        dragStartVal = getCurrentNorm (dragState.ch, dragState.knob);
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
@@ -134,8 +159,8 @@ public:
     }
 
 private:
-    // ── Knob IDs ──────────────────────────────────────────────────────────────
-    enum class Knob { None, ReverbMix, ReverbSize, ReverbDamp, Gain };
+    // ── Knob IDs — mirrors the real SfzPlayer::ChannelStrip fields ────────────
+    enum class Knob { None, Volume, Pan, ReverbSend };
 
     static constexpr float kKnobH    = 44.f;   // px tall per knob row
     static constexpr float kLabelH   = 18.f;   // preset name label
@@ -152,56 +177,38 @@ private:
         return n;
     }
 
-    float getCurrentVal (int ch, Knob k) const noexcept
+    /** Returns the knob's normalised 0..1 display value from the live
+     *  ChannelStrip snapshot.  Pan is remapped from -1..+1 to 0..1. */
+    float getCurrentNorm (int ch, Knob k) const noexcept
     {
+        const auto strip = processor.sfzPlayer.getChannelStrip (ch);
         switch (k)
         {
-            case Knob::ReverbMix:  return processor.sfzPlayer.getChannelReverbMix  (ch) / 100.f;
-            case Knob::ReverbSize: return processor.sfzPlayer.getChannelReverbSize (ch) / 100.f;
-            case Knob::ReverbDamp: return processor.sfzPlayer.getChannelReverbDamp (ch) / 100.f;
-            case Knob::Gain:       return processor.sfzPlayer.getChannelGain       (ch) / 200.f;
+            case Knob::Volume:     return juce::jlimit (0.f, 1.f, strip.volume);
+            case Knob::Pan:        return juce::jlimit (0.f, 1.f, (strip.pan + 1.0f) * 0.5f);
+            case Knob::ReverbSend: return juce::jlimit (0.f, 1.f, strip.reverbSend);
             default:               return 0.f;
         }
     }
 
     void applyNorm (int ch, Knob k, float norm)
     {
-        // Apply directly via atomic (UI-thread safe)
         switch (k)
         {
-            case Knob::ReverbMix:  processor.sfzPlayer.setChannelReverbMix  (ch, norm * 100.f); break;
-            case Knob::ReverbSize: processor.sfzPlayer.setChannelReverbSize (ch, norm * 100.f); break;
-            case Knob::ReverbDamp: processor.sfzPlayer.setChannelReverbDamp (ch, norm * 100.f); break;
-            case Knob::Gain:       processor.sfzPlayer.setChannelGain       (ch, norm * 200.f); break;
+            case Knob::Volume:     processor.sfzPlayer.setChannelVolume     (ch, norm);                break;
+            case Knob::Pan:        processor.sfzPlayer.setChannelPan        (ch, norm * 2.0f - 1.0f);   break;
+            case Knob::ReverbSend: processor.sfzPlayer.setChannelReverbSend (ch, norm);                 break;
             default: break;
         }
-
-        // Also push a CmdSetSliceParam so MIDI-learn and the undo system see it.
-        // intParam1 = field, intParam2 = channel index, floatParam1 = raw value.
-        DysektProcessor::Command cmd;
-        cmd.type       = DysektProcessor::CmdSetSliceParam;
-        cmd.intParam2  = ch;
-        cmd.floatParam1 = norm;
-
-        switch (k)
-        {
-            case Knob::ReverbMix:  cmd.intParam1 = DysektProcessor::FieldSfzChReverbMix;  cmd.floatParam1 = norm * 100.f; break;
-            case Knob::ReverbSize: cmd.intParam1 = DysektProcessor::FieldSfzChReverbSize; cmd.floatParam1 = norm * 100.f; break;
-            case Knob::ReverbDamp: cmd.intParam1 = DysektProcessor::FieldSfzChReverbDamp; cmd.floatParam1 = norm * 100.f; break;
-            case Knob::Gain:       cmd.intParam1 = DysektProcessor::FieldSfzChGain;       cmd.floatParam1 = norm * 200.f; break;
-            default: return;
-        }
-        processor.pushCommand (cmd);
     }
 
     void resetToDefault (int ch, Knob k)
     {
         switch (k)
         {
-            case Knob::ReverbMix:  applyNorm (ch, k, 0.f);   break;   // default: dry
-            case Knob::ReverbSize: applyNorm (ch, k, 0.5f);  break;   // 50 %
-            case Knob::ReverbDamp: applyNorm (ch, k, 0.5f);  break;   // 50 %
-            case Knob::Gain:       applyNorm (ch, k, 0.5f);  break;   // 100 % (unity)
+            case Knob::Volume:     applyNorm (ch, k, 1.0f); break;   // unity
+            case Knob::Pan:        applyNorm (ch, k, 0.5f); break;   // centre
+            case Knob::ReverbSend: applyNorm (ch, k, 0.0f); break;   // dry
             default: break;
         }
     }
@@ -233,10 +240,9 @@ private:
 
         switch (k)
         {
-            case Knob::ReverbMix:  return { x, y0,              w, kH };
-            case Knob::ReverbSize: return { x, y0 + kH,         w, kH };
-            case Knob::ReverbDamp: return { x, y0 + kH * 2.f,   w, kH };
-            case Knob::Gain:       return { x, y0 + kH * 3.f,   w, kH };
+            case Knob::Volume:     return { x, y0,            w, kH };
+            case Knob::Pan:        return { x, y0 + kH,       w, kH };
+            case Knob::ReverbSend: return { x, y0 + kH * 2.f, w, kH };
             default:               return {};
         }
     }
@@ -249,7 +255,7 @@ private:
             if (! (activeMask & (1u << ch))) continue;
             const auto col = colRectFor (ch);
             if (! col.contains (fpt)) continue;
-            for (auto k : { Knob::ReverbMix, Knob::ReverbSize, Knob::ReverbDamp, Knob::Gain })
+            for (auto k : { Knob::Volume, Knob::Pan, Knob::ReverbSend })
                 if (knobRect (col, k).contains (fpt))
                     return { ch, k };
         }
@@ -267,27 +273,30 @@ private:
         g.setColour (theme.separator);
         g.drawLine (col.getX(), col.getY(), col.getX(), col.getBottom(), 1.f);
 
-        // Preset label
-        g.setColour (theme.accent);
+        const auto strip = processor.sfzPlayer.getChannelStrip (ch);
+
+        // Preset label — dimmed when muted, doubles as the mute-toggle target.
+        g.setColour (strip.muted ? theme.foreground.withAlpha (0.35f) : theme.accent);
         g.setFont (DysektLookAndFeel::makeFont(12.f, true));
         const auto labelRect = col.withHeight (kLabelH).reduced (kPadding, 1.f);
-        g.drawText (channelLabels[ch].isEmpty() ? ("CH " + juce::String (ch + 1))
-                                                 : channelLabels[ch],
-                    labelRect.toNearestInt(), juce::Justification::centredLeft, true);
+        juce::String label = channelLabels[ch].isEmpty() ? ("CH " + juce::String (ch + 1))
+                                                           : channelLabels[ch];
+        if (strip.muted) label += " (muted)";
+        g.drawText (label, labelRect.toNearestInt(), juce::Justification::centredLeft, true);
 
         // Draw each knob
-        paintKnob (g, ch, Knob::ReverbMix,  col, "MIX",  theme);
-        paintKnob (g, ch, Knob::ReverbSize, col, "SIZE", theme);
-        paintKnob (g, ch, Knob::ReverbDamp, col, "DAMP", theme);
-        paintKnob (g, ch, Knob::Gain,       col, "GAIN", theme);
+        paintKnob (g, ch, Knob::Volume,     col, "VOL",  theme, strip.muted);
+        paintKnob (g, ch, Knob::Pan,        col, "PAN",  theme, strip.muted);
+        paintKnob (g, ch, Knob::ReverbSend, col, "REV",  theme, strip.muted);
     }
 
     void paintKnob (juce::Graphics& g, int ch, Knob k,
                     const juce::Rectangle<float>& col,
                     const char* label,
-                    const ThemeData& theme)
+                    const ThemeData& theme,
+                    bool dimmed)
     {
-        const float norm   = getCurrentVal (ch, k);
+        const float norm   = getCurrentNorm (ch, k);
         const auto  kr     = knobRect (col, k);
         const float cx     = kr.getCentreX();
         const float cy     = kr.getCentreY();
@@ -298,25 +307,27 @@ private:
         constexpr float endAngle   = juce::MathConstants<float>::pi * 2.8f;
         const float fillAngle = startAngle + norm * (endAngle - startAngle);
 
+        const float alpha = dimmed ? 0.4f : 1.0f;
+
         juce::Path trackArc;
         trackArc.addCentredArc (cx, cy, radius, radius, 0.f, startAngle, endAngle, true);
-        g.setColour (theme.button);
+        g.setColour (theme.button.withMultipliedAlpha (alpha));
         g.strokePath (trackArc, juce::PathStrokeType (3.f));
 
         juce::Path fillArc;
         fillArc.addCentredArc (cx, cy, radius, radius, 0.f, startAngle, fillAngle, true);
-        g.setColour (theme.accent);
+        g.setColour (theme.accent.withMultipliedAlpha (alpha));
         g.strokePath (fillArc, juce::PathStrokeType (3.f));
 
         // Pointer
         const float px = cx + radius * 0.6f * std::sin (fillAngle);
         const float py = cy - radius * 0.6f * std::cos (fillAngle);
-        g.setColour (theme.accent);
+        g.setColour (theme.accent.withMultipliedAlpha (alpha));
         g.drawLine (cx, cy, px, py, 1.5f);
 
         // Label and value
         g.setFont (DysektLookAndFeel::makeFont(10.f));
-        g.setColour (theme.foreground.withAlpha (0.6f));
+        g.setColour (theme.foreground.withAlpha (0.6f * alpha));
 
         const auto topLabel = kr.withHeight (12.f);
         g.drawText (label, topLabel.toNearestInt(), juce::Justification::centred);
@@ -324,11 +335,17 @@ private:
         juce::String valStr;
         switch (k)
         {
-            case Knob::Gain:  valStr = juce::String (juce::roundToInt (norm * 200.f)) + "%"; break;
-            default:          valStr = juce::String (juce::roundToInt (norm * 100.f)) + "%"; break;
+            case Knob::Pan:
+            {
+                const int pct = juce::roundToInt ((norm * 2.0f - 1.0f) * 100.f);
+                valStr = pct == 0 ? juce::String ("C")
+                                  : (pct < 0 ? (juce::String (-pct) + "L") : (juce::String (pct) + "R"));
+                break;
+            }
+            default: valStr = juce::String (juce::roundToInt (norm * 100.f)) + "%"; break;
         }
 
-        g.setColour (theme.foreground);
+        g.setColour (theme.foreground.withMultipliedAlpha (alpha));
         g.setFont (DysektLookAndFeel::makeFont(11.f, true));
         const auto botLabel = kr.withY (kr.getBottom() - 13.f).withHeight (13.f);
         g.drawText (valStr, botLabel.toNearestInt(), juce::Justification::centred);
@@ -337,7 +354,7 @@ private:
     // ── State ─────────────────────────────────────────────────────────────────
 
     DysektProcessor& processor;
-    uint16_t         activeMask  { 0xFFFF };   // show all 16 until told otherwise
+    uint16_t         activeMask  { 0x0000 };   // nothing shown until told otherwise
     juce::String     channelLabels[16];
 
     DragState dragState;

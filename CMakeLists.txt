@@ -190,7 +190,8 @@ target_sources(Dysekt PRIVATE
     src/ui/Sf2LcdDisplay.cpp
     src/ui/Sf2WaveformLcd.cpp
     src/ui/DualLcdControlFrame.cpp
-    src/ui/SfzDropdownPanel.cpp
+    src/ui/SfzDropdownPanel.cpp     # now unused (Sf2InstrumentWorkspace replaces it) -- safe to remove
+    src/ui/Sf2InstrumentWorkspace.cpp
     src/ui/SfzPlayerDropdownPanel.cpp
     src/ui/Sf2ProgramGrid.cpp
     src/ui/SfzModulePanel.cpp
@@ -288,7 +289,8 @@ target_sources(DysektStandalone PRIVATE
     src/ui/Sf2LcdDisplay.cpp
     src/ui/Sf2WaveformLcd.cpp
     src/ui/DualLcdControlFrame.cpp
-    src/ui/SfzDropdownPanel.cpp
+    src/ui/SfzDropdownPanel.cpp     # now unused (Sf2InstrumentWorkspace replaces it) -- safe to remove
+    src/ui/Sf2InstrumentWorkspace.cpp
     src/ui/SfzPlayerDropdownPanel.cpp
     src/ui/Sf2ProgramGrid.cpp
     src/ui/SfzModulePanel.cpp
