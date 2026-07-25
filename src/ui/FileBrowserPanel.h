@@ -251,6 +251,17 @@ private:
     void stopPreview();
     void updatePlayButton();
 
+    // ── Post-load "instrument decoding" indicator ─────────────────────────────
+    // Downloading (or reading) an .sf2/.sfz file is only half the wait — once
+    // handed to SoundFontLoader, sfizz still has to decode/render it, tracked
+    // by DysektProcessor::mainLoadInFlight. This keeps the same preview-bar
+    // fill visible (in an indeterminate state) through that second phase, for
+    // BOTH the archive-download path and plain local double-clicks, so a slow
+    // kit load always shows *something* in the browser rather than just the
+    // separate static "LOADING..." text in SliceWaveformLcd.
+    void beginInstrumentLoadPoll (int generation, const juce::String& displayName);
+    void pollInstrumentLoad();
+
     DysektProcessor& processor;
 
     // ── Local folder bookmarks ────────────────────────────────────────────────
@@ -342,6 +353,26 @@ private:
     juce::String                   streamPreviewUrl;   // non-empty when current preview is a stream
     bool                           previewVisible = false;
     std::atomic<int>               streamGeneration { 0 };  // incremented to cancel stale stream callbacks
+
+    // Progress of an in-flight full download (double-click "download + load",
+    // as opposed to the in-memory single-click stream preview above). Shown as
+    // a thin fill inside the same preview bar. -1 = no download in progress;
+    // 0..1 = known fraction complete; drawn as an indeterminate pulse instead
+    // of a fill when the server didn't report a Content-Length.
+    float                          archiveDownloadProgress = -1.0f;
+    bool                           archiveDownloadTotalKnown = false;
+
+    // Separate, faster timer from the 400ms bookmark-spinner one below —
+    // polls DysektProcessor::mainLoadInFlight at 100ms while an .sf2/.sfz
+    // decode is in flight (either from an archive download or a local
+    // double-click) so the bar's indeterminate fill can clear promptly.
+    struct InstrumentLoadPollTimer : public juce::Timer
+    {
+        std::function<void()> onTick;
+        void timerCallback() override { if (onTick) onTick(); }
+    };
+    InstrumentLoadPollTimer        instrumentLoadPollTimer;
+    int                            instrumentLoadGeneration = -1;   // compared against streamGeneration
 
     IconButton                     playStopBtn;
     juce::Slider                   volumeSlider;

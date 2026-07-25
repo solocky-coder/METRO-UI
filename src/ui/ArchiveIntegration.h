@@ -88,15 +88,26 @@ public:
                                  std::function<void (bool ok, juce::Array<CollectionEntry> entries)> cb);
 
     /**
+     * Reports download progress with (bytesSoFar, totalBytes).
+     * totalBytes is -1 if the server didn't report a Content-Length (progress
+     * is then indeterminate — bytesSoFar still counts up).
+     * Delivered on the JUCE message thread, throttled to a few times/second.
+     */
+    using ProgressCallback = std::function<void (juce::int64 bytesSoFar, juce::int64 totalBytes)>;
+
+    /**
      * Download a remote file to the local cache.
      * If the file is already cached the callback fires immediately (still async).
      * The callback is delivered on the JUCE message thread.
      *
      * @param downloadUrl  Full https:// URL to the file.
      * @param cb           Called with (success, localFile).
+     * @param onProgress   Optional. Called periodically while downloading (not
+     *                     called at all for an already-cached file).
      */
     static void downloadFile (const juce::String& downloadUrl,
-                              std::function<void (bool ok, juce::File localFile)> cb);
+                              std::function<void (bool ok, juce::File localFile)> cb,
+                              ProgressCallback onProgress = nullptr);
 
     /**
      * Download a remote file to a TEMPORARY location (not the persistent cache).
@@ -105,7 +116,8 @@ public:
      * The callback is delivered on the JUCE message thread.
      */
     static void downloadTemp (const juce::String& downloadUrl,
-                              std::function<void (bool ok, juce::File tempFile)> cb);
+                              std::function<void (bool ok, juce::File tempFile)> cb,
+                              ProgressCallback onProgress = nullptr);
 
     /** Delete all files in the temp preview directory. Safe to call at any time. */
     static void clearTemp();

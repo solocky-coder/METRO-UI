@@ -9,6 +9,48 @@ juce::ThreadPool& ArchiveIntegration::pool()
     return tp;
 }
 
+namespace
+{
+    constexpr int kCopyChunkBytes = 65536;
+
+    // Copies the entire contents of `in` to `out` in chunks, invoking
+    // onProgress (dispatched to the message thread, throttled to ~12/sec)
+    // as bytes arrive. `in.getTotalLength()` is the Content-Length reported
+    // by the server, or -1 if it wasn't sent — callers treat that as
+    // "unknown total" rather than failing.
+    void copyStreamWithProgress (juce::InputStream& in, juce::FileOutputStream& out,
+                                 const ArchiveIntegration::ProgressCallback& onProgress)
+    {
+        const juce::int64 total = in.getTotalLength();
+        juce::int64        done = 0;
+        juce::uint32        lastReportMs = juce::Time::getMillisecondCounter();
+
+        juce::HeapBlock<char> buffer (kCopyChunkBytes);
+
+        for (;;)
+        {
+            const int justRead = in.read (buffer.getData(), kCopyChunkBytes);
+            if (justRead <= 0) break;
+
+            out.write (buffer.getData(), (size_t) justRead);
+            done += justRead;
+
+            const bool exhausted = in.isExhausted();
+            if (onProgress != nullptr)
+            {
+                const auto now = juce::Time::getMillisecondCounter();
+                if (now - lastReportMs >= 80 || exhausted)
+                {
+                    lastReportMs = now;
+                    juce::MessageManager::callAsync ([onProgress, done, total] { onProgress (done, total); });
+                }
+            }
+
+            if (exhausted) break;
+        }
+    }
+}
+
 juce::String ArchiveIntegration::identifierFromUrl (const juce::String& url)
 {
     static const juce::String prefixes[] = {
@@ -87,7 +129,8 @@ void ArchiveIntegration::clearTemp()
 }
 
 void ArchiveIntegration::downloadTemp (const juce::String& downloadUrl,
-                                       std::function<void (bool ok, juce::File tempFile)> cb)
+                                       std::function<void (bool ok, juce::File tempFile)> cb,
+                                       ProgressCallback onProgress)
 {
     auto filename = downloadUrl.fromLastOccurrenceOf ("/", false, false)
                                .upToFirstOccurrenceOf ("?", false, false)
@@ -105,7 +148,7 @@ void ArchiveIntegration::downloadTemp (const juce::String& downloadUrl,
         return;
     }
 
-    pool().addJob ([downloadUrl, tempFile, cb]
+    pool().addJob ([downloadUrl, tempFile, cb, onProgress]
     {
         tempFile.getParentDirectory().createDirectory();
 
@@ -127,7 +170,7 @@ void ArchiveIntegration::downloadTemp (const juce::String& downloadUrl,
             return;
         }
 
-        out.writeFromInputStream (*stream, -1);
+        copyStreamWithProgress (*stream, out, onProgress);
         out.flush();
 
         const bool ok = tempFile.existsAsFile() && tempFile.getSize() > 0;
@@ -355,7 +398,8 @@ void ArchiveIntegration::fetchCollection (const juce::String& collectionId,
 // ── downloadFile ─────────────────────────────────────────────────────────────
 
 void ArchiveIntegration::downloadFile (const juce::String& downloadUrl,
-                                       std::function<void (bool ok, juce::File localFile)> cb)
+                                       std::function<void (bool ok, juce::File localFile)> cb,
+                                       ProgressCallback onProgress)
 {
     // Derive a stable filename from the URL
     auto filename = downloadUrl.fromLastOccurrenceOf ("/", false, false)
@@ -374,7 +418,7 @@ void ArchiveIntegration::downloadFile (const juce::String& downloadUrl,
         return;
     }
 
-    pool().addJob ([downloadUrl, localFile, cb]
+    pool().addJob ([downloadUrl, localFile, cb, onProgress]
     {
         localFile.getParentDirectory().createDirectory();
 
@@ -396,7 +440,7 @@ void ArchiveIntegration::downloadFile (const juce::String& downloadUrl,
             return;
         }
 
-        out.writeFromInputStream (*stream, -1);
+        copyStreamWithProgress (*stream, out, onProgress);
         out.flush();
 
         const bool ok = localFile.existsAsFile() && localFile.getSize() > 0;
