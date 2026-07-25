@@ -5,6 +5,7 @@
 #include "DysektLookAndFeel.h"
 #include "ArchiveIntegration.h"
 #include "ArchiveUrlOverlay.h"
+#include "LoadProgressOverlay.h"
 #include "SfzFileBrowser.h"
 
 class DysektProcessor;
@@ -254,13 +255,23 @@ private:
     // ── Post-load "instrument decoding" indicator ─────────────────────────────
     // Downloading (or reading) an .sf2/.sfz file is only half the wait — once
     // handed to SoundFontLoader, sfizz still has to decode/render it, tracked
-    // by DysektProcessor::mainLoadInFlight. This keeps the same preview-bar
-    // fill visible (in an indeterminate state) through that second phase, for
-    // BOTH the archive-download path and plain local double-clicks, so a slow
-    // kit load always shows *something* in the browser rather than just the
-    // separate static "LOADING..." text in SliceWaveformLcd.
+    // by DysektProcessor::mainLoadInFlight. This polls that flag and keeps
+    // showLoadProgress()'s popup up (in an indeterminate state) through that
+    // second phase, for BOTH the archive-download path and plain local
+    // double-clicks.
     void beginInstrumentLoadPoll (int generation, const juce::String& displayName);
     void pollInstrumentLoad();
+
+    // ── Load-progress popup (download %, then "loading instrument…") ─────────
+    // A floating popup rather than anything drawn inside this panel, since
+    // this panel only shows ONE of the archive view / local browser view at
+    // a time — embedding progress in, say, the archive preview bar meant it
+    // was invisible while browsing local files. Reparented to the plugin
+    // window's top-level component so it's visible regardless of which view
+    // is on screen. progress < 0 = indeterminate.
+    void showLoadProgress (const juce::String& label, float progress);
+    void hideLoadProgress();
+    std::unique_ptr<LoadProgressOverlay> loadProgressOverlay;
 
     DysektProcessor& processor;
 
@@ -354,18 +365,10 @@ private:
     bool                           previewVisible = false;
     std::atomic<int>               streamGeneration { 0 };  // incremented to cancel stale stream callbacks
 
-    // Progress of an in-flight full download (double-click "download + load",
-    // as opposed to the in-memory single-click stream preview above). Shown as
-    // a thin fill inside the same preview bar. -1 = no download in progress;
-    // 0..1 = known fraction complete; drawn as an indeterminate pulse instead
-    // of a fill when the server didn't report a Content-Length.
-    float                          archiveDownloadProgress = -1.0f;
-    bool                           archiveDownloadTotalKnown = false;
-
-    // Separate, faster timer from the 400ms bookmark-spinner one below —
-    // polls DysektProcessor::mainLoadInFlight at 100ms while an .sf2/.sfz
+    // Polls DysektProcessor::mainLoadInFlight at 100ms while an .sf2/.sfz
     // decode is in flight (either from an archive download or a local
-    // double-click) so the bar's indeterminate fill can clear promptly.
+    // double-click), separate from the coarser 400ms bookmark-spinner timer
+    // below, so showLoadProgress()'s popup can clear promptly.
     struct InstrumentLoadPollTimer : public juce::Timer
     {
         std::function<void()> onTick;

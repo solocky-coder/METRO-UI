@@ -102,17 +102,9 @@ void FileBrowserPanel::ArchiveListModel::listBoxItemDoubleClicked (int row, cons
         // can't have a stale progress/completion callback stomp on newer state.
         owner->stopPreview();
         const int myGeneration = ++owner->streamGeneration;
-
         owner->streamPreviewUrl = {};
-        owner->previewVisible   = true;
-        owner->archiveDownloadProgress   = 0.0f;
-        owner->archiveDownloadTotalKnown = false;
-        owner->fileNameLabel.setText ("Downloading: " + R.name, juce::dontSendNotification);
-        owner->fileNameLabel.setVisible (true);
-        owner->playStopBtn.setVisible  (false);
-        owner->volumeSlider.setVisible (false);
-        owner->resized();
-        owner->repaint();
+
+        owner->showLoadProgress ("Downloading: " + R.name, 0.0f);
 
         ArchiveIntegration::downloadFile (R.downloadUrl,
             [this, myGeneration, name = R.name] (bool ok, juce::File localFile)
@@ -121,13 +113,9 @@ void FileBrowserPanel::ArchiveListModel::listBoxItemDoubleClicked (int row, cons
 
                 if (! ok)
                 {
-                    owner->archiveDownloadProgress = -1.0f;
-                    owner->fileNameLabel.setText (u8"Download failed \u2014 check connection",
-                                                   juce::dontSendNotification);
-                    owner->playStopBtn.setVisible  (false);
-                    owner->volumeSlider.setVisible (false);
-                    owner->resized();
-                    owner->repaint();
+                    owner->hideLoadProgress();
+                    owner->showArchiveMessage ("Download Failed",
+                        "Could not download \"" + name + "\". Check your connection and try again.");
                     return;
                 }
 
@@ -142,15 +130,14 @@ void FileBrowserPanel::ArchiveListModel::listBoxItemDoubleClicked (int row, cons
                     // just kicks off an async sfizz decode/render — mirrored by
                     // DysektProcessor::mainLoadInFlight — that can itself take a while
                     // for a large kit. Claim a fresh generation (stopPreview() just
-                    // bumped it) and keep the same bar up, now in an indeterminate
+                    // bumped it) and keep the popup up, now in an indeterminate
                     // "loading instrument" state, instead of hiding it here.
                     const int loadGeneration = ++owner->streamGeneration;
                     owner->beginInstrumentLoadPoll (loadGeneration, name);
                 }
                 else
                 {
-                    owner->archiveDownloadProgress = -1.0f;   // plain audio decodes locally/quickly
-                    owner->repaint();
+                    owner->hideLoadProgress();   // plain audio decodes locally/quickly
                 }
 
                 // Prefer the owner-supplied callback so it can route by uiMode; only
@@ -179,18 +166,14 @@ void FileBrowserPanel::ArchiveListModel::listBoxItemDoubleClicked (int row, cons
             {
                 if (owner->streamGeneration.load() != myGeneration) return;   // superseded
 
-                owner->archiveDownloadTotalKnown = (totalBytes > 0);
-                owner->archiveDownloadProgress   = owner->archiveDownloadTotalKnown
-                    ? (float) ((double) bytesSoFar / (double) totalBytes)
-                    : 0.0f;
+                const bool totalKnown = (totalBytes > 0);
+                const float fraction  = totalKnown ? (float) ((double) bytesSoFar / (double) totalBytes) : -1.0f;
 
-                owner->fileNameLabel.setText (
-                    owner->archiveDownloadTotalKnown
-                        ? "Downloading: " + name + "  ("
-                              + juce::String (juce::roundToInt (owner->archiveDownloadProgress * 100.0f)) + "%)"
+                owner->showLoadProgress (
+                    totalKnown
+                        ? "Downloading: " + name + "  (" + juce::String (juce::roundToInt (fraction * 100.0f)) + "%)"
                         : "Downloading: " + name + "  (" + juce::String (bytesSoFar / 1024) + " KB)",
-                    juce::dontSendNotification);
-                owner->repaint();
+                    fraction);
             });
     }
 }
@@ -532,33 +515,6 @@ void FileBrowserPanel::paint (juce::Graphics& g)
         g.setColour (ac.withAlpha (0.25f));
         g.drawLine ((float) barRect.getX(), (float) barRect.getY(),
                     (float) barRect.getRight(), (float) barRect.getY(), 1.0f);
-
-        // Download-progress fill — a thin strip along the bar's bottom edge,
-        // same visual language as the trim-knob / slice-marker meters
-        // elsewhere in the UI (dark track + accent fill).
-        if (archiveDownloadProgress >= 0.0f)
-        {
-            constexpr int barThickness = 3;
-            const auto track = juce::Rectangle<int> (barRect.getX(), barRect.getBottom() - barThickness,
-                                                       barRect.getWidth(), barThickness);
-            g.setColour (T.separator);
-            g.fillRect (track);
-            g.setColour (ac);
-
-            if (archiveDownloadTotalKnown)
-            {
-                // Known size — fill proportionally to bytes downloaded so far.
-                const auto filledW = (int) (track.getWidth() * juce::jlimit (0.0f, 1.0f, archiveDownloadProgress));
-                g.fillRect (track.withWidth (filledW));
-            }
-            else
-            {
-                // Server didn't report a Content-Length — we can't compute a
-                // fraction, so light the whole strip to show activity rather
-                // than implying a (fake) percentage.
-                g.fillRect (track);
-            }
-        }
     }
 
     // ── Bookmark bar row 1 background ────────────────────────────────────────
@@ -718,21 +674,35 @@ void FileBrowserPanel::stopPreview()
     updatePlayButton();
 }
 
+void FileBrowserPanel::showLoadProgress (const juce::String& label, float progress)
+{
+    if (! loadProgressOverlay)
+    {
+        loadProgressOverlay = std::make_unique<LoadProgressOverlay> (label);
+        if (auto* top = getTopLevelComponent())
+        {
+            top->addAndMakeVisible (*loadProgressOverlay);
+            loadProgressOverlay->setBounds (top->getLocalBounds());
+            loadProgressOverlay->toFront (false);
+        }
+    }
+    loadProgressOverlay->setLabel (label);
+    loadProgressOverlay->setProgress (progress);
+}
+
+void FileBrowserPanel::hideLoadProgress()
+{
+    if (! loadProgressOverlay) return;
+    if (auto* p = loadProgressOverlay->getParentComponent())
+        p->removeChildComponent (loadProgressOverlay.get());
+    loadProgressOverlay.reset();
+}
+
 void FileBrowserPanel::beginInstrumentLoadPoll (int generation, const juce::String& displayName)
 {
     instrumentLoadGeneration = generation;
 
-    previewVisible   = true;
-    fileNameLabel.setText ("Loading instrument: " + displayName, juce::dontSendNotification);
-    fileNameLabel.setVisible (true);
-    playStopBtn.setVisible  (false);
-    volumeSlider.setVisible (false);
-
-    archiveDownloadProgress   = 0.0f;
-    archiveDownloadTotalKnown = false;   // sfizz doesn't report a byte-level fraction — pulse instead
-
-    resized();
-    repaint();
+    showLoadProgress ("Loading instrument: " + displayName, -1.0f);   // indeterminate
 
     if (! instrumentLoadPollTimer.onTick)
         instrumentLoadPollTimer.onTick = [this] { pollInstrumentLoad(); };
@@ -752,13 +722,9 @@ void FileBrowserPanel::pollInstrumentLoad()
     if (! processor.mainLoadInFlight.load (std::memory_order_relaxed))
     {
         instrumentLoadPollTimer.stopTimer();
-        archiveDownloadProgress = -1.0f;
-        resized();
-        repaint();
+        hideLoadProgress();
         return;
     }
-
-    repaint();   // keep the indeterminate fill/label on screen
 }
 
 void FileBrowserPanel::startPreviewFromReader (juce::AudioFormatReader* reader)
