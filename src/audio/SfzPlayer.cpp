@@ -878,6 +878,30 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
             + " sfontId=" + juce::String (sfontId)
             + " liveMask=0x" + juce::String::toHexString ((int) liveMask));
 
+    // ── Segmented rendering (Phase 2: sample-accurate MIDI timing) ───────────
+    // fluid_synth_process() has no notion of "apply this event at sample N
+    // within the block" — timing has to be achieved by rendering in pieces,
+    // advancing a cursor to each event's sample position before dispatching
+    // it. See SF2_PLAYER_PHASE2_SAMPLE_ACCURATE_TIMING.md for the full design.
+    //
+    // fluid_synth_process ACCUMULATES — must zero before the first call.
+    std::fill (scratchL.begin(), scratchL.begin() + numSamples, 0.0f);
+    std::fill (scratchR.begin(), scratchR.begin() + numSamples, 0.0f);
+
+    int renderCursor  = 0;
+    int lastProcessRc = 0;   // last segment's rc, kept only for the debug log below
+
+    auto renderSegment = [&] (int uptoSample)
+    {
+        const int span = uptoSample - renderCursor;
+        if (span <= 0)
+            return;
+
+        float* seg[2] = { scratchL.data() + renderCursor, scratchR.data() + renderCursor };
+        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 2, seg);
+        renderCursor = uptoSample;
+    };
+
     for (const auto meta : midiIn)
     {
         const auto msg    = meta.getMessage();
@@ -888,6 +912,12 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         // never react to either channel, regardless of mask/UI state upstream.
         if (midiCh < 3 || midiCh > 16)
             continue;
+
+        // Render up to this event's position BEFORE applying it, so FluidSynth
+        // hears the event at the correct offset instead of at the top of the
+        // block. Clamp defensively — a host may (rarely, due to rounding) hand
+        // us an event timestamped at or past numSamples.
+        renderSegment (juce::jlimit (0, numSamples, meta.samplePosition));
 
         // TEMP diagnostic: log every message unconditionally, before any
         // channel/velocity filtering, so we can catch cases where isNoteOn()
@@ -1001,20 +1031,20 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         }
     }
 
-    // ── Render FluidSynth ─────────────────────────────────────────────────────
-    // fluid_synth_process ACCUMULATES — must zero before every call.
-    std::fill (scratchL.begin(), scratchL.begin() + numSamples, 0.0f);
-    std::fill (scratchR.begin(), scratchR.begin() + numSamples, 0.0f);
-
-    float* planes[2] = { scratchL.data(), scratchR.data() };
-    const int processRc = fluid_synth_process (synth, numSamples, 0, nullptr, 2, planes);
+    // ── Render FluidSynth (remainder) ─────────────────────────────────────────
+    // Every event above already rendered its preceding segment via
+    // renderSegment() at the correct sample offset; this call renders
+    // whatever's left between the last event and the end of the block. With
+    // an empty/all-filtered midiIn this is the only call made, and it renders
+    // the full block in one go — same as the old single-call path.
+    renderSegment (numSamples);
 
     if (sf2DebugHadNoteOnThisBlock)
     {
         float peak = 0.0f;
         for (int i = 0; i < numSamples; ++i)
             peak = std::max (peak, std::abs (scratchL[(size_t) i]));
-        sf2DebugLog ("post-render (note-on this block): fluid_synth_process rc=" + juce::String (processRc)
+        sf2DebugLog ("post-render (note-on this block): fluid_synth_process rc=" + juce::String (lastProcessRc)
             + " outputPeakL=" + juce::String (peak, 6)
             + " sfontId=" + juce::String (sfontId)
             + " gain=" + juce::String (fluid_synth_get_gain (synth), 3));
