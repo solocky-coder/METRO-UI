@@ -23,137 +23,134 @@
 //  clicks back to the owner. The underlying Sf2ProgramGrid keeps holding the
 //  real preset/channel data (so getProgramGrid() stays correct for
 //  PluginEditor's mixerPanel wiring) — this model is presentation-only.
-namespace
+class Sf2InstrumentWorkspace::PresetListModel : public juce::ListBoxModel
 {
-    class PresetListModel : public juce::ListBoxModel
+public:
+    explicit PresetListModel (Sf2InstrumentWorkspace& ownerIn) : owner (ownerIn) {}
+
+    int getNumRows() override
     {
-    public:
-        explicit PresetListModel (Sf2InstrumentWorkspace& ownerIn) : owner (ownerIn) {}
+        return (int) owner.filteredPresetIndices.size();
+    }
 
-        int getNumRows() override
-        {
-            return (int) owner.filteredPresetIndices.size();
-        }
-
-        void paintListBoxItem (int rowNumber, juce::Graphics& g,
-                               int width, int height, bool rowIsSelected) override
-        {
-            if (rowNumber < 0 || rowNumber >= (int) owner.filteredPresetIndices.size())
-                return;
-
-            const int presetIdx = owner.filteredPresetIndices[(size_t) rowNumber];
-            if (presetIdx < 0 || presetIdx >= (int) owner.presetList.size())
-                return;
-
-            const auto& info = owner.presetList[(size_t) presetIdx];
-            const auto& theme = getTheme();
-            juce::Rectangle<int> row (0, 0, width, height);
-
-            const bool isCurrent = presetIdx == owner.processor.sfzPlayer.getCurrentPresetIndex();
-
-            if (rowIsSelected || isCurrent)
-            {
-                g.setColour (theme.accent.withAlpha (0.16f));
-                g.fillRect (row);
-                g.setColour (theme.accent);
-                g.fillRect (row.removeFromLeft (4));
-            }
-
-            const auto& chMap = owner.programGrid.getPresetChannels();
-            const auto chIt = chMap.find (presetIdx);
-            const bool assigned = chIt != chMap.end() && chIt->second >= 1;
-
-            auto textArea = row.reduced (12, 0);
-            auto badgeArea = textArea.removeFromRight (48);
-
-            g.setFont (DysektLookAndFeel::makeFont (13.f, isCurrent));
-            g.setColour (assigned ? theme.accent : theme.foreground);
-            g.drawText (info.name, textArea, juce::Justification::centredLeft, true);
-
-            g.setFont (DysektLookAndFeel::makeFont (11.f, true));
-            g.setColour (theme.foreground.withAlpha (0.55f));
-            juce::String badge = juce::String (info.preset).paddedLeft ('0', 3);
-            if (assigned)
-                badge = "CH" + juce::String (chIt->second);
-            g.drawText (badge, badgeArea, juce::Justification::centredRight);
-        }
-
-        void listBoxItemClicked (int row, const juce::MouseEvent& e) override
-        {
-            if (row < 0 || row >= (int) owner.filteredPresetIndices.size())
-                return;
-            const int presetIdx = owner.filteredPresetIndices[(size_t) row];
-
-            if (e.mods.isPopupMenu())
-                owner.handlePresetRightClicked (presetIdx, e.getScreenPosition());
-            else
-                owner.handlePresetLeftClicked (presetIdx);
-        }
-
-    private:
-        Sf2InstrumentWorkspace& owner;
-    };
-
-    // ── Small popup for the MIDI channel-range spinner ─────────────────────────
-    // Lives behind the SETTINGS button. See header comment: the literal mockup
-    // has no room for a lo/hi spinner, only a static "CH 03" readout, so this
-    // keeps multitimbral channel-range assignment reachable without adding a
-    // widget the SVG doesn't show.
-    class ChannelRangePopup : public juce::Component
+    void paintListBoxItem (int rowNumber, juce::Graphics& g,
+                           int width, int height, bool rowIsSelected) override
     {
-    public:
-        explicit ChannelRangePopup (Sf2InstrumentWorkspace& ownerIn) : owner (ownerIn)
+        if (rowNumber < 0 || rowNumber >= (int) owner.filteredPresetIndices.size())
+            return;
+
+        const int presetIdx = owner.filteredPresetIndices[(size_t) rowNumber];
+        if (presetIdx < 0 || presetIdx >= (int) owner.presetList.size())
+            return;
+
+        const auto& info = owner.presetList[(size_t) presetIdx];
+        const auto& theme = getTheme();
+        juce::Rectangle<int> row (0, 0, width, height);
+
+        const bool isCurrent = presetIdx == owner.processor.sfzPlayer.getCurrentPresetIndex();
+
+        if (rowIsSelected || isCurrent)
         {
-            setSize (220, 64);
-            for (auto* b : { &lowDec, &lowInc, &highDec, &highInc })
-            {
-                addAndMakeVisible (b);
-                b->setColour (juce::TextButton::buttonColourId, getTheme().button);
-            }
-            lowDec.onClick  = [this] { owner.adjustChannelRange (true,  -1); repaint(); };
-            lowInc.onClick  = [this] { owner.adjustChannelRange (true,  +1); repaint(); };
-            highDec.onClick = [this] { owner.adjustChannelRange (false, -1); repaint(); };
-            highInc.onClick = [this] { owner.adjustChannelRange (false, +1); repaint(); };
+            g.setColour (theme.accent.withAlpha (0.16f));
+            g.fillRect (row);
+            g.setColour (theme.accent);
+            g.fillRect (row.removeFromLeft (4));
         }
 
-        void resized() override
+        const auto& chMap = owner.programGrid.getPresetChannels();
+        const auto chIt = chMap.find (presetIdx);
+        const bool assigned = chIt != chMap.end() && chIt->second >= 1;
+
+        auto textArea = row.reduced (12, 0);
+        auto badgeArea = textArea.removeFromRight (48);
+
+        g.setFont (DysektLookAndFeel::makeFont (13.f, isCurrent));
+        g.setColour (assigned ? theme.accent : theme.foreground);
+        g.drawText (info.name, textArea, juce::Justification::centredLeft, true);
+
+        g.setFont (DysektLookAndFeel::makeFont (11.f, true));
+        g.setColour (theme.foreground.withAlpha (0.55f));
+        juce::String badge = juce::String (info.preset).paddedLeft ('0', 3);
+        if (assigned)
+            badge = "CH" + juce::String (chIt->second);
+        g.drawText (badge, badgeArea, juce::Justification::centredRight);
+    }
+
+    void listBoxItemClicked (int row, const juce::MouseEvent& e) override
+    {
+        if (row < 0 || row >= (int) owner.filteredPresetIndices.size())
+            return;
+        const int presetIdx = owner.filteredPresetIndices[(size_t) row];
+
+        if (e.mods.isPopupMenu())
+            owner.handlePresetRightClicked (presetIdx, e.getScreenPosition());
+        else
+            owner.handlePresetLeftClicked (presetIdx);
+    }
+
+private:
+    Sf2InstrumentWorkspace& owner;
+};
+
+// ── Small popup for the MIDI channel-range spinner ─────────────────────────
+// Lives behind the SETTINGS button. See header comment: the literal mockup
+// has no room for a lo/hi spinner, only a static "CH 03" readout, so this
+// keeps multitimbral channel-range assignment reachable without adding a
+// widget the SVG doesn't show.
+class Sf2InstrumentWorkspace::ChannelRangePopup : public juce::Component
+{
+public:
+    explicit ChannelRangePopup (Sf2InstrumentWorkspace& ownerIn) : owner (ownerIn)
+    {
+        setSize (220, 64);
+        for (auto* b : { &lowDec, &lowInc, &highDec, &highInc })
         {
-            auto b = getLocalBounds().reduced (10);
-            b.removeFromTop (20); // label row painted, not a component
-            auto lowRow  = b.removeFromTop (28);
-            auto highRow = b;
-            lowDec.setBounds  (lowRow.removeFromLeft (28));
-            lowRow.removeFromLeft (48);
-            lowInc.setBounds  (lowRow.removeFromLeft (28));
-            highDec.setBounds (highRow.removeFromLeft (28));
-            highRow.removeFromLeft (48);
-            highInc.setBounds (highRow.removeFromLeft (28));
+            addAndMakeVisible (b);
+            b->setColour (juce::TextButton::buttonColourId, getTheme().button);
         }
+        lowDec.onClick  = [this] { owner.adjustChannelRange (true,  -1); repaint(); };
+        lowInc.onClick  = [this] { owner.adjustChannelRange (true,  +1); repaint(); };
+        highDec.onClick = [this] { owner.adjustChannelRange (false, -1); repaint(); };
+        highInc.onClick = [this] { owner.adjustChannelRange (false, +1); repaint(); };
+    }
 
-        void paint (juce::Graphics& g) override
-        {
-            const auto& theme = getTheme();
-            g.fillAll (theme.darkBar);
-            g.setColour (theme.foreground);
-            g.setFont (DysektLookAndFeel::makeFont (12.f, true));
-            g.drawText ("MULTITIMBRAL CHANNEL RANGE", getLocalBounds().removeFromTop (20),
-                        juce::Justification::centred);
+    void resized() override
+    {
+        auto b = getLocalBounds().reduced (10);
+        b.removeFromTop (20); // label row painted, not a component
+        auto lowRow  = b.removeFromTop (28);
+        auto highRow = b;
+        lowDec.setBounds  (lowRow.removeFromLeft (28));
+        lowRow.removeFromLeft (48);
+        lowInc.setBounds  (lowRow.removeFromLeft (28));
+        highDec.setBounds (highRow.removeFromLeft (28));
+        highRow.removeFromLeft (48);
+        highInc.setBounds (highRow.removeFromLeft (28));
+    }
 
-            g.setFont (DysektLookAndFeel::makeFont (13.f, true));
-            g.drawText ("LOW " + (owner.cachedChLow  > 0 ? juce::String (owner.cachedChLow)  : juce::String ("-")),
-                        getLocalBounds().removeFromTop (48).removeFromBottom (28).withTrimmedLeft (58).withWidth (48),
-                        juce::Justification::centred);
-            g.drawText ("HIGH " + (owner.cachedChHigh > 0 ? juce::String (owner.cachedChHigh) : juce::String ("-")),
-                        getLocalBounds().removeFromBottom (28).withTrimmedLeft (58).withWidth (48),
-                        juce::Justification::centred);
-        }
+    void paint (juce::Graphics& g) override
+    {
+        const auto& theme = getTheme();
+        g.fillAll (theme.darkBar);
+        g.setColour (theme.foreground);
+        g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+        g.drawText ("MULTITIMBRAL CHANNEL RANGE", getLocalBounds().removeFromTop (20),
+                    juce::Justification::centred);
 
-    private:
-        Sf2InstrumentWorkspace& owner;
-        juce::TextButton lowDec  { "\u25c2" }, lowInc  { "\u25b8" };
-        juce::TextButton highDec { "\u25c2" }, highInc { "\u25b8" };
-    };
-}
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+        g.drawText ("LOW " + (owner.cachedChLow  > 0 ? juce::String (owner.cachedChLow)  : juce::String ("-")),
+                    getLocalBounds().removeFromTop (48).removeFromBottom (28).withTrimmedLeft (58).withWidth (48),
+                    juce::Justification::centred);
+        g.drawText ("HIGH " + (owner.cachedChHigh > 0 ? juce::String (owner.cachedChHigh) : juce::String ("-")),
+                    getLocalBounds().removeFromBottom (28).withTrimmedLeft (58).withWidth (48),
+                    juce::Justification::centred);
+    }
+
+private:
+    Sf2InstrumentWorkspace& owner;
+    juce::TextButton lowDec  { "\u25c2" }, lowInc  { "\u25b8" };
+    juce::TextButton highDec { "\u25c2" }, highInc { "\u25b8" };
+};
 
 // =============================================================================
 //  Constructor / destructor

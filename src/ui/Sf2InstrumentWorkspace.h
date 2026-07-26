@@ -126,6 +126,12 @@ public:
     const Sf2ProgramGrid& getProgramGrid() const noexcept { return programGrid; }
 
 private:
+    // Nested classes (not free classes in an anonymous namespace) so they
+    // get automatic access to our private members per C++11 nested-class
+    // access rules, without needing friend declarations.
+    class PresetListModel;
+    class ChannelRangePopup;
+
     // ── Layout — proportions taken from the 1370x414 reference panel ─────────
     static constexpr float kColPresetsFrac = 350.0f / 1370.0f;   // ~0.2555
     static constexpr float kColVoiceFrac   = 477.0f / 1370.0f;   // ~0.3482
