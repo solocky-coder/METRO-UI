@@ -7,12 +7,24 @@
 
 // ── Fixed black STN-LCD palette ──────────────────────────────────────────────
 // This panel simulates a physical black-tinted STN LCD scope display (classic
-// Roland hardware style). Colours are fixed "hardware" values rather than
+// Roland hardware style). Ink colours are fixed "hardware" values rather than
 // theme-derived, since a real LCD doesn't change colour with the host's
-// light/dark mode. Background is a near-black shade; ink is a bright blue
-// "phosphor" trace colour that reads clearly against it.
-static const juce::Colour kLcd2BgMid   { 0xFF0A0E14 };
+// light/dark mode. Ink is a bright blue "phosphor" trace colour that reads
+// clearly against the screen.
+//
+// The screen background itself, however, is theme-derived — matching
+// Sf2WaveformLcd's sf2Lcd2Bg() formula exactly, since this widget (shared by
+// Slicer and SFZ-Player mode) and Sf2WaveformLcd (SF2-Player mode) are meant
+// to read as the same physical screen regardless of which engine is active.
+// This used to be a locally hardcoded hex constant (0xFF0A0E14) that carried
+// a visible blue cast versus the other two panels' near-black — exactly the
+// "re-declared local copy" drift LcdColours.h warns about for the small LCD
+// chassis palette, just recurring here in the bigger waveform-LCD panels.
+static juce::Colour lcd2BgMid() { return getTheme().darkBar.darker (0.55f); }
 
+// NOTE: kBg is retained as a declared static member (header compatibility)
+// but is no longer used for the live screen background — lcd2Bg()/lcd2BgMid()
+// above are the actual source now. Don't route painting back through kBg.
 const juce::Colour SliceWaveformLcd::kBg { 0xFF0A0E14 };
 const juce::Colour SliceWaveformLcd::kBezel { 0xFF12294A };
 const juce::Colour SliceWaveformLcd::kPhosphor { 0xFF4A95FF };   // bright ink / trace colour
@@ -20,7 +32,7 @@ const juce::Colour SliceWaveformLcd::kDim { 0xFF4A95FF };
 const juce::Colour SliceWaveformLcd::kBright { 0xFF8AC4FF };     // brighter ink for emphasis
 const juce::Colour SliceWaveformLcd::kLabel { 0xFF4A95FF };
 
-static juce::Colour lcd2Bg() { return SliceWaveformLcd::kBg; }
+static juce::Colour lcd2Bg() { return lcd2BgMid(); }
 static juce::Colour lcd2Phosphor() { return SliceWaveformLcd::kPhosphor; }
 static juce::Colour lcd2Dim() { return SliceWaveformLcd::kDim.withAlpha (0.55f).overlaidWith (lcd2Bg()); }
 static juce::Colour lcd2Bright() { return SliceWaveformLcd::kBright; }
@@ -636,7 +648,7 @@ void SliceWaveformLcd::drawBackground (juce::Graphics& g)
 
  // ── Inner screen — solid near-black fill, no gradient, no glow ──────────
  auto screen = b.reduced (4);
- g.setColour (kLcd2BgMid);
+ g.setColour (lcd2BgMid());
  g.fillRoundedRectangle (screen.toFloat(), 0.0f);
 
  // ── Scanline texture — subtle physical-screen feel ──────────────────────
