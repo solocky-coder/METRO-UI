@@ -190,7 +190,7 @@ private:
     bool channelMixerTabEnabled() const noexcept { return countAssignedChannels() > 1; }
 
     juce::Rectangle<int> reverbSendZone, reverbDampZone;
-    juce::Rectangle<int> midiInputHeaderZone, midiChannelReadoutZone, noteMeterZone;
+    juce::Rectangle<int> midiInputHeaderZone, midiChannelReadoutZone, noteActivityLabelZone, noteMeterZone;
     juce::Rectangle<int> outputHeaderZone, masterBusLabelZone, settingsButtonZone;
     juce::Rectangle<int> keyboardZone;
     juce::TextButton settingsButton { "SETTINGS" };
