@@ -65,6 +65,11 @@ public:
             const auto soloR = recR.translated (-(btnW + btnGap), 0);
             const auto muteR = soloR.translated (-(btnW + btnGap), 0);
 
+            // Reserved trailing width for the M/S/R cluster (3 buttons + 2 gaps)
+            // plus recR's own right margin, so the track name never draws under
+            // these buttons regardless of trackH.
+            const int muteW = btnW * 3 + btnGap * 2 + 4;
+
             g.setColour (info.enabled ? juce::Colour (0xFF2A8060) : juce::Colour (0xFF602020));
             g.fillRoundedRectangle (muteR.toFloat(), 0.0f);
             g.setColour (info.solo ? juce::Colour (0xFFD1B34C) : theme.button);
