@@ -426,14 +426,16 @@ private:
     // directly off real MIDI events, see sf2ActiveNoteCount below.)
     std::atomic<int>           pendingTriggeredNote   { -1 };
 
-    // ── FluidSynth branch playhead tracking (replaces juceAdsr.isActive()) ───
+    // ── FluidSynth branch note-on/off bookkeeping ─────────────────────────────
     // Incremented on each note-on, decremented on each note-off, dispatched
-    // to FluidSynth in the process() event loop. previewPositionSample
-    // advances each block while this is > 0, and resets to 0 once it hits 0
-    // (all held notes released) — mirrors the old juceAdsr-driven behaviour
-    // for the UI playhead, minus the ability to keep animating through an
-    // individual voice's own release tail (FluidSynth voices release
-    // independently now, so there's no single shared envelope left to poll).
+    // to FluidSynth in the process() event loop. NOTE: previewPositionSample
+    // (the UI playhead) no longer reads this directly — it uses
+    // fluid_synth_get_active_voice_count(synth) instead, since that reports
+    // true voice lifetime (including release tails and sustain/sostenuto
+    // holds) rather than just note-on/off message counts. sf2ActiveNoteCount
+    // is retained for anything that only needs to know "is a note currently
+    // held down" rather than "is a voice still audibly sounding" (e.g.
+    // lastTriggeredNote reset gating above).
     std::atomic<int>           sf2ActiveNoteCount     { 0 };
 
     /** Converts the current UI A/D/S/R atomics (juceAdsrAttack/Decay/Sustain/

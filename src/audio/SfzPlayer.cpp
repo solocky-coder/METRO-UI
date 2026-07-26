@@ -1073,10 +1073,22 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     // FluidSynth has already shaped each voice's envelope internally via the
     // per-channel generators written above/in applyFluidAdsrFromUi() — no
     // post-mix gain stage needed here. Just advance the UI playhead position
-    // while any note is held, matching the old juceAdsr.isActive()-driven
-    // behaviour minus continuing through an individual voice's own release
-    // tail (see sf2ActiveNoteCount doc comment in the header).
-    if (sf2ActiveNoteCount.load (std::memory_order_relaxed) > 0)
+    // while any note is held.
+    //
+    // fluid_synth_get_active_voice_count() is used here instead of
+    // sf2ActiveNoteCount: the note-on/off counter alone hits 0 the instant the
+    // *last note-off message* is seen, with no idea whether that voice is
+    // still ringing out its release tail. fluid_synth_get_active_voice_count()
+    // reports true voice lifetime — it stays > 0 for a voice that received a
+    // note-off but hasn't finished its release (or is held by sustain/
+    // sostenuto) — so the playhead now keeps animating through the tail,
+    // matching the old juceAdsr.isActive()-driven behaviour exactly. Calling
+    // it here, immediately after this block's render, satisfies FluidSynth's
+    // documented requirement that the count be read synchronously with audio
+    // synthesis for an accurate value. sf2ActiveNoteCount is retained (see its
+    // doc comment) for other bookkeeping that only cares about note-on/off,
+    // not full voice lifetime.
+    if (fluid_synth_get_active_voice_count (synth) > 0)
         previewPositionSample.fetch_add (numSamples, std::memory_order_relaxed);
     else
         previewPositionSample.store (0, std::memory_order_relaxed);
