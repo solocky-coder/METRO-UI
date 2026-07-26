@@ -73,15 +73,20 @@ public:
 
     void paint (juce::Graphics& g) override
     {
+        // Was UIHelpers::drawTexturedPanel(..., PanelZone::Chassis) — the old
+        // wood-grain/gradient chassis look. Sf2ChannelFxPanel only ever
+        // appears docked inside Sf2InstrumentWorkspace's flat #080e12 "metro"
+        // panel (no other call site — checked), so a textured background
+        // here reads as a visual seam between two different UI languages
+        // rather than one continuous column 3. Flat fill to match.
         const auto theme = ThemeData::darkTheme();
-        UIHelpers::drawTexturedPanel (g, getLocalBounds().toFloat(), theme.darkBar,
-                                       UIHelpers::PanelZone::Chassis);
+        g.fillAll (juce::Colour::fromString ("FF080e12"));
 
         const int numActive = countActiveBits();
         if (numActive == 0)
         {
             g.setColour (theme.foreground.withAlpha (0.4f));
-            g.setFont (DysektLookAndFeel::makeFont(13.f));
+            g.setFont (DysektLookAndFeel::makeFont(14.f));
             g.drawText ("No SF2 channels active", getLocalBounds(), juce::Justification::centred);
             return;
         }
@@ -163,7 +168,7 @@ private:
     enum class Knob { None, Volume, Pan, ReverbSend };
 
     static constexpr float kKnobH    = 44.f;   // px tall per knob row
-    static constexpr float kLabelH   = 18.f;   // preset name label
+    static constexpr float kLabelH   = 20.f;   // preset name label
     static constexpr float kPadding  =  4.f;
 
     struct DragState { int ch { -1 }; Knob knob { Knob::None }; };
@@ -276,11 +281,15 @@ private:
         const auto strip = processor.sfzPlayer.getChannelStrip (ch);
 
         // Preset label — dimmed when muted, doubles as the mute-toggle target.
+        // Shows the actual 1-based MIDI channel number alongside the preset
+        // name (not just the name) so it's possible to confirm which channel
+        // a controller needs to send on without switching back to the
+        // Performance & FX tab's MIDI INPUT readout.
         g.setColour (strip.muted ? theme.foreground.withAlpha (0.35f) : theme.accent);
-        g.setFont (DysektLookAndFeel::makeFont(12.f, true));
+        g.setFont (DysektLookAndFeel::makeFont(13.f, true));
         const auto labelRect = col.withHeight (kLabelH).reduced (kPadding, 1.f);
-        juce::String label = channelLabels[ch].isEmpty() ? ("CH " + juce::String (ch + 1))
-                                                           : channelLabels[ch];
+        juce::String label = "CH " + juce::String (ch + 1) + "  "
+                            + (channelLabels[ch].isEmpty() ? juce::String ("(empty)") : channelLabels[ch]);
         if (strip.muted) label += " (muted)";
         g.drawText (label, labelRect.toNearestInt(), juce::Justification::centredLeft, true);
 
@@ -326,10 +335,10 @@ private:
         g.drawLine (cx, cy, px, py, 1.5f);
 
         // Label and value
-        g.setFont (DysektLookAndFeel::makeFont(10.f));
+        g.setFont (DysektLookAndFeel::makeFont(11.f));
         g.setColour (theme.foreground.withAlpha (0.6f * alpha));
 
-        const auto topLabel = kr.withHeight (12.f);
+        const auto topLabel = kr.withHeight (13.f);
         g.drawText (label, topLabel.toNearestInt(), juce::Justification::centred);
 
         juce::String valStr;
@@ -346,8 +355,8 @@ private:
         }
 
         g.setColour (theme.foreground.withMultipliedAlpha (alpha));
-        g.setFont (DysektLookAndFeel::makeFont(11.f, true));
-        const auto botLabel = kr.withY (kr.getBottom() - 13.f).withHeight (13.f);
+        g.setFont (DysektLookAndFeel::makeFont(13.f, true));
+        const auto botLabel = kr.withY (kr.getBottom() - 15.f).withHeight (15.f);
         g.drawText (valStr, botLabel.toNearestInt(), juce::Justification::centred);
     }
 
