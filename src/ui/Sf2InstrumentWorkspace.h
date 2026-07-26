@@ -124,6 +124,16 @@ public:
     /** Called by PluginEditor whenever a preset<->channel mapping changes. */
     void notifyPresetChannelChanged (const juce::String& presetName, int midiCh1Based);
 
+    /** Called by PluginEditor when the Arranger's selected track is a genuine
+     *  SF2 preset track (see ArrangeView::onTrackTypeSelected). Looks up
+     *  whichever preset is currently routed to midiCh1Based via the same
+     *  programGrid channel map the preset list itself is highlighted from,
+     *  and — if found — selects/loads it exactly as a left-click on that row
+     *  would (updates the ACTIVE PRESET header, envelope, and list
+     *  highlight). No-op, deliberately, if no preset is assigned to that
+     *  channel yet; it does not clear or guess. */
+    void selectPresetForChannel (int midiChannel1Based);
+
     /** Direct access to the SF2 program grid (read-only) for PluginEditor.
      *  Still backs the preset list even though Sf2ProgramGrid's own grid
      *  paint route is no longer used in column 1. */

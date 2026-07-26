@@ -153,7 +153,7 @@ private:
 };
 
 // =============================================================================
-//  CompactKeyboard — dedicated C3-C5 keyboard strip
+//  CompactKeyboard — dedicated scrollable keyboard strip
 // =============================================================================
 //  KeysPanel (the shared full-instrument keyboard) is a 128-key component
 //  with an attached sample-zone matrix and no way to restrict its visible
@@ -161,11 +161,13 @@ private:
 //  placeholder ("No zones loaded") consumed most of the height and squeezed
 //  75 white keys into column 3's width — exactly the "empty black area" /
 //  "keyboard too narrow" problems reported against the first build. This is
-//  a small purpose-built replacement: just the keys, C3-C5, with note-on
-//  highlighting read directly from processor.sfzActiveNotes and click/drag
-//  preview routed through the same sfzUiNoteOn/OffRequest atomics KeysPanel
-//  used. Note-naming matches this codebase's existing convention (see
-//  KeysPanel.cpp: octave = note/12 - 2, so MIDI 60 = C3).
+//  a small purpose-built replacement: just the keys, a 2-octave scrollable
+//  window ('<'/'>' shift by a full octave, and it auto-jumps to follow
+//  incoming MIDI/preview notes — see shiftOctave()/scrollToNoteIfHidden()),
+//  with note-on highlighting read directly from processor.sfzActiveNotes and
+//  click/drag preview routed through the same sfzUiNoteOn/OffRequest atomics
+//  KeysPanel used. Note-naming matches this codebase's existing convention
+//  (see KeysPanel.cpp: octave = note/12 - 2, so MIDI 60 = C3).
 class Sf2InstrumentWorkspace::CompactKeyboard : public juce::Component,
                                                  private juce::Timer
 {
@@ -177,9 +179,14 @@ public:
         // arrives on the audio thread asynchronously, so this can't wait for
         // a mouse-driven or workspace-level repaint to notice the change.
         startTimerHz (30);
+
+        addAndMakeVisible (octDownBtn);
+        addAndMakeVisible (octUpBtn);
+        octDownBtn.onClick = [this] { shiftOctave (-1); };
+        octUpBtn  .onClick = [this] { shiftOctave (+1); };
     }
 
-    void resized() override { rebuildKeyRects(); }
+    void resized() override { layoutButtons(); rebuildKeyRects(); }
 
     void paint (juce::Graphics& g) override
     {
@@ -195,6 +202,14 @@ public:
     void mouseUp   (const juce::MouseEvent&)   override { releaseHeld(); }
     void mouseExit (const juce::MouseEvent&)   override { releaseHeld(); }
 
+    /** For the "KEYBOARD | C3-C5" header label, which is painted by the
+     *  owner workspace rather than this component — kept in sync with
+     *  whatever window is actually showing instead of a hardcoded string. */
+    juce::String getRangeLabel() const
+    {
+        return noteName (lowNote) + "-" + noteName (lowNote + kWindowSemitones);
+    }
+
 private:
     void timerCallback() override
     {
@@ -204,6 +219,23 @@ private:
         {
             lastLo = lo;
             lastHi = hi;
+
+            // Jump the visible window to follow incoming MIDI/preview notes,
+            // same idea as KeysPanel::scrollToOctaveForNote() — find the
+            // lowest currently-active note and, if it's outside the current
+            // 2-octave window, shift the window to start at that note's own
+            // octave.
+            for (int n = 0; n < 128; ++n)
+            {
+                const uint64_t word = (n < 64) ? lo : hi;
+                const int      bit  = (n < 64) ? n  : (n - 64);
+                if ((word >> bit) & 1)
+                {
+                    scrollToNoteIfHidden (n);
+                    break;
+                }
+            }
+
             repaint();
         }
     }
@@ -214,42 +246,96 @@ private:
     std::vector<KeyRect> keyRects;
     int heldNote { -1 };
 
-    static constexpr int kLowNote  = 60;   // C3
-    static constexpr int kHighNote = 84;   // C5
+    // ── Scrollable window ────────────────────────────────────────────────
+    // Shows kWindowSemitones (2 octaves) starting at lowNote, which is
+    // always kept a multiple of 12 (a C) so the window always starts/ends
+    // cleanly on octave boundaries. '<'/'>' shift by a full octave;
+    // timerCallback() above also auto-shifts it to follow incoming notes.
+    static constexpr int kWindowSemitones = 24;   // C..C two octaves later
+    static constexpr int kMaxLowNote      = 96;   // (96..120) is the top window that still fits 0-127
+    int lowNote { 60 };   // C3
+
+    juce::TextButton octDownBtn { "<" }, octUpBtn { ">" };
+    static constexpr int kBtnW = 14;
+    juce::Rectangle<int> keysArea;
+
+    void layoutButtons()
+    {
+        auto b = getLocalBounds();
+        octDownBtn.setBounds (b.removeFromLeft (kBtnW));
+        octUpBtn  .setBounds (b.removeFromRight (kBtnW));
+        keysArea = b;
+        octDownBtn.setEnabled (lowNote > 0);
+        octUpBtn  .setEnabled (lowNote < kMaxLowNote);
+    }
+
+    void shiftOctave (int dir)
+    {
+        const int next = juce::jlimit (0, kMaxLowNote, lowNote + dir * 12);
+        if (next == lowNote) return;
+        lowNote = next;
+        layoutButtons();
+        rebuildKeyRects();
+        repaint();
+        owner.repaint();   // the "KEYBOARD | ..." range label lives on the owner
+    }
+
+    void scrollToNoteIfHidden (int note)
+    {
+        if (note < 0 || note > 127) return;
+        if (note >= lowNote && note <= lowNote + kWindowSemitones) return;   // already visible
+
+        const int targetLow = juce::jlimit (0, kMaxLowNote, (note / 12) * 12);
+        if (targetLow == lowNote) return;
+        lowNote = targetLow;
+        layoutButtons();
+        rebuildKeyRects();
+        owner.repaint();   // the "KEYBOARD | ..." range label lives on the owner
+    }
+
+    static juce::String noteName (int note)
+    {
+        static const char* const names[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+        const int octave = note / 12 - 2;   // matches this codebase's convention: MIDI 60 = C3
+        return juce::String (names[note % 12]) + juce::String (octave);
+    }
 
     void rebuildKeyRects()
     {
         keyRects.clear();
-        if (getWidth() <= 0 || getHeight() <= 0) return;
+        if (keysArea.getWidth() <= 0 || keysArea.getHeight() <= 0) return;
 
         static const int semiToWhite[12] = { 0,-1,1,-1,2, 3,-1,4,-1,5,-1,6 };
 
+        const int highNote = lowNote + kWindowSemitones;
+
         int numWhite = 0;
-        for (int n = kLowNote; n <= kHighNote; ++n)
+        for (int n = lowNote; n <= highNote; ++n)
             if (semiToWhite[n % 12] >= 0) ++numWhite;
 
-        const float w = (float) getWidth() / (float) numWhite;
-        const float h = (float) getHeight();
+        const float originX = (float) keysArea.getX();
+        const float w = (float) keysArea.getWidth() / (float) numWhite;
+        const float h = (float) keysArea.getHeight();
         const float blackW = w * 0.62f;
         const float blackH = h * 0.6f;
 
         int whiteIdx = 0;
-        for (int n = kLowNote; n <= kHighNote; ++n)
+        for (int n = lowNote; n <= highNote; ++n)
         {
             if (semiToWhite[n % 12] >= 0)
             {
-                keyRects.push_back ({ { whiteIdx * w, 0.f, w, h }, n, false });
+                keyRects.push_back ({ { originX + whiteIdx * w, 0.f, w, h }, n, false });
                 ++whiteIdx;
             }
         }
-        for (int n = kLowNote; n <= kHighNote; ++n)
+        for (int n = lowNote; n <= highNote; ++n)
         {
             if (semiToWhite[n % 12] < 0)
             {
                 int precedingWhites = 0;
-                for (int m = kLowNote; m < n; ++m)
+                for (int m = lowNote; m < n; ++m)
                     if (semiToWhite[m % 12] >= 0) ++precedingWhites;
-                keyRects.push_back ({ { precedingWhites * w - blackW * 0.5f, 0.f, blackW, blackH }, n, true });
+                keyRects.push_back ({ { originX + precedingWhites * w - blackW * 0.5f, 0.f, blackW, blackH }, n, true });
             }
         }
     }
@@ -912,7 +998,8 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     // ── Keyboard label ──────────────────────────────────────────────────────
     g.setFont (DysektLookAndFeel::makeFont (14.f, true));
     g.setColour (theme.foreground.withAlpha (0.6f));
-    g.drawText ("KEYBOARD  |  C3-C5", keyboardZone.withHeight (16).translated (0, -18),
+    g.drawText ("KEYBOARD  |  " + (compactKeyboard != nullptr ? compactKeyboard->getRangeLabel() : "C3-C5"),
+                keyboardZone.withHeight (16).translated (0, -18),
                 juce::Justification::centredLeft);
 }
 
@@ -1210,6 +1297,28 @@ void Sf2InstrumentWorkspace::notifyPresetChannelChanged (const juce::String& pre
     presetListBox.updateContent();
     resized();
     repaint();
+}
+
+void Sf2InstrumentWorkspace::selectPresetForChannel (int midiChannel1Based)
+{
+    // Same source of truth the preset list itself highlights from
+    // (effectiveDisplayPresetIndex()/PresetListModel), so this can never
+    // disagree with what a manual click on that row would have shown.
+    const auto& chMap = programGrid.getPresetChannels();
+    for (const auto& [presetIdx, ch] : chMap)
+    {
+        if (ch == midiChannel1Based)
+        {
+            // Reuses the exact list-row-click path: updates the ACTIVE
+            // PRESET header/envelope and, since this preset is already
+            // routed to a real channel, its own early-return means no
+            // audible preview note gets fired just from selecting a track.
+            handlePresetLeftClicked (presetIdx);
+            return;
+        }
+    }
+    // No preset assigned to this channel (yet) — leave the panel as-is
+    // rather than clearing or guessing.
 }
 
 void Sf2InstrumentWorkspace::onFileChosen (const juce::File& f)

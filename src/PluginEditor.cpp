@@ -312,7 +312,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
     // SF-player track → Sequencer mode (channel mask already set by ArrangeView).
     // Slicer track (MainSlice / ChromaticSlice) → Slicer mode.
     // Nothing selected → Sequencer mode with mask=0 (no live input).
-    arrangeView.onTrackTypeSelected = [this] (TrackType type, bool hasSelection, bool isSfzInstrument)
+    arrangeView.onTrackTypeSelected = [this] (TrackType type, bool hasSelection, bool isSfzInstrument, int midiChannel1Based)
     {
         if (activeSlot != SlotContent::Seq) return;
         using Mode = DysektProcessor::MidiRouteMode;
@@ -326,6 +326,14 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
         // showing on screen always agrees with the selected track.
         if (hasSelection)
             setUiMode (type == TrackType::SfPlayer ? (isSfzInstrument ? 1 : 2) : 0);
+
+        // A genuine SF2 preset track (SfPlayer, not the .sfz-instrument
+        // flavour) was selected — follow the selection all the way and make
+        // the SF2-PLAYER panel show the actual preset routed to that track's
+        // channel, not just switch tabs and leave whatever was last clicked
+        // highlighted.
+        if (hasSelection && type == TrackType::SfPlayer && ! isSfzInstrument && midiChannel1Based > 0)
+            sfzDropdown.selectPresetForChannel (midiChannel1Based);
     };
 #endif
 

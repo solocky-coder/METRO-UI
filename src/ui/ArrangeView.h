@@ -69,8 +69,16 @@ public:
      *                          true if the track is a real .sfz-file instrument track
      *                          rather than an SF2 preset track — see
      *                          SequencerTrack::isSfzInstrument. Lets listeners tell
-     *                          the SFZ-PLAYER and SF2-PLAYER tabs apart. */
-    std::function<void(TrackType type, bool hasSelection, bool isSfzInstrument)> onTrackTypeSelected;
+     *                          the SFZ-PLAYER and SF2-PLAYER tabs apart.
+     *  @param midiChannel1Based  Only meaningful when type == SfPlayer && hasSelection
+     *                          && !isSfzInstrument (a genuine SF2 preset track): the
+     *                          track's assigned MIDI channel, 1-based. -1 otherwise.
+     *                          Lets listeners (e.g. the SF2-PLAYER workspace) look up
+     *                          and highlight whichever preset is actually routed to
+     *                          that channel, so the panel follows Arranger selection
+     *                          instead of just switching tabs and leaving whatever
+     *                          preset was last clicked highlighted. */
+    std::function<void(TrackType type, bool hasSelection, bool isSfzInstrument, int midiChannel1Based)> onTrackTypeSelected;
 
     /** Re-fires onTrackTypeSelected for the currently selected track.
      *  Call this when opening the sequencer panel so the editor can
@@ -82,10 +90,13 @@ public:
             if (juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()))
             {
                 const auto info = engine.getTrackInfo (selectedTrack);
-                onTrackTypeSelected (info.type, true, info.isSfzInstrument);
+                const int ch1Based = (info.type == TrackType::SfPlayer
+                                       && info.midiChannel >= 0 && info.midiChannel < 16)
+                                    ? info.midiChannel + 1 : -1;
+                onTrackTypeSelected (info.type, true, info.isSfzInstrument, ch1Based);
             }
             else
-                onTrackTypeSelected (TrackType::MainSlice, false, false);
+                onTrackTypeSelected (TrackType::MainSlice, false, false, -1);
         }
     }
 
@@ -698,6 +709,7 @@ private:
         bool hasSelection = juce::isPositiveAndBelow (idx, engine.getNumTracks());
 
         int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
+        int assignedChannel1Based = -1;
 
         if (hasSelection)
         {
@@ -715,7 +727,10 @@ private:
                 case TrackType::SfPlayer:
                     liveCh = 0;  // SfPlayer uses liveInputChannelMask instead
                     if (info.midiChannel >= 0 && info.midiChannel < 16)
+                    {
                         mask = (uint16_t)(1u << info.midiChannel);
+                        assignedChannel1Based = info.midiChannel + 1;
+                    }
                     break;
             }
         }
@@ -734,7 +749,7 @@ private:
         engine.setSelectedTrack (hasSelection ? idx : -1);
 
         if (onTrackTypeSelected)
-            onTrackTypeSelected (type, hasSelection, isSfzInstrument);
+            onTrackTypeSelected (type, hasSelection, isSfzInstrument, assignedChannel1Based);
     }
 
     static void styleScrollBar (juce::ScrollBar& sb)
