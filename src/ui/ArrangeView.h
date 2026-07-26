@@ -73,12 +73,19 @@ public:
      *  @param midiChannel1Based  Only meaningful when type == SfPlayer && hasSelection
      *                          && !isSfzInstrument (a genuine SF2 preset track): the
      *                          track's assigned MIDI channel, 1-based. -1 otherwise.
-     *                          Lets listeners (e.g. the SF2-PLAYER workspace) look up
-     *                          and highlight whichever preset is actually routed to
-     *                          that channel, so the panel follows Arranger selection
-     *                          instead of just switching tabs and leaving whatever
-     *                          preset was last clicked highlighted. */
-    std::function<void(TrackType type, bool hasSelection, bool isSfzInstrument, int midiChannel1Based)> onTrackTypeSelected;
+     *  @param presetBank / @param presetProgram  Same guard as midiChannel1Based.
+     *                          The track's own SequencerTrackInfo::preset (bank/
+     *                          program) — the actual authoritative preset<->track
+     *                          link, set wherever the track's preset was originally
+     *                          assigned (e.g. TrackInspector's PART dropdown via
+     *                          addOrUpdateSfTrackOnChannel()). NOT the same as
+     *                          Sf2ProgramGrid::getPresetChannels(), which only tracks
+     *                          assignments made through the SF2-PLAYER panel's own
+     *                          right-click menu and is a completely separate map —
+     *                          a track assigned via the Arranger never appears there.
+     *                          -1/-1 when not applicable. */
+    std::function<void(TrackType type, bool hasSelection, bool isSfzInstrument,
+                        int midiChannel1Based, int presetBank, int presetProgram)> onTrackTypeSelected;
 
     /** Re-fires onTrackTypeSelected for the currently selected track.
      *  Call this when opening the sequencer panel so the editor can
@@ -90,13 +97,16 @@ public:
             if (juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()))
             {
                 const auto info = engine.getTrackInfo (selectedTrack);
+                const bool isSf2Track = info.type == TrackType::SfPlayer && ! info.isSfzInstrument;
                 const int ch1Based = (info.type == TrackType::SfPlayer
                                        && info.midiChannel >= 0 && info.midiChannel < 16)
                                     ? info.midiChannel + 1 : -1;
-                onTrackTypeSelected (info.type, true, info.isSfzInstrument, ch1Based);
+                onTrackTypeSelected (info.type, true, info.isSfzInstrument, ch1Based,
+                                      isSf2Track ? info.preset.bank   : -1,
+                                      isSf2Track ? info.preset.preset : -1);
             }
             else
-                onTrackTypeSelected (TrackType::MainSlice, false, false, -1);
+                onTrackTypeSelected (TrackType::MainSlice, false, false, -1, -1, -1);
         }
     }
 
@@ -710,6 +720,7 @@ private:
 
         int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
         int assignedChannel1Based = -1;
+        int assignedPresetBank = -1, assignedPresetProgram = -1;
 
         if (hasSelection)
         {
@@ -731,6 +742,14 @@ private:
                         mask = (uint16_t)(1u << info.midiChannel);
                         assignedChannel1Based = info.midiChannel + 1;
                     }
+                    if (! isSfzInstrument)
+                    {
+                        // The track's own preset link (set wherever it was
+                        // assigned — e.g. TrackInspector's PART dropdown),
+                        // not Sf2ProgramGrid's separate channel map.
+                        assignedPresetBank    = info.preset.bank;
+                        assignedPresetProgram = info.preset.preset;
+                    }
                     break;
             }
         }
@@ -749,7 +768,8 @@ private:
         engine.setSelectedTrack (hasSelection ? idx : -1);
 
         if (onTrackTypeSelected)
-            onTrackTypeSelected (type, hasSelection, isSfzInstrument, assignedChannel1Based);
+            onTrackTypeSelected (type, hasSelection, isSfzInstrument, assignedChannel1Based,
+                                  assignedPresetBank, assignedPresetProgram);
     }
 
     static void styleScrollBar (juce::ScrollBar& sb)

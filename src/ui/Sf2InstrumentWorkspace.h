@@ -126,13 +126,17 @@ public:
 
     /** Called by PluginEditor when the Arranger's selected track is a genuine
      *  SF2 preset track (see ArrangeView::onTrackTypeSelected). Looks up
-     *  whichever preset is currently routed to midiCh1Based via the same
-     *  programGrid channel map the preset list itself is highlighted from,
-     *  and — if found — selects/loads it exactly as a left-click on that row
-     *  would (updates the ACTIVE PRESET header, envelope, and list
-     *  highlight). No-op, deliberately, if no preset is assigned to that
-     *  channel yet; it does not clear or guess. */
-    void selectPresetForChannel (int midiChannel1Based);
+     *  whichever preset row matches the track's own bank/program — the
+     *  actual authoritative preset<->track link (SequencerTrackInfo::preset,
+     *  set wherever the track was assigned, e.g. TrackInspector's PART
+     *  dropdown) — NOT Sf2ProgramGrid::getPresetChannels(), which only knows
+     *  about assignments made through this panel's own right-click menu and
+     *  is a separate map entirely; a track assigned via the Arranger never
+     *  appears there. If found, selects/loads it exactly as a left-click on
+     *  that row would (updates the ACTIVE PRESET header, envelope, and list
+     *  highlight). No-op, deliberately, if no matching preset is found in
+     *  the currently-loaded preset list. */
+    void selectPresetForTrack (int presetBank, int presetProgram);
 
     /** Direct access to the SF2 program grid (read-only) for PluginEditor.
      *  Still backs the preset list even though Sf2ProgramGrid's own grid

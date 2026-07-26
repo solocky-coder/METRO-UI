@@ -256,7 +256,7 @@ private:
     int lowNote { 60 };   // C3
 
     juce::TextButton octDownBtn { "<" }, octUpBtn { ">" };
-    static constexpr int kBtnW = 14;
+    static constexpr int kBtnW = 18;   // matches KeysPanel's kTransposeBtnW
     juce::Rectangle<int> keysArea;
 
     void layoutButtons()
@@ -1299,26 +1299,28 @@ void Sf2InstrumentWorkspace::notifyPresetChannelChanged (const juce::String& pre
     repaint();
 }
 
-void Sf2InstrumentWorkspace::selectPresetForChannel (int midiChannel1Based)
+void Sf2InstrumentWorkspace::selectPresetForTrack (int presetBank, int presetProgram)
 {
-    // Same source of truth the preset list itself highlights from
-    // (effectiveDisplayPresetIndex()/PresetListModel), so this can never
-    // disagree with what a manual click on that row would have shown.
-    const auto& chMap = programGrid.getPresetChannels();
-    for (const auto& [presetIdx, ch] : chMap)
+    // Matches against the currently-loaded preset list by bank+program —
+    // the track's own stored preset link — not programGrid's channel map
+    // (see header comment: that map is populated only by this panel's own
+    // right-click assignment flow and knows nothing about tracks assigned
+    // via the Arranger/TrackInspector).
+    for (int i = 0; i < (int) presetList.size(); ++i)
     {
-        if (ch == midiChannel1Based)
+        const auto& p = presetList[(size_t) i];
+        if (p.bank == presetBank && p.preset == presetProgram)
         {
             // Reuses the exact list-row-click path: updates the ACTIVE
             // PRESET header/envelope and, since this preset is already
             // routed to a real channel, its own early-return means no
             // audible preview note gets fired just from selecting a track.
-            handlePresetLeftClicked (presetIdx);
+            handlePresetLeftClicked (i);
             return;
         }
     }
-    // No preset assigned to this channel (yet) — leave the panel as-is
-    // rather than clearing or guessing.
+    // No matching preset in the currently-loaded list (wrong/no .sf2 file
+    // loaded yet, etc.) — leave the panel as-is rather than guessing.
 }
 
 void Sf2InstrumentWorkspace::onFileChosen (const juce::File& f)

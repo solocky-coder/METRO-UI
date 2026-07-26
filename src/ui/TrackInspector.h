@@ -80,17 +80,21 @@ public:
         {
             if (! hasTrack()) return;
             const auto info = engine.getTrackInfo (selectedTrack);
-            if (info.type != TrackType::SfPlayer) return;
 
-            // SF2-preset tracks are matched/updated by preset (bank+program);
-            // a real .sfz-file track has no meaningful preset to match on, so
-            // routing it through addOrUpdateSfTrackOnChannel silently failed
-            // to update the track that's actually playing — it has to go
-            // through addSfzTrack instead, same as loading a new .sfz file.
-            if (info.isSfzInstrument)
+            // SF2-preset tracks are reassigned exclusively through the
+            // SF2-PLAYER panel's right-click "Assign MIDI channel" menu now
+            // (Sf2InstrumentWorkspace::handleChannelAssigned) — that's the
+            // only path that keeps processor.sfPlayerChannelMask in sync,
+            // which is what actually gates whether processMidi() routes any
+            // MIDI to the SF2 engine on a given channel at all. Routing an
+            // SF2 track's channel change through here (as before) updated
+            // the track's own midiChannel/FluidSynth program but left that
+            // mask stale, so a track moved to a not-yet-enabled channel
+            // would go silent despite showing the "correct" channel — see
+            // channelBox's visibility below, which now only shows this
+            // control for real .sfz-instrument tracks in the first place.
+            if (info.type == TrackType::SfPlayer && info.isSfzInstrument)
                 engine.addSfzTrack (info.name, channelBox.getSelectedId() - 1, info.colour);
-            else
-                engine.addOrUpdateSfTrackOnChannel (info.preset, channelBox.getSelectedId() - 1, info.colour);
         };
 
         setControlsVisible (false);
@@ -118,9 +122,12 @@ public:
         volumeSlider.setValue (info.volumeDb, juce::dontSendNotification);
         panSlider.setValue (info.pan * 100.0, juce::dontSendNotification);
 
-        const bool isMultiTimbral = info.type == TrackType::SfPlayer;
-        channelBox.setVisible (isMultiTimbral);
-        if (isMultiTimbral)
+        // Only real .sfz-instrument tracks use this control now. Genuine SF2
+        // preset tracks are reassigned exclusively via the SF2-PLAYER
+        // panel's right-click menu — see channelBox.onChange above for why.
+        const bool showChannelBox = info.type == TrackType::SfPlayer && info.isSfzInstrument;
+        channelBox.setVisible (showChannelBox);
+        if (showChannelBox)
             channelBox.setSelectedId (info.midiChannel + 1, juce::dontSendNotification);
 
         resized();

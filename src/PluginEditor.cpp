@@ -312,7 +312,8 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
     // SF-player track → Sequencer mode (channel mask already set by ArrangeView).
     // Slicer track (MainSlice / ChromaticSlice) → Slicer mode.
     // Nothing selected → Sequencer mode with mask=0 (no live input).
-    arrangeView.onTrackTypeSelected = [this] (TrackType type, bool hasSelection, bool isSfzInstrument, int midiChannel1Based)
+    arrangeView.onTrackTypeSelected = [this] (TrackType type, bool hasSelection, bool isSfzInstrument,
+                                               int midiChannel1Based, int presetBank, int presetProgram)
     {
         if (activeSlot != SlotContent::Seq) return;
         using Mode = DysektProcessor::MidiRouteMode;
@@ -329,11 +330,15 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
 
         // A genuine SF2 preset track (SfPlayer, not the .sfz-instrument
         // flavour) was selected — follow the selection all the way and make
-        // the SF2-PLAYER panel show the actual preset routed to that track's
-        // channel, not just switch tabs and leave whatever was last clicked
-        // highlighted.
-        if (hasSelection && type == TrackType::SfPlayer && ! isSfzInstrument && midiChannel1Based > 0)
-            sfzDropdown.selectPresetForChannel (midiChannel1Based);
+        // the SF2-PLAYER panel show the actual preset assigned to that
+        // track, not just switch tabs and leave whatever was last clicked
+        // highlighted. midiChannel1Based is unused here now (routing/mask
+        // wiring already handled elsewhere) — presetBank/presetProgram are
+        // the track's own preset link and what actually identifies the row.
+        juce::ignoreUnused (midiChannel1Based);
+        if (hasSelection && type == TrackType::SfPlayer && ! isSfzInstrument
+            && presetBank >= 0 && presetProgram >= 0)
+            sfzDropdown.selectPresetForTrack (presetBank, presetProgram);
     };
 #endif
 
