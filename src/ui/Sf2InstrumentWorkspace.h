@@ -143,7 +143,7 @@ private:
     // Column 3 (Performance & FX / Channel Mixer) gets the remainder (~0.396).
     static constexpr int   kNarrowThreshold = 760;   // px — below this, stack columns
     static constexpr int   kTopBarH         = 36;
-    static constexpr int   kKnobW  = 60;
+    static constexpr int   kKnobW  = 64;
     static constexpr int   kKnobH  = 60;
     static constexpr int   kPad    = 8;
 
@@ -169,6 +169,17 @@ private:
     void handlePresetLeftClicked  (int presetIdx);
     void handlePresetRightClicked (int presetIdx, juce::Point<int> screenPos);
     void handleChannelAssigned    (int presetIdx, int ch);
+
+    /** SfzPlayer tracks two separate indices: getCurrentPresetIndex() (the
+     *  actual engine-loaded preset) and getDisplayPresetIndex() (UI-only,
+     *  set via setDisplayPresetIndex() whenever the user clicks a row here,
+     *  defaults to -1). Using getCurrentPresetIndex() for UI highlighting
+     *  was the bug behind "the first preset stays highlighted forever" —
+     *  it only changes on a real engine load, not on browsing. This falls
+     *  back to the real engine index only while nothing has been explicitly
+     *  browsed yet (-1), so a freshly-loaded file still shows its actual
+     *  active preset instead of "No preset selected". */
+    int effectiveDisplayPresetIndex() const;
 
     struct AssignedPreset { juce::String name; int ch { 0 }; };
     std::vector<AssignedPreset> sf2Presets;
