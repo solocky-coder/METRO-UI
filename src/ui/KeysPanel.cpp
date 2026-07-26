@@ -864,15 +864,16 @@ KeysPanel::KeysPanel (DysektProcessor& p) : processor (p)
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
     setMouseClickGrabsKeyboardFocus (false);
 
-    // Transpose buttons kept invisible — octave-shift logic intact for future use.
+    // Flank the keyboard with '<'/'>' buttons that shift the visible window
+    // by a full octave. Actual bounds are set in resized(); visibility is on
+    // by default now that the keyboard renders a scrollable window instead
+    // of the full 0-127 range squeezed into one width.
     addAndMakeVisible (transposeDownBtn);
     addAndMakeVisible (transposeUpBtn);
     transposeDownBtn.setMouseCursor (juce::MouseCursor::NormalCursor);
     transposeUpBtn  .setMouseCursor (juce::MouseCursor::NormalCursor);
-    transposeDownBtn.setVisible (false);
-    transposeUpBtn  .setVisible (false);
     transposeDownBtn.onClick = [this] { if (baseOctave > 0) { --baseOctave; resized(); repaint(); } };
-    transposeUpBtn  .onClick = [this] { if (baseOctave < 8) { ++baseOctave; resized(); repaint(); } };
+    transposeUpBtn  .onClick = [this] { if (baseOctave < kMaxBaseOctave) { ++baseOctave; resized(); repaint(); } };
 
     zoneViewport.setScrollBarsShown (true, false);
     zoneViewport.setViewedComponent (&zoneMatrix, false);
@@ -960,7 +961,7 @@ void KeysPanel::rebuildZoneMatrix()
 }
 
 // =============================================================================
-// resized  — full 128-note keyboard
+// resized  — scrollable kVisibleOctaves-octave keyboard window
 // =============================================================================
 
 void KeysPanel::resized()
@@ -977,26 +978,43 @@ void KeysPanel::resized()
     constexpr int kMatrixKeyGap = 8;   // px gap between zone matrix frame and keyboard
     kZoneViewH = juce::jmax (0, h - kKeyH - kMatrixKeyGap);
 
-    // Full keyboard: 75 white keys spanning the full component width.
-    kNumWhite = kTotalWhite;   // 75
-    kNumBlack = kTotalBlack;   // 53
+    // Windowed keyboard: only kVisibleOctaves octaves are shown at once,
+    // starting at MIDI note (baseOctave * 12) — always a C, so the window
+    // always starts and ends cleanly on octave boundaries. '<'/'>' flank the
+    // keyboard and shift baseOctave by a whole octave; see also
+    // scrollToOctaveForNote(), which jumps the window automatically when a
+    // live/preview note arrives outside it.
+    baseOctave = juce::jlimit (0, kMaxBaseOctave, baseOctave);
+    const int startNote = baseOctave * 12;
+    const int endNote   = juce::jmin (128, startNote + 12 * kVisibleOctaves);   // exclusive
 
-    // Key width: fill the full component width with all 75 white keys.
+    kNumWhite = 7 * kVisibleOctaves;   // 14
+    kNumBlack = 5 * kVisibleOctaves;   // 10
+
+    // Transpose buttons flank the keyboard; the keyboard itself fills the
+    // width between them.
+    constexpr int kTransposeBtnW = 18;
+    const int keyboardX = kTransposeBtnW;
+    const int keyboardW = juce::jmax (0, w - kTransposeBtnW * 2);
+
+    // Key width: fill the windowed keyboard area with kNumWhite white keys.
     // Use float division so we can use fractional positions and avoid gaps.
-    kWhiteKeyW = juce::jmax (4, w / kNumWhite);     // integer for hit-testing
-    kWhiteKeyWf = (float) w / (float) kNumWhite;    // float for drawing
+    kWhiteKeyW = juce::jmax (4, keyboardW / kNumWhite);     // integer for hit-testing
+    kWhiteKeyWf = (float) keyboardW / (float) kNumWhite;    // float for drawing
     kBlackKeyW  = juce::roundToInt (kWhiteKeyWf * 0.56f);
     kBlackKeyH  = juce::roundToInt ((float) kKeyH  * 0.60f);
 
     const int keyboardY = h - kKeyH;
 
-    // ── Build keyRects for all 128 notes ──────────────────────────────────────
+    // ── Build keyRects for only the notes in the current window ────────────────
     keyRects.clear();
-    keyRects.reserve (128);
+    keyRects.reserve (endNote - startNote);
+
+    const int startWhiteIdx = whiteIndexForNote (startNote);   // startNote is always C, always white
 
     // White keys pass
-    int wi = 0;   // running white-key index
-    for (int note = 0; note < 128; ++note)
+    int wi = 0;   // running white-key index within the window
+    for (int note = startNote; note < endNote; ++note)
     {
         const int semi = note % 12;
         if (semiToWhite[semi] >= 0)
@@ -1004,7 +1022,7 @@ void KeysPanel::resized()
             const int x = juce::roundToInt ((float) wi * kWhiteKeyWf);
             const int x2 = juce::roundToInt ((float)(wi + 1) * kWhiteKeyWf);
             KeyRect kr;
-            kr.bounds  = { x, keyboardY, x2 - x - 1, kKeyH };
+            kr.bounds  = { keyboardX + x, keyboardY, x2 - x - 1, kKeyH };
             kr.note    = note;
             kr.isBlack = false;
             keyRects.push_back (kr);
@@ -1013,23 +1031,22 @@ void KeysPanel::resized()
     }
 
     // Black keys pass — positioned at the right edge of the white key before them
-    for (int note = 0; note < 128; ++note)
+    for (int note = startNote; note < endNote; ++note)
     {
         const int semi = note % 12;
         if (semiToWhite[semi] >= 0) continue;  // skip white keys
 
-        // Find the white-key index of the white key just below this black key.
-        // The white key below a black key at semitone s is the white key with
-        // the largest note < note that is a white key.
+        // Find the white-key index of the white key just below this black key,
+        // searching only within the current window.
         int prevWhite = -1;
-        for (int n = note - 1; n >= 0; --n)
+        for (int n = note - 1; n >= startNote; --n)
         {
             if (semiToWhite[n % 12] >= 0) { prevWhite = n; break; }
         }
         if (prevWhite < 0) continue;
 
-        // The white-key slot index of prevWhite
-        int pwi = whiteIndexForNote (prevWhite);
+        // The white-key slot index of prevWhite, relative to this window.
+        const int pwi = whiteIndexForNote (prevWhite) - startWhiteIdx;
         if (pwi < 0) continue;
 
         // Black key sits centred on the right edge of prevWhite's slot
@@ -1037,11 +1054,16 @@ void KeysPanel::resized()
         const int bx = juce::roundToInt (rightEdge - kBlackKeyW * 0.5f);
 
         KeyRect kr;
-        kr.bounds  = { bx, keyboardY, kBlackKeyW, kBlackKeyH };
+        kr.bounds  = { keyboardX + bx, keyboardY, kBlackKeyW, kBlackKeyH };
         kr.note    = note;
         kr.isBlack = true;
         keyRects.push_back (kr);
     }
+
+    transposeDownBtn.setBounds (0, keyboardY, kTransposeBtnW - 2, kKeyH);
+    transposeUpBtn  .setBounds (w - kTransposeBtnW + 2, keyboardY, kTransposeBtnW - 2, kKeyH);
+    transposeDownBtn.setEnabled (baseOctave > 0);
+    transposeUpBtn  .setEnabled (baseOctave < kMaxBaseOctave);
 
     // ── Zone viewport ─────────────────────────────────────────────────────────
     if (kZoneViewH > 0)
@@ -1219,6 +1241,22 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
     }
 }
 
+void KeysPanel::scrollToOctaveForNote (int note)
+{
+    if (note < 0 || note > 127) return;
+
+    const int startNote = baseOctave * 12;
+    const int endNote   = juce::jmin (128, startNote + 12 * kVisibleOctaves);
+    if (note >= startNote && note < endNote) return;   // already visible
+
+    const int targetOctave = juce::jlimit (0, kMaxBaseOctave, note / 12);
+    if (targetOctave == baseOctave) return;
+
+    baseOctave = targetOctave;
+    resized();
+    repaint();
+}
+
 // =============================================================================
 // Hit-testing helpers
 // =============================================================================
@@ -1382,7 +1420,10 @@ void KeysPanel::timerCallback()
         sfzActiveSnap[0] = lo;
         sfzActiveSnap[1] = hi;
 
-        // Find the lowest active note and scroll the zone matrix to it.
+        // Find the lowest active note, scroll the zone matrix to it, and jump
+        // the on-screen keyboard's octave window to it if it's not already
+        // visible (covers both live MIDI input and note-preview sources —
+        // anything that lights up sfzActiveNotes/sfz2ActiveNotes).
         for (int n = 0; n < 128; ++n)
         {
             const uint64_t word = (n < 64) ? lo : hi;
@@ -1390,6 +1431,7 @@ void KeysPanel::timerCallback()
             if ((word >> bit) & 1)
             {
                 highlightNoteInMatrix (n);
+                scrollToOctaveForNote (n);
                 break;
             }
         }

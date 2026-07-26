@@ -197,6 +197,15 @@ private:
 
     bool slicerHighlightEnabled = true; ///< false in SF-player mode — suppresses slicer note borders
 
+    // ── Scrollable octave window ────────────────────────────────────────────
+    // The keyboard shows kVisibleOctaves full octaves at a time, starting at
+    // MIDI note (baseOctave * 12). '<'/'>' shift the window by a whole
+    // octave; timerCallback() also auto-shifts baseOctave to bring an
+    // incoming live/preview note into view. Clamped to [0, kMaxBaseOctave]
+    // so the window never runs off either end of the 0-127 MIDI range.
+    static constexpr int kVisibleOctaves = 2;
+    static constexpr int kMaxBaseOctave  = 10;   // (10*12)=120..127 = top window
+
     int baseOctave     = 3;
     int lastActiveNote = -1;
     int hoveredNote    = -1;
@@ -241,6 +250,10 @@ private:
     float noteKeyWidth      (int note) const;
     juce::Colour zoneColourForNote (int note) const;
     void  rebuildZoneMatrix ();
+    /** If 'note' falls outside the currently visible octave window, shifts
+     *  baseOctave so the window starts at note's own octave (giving headroom
+     *  above it) and relayouts. No-op if note is already visible or invalid. */
+    void  scrollToOctaveForNote (int note);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (KeysPanel)
 };

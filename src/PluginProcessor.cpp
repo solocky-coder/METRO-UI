@@ -3348,8 +3348,12 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         }
     }
 
+#if ! DYSEKT_STANDALONE
     // ── Snoop note messages to update active-note bitmask for keyboard display ──
-    // Snoop messages on the SF player's assigned channels only.
+    // Snoop messages on the SF player's assigned channels only. Plugin build
+    // only: there's no selected-track channel-1 retargeting in this build
+    // (see the DYSEKT_STANDALONE branch below), so `midi` is already on its
+    // final channel here and snooping at this point is correct as-is.
     {
         const uint32_t sfMaskSnoop = sfPlayerChannelMask.load (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
 
@@ -3371,6 +3375,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 sfzActiveNotes[w].fetch_and (~((uint64_t)1 << b), std::memory_order_relaxed);
         }
     }
+#endif
 
 
 #if DYSEKT_STANDALONE
@@ -3429,6 +3434,39 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             transformed.addEvent (msg, meta.samplePosition);
         }
         midi = std::move (transformed);
+    }
+
+    // ── Snoop note messages to update active-note bitmask for keyboard display ──
+    // Standalone build only. Must run *after* the channel-1 retarget above,
+    // not before it: live controller input generally arrives on channel 1
+    // and only gets rewritten onto the selected track's actual SF2/SFZ
+    // channel by the transform just above. Snooping any earlier (as the
+    // plugin-build branch does) would check the wrong buffer — the message
+    // would still be sitting on channel 1 at that point, which can never
+    // match sfPlayerChannelMask since channels 1/2 are excluded from
+    // kSf2AllowedMidiChannelMask — so the indicator would never light up for
+    // live playing, only for on-screen mouse clicks (which inject directly
+    // on the already-correct channel elsewhere).
+    {
+        const uint32_t sfMaskSnoop = sfPlayerChannelMask.load (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
+
+        for (const auto metadata : midi)
+        {
+            const auto msg = metadata.getMessage();
+            if (sfMaskSnoop != 0)
+            {
+                const int ch = msg.getChannel();   // 1-based
+                if (ch < 3 || ch > 16 || ! (sfMaskSnoop & (1u << ch))) continue;
+            }
+            const int n = msg.getNoteNumber();
+            if (n < 0 || n > 127) continue;
+            const int w = n < 64 ? 0 : 1;
+            const int b = n < 64 ? n : n - 64;
+            if (msg.isNoteOn())
+                sfzActiveNotes[w].fetch_or  ((uint64_t)1 << b, std::memory_order_relaxed);
+            else if (msg.isNoteOff())
+                sfzActiveNotes[w].fetch_and (~((uint64_t)1 << b), std::memory_order_relaxed);
+        }
     }
 
     // Keep a copy of the (already-transformed) live input for the SF2/SFZ
