@@ -4,6 +4,7 @@
 //                    SFZ → sfizz backend
 // =============================================================================
 #include "SfzPlayer.h"
+#include <cmath>   // std::log2, std::log10 — ADSR unit conversion (see applyFluidAdsrFromUi)
 
 #if DYSEKT_HAS_SFIZZ
   // Include sfizz C API via path relative to the project root.
@@ -846,6 +847,16 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     if (programChangePending.load (std::memory_order_acquire))
         applyProgramChange();
 
+    // Unconditional per-block reapply. fluid_synth_set_gen() is a plain array
+    // write with no allocation, so this is cheap enough to call every block
+    // rather than tracking a dirty flag — which matters because
+    // fluid_synth_program_select()/_program_change() (just above, and also
+    // possible mid-block below on an incoming program-change message) both
+    // reset a channel's generators back to the SoundFont's own defaults,
+    // silently reverting the UI-driven envelope if not reapplied.
+    juceAdsrParamsDirty.exchange (false, std::memory_order_acquire);   // clear; consumed here instead of the old post-mix block
+    applyFluidAdsrFromUi();
+
     // ── Forward MIDI to FluidSynth ────────────────────────────────────────────
     // Multi-timbral mode: route each message to its own FluidSynth channel (0-based).
     // Channels 1 and 2 are reserved (Slicer / SFZ-Player respectively) and are
@@ -897,17 +908,21 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
             previewPositionSample.store (0, std::memory_order_relaxed);
             lastTriggeredNote.store (juce::jlimit (0, 127, msg.getNoteNumber() + trans),
                                      std::memory_order_relaxed);
-            // Drive the JUCE ADSR so it doesn't stay idle and multiply output by 0.
-            // (juceAdsrNoteOn() is only called for UI-keyboard injections; external
-            //  MIDI must trigger it here on the audio thread directly — mirrors the
-            //  sfizz branch above. Without this, fluid_synth_process() renders real
-            //  audio into scratchL/R but the ADSR envelope stays at 0 and silences
-            //  it before the final mix into outL/outR.)
-            juceAdsr.noteOn();
+            // FluidSynth shapes this voice's envelope itself now (see
+            // applyFluidAdsrFromUi) — no shared envelope to drive here.
+            // sf2ActiveNoteCount just tracks whether any note is currently
+            // held, for the UI playhead (see field doc comment in the header).
+            sf2ActiveNoteCount.fetch_add (1, std::memory_order_relaxed);
         }
         else if (msg.isNoteOff())
         {
-            juceAdsr.noteOff();
+            // Clamp at 0 defensively — a stray note-off with no matching
+            // note-on (e.g. host transport jump) shouldn't go negative and
+            // leave the playhead permanently "stuck active".
+            int prev = sf2ActiveNoteCount.load (std::memory_order_relaxed);
+            while (prev > 0 && ! sf2ActiveNoteCount.compare_exchange_weak (
+                       prev, prev - 1, std::memory_order_relaxed))
+            {}
         }
 
         // Determine the set of FluidSynth channels to address.
@@ -964,6 +979,11 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
             {
                 fluid_synth_program_change (synth, fch,
                                             msg.getProgramChangeNumber());
+                // Program change resets this channel's generators to the
+                // SoundFont's own defaults — reapply immediately so a
+                // note-on later in this same block still gets the UI's
+                // envelope shape rather than the raw SoundFont one.
+                applyFluidAdsrFromUi();
             }
             else if (msg.isAllNotesOff() || msg.isAllSoundOff())
             {
@@ -1019,35 +1039,14 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         dspReverb.process (ctx);
     }
 
-    // ── Apply JUCE ADSR (Option B) ────────────────────────────────────────────
-    // Flush param changes, handle note-on/off, then shape the rendered buffer.
-    if (juceAdsrParamsDirty.exchange (false, std::memory_order_acquire))
-    {
-        juceAdsrParams = { juceAdsrAttack .load (std::memory_order_relaxed),
-                           juceAdsrDecay  .load (std::memory_order_relaxed),
-                           juceAdsrSustain.load (std::memory_order_relaxed),
-                           juceAdsrRelease.load (std::memory_order_relaxed) };
-        juceAdsr.setParameters (juceAdsrParams);
-    }
-    if (juceAdsrNoteOnPending .exchange (false, std::memory_order_acquire))
-    {
-        juceAdsr.noteOn();
-        previewPositionSample.store (0, std::memory_order_relaxed);
-        const int n = pendingTriggeredNote.exchange (-1, std::memory_order_relaxed);
-        if (n >= 0)
-            lastTriggeredNote.store (n, std::memory_order_relaxed);
-    }
-    if (juceAdsrNoteOffPending.exchange (false, std::memory_order_acquire))
-        juceAdsr.noteOff();
-
-    for (int i = 0; i < numSamples; ++i)
-    {
-        const float env = juceAdsr.getNextSample();
-        scratchL[(size_t) i] *= env;
-        scratchR[(size_t) i] *= env;
-    }
-    juceAdsrActive.store (juceAdsr.isActive(), std::memory_order_relaxed);
-    if (juceAdsr.isActive())
+    // ── Playhead tracking (replaces the old post-mix shared-envelope block) ──
+    // FluidSynth has already shaped each voice's envelope internally via the
+    // per-channel generators written above/in applyFluidAdsrFromUi() — no
+    // post-mix gain stage needed here. Just advance the UI playhead position
+    // while any note is held, matching the old juceAdsr.isActive()-driven
+    // behaviour minus continuing through an individual voice's own release
+    // tail (see sf2ActiveNoteCount doc comment in the header).
+    if (sf2ActiveNoteCount.load (std::memory_order_relaxed) > 0)
         previewPositionSample.fetch_add (numSamples, std::memory_order_relaxed);
     else
         previewPositionSample.store (0, std::memory_order_relaxed);
@@ -1117,32 +1116,57 @@ void SfzPlayer::measureChannelPeaks (int /*numSamples*/)
     }
 }
 
-// ── suppressFluidAdsr ─────────────────────────────────────────────────────────
-//  Called once after a successful SF2 load to zero FluidSynth's built-in ADSR
-//  generators on all 16 channels, giving JUCE ADSR exclusive envelope control.
-//
-//  Generator values are in timecents (GEN_VOLENVATTACK/DECAY/RELEASE) or
-//  centibels attenuation (GEN_VOLENVSUSTAIN).
-//    • Minimum attack/decay/release in FluidSynth = -12000 timecents ≈ 0 ms
-//    • GEN_VOLENVSUSTAIN = 0 means 0 dB attenuation (full level); JUCE ADSR drives
-//      the actual shape.
+// ── ADSR unit conversion (seconds/percent UI values -> SF2 generator units) ──
+//  FluidSynth/SoundFont generators use timecents for the time stages and
+//  centibels of attenuation for sustain — not the seconds/percent the UI
+//  works in, so every write needs converting.
+//    time_sec = 2^(timecents/1200)  =>  timecents = 1200 * log2(time_sec)
+//    FluidSynth's usable floor is -12000 timecents (~1 ms).
+//    GEN_VOLENVSUSTAIN is attenuation in centibels: 0 = full level (0 dB),
+//    1000 = silence (-100 dB) — inverse of the UI's 0-100% *level* meaning,
+//    so it needs a sign flip as well as a unit conversion.
 // ─────────────────────────────────────────────────────────────────────────────
-void SfzPlayer::suppressFluidAdsr()
+namespace
+{
+    float secondsToTimecents (float sec) noexcept
+    {
+        sec = juce::jmax (0.001f, sec);   // avoid log2(0); ~1 ms floor
+        return juce::jlimit (-12000.0f, 8000.0f, 1200.0f * std::log2 (sec));
+    }
+
+    float levelPercentToSustainCentibels (float pct) noexcept
+    {
+        const float lvl = juce::jlimit (0.0001f, 1.0f, pct * 0.01f);
+        return juce::jlimit (0.0f, 1000.0f, -200.0f * std::log10 (lvl));
+    }
+}
+
+// ── applyFluidAdsrFromUi ──────────────────────────────────────────────────────
+//  Writes the current UI A/D/S/R values (juceAdsrAttack/Decay/Sustain/Release —
+//  the same atomics the amp-envelope graph and LCD display read/write) into
+//  FluidSynth's per-channel generators on all 16 channels. FluidSynth then
+//  shapes each voice's envelope internally and independently, so releasing
+//  one note no longer affects any other currently-sounding note the way the
+//  old shared post-mix JUCE ADSR did. Called after load, after every
+//  program/preset change (both reset a channel's generators back to the
+//  SoundFont's own defaults), and whenever the UI values change.
+// ─────────────────────────────────────────────────────────────────────────────
+void SfzPlayer::applyFluidAdsrFromUi()
 {
 #if DYSEKT_HAS_FLUIDSYNTH
     if (synth == nullptr) return;
 
+    const float atkTc = secondsToTimecents (juceAdsrAttack .load (std::memory_order_relaxed));
+    const float decTc = secondsToTimecents (juceAdsrDecay  .load (std::memory_order_relaxed));
+    const float susCb = levelPercentToSustainCentibels (juceAdsrSustain.load (std::memory_order_relaxed) * 100.0f);
+    const float relTc = secondsToTimecents (juceAdsrRelease.load (std::memory_order_relaxed));
+
     for (int ch = 0; ch < 16; ++ch)
     {
-        // Instant attack  (minimum timecents)
-        fluid_synth_set_gen (synth, ch, GEN_VOLENVATTACK,  -12000.0f);
-        // Instant decay   (minimum timecents)
-        fluid_synth_set_gen (synth, ch, GEN_VOLENVDECAY,   -12000.0f);
-        // GEN_VOLENVSUSTAIN = 0 means 0 dB attenuation (full level) — FluidSynth
-        // passes audio at full amplitude and JUCE ADSR shapes the envelope.
-        fluid_synth_set_gen (synth, ch, GEN_VOLENVSUSTAIN,  0.0f);
-        // Instant release (minimum timecents)
-        fluid_synth_set_gen (synth, ch, GEN_VOLENVRELEASE, -12000.0f);
+        fluid_synth_set_gen (synth, ch, GEN_VOLENVATTACK,  atkTc);
+        fluid_synth_set_gen (synth, ch, GEN_VOLENVDECAY,   decTc);
+        fluid_synth_set_gen (synth, ch, GEN_VOLENVSUSTAIN, susCb);
+        fluid_synth_set_gen (synth, ch, GEN_VOLENVRELEASE, relTc);
     }
 #endif
 }
@@ -1296,8 +1320,10 @@ void SfzPlayer::applyPendingLoad()
     applyPendingChannelChanges();  // all slots are -1 at this point; no-op but clears dirty flag
     setPresetByIndex (0);          // triggers applyProgramChange() on next process() tick
 
-    // Suppress FluidSynth's internal ADSR so JUCE ADSR has exclusive envelope control.
-    suppressFluidAdsr();
+    // Apply the current UI ADSR values as FluidSynth's own per-voice envelope,
+    // so loaded notes are shaped independently instead of via a shared post-mix
+    // envelope (see applyFluidAdsrFromUi doc comment).
+    applyFluidAdsrFromUi();
 
     // Switch to omni so all incoming MIDI reaches FluidSynth without needing
     // the host to route on a specific channel.  In VST3, processMidi() already

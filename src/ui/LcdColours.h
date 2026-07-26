@@ -16,14 +16,18 @@
 // two in the first place.
 namespace LcdColours
 {
-    // Background is a near-black shade; ink now follows Metro's own accent
-    // blue instead of a fixed hardware-green phosphor, so slice LCD text
-    // reads consistently with the rest of the Metro UI (waveform, lock-active,
-    // selection highlight, etc. all already use this same accent).
+    // Background is a near-black shade; ink is a bright green "phosphor"
+    // colour that reads clearly against it.
     static const juce::Colour kBgMid    { 0xFF0A0F08 };
+    static const juce::Colour kInk      { 0xFF6BFF4A };
     static const juce::Colour kOutline  { 0xFF1C3A12 };
+    static const juce::Colour kGlow     { 0xFF6BFF4A };   // used with alpha for glow layers
 
-    // ── Metro helpers ─────────────────────────────────────────────────────
+    // ── Metro override helpers ───────────────────────────────────────────────
+    // The fixed green-phosphor palette above intentionally never follows the
+    // app theme (a real LCD doesn't relight when the host skins itself) — but
+    // Metro explicitly asks for flat cards with no hardware simulation, so the
+    // chassis (not the phosphor text/segments) breaks that rule for Metro only.
     static inline bool currentThemeIsMetro() { return getTheme().name == "metro"; }
     static inline juce::Colour metroWaveformBg() { return getTheme().waveformBg; }
     static inline juce::Colour metroSeparator()  { return getTheme().separator; }
@@ -37,9 +41,10 @@ namespace LcdColours
 
     static inline Palette fromTheme()
     {
-        // Kept the name fromTheme() to minimise churn at call sites.
+        // Kept the name fromTheme() to minimise churn at call sites, but the
+        // values below are fixed hardware colours, not theme-derived.
         const auto bg = kBgMid;
-        const auto ac = getTheme().accent;                    // ink / "phosphor" colour
+        const auto ac = kInk;                                 // ink / "phosphor" colour
 
         Palette p;
         p.background = bg;

@@ -215,12 +215,20 @@ public:
     void process (const juce::MidiBuffer& midiIn,
                   float* outL, float* outR, int numSamples);
 
-    // ── JUCE ADSR (Option B — applied post-FluidSynth/sfizz in processBlock) ──
+    // ── JUCE ADSR (applied post-render — SFZ/sfizz branch only) ──────────────
     //  The envelope is owned here so it lives on the audio thread.
     //  UI thread sets parameters via setJuceAdsr(); noteOn/Off are signalled via
     //  atomics so the audio thread fires the envelope at the right moment.
-    //  On SF2 load, suppressFluidAdsr() is called once to zero out FluidSynth's
-    //  internal envelope generators so JUCE ADSR has exclusive control.
+    //
+    //  SF2/FluidSynth branch no longer uses this shared envelope (a single
+    //  post-mix ADSR gated every voice at once, causing one note's release to
+    //  fade every other currently-sounding note — see
+    //  SF2_PLAYER_POLYPHONY_AND_NOTE_CUTOFF_FIXES.md). Instead the same UI
+    //  A/D/S/R values are converted to FluidSynth generator units and written
+    //  per-channel via applyFluidAdsrFromUi(), so FluidSynth's own per-voice
+    //  envelopes shape each note independently while still tracking the UI
+    //  controls (Option B from that doc, not Option A — the amp-envelope
+    //  graph/LCD stay live instead of going inert).
 
     /** Update ADSR parameters.  Safe to call from any thread. */
     void setJuceAdsr (float attackSec, float decaySec,
@@ -414,12 +422,29 @@ private:
     // Staging slot for juceAdsrNoteOn(int): set by the caller (UI-injection
     // path), consumed into lastTriggeredNote when juceAdsrNoteOnPending is
     // processed in process(). -1 = no note number supplied for this trigger.
+    // (SFZ/sfizz branch only — the FluidSynth branch tracks note-on/off
+    // directly off real MIDI events, see sf2ActiveNoteCount below.)
     std::atomic<int>           pendingTriggeredNote   { -1 };
 
-    /** Called once after a successful SF2/SFZ load to zero FluidSynth's internal
-     *  envelope generators on all channels so JUCE ADSR has exclusive control.
-     *  No-op for SFZ (sfizz envelope is bypassed differently). */
-    void suppressFluidAdsr();
+    // ── FluidSynth branch playhead tracking (replaces juceAdsr.isActive()) ───
+    // Incremented on each note-on, decremented on each note-off, dispatched
+    // to FluidSynth in the process() event loop. previewPositionSample
+    // advances each block while this is > 0, and resets to 0 once it hits 0
+    // (all held notes released) — mirrors the old juceAdsr-driven behaviour
+    // for the UI playhead, minus the ability to keep animating through an
+    // individual voice's own release tail (FluidSynth voices release
+    // independently now, so there's no single shared envelope left to poll).
+    std::atomic<int>           sf2ActiveNoteCount     { 0 };
+
+    /** Converts the current UI A/D/S/R atomics (juceAdsrAttack/Decay/Sustain/
+     *  Release — same values the amp-envelope graph and LCD display) into
+     *  FluidSynth generator units and writes them to all 16 channels, giving
+     *  FluidSynth's own per-voice envelopes the UI-specified shape while
+     *  keeping each voice's envelope independent of every other voice.
+     *  Called after SF2 load and after any program/preset change (both reset
+     *  a channel's generators back to the SoundFont's own defaults), and
+     *  whenever the UI values themselves change. No-op for SFZ. */
+    void applyFluidAdsrFromUi();
 
     // ── Private helpers ───────────────────────────────────────────────────────
     void applyPendingLoad();             ///< called at top of process()

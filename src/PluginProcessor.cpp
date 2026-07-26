@@ -3294,7 +3294,10 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 const int w = noteOn < 64 ? 0 : 1;
                 const int b = noteOn < 64 ? noteOn : noteOn - 64;
                 sfzActiveNotes[w].fetch_or ((uint64_t)1 << b, std::memory_order_relaxed);
-                sfzPlayer.juceAdsrNoteOn (noteOn);   // trigger JUCE ADSR envelope
+                // No separate juceAdsrNoteOn() trigger needed — the real
+                // MIDI note-on event added above is what SfzPlayer::process()
+                // reads (FluidSynth branch shapes the envelope itself now;
+                // see applyFluidAdsrFromUi doc comment).
             }
             if (noteOff >= 0 && noteOff <= 127)
             {
@@ -3308,7 +3311,8 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     const int b = noteOff < 64 ? noteOff : noteOff - 64;
                     sfzActiveNotes[w].fetch_and (~((uint64_t)1 << b), std::memory_order_relaxed);
                 }
-                sfzPlayer.juceAdsrNoteOff();   // release JUCE ADSR envelope
+                // No separate juceAdsrNoteOff() trigger needed — see the
+                // matching note-on comment above.
             }
         }
     }
