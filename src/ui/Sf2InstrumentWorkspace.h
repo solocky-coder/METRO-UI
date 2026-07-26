@@ -58,11 +58,16 @@
 //      treatment (not the old panel's continuous VU-style meter)
 //    • OUTPUT: "MASTER BUS" label + SETTINGS button (opens the same
 //      MIDI-learn / routing menu the old panel used)
-//    • Embedded compact KeysPanel (EngineSource::SfPlayer), C3-C5 range,
-//      docked at the bottom of column 3 per the mockup's keyboard strip
-//      (not full-width across all 3 columns)
+//    • Compact keyboard, C3-C5 only, drawn by our own CompactKeyboard nested
+//      class rather than the shared KeysPanel. KeysPanel is a full 128-key
+//      component with an attached sample-zone matrix ("+ ZONE" editor, "No
+//      zones loaded" placeholder, etc.) — it has no API to restrict its
+//      visible range, so embedding it here at ~110px meant the zone-matrix
+//      placeholder ate most of the height and the real keys got squeezed
+//      into a sliver, plus 75 white keys crammed into column 3's width read
+//      as "too narrow". A small dedicated component avoids all of that.
 //
-//    Column 3 ALSO carries the explicit mixer-toggle decided in the prior
+//  Column 3 ALSO carries the explicit mixer-toggle decided in the prior
 //    review: a small tab pair — "Performance & FX" (this literal-mockup
 //    state, shown whenever <=1 MIDI channel has an assigned preset) vs.
 //    "Channel Mixer" (Sf2ChannelFxPanel, shown once more than one channel is
@@ -80,7 +85,6 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_basics/juce_audio_basics.h>
-#include "KeysPanel.h"
 #include "Sf2ProgramGrid.h"
 #include "Sf2ChannelFxPanel.h"
 #include "../audio/SfzPlayer.h"
@@ -131,6 +135,7 @@ private:
     // access rules, without needing friend declarations.
     class PresetListModel;
     class ChannelRangePopup;
+    class CompactKeyboard;
 
     // ── Layout — proportions taken from the 1370x414 reference panel ─────────
     static constexpr float kColPresetsFrac = 350.0f / 1370.0f;   // ~0.2555
@@ -138,8 +143,8 @@ private:
     // Column 3 (Performance & FX / Channel Mixer) gets the remainder (~0.396).
     static constexpr int   kNarrowThreshold = 760;   // px — below this, stack columns
     static constexpr int   kTopBarH         = 36;
-    static constexpr int   kKnobW  = 56;
-    static constexpr int   kKnobH  = 56;
+    static constexpr int   kKnobW  = 60;
+    static constexpr int   kKnobH  = 60;
     static constexpr int   kPad    = 8;
 
     void layoutWide   (juce::Rectangle<int> bounds);
@@ -195,7 +200,7 @@ private:
     juce::Rectangle<int> keyboardZone;
     juce::TextButton settingsButton { "SETTINGS" };
 
-    KeysPanel keysPanel;
+    std::unique_ptr<CompactKeyboard> compactKeyboard;
     Sf2ChannelFxPanel channelFxPanel;   // shown only in Col3Mode::ChannelMixer
     uint16_t assignedChannelMask { 0 }; ///< bit N set = MIDI channel N (0-based bit) has a preset
     int      countAssignedChannels() const noexcept;

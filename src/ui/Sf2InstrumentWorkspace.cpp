@@ -64,11 +64,11 @@ public:
         auto textArea = row.reduced (12, 0);
         auto badgeArea = textArea.removeFromRight (48);
 
-        g.setFont (DysektLookAndFeel::makeFont (13.f, isCurrent));
+        g.setFont (DysektLookAndFeel::makeFont (15.f, isCurrent));
         g.setColour (assigned ? theme.accent : theme.foreground);
         g.drawText (info.name, textArea, juce::Justification::centredLeft, true);
 
-        g.setFont (DysektLookAndFeel::makeFont (11.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
         g.setColour (theme.foreground.withAlpha (0.55f));
         juce::String badge = juce::String (info.preset).paddedLeft ('0', 3);
         if (assigned)
@@ -133,11 +133,11 @@ public:
         const auto& theme = getTheme();
         g.fillAll (theme.darkBar);
         g.setColour (theme.foreground);
-        g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
         g.drawText ("MULTITIMBRAL CHANNEL RANGE", getLocalBounds().removeFromTop (20),
                     juce::Justification::centred);
 
-        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (15.f, true));
         g.drawText ("LOW " + (owner.cachedChLow  > 0 ? juce::String (owner.cachedChLow)  : juce::String ("-")),
                     getLocalBounds().removeFromTop (48).removeFromBottom (28).withTrimmedLeft (58).withWidth (48),
                     juce::Justification::centred);
@@ -148,8 +148,144 @@ public:
 
 private:
     Sf2InstrumentWorkspace& owner;
-    juce::TextButton lowDec  { "\u25c2" }, lowInc  { "\u25b8" };
-    juce::TextButton highDec { "\u25c2" }, highInc { "\u25b8" };
+    juce::TextButton lowDec  { "<" }, lowInc  { ">" };
+    juce::TextButton highDec { "<" }, highInc { ">" };
+};
+
+// =============================================================================
+//  CompactKeyboard — dedicated C3-C5 keyboard strip
+// =============================================================================
+//  KeysPanel (the shared full-instrument keyboard) is a 128-key component
+//  with an attached sample-zone matrix and no way to restrict its visible
+//  range. Embedding it in this ~110px docked strip meant its zone-matrix
+//  placeholder ("No zones loaded") consumed most of the height and squeezed
+//  75 white keys into column 3's width — exactly the "empty black area" /
+//  "keyboard too narrow" problems reported against the first build. This is
+//  a small purpose-built replacement: just the keys, C3-C5, with note-on
+//  highlighting read directly from processor.sfzActiveNotes and click/drag
+//  preview routed through the same sfzUiNoteOn/OffRequest atomics KeysPanel
+//  used. Note-naming matches this codebase's existing convention (see
+//  KeysPanel.cpp: octave = note/12 - 2, so MIDI 60 = C3).
+class Sf2InstrumentWorkspace::CompactKeyboard : public juce::Component
+{
+public:
+    explicit CompactKeyboard (Sf2InstrumentWorkspace& ownerIn) : owner (ownerIn) {}
+
+    void resized() override { rebuildKeyRects(); }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour::fromString ("FF0a1216"));
+        for (auto& k : keyRects) if (! k.isBlack) drawKey (g, k);
+        for (auto& k : keyRects) if (k.isBlack)   drawKey (g, k);
+        g.setColour (juce::Colour::fromString ("FF263b45"));
+        g.drawRect (getLocalBounds(), 1);
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override { handlePress (e.getPosition()); }
+    void mouseDrag (const juce::MouseEvent& e) override { handlePress (e.getPosition()); }
+    void mouseUp   (const juce::MouseEvent&)   override { releaseHeld(); }
+    void mouseExit (const juce::MouseEvent&)   override { releaseHeld(); }
+
+private:
+    struct KeyRect { juce::Rectangle<float> bounds; int note; bool isBlack; };
+    std::vector<KeyRect> keyRects;
+    int heldNote { -1 };
+
+    static constexpr int kLowNote  = 60;   // C3
+    static constexpr int kHighNote = 84;   // C5
+
+    void rebuildKeyRects()
+    {
+        keyRects.clear();
+        if (getWidth() <= 0 || getHeight() <= 0) return;
+
+        static const int semiToWhite[12] = { 0,-1,1,-1,2, 3,-1,4,-1,5,-1,6 };
+
+        int numWhite = 0;
+        for (int n = kLowNote; n <= kHighNote; ++n)
+            if (semiToWhite[n % 12] >= 0) ++numWhite;
+
+        const float w = (float) getWidth() / (float) numWhite;
+        const float h = (float) getHeight();
+        const float blackW = w * 0.62f;
+        const float blackH = h * 0.6f;
+
+        int whiteIdx = 0;
+        for (int n = kLowNote; n <= kHighNote; ++n)
+        {
+            if (semiToWhite[n % 12] >= 0)
+            {
+                keyRects.push_back ({ { whiteIdx * w, 0.f, w, h }, n, false });
+                ++whiteIdx;
+            }
+        }
+        for (int n = kLowNote; n <= kHighNote; ++n)
+        {
+            if (semiToWhite[n % 12] < 0)
+            {
+                int precedingWhites = 0;
+                for (int m = kLowNote; m < n; ++m)
+                    if (semiToWhite[m % 12] >= 0) ++precedingWhites;
+                keyRects.push_back ({ { precedingWhites * w - blackW * 0.5f, 0.f, blackW, blackH }, n, true });
+            }
+        }
+    }
+
+    int noteAt (juce::Point<int> p) const
+    {
+        const auto pf = p.toFloat();
+        for (auto& k : keyRects) if (k.isBlack && k.bounds.contains (pf)) return k.note;
+        for (auto& k : keyRects) if (! k.isBlack && k.bounds.contains (pf)) return k.note;
+        return -1;
+    }
+
+    void handlePress (juce::Point<int> pos)
+    {
+        const int note = noteAt (pos);
+        if (note == heldNote) return;
+        releaseHeld();
+        if (note >= 0)
+        {
+            owner.processor.sfzUiNoteOnRequest.store (note, std::memory_order_relaxed);
+            heldNote = note;
+        }
+        repaint();
+    }
+
+    void releaseHeld()
+    {
+        if (heldNote >= 0)
+        {
+            owner.processor.sfzUiNoteOffRequest.store (heldNote, std::memory_order_relaxed);
+            heldNote = -1;
+            repaint();
+        }
+    }
+
+    bool isNoteActive (int note) const
+    {
+        if (note < 64)
+            return ((owner.processor.sfzActiveNotes[0].load (std::memory_order_relaxed) >> note) & 1ull) != 0;
+        return ((owner.processor.sfzActiveNotes[1].load (std::memory_order_relaxed) >> (note - 64)) & 1ull) != 0;
+    }
+
+    void drawKey (juce::Graphics& g, const KeyRect& k) const
+    {
+        const auto& theme = getTheme();
+        const bool active = k.note == heldNote || isNoteActive (k.note);
+
+        juce::Colour base = k.isBlack ? juce::Colour::fromString ("FF10181c")
+                                       : juce::Colour::fromString ("FFe8edf0");
+        if (active) base = theme.accent;
+
+        g.setColour (base);
+        g.fillRect (k.bounds);
+        g.setColour (juce::Colour::fromString ("FF060a0c").withAlpha (0.85f));
+        g.drawRect (k.bounds, 1.f);
+    }
+
+    Sf2InstrumentWorkspace& owner;
 };
 
 // =============================================================================
@@ -157,12 +293,8 @@ private:
 // =============================================================================
 
 Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
-    : keysPanel (p), channelFxPanel (p), processor (p)
+    : channelFxPanel (p), processor (p)
 {
-    keysPanel.setEngineSource (KeysPanel::EngineSource::SfPlayer);
-    keysPanel.setSlicerHighlightEnabled (false);
-    keysPanel.setSf2PresetListMode (false);
-
     // The grid is retained purely as the shared data model (channel
     // assignments, preset list) that PluginEditor reads via getProgramGrid();
     // it is never painted or made visible — column 1 is a search+list now.
@@ -176,6 +308,7 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     // ── Column 1 — search box + preset list ───────────────────────────────────
     searchBox.setTextToShowWhenEmpty ("Search presets", getTheme().foreground.withAlpha (0.45f));
     searchBox.setMultiLine (false);
+    searchBox.setFont (DysektLookAndFeel::makeFont (14.f));
     searchBox.setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.darker (0.2f));
     searchBox.setColour (juce::TextEditor::textColourId, getTheme().foreground);
     searchBox.onTextChange = [this]
@@ -189,7 +322,7 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
 
     presetListModel = std::make_unique<PresetListModel> (*this);
     presetListBox.setModel (presetListModel.get());
-    presetListBox.setRowHeight (36);
+    presetListBox.setRowHeight (40);
     presetListBox.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
     presetListBox.setColour (juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
     addAndMakeVisible (presetListBox);
@@ -220,7 +353,8 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     };
     addAndMakeVisible (settingsButton);
 
-    addAndMakeVisible (keysPanel);
+    compactKeyboard = std::make_unique<CompactKeyboard> (*this);
+    addAndMakeVisible (*compactKeyboard);
     addChildComponent (channelFxPanel);   // hidden until Col3Mode::ChannelMixer
 
     startTimerHz (30);
@@ -411,7 +545,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
     // ── Column 2 top — active preset header + 3 knobs (+ fine stepper) ─────
     {
         auto c = col2Zone.reduced (kPad);
-        auto top = c.removeFromTop (160 - kPad);
+        auto top = c.removeFromTop (168 - kPad);
         activePresetHeaderZone = top.removeFromTop (54);
         top.removeFromTop (kPad);
 
@@ -425,13 +559,15 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         panZone   = knobRow.removeFromLeft (kKnobW);
 
         // Fine-tune stepper — deliberately small/secondary, docked under
-        // Transpose; see header comment for why this exists at all.
-        fineZone = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobH + 2,
-                                          transZone.getWidth(), 14);
+        // Transpose; see header comment for why this exists at all. Gap
+        // widened to 10px (was 2px) so it reads as a distinct secondary
+        // control rather than overlapping the knob's value text above it.
+        fineZone = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobH + 10,
+                                          transZone.getWidth(), 16);
 
         envelopeZone = c;   // remainder of col2 becomes the envelope
-        envelopeZone.setY (col2Zone.getY() + 160);
-        envelopeZone.setHeight (col2Zone.getHeight() - 160);
+        envelopeZone.setY (col2Zone.getY() + 168);
+        envelopeZone.setHeight (col2Zone.getHeight() - 168);
         envelopeZone = envelopeZone.reduced (kPad, kPad);
 
         auto env = envelopeZone;
@@ -454,7 +590,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
 
         keyboardZone = c.removeFromBottom (110);
         c.removeFromBottom (kPad);
-        keysPanel.setBounds (keyboardZone);
+        compactKeyboard->setBounds (keyboardZone);
 
         if (col3Mode == Col3Mode::ChannelMixer)
         {
@@ -527,9 +663,9 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         transZone = knobRow.removeFromLeft (kKnobW);
         knobRow.removeFromLeft (knobGap);
         panZone   = knobRow.removeFromLeft (kKnobW);
-        fineZone  = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobH + 2,
-                                           transZone.getWidth(), 14);
-        c.removeFromTop (18);
+        fineZone  = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobH + 10,
+                                           transZone.getWidth(), 16);
+        c.removeFromTop (26);
 
         auto labelRow = c.removeFromBottom (18);
         envelopeGraphZone = c;
@@ -549,7 +685,7 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
 
         keyboardZone = c.removeFromBottom (100);
         c.removeFromBottom (kPad);
-        keysPanel.setBounds (keyboardZone);
+        compactKeyboard->setBounds (keyboardZone);
 
         if (col3Mode == Col3Mode::ChannelMixer)
         {
@@ -598,10 +734,10 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     g.setColour (juce::Colour::fromString ("FF10191e"));
     g.fillRect (topBarZone);
     g.setColour (theme.foreground.withAlpha (0.8f));
-    g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+    g.setFont (DysektLookAndFeel::makeFont (16.f, true));
     g.drawText ("SF2 INSTRUMENT PANEL", topBarZone.withTrimmedLeft (16),
                 juce::Justification::centredLeft);
-    g.setFont (DysektLookAndFeel::makeFont (12.f));
+    g.setFont (DysektLookAndFeel::makeFont (13.f));
     g.setColour (theme.foreground.withAlpha (0.55f));
     g.drawText ("PRESET BROWSER  /  PERFORMANCE  /  ENVELOPE",
                 topBarZone.withTrimmedLeft (200), juce::Justification::centredLeft);
@@ -614,7 +750,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         g.setColour (loaded ? juce::Colour::fromString ("FF83d96b") : theme.foreground.withAlpha (0.3f));
         g.fillEllipse (loadedPillZone.getX() + 10.f, loadedPillZone.getCentreY() - 4.f, 8.f, 8.f);
         g.setColour (juce::Colour::fromString ("FFc9efd0"));
-        g.setFont (DysektLookAndFeel::makeFont (11.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
         g.drawText (loaded ? "SOUNDFONT LOADED" : "NO SOUNDFONT",
                     loadedPillZone.withTrimmedLeft (24), juce::Justification::centredLeft);
     }
@@ -633,9 +769,9 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     }
 
     // ── Column 1 footer ─────────────────────────────────────────────────────
-    g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+    g.setFont (DysektLookAndFeel::makeFont (14.f, true));
     g.setColour (theme.foreground.withAlpha (0.6f));
-    g.drawText ("BANK 000  \u00b7  GENERAL MIDI", bankFooterZone, juce::Justification::centredLeft);
+    g.drawText ("BANK 000  |  GENERAL MIDI", bankFooterZone, juce::Justification::centredLeft);
 
     // ── Column 2 — active preset header ────────────────────────────────────
     {
@@ -647,8 +783,8 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
             const auto& info = presetList[(size_t) idx];
             name = info.name;
             meta = "BANK " + juce::String (info.bank).paddedLeft ('0', 3)
-                 + "  \u00b7  PROGRAM " + juce::String (info.preset).paddedLeft ('0', 3)
-                 + "  \u00b7  CH " + (processor.sfzPlayer.getMidiChannel() > 0
+                 + "  |  PROGRAM " + juce::String (info.preset).paddedLeft ('0', 3)
+                 + "  |  CH " + (processor.sfzPlayer.getMidiChannel() > 0
                                        ? juce::String (processor.sfzPlayer.getMidiChannel()).paddedLeft ('0', 2)
                                        : juce::String ("--"));
         }
@@ -658,14 +794,14 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         // which is exactly the bug that made this text vanish after ~1 second
         // of runtime in the first build.
         auto header = activePresetHeaderZone;
-        g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
         g.setColour (theme.foreground.withAlpha (0.6f));
         g.drawText ("ACTIVE PRESET", header.removeFromTop (16),
                     juce::Justification::centredLeft);
-        g.setFont (DysektLookAndFeel::makeFont (20.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (22.f, true));
         g.setColour (theme.foreground);
         g.drawText (name, header.removeFromTop (26), juce::Justification::centredLeft);
-        g.setFont (DysektLookAndFeel::makeFont (12.f));
+        g.setFont (DysektLookAndFeel::makeFont (13.f));
         g.setColour (theme.foreground.withAlpha (0.6f));
         g.drawText (meta, header, juce::Justification::centredLeft);
     }
@@ -678,18 +814,18 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     drawKnob (g, panZone, panToNorm (processor.sfzPlayer.getPan()), "PAN",
               juce::String (juce::roundToInt (processor.sfzPlayer.getPan() * 100.f)));
 
-    g.setFont (DysektLookAndFeel::makeFont (10.f));
+    g.setFont (DysektLookAndFeel::makeFont (11.f));
     g.setColour (theme.foreground.withAlpha (0.5f));
     g.drawText ("FINE " + juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c",
                 fineZone, juce::Justification::centred);
 
     // ── Column 2 — amp envelope graph ──────────────────────────────────────
-    g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
     g.setColour (theme.foreground.withAlpha (0.6f));
     g.drawText ("AMP ENVELOPE", envelopeZone.withHeight (16), juce::Justification::centredLeft);
     drawEnvelopeGraph (g, envelopeGraphZone);
 
-    g.setFont (DysektLookAndFeel::makeFont (11.f, true));
+    g.setFont (DysektLookAndFeel::makeFont (12.f, true));
     g.setColour (theme.foreground.withAlpha (0.6f));
     g.drawText ("A " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzAttack() * 1000.f)) + "ms",
                 envAttackLabelZone, juce::Justification::centred);
@@ -707,7 +843,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
             g.setColour (active ? theme.accent.withAlpha (0.18f) : juce::Colours::transparentBlack);
             g.fillRect (r);
             g.setColour (active ? theme.accent : theme.foreground.withAlpha (enabled ? 0.6f : 0.25f));
-            g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+            g.setFont (DysektLookAndFeel::makeFont (13.f, true));
             g.drawText (text, r, juce::Justification::centred);
         };
         drawTab (perfFxTabZone,       "PERFORMANCE & FX", col3Mode == Col3Mode::PerformanceFx, true);
@@ -722,35 +858,35 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         drawSlider (g, reverbDampZone, processor.sfzPlayer.getReverbDamp() / 100.f, "REVERB DAMP",
                     juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
 
-        g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
         g.setColour (theme.foreground.withAlpha (0.6f));
         g.drawText ("MIDI INPUT", midiInputHeaderZone, juce::Justification::centredLeft);
         g.setColour (juce::Colour::fromString ("FF091116"));
         g.fillRect (midiChannelReadoutZone);
         g.setColour (theme.foreground);
-        g.setFont (DysektLookAndFeel::makeFont (18.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (20.f, true));
         const juce::String chText = cachedChHigh > cachedChLow
-            ? "CH " + juce::String (cachedChLow) + "\u2013" + juce::String (cachedChHigh)
+            ? "CH " + juce::String (cachedChLow) + "-" + juce::String (cachedChHigh)
             : (cachedChLow > 0 ? "CH " + juce::String (cachedChLow).paddedLeft ('0', 2) : "CH --");
         g.drawText (chText, midiChannelReadoutZone.reduced (10, 0), juce::Justification::centredLeft);
 
-        g.setFont (DysektLookAndFeel::makeFont (11.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (12.f, true));
         g.setColour (theme.foreground.withAlpha (0.55f));
         g.drawText ("NOTE ACTIVITY", noteActivityLabelZone, juce::Justification::centredLeft);
         drawNoteMeter (g, noteMeterZone);
 
-        g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
         g.setColour (theme.foreground.withAlpha (0.6f));
         g.drawText ("OUTPUT", outputHeaderZone, juce::Justification::centredLeft);
-        g.setFont (DysektLookAndFeel::makeFont (15.f, true));
+        g.setFont (DysektLookAndFeel::makeFont (16.f, true));
         g.setColour (theme.foreground);
         g.drawText ("MASTER BUS", masterBusLabelZone, juce::Justification::centredLeft);
     }
 
     // ── Keyboard label ──────────────────────────────────────────────────────
-    g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
     g.setColour (theme.foreground.withAlpha (0.6f));
-    g.drawText ("KEYBOARD  \u00b7  C3 \u2014 C5", keyboardZone.withHeight (16).translated (0, -18),
+    g.drawText ("KEYBOARD  |  C3-C5", keyboardZone.withHeight (16).translated (0, -18),
                 juce::Justification::centredLeft);
 }
 
@@ -782,13 +918,13 @@ void Sf2InstrumentWorkspace::drawKnob (juce::Graphics& g, juce::Rectangle<int> b
     const float py = cy - radius * 0.6f * std::cos (fillAngle);
     g.drawLine (cx, cy, px, py, 1.5f);
 
-    g.setFont (DysektLookAndFeel::makeFont (11.f));
+    g.setFont (DysektLookAndFeel::makeFont (13.f));
     g.setColour (theme.foreground.withAlpha (0.65f));
-    g.drawText (label, bounds.withY (bounds.getY() - 2).withHeight (13), juce::Justification::centredTop);
+    g.drawText (label, bounds.withY (bounds.getY() - 2).withHeight (15), juce::Justification::centredTop);
 
     g.setColour (theme.foreground);
-    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
-    g.drawText (valueStr, bounds.withY (bounds.getBottom() - 16).withHeight (16), juce::Justification::centredBottom);
+    g.setFont (DysektLookAndFeel::makeFont (15.f, true));
+    g.drawText (valueStr, bounds.withY (bounds.getBottom() - 18).withHeight (18), juce::Justification::centredBottom);
 }
 
 void Sf2InstrumentWorkspace::drawSlider (juce::Graphics& g, juce::Rectangle<int> bounds,
@@ -798,12 +934,12 @@ void Sf2InstrumentWorkspace::drawSlider (juce::Graphics& g, juce::Rectangle<int>
     if (bounds.isEmpty()) return;
     const auto& theme = getTheme();
 
-    g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
     g.setColour (theme.foreground.withAlpha (0.65f));
     auto labelRow = bounds.removeFromTop (16);
     g.drawText (label, labelRow, juce::Justification::centredLeft);
     g.setColour (theme.foreground);
-    g.setFont (DysektLookAndFeel::makeFont (12.f, true));
+    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
     g.drawText (valueStr, labelRow, juce::Justification::centredRight);
 
     auto track = juce::Rectangle<int> (bounds.getX(), bounds.getY() + 4, bounds.getWidth(), 12);
