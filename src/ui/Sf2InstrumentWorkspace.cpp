@@ -199,16 +199,19 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
 
     browseButton.onClick = [this]
     {
-        auto chooser = std::make_shared<juce::FileChooser> (
-            "Choose a SoundFont", juce::File(), "*.sf2");
-        auto flags = juce::FileBrowserComponent::openMode
-                   | juce::FileBrowserComponent::canSelectFiles;
-        chooser->launchAsync (flags, [this, chooser] (const juce::FileChooser& fc)
-        {
-            auto f = fc.getResult();
-            if (f.existsAsFile())
-                onFileChosen (f);
-        });
+        fileChooser = std::make_unique<juce::FileChooser> (
+            "Load SoundFont",
+            juce::File::getSpecialLocation (juce::File::userMusicDirectory),
+            "*.sf2");
+
+        fileChooser->launchAsync (juce::FileBrowserComponent::openMode
+                                 | juce::FileBrowserComponent::canSelectFiles,
+            [this] (const juce::FileChooser& fc)
+            {
+                auto result = fc.getResult();
+                if (result.existsAsFile())
+                    onFileChosen (result);
+            });
     };
     addAndMakeVisible (browseButton);
 
@@ -216,8 +219,7 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     settingsButton.onClick = [this]
     {
         auto popup = std::make_unique<ChannelRangePopup> (*this);
-        juce::CallOutBox::launchAsynchronously (std::move (popup), settingsButtonZone,
-                                                 this, false);
+        juce::CallOutBox::launchAsynchronously (std::move (popup), settingsButtonZone, this);
     };
     addAndMakeVisible (settingsButton);
 

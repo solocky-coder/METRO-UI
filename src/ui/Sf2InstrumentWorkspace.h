@@ -147,11 +147,17 @@ private:
     std::vector<Sf2PresetInfo> presetList;
     juce::TextEditor searchBox;
     juce::ListBox    presetListBox;
+    std::unique_ptr<juce::ListBoxModel> presetListModel;   // see .cpp: PresetListModel
     juce::TextButton browseButton { "BROWSE SF2" };
+    std::unique_ptr<juce::FileChooser> fileChooser;
     juce::Rectangle<int> col1Zone, searchZone, listZone, bankFooterZone, browseButtonZone;
     juce::String currentSearchFilter;
+    std::vector<int> filteredPresetIndices;   // indices into presetList, post-search-filter
     void restoreGridChannelAssignments();
     void rebuildFilteredPresetRows();
+    void handlePresetLeftClicked  (int presetIdx);
+    void handlePresetRightClicked (int presetIdx, juce::Point<int> screenPos);
+    void handleChannelAssigned    (int presetIdx, int ch);
 
     struct AssignedPreset { juce::String name; int ch { 0 }; };
     std::vector<AssignedPreset> sf2Presets;
@@ -188,6 +194,16 @@ private:
     uint16_t assignedChannelMask { 0 }; ///< bit N set = MIDI channel N (0-based bit) has a preset
     int      countAssignedChannels() const noexcept;
     void     refreshChannelFxLabels();
+
+    // MIDI channel-range (multitimbral fan-out). The literal mockup shows only
+    // a static "CH 03" readout with no lo/hi spinner — that control has no
+    // home in the SVG. Rather than silently dropping multi-channel assignment
+    // (a real feature, not cosmetic), it lives behind the SETTINGS button as
+    // a small popup, reusing the exact same range/collision logic the old
+    // panel had inline.
+    int cachedChLow  { 0 };
+    int cachedChHigh { 0 };
+    void adjustChannelRange (bool isLow, int delta);
 
     void drawKnob      (juce::Graphics& g, juce::Rectangle<int> bounds,
                          float normalised, const juce::String& label,
