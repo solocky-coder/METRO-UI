@@ -175,14 +175,19 @@ public:
     }
 
     /** Docks (or undocks, with nullptrs) external view-switcher buttons — e.g.
-     *  the Mixer / Arranger toggle — into the far left of the transport row.
-     *  Ownership stays with the caller; TransportBar only reparents + positions. */
-    void setViewButtons (juce::TextButton* mixerBtn, juce::TextButton* arrangeBtn)
+     *  the Mixer / Arranger / Global EQ toggle — into the far left of the
+     *  transport row. Ownership stays with the caller; TransportBar only
+     *  reparents + positions. eqBtn defaults to nullptr so existing callers
+     *  that only pass two buttons keep compiling unchanged. */
+    void setViewButtons (juce::TextButton* mixerBtn, juce::TextButton* arrangeBtn,
+                         juce::TextButton* eqBtn = nullptr)
     {
         viewMixerBtn   = mixerBtn;
         viewArrangeBtn = arrangeBtn;
+        viewEqBtn      = eqBtn;
         if (viewMixerBtn   != nullptr) addAndMakeVisible (*viewMixerBtn);
         if (viewArrangeBtn != nullptr) addAndMakeVisible (*viewArrangeBtn);
+        if (viewEqBtn      != nullptr) addAndMakeVisible (*viewEqBtn);
         resized();
     }
 
@@ -227,17 +232,25 @@ public:
         const int linkW = 54;
         const int gap   = 4;
 
-        // ── Far left: view switcher (Mixer / Arranger), when docked ───────
-        if (viewMixerBtn != nullptr || viewArrangeBtn != nullptr)
+        // ── Far left: view switcher (Mixer / Arranger / Global EQ), when docked ──
+        if (viewMixerBtn != nullptr || viewArrangeBtn != nullptr || viewEqBtn != nullptr)
         {
             constexpr int arrangeWidth = 92;
             constexpr int mixerWidth   = 70;
-            auto left = b.removeFromLeft (mixerWidth + gap + arrangeWidth);
+            constexpr int eqWidth      = 88;
+            const int totalW = mixerWidth + gap + arrangeWidth
+                             + (viewEqBtn != nullptr ? gap + eqWidth : 0);
+            auto left = b.removeFromLeft (totalW);
             if (viewMixerBtn != nullptr)
                 viewMixerBtn->setBounds (left.removeFromLeft (mixerWidth));
             left.removeFromLeft (gap);
             if (viewArrangeBtn != nullptr)
                 viewArrangeBtn->setBounds (left.removeFromLeft (arrangeWidth));
+            if (viewEqBtn != nullptr)
+            {
+                left.removeFromLeft (gap);
+                viewEqBtn->setBounds (left.removeFromLeft (eqWidth));
+            }
             b.removeFromLeft (gap * 2);
         }
 
@@ -294,6 +307,7 @@ private:
     // Externally-owned view switcher (Mixer / Arranger), docked in via setViewButtons().
     juce::TextButton* viewMixerBtn   = nullptr;
     juce::TextButton* viewArrangeBtn = nullptr;
+    juce::TextButton* viewEqBtn      = nullptr;
 
     void timerCallback() override
     {

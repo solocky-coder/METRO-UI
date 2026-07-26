@@ -40,10 +40,13 @@ public:
 
         configureViewButton (mixerButton, "MIXER");
         configureViewButton (arrangeButton, "ARRANGER");
+        configureViewButton (eqButton, "GLOBAL EQ");
         mixerButton.onClick   = [this] { selectView (Content::Mixer); };
         arrangeButton.onClick = [this] { selectView (Content::Arrange); };
+        eqButton.onClick      = [this] { selectView (Content::Eq); };
         addChildComponent (mixerButton);
         addChildComponent (arrangeButton);
+        addChildComponent (eqButton);
     }
 
     /** Show exactly one of Mixer / Eq / Arrange (or None to hide all three). */
@@ -54,24 +57,27 @@ public:
         eqPanel.setVisible     (c == Content::Eq);
         arrangeView.setVisible (c == Content::Arrange);
 
-        const bool showSwitcher = c == Content::Mixer || c == Content::Arrange;
+        const bool showSwitcher = c == Content::Mixer || c == Content::Arrange || c == Content::Eq;
 
         // Arrange has its own transport row — dock the switcher buttons into its
-        // far left instead of reserving a separate row above it. Mixer has no
-        // transport row of its own, so the switcher keeps its standalone row.
+        // far left instead of reserving a separate row above it. Mixer and Eq
+        // have no transport row of their own, so the switcher keeps its
+        // standalone row for those.
         if (c == Content::Arrange)
         {
-            arrangeView.getTransportBar().setViewButtons (&mixerButton, &arrangeButton);
+            arrangeView.getTransportBar().setViewButtons (&mixerButton, &arrangeButton, &eqButton);
         }
         else
         {
-            arrangeView.getTransportBar().setViewButtons (nullptr, nullptr);
+            arrangeView.getTransportBar().setViewButtons (nullptr, nullptr, nullptr);
             addChildComponent (mixerButton);
             addChildComponent (arrangeButton);
+            addChildComponent (eqButton);
         }
 
         mixerButton.setVisible (showSwitcher);
         arrangeButton.setVisible (showSwitcher);
+        eqButton.setVisible (showSwitcher);
         updateViewButtonState();
         resized();
     }
@@ -138,12 +144,10 @@ public:
     {
         auto r = getLocalBounds();
         // Arrange docks the switcher into its own transport row, so it needs no
-        // separate switcher row here; Mixer/Eq still reserve one above the content.
+        // separate switcher row here; Mixer and Eq still reserve one above the content.
         constexpr int switcherHeight = 34;
-        const bool reserveSwitcherRow = (current == Content::Mixer);
-        const auto contentBounds = (current == Content::Mixer || current == Content::Arrange)
-                                     ? (reserveSwitcherRow ? r.withTrimmedTop (switcherHeight) : r)
-                                     : r;
+        const bool reserveSwitcherRow = (current == Content::Mixer || current == Content::Eq);
+        const auto contentBounds = reserveSwitcherRow ? r.withTrimmedTop (switcherHeight) : r;
         mixerPanel.setBounds  (contentBounds);
         eqPanel.setBounds     (contentBounds);
         arrangeView.setBounds (contentBounds);
@@ -153,11 +157,14 @@ public:
             auto switcher = r.removeFromTop (switcherHeight).reduced (8, 5);
             constexpr int arrangeWidth = 92;
             constexpr int mixerWidth = 70;
-            // Dock far left, mixer then arrange — same order/position as the
-            // switcher docked into the transport bar in Arrange view.
+            constexpr int eqWidth = 88;
+            // Dock far left, mixer then arrange then eq — same order/position as
+            // the switcher docked into the transport bar in Arrange view.
             mixerButton.setBounds (switcher.removeFromLeft (mixerWidth));
             switcher.removeFromLeft (4);
             arrangeButton.setBounds (switcher.removeFromLeft (arrangeWidth));
+            switcher.removeFromLeft (4);
+            eqButton.setBounds (switcher.removeFromLeft (eqWidth));
         }
 
         if (pickOverlay != nullptr)
@@ -189,6 +196,7 @@ private:
     {
         mixerButton.setToggleState (current == Content::Mixer, juce::dontSendNotification);
         arrangeButton.setToggleState (current == Content::Arrange, juce::dontSendNotification);
+        eqButton.setToggleState (current == Content::Eq, juce::dontSendNotification);
     }
 
     void selectView (Content c)
@@ -206,6 +214,7 @@ private:
     ArrangeView&   arrangeView;
     juce::TextButton mixerButton;
     juce::TextButton arrangeButton;
+    juce::TextButton eqButton;
     Content        current = Content::None;
 
     std::unique_ptr<ThemePickOverlay> pickOverlay;

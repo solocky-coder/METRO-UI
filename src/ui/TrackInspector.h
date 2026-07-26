@@ -24,10 +24,6 @@ public:
         configureButton (soloButton,    "S", juce::Colour (0xffd1b34c));
         configureButton (recordButton,  "R", juce::Colour (0xffd95454));
 
-        inputBox.addItem ("All MIDI Inputs", 1);
-        inputBox.setSelectedId (1, juce::dontSendNotification);
-        inputBox.setEnabled (false);
-
         channelBox.setVisible (false);
         for (int channel = 1; channel <= 16; ++channel)
             channelBox.addItem ("Part " + juce::String (channel), channel);
@@ -48,8 +44,7 @@ public:
             return value < 0.0 ? "L" + juce::String ((int) -value) : "R" + juce::String ((int) value);
         };
 
-        for (auto* control : { static_cast<juce::Component*> (&inputBox),
-                                static_cast<juce::Component*> (&channelBox),
+        for (auto* control : { static_cast<juce::Component*> (&channelBox),
                                 static_cast<juce::Component*> (&volumeSlider),
                                 static_cast<juce::Component*> (&panSlider) })
             addAndMakeVisible (*control);
@@ -141,9 +136,11 @@ public:
         area.removeFromTop (52); // selected-track identity card
         area.removeFromTop (31); // performance control row + breathing room
 
-        area.removeFromTop (20); // ROUTING heading
-        layoutField (area, inputBox);
-        if (channelBox.isVisible()) layoutField (area, channelBox);
+        if (channelBox.isVisible())
+        {
+            area.removeFromTop (10);
+            layoutField (area, channelBox);
+        }
 
         area.removeFromTop (10);
         area.removeFromTop (20); // CHANNEL heading
@@ -178,11 +175,11 @@ public:
         const auto info = engine.getTrackInfo (selectedTrack);
         auto card = content.removeFromTop (52).toFloat();
         g.setColour (theme.button.brighter (0.06f));
-        g.fillRoundedRectangle (card, 6.0f);
+        g.fillRoundedRectangle (card, 0.0f);
         g.setColour (theme.separator.brighter (0.12f));
-        g.drawRoundedRectangle (card.reduced (0.5f), 6.0f, 1.0f);
+        g.drawRoundedRectangle (card.reduced (0.5f), 0.0f, 1.0f);
         g.setColour (info.colour);
-        g.fillRoundedRectangle ({ card.getX(), card.getY(), 4.0f, card.getHeight() }, 2.0f);
+        g.fillRoundedRectangle ({ card.getX(), card.getY(), 4.0f, card.getHeight() }, 0.0f);
 
         auto title = card.toNearestInt().withTrimmedLeft (13).reduced (0, 7).removeFromTop (19);
         g.setColour (theme.foreground);
@@ -195,11 +192,14 @@ public:
         g.drawText (trackTypeName (info.type), subtitle, juce::Justification::centredLeft, false);
 
         content.removeFromTop (31);
-        sectionLabel (g, "ROUTING", content.removeFromTop (20));
-        drawFieldLabel (g, "INPUT", inputBox);
-        if (channelBox.isVisible()) drawFieldLabel (g, "PART", channelBox);
+        if (channelBox.isVisible())
+        {
+            content.removeFromTop (10);
+            drawFieldLabel (g, "PART", channelBox);
+            content.removeFromTop (42);
+        }
 
-        content.removeFromTop ((channelBox.isVisible() ? 2 : 1) * 42 + 10);
+        content.removeFromTop (10);
         sectionLabel (g, "CHANNEL", content.removeFromTop (20));
         drawFieldLabel (g, "VOLUME", volumeSlider);
         drawFieldLabel (g, "PAN", panSlider);
@@ -210,7 +210,7 @@ private:
     int  selectedTrack   = -1;
 
     juce::TextButton muteButton, soloButton, recordButton;
-    juce::ComboBox   inputBox, channelBox;
+    juce::ComboBox   channelBox;
     juce::Slider     volumeSlider, panSlider;
 
     bool hasTrack() const { return juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()); }
@@ -231,7 +231,6 @@ private:
         for (auto* control : { static_cast<juce::Component*> (&muteButton),
                                 static_cast<juce::Component*> (&soloButton),
                                 static_cast<juce::Component*> (&recordButton),
-                                static_cast<juce::Component*> (&inputBox),
                                 static_cast<juce::Component*> (&volumeSlider),
                                 static_cast<juce::Component*> (&panSlider) })
             control->setVisible (visible);

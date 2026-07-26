@@ -1301,10 +1301,21 @@ private:
         const int x = (int)tickToX (tick);
         if (x < clipGridBounds.getX() || x > clipGridBounds.getRight()) return;
 
-        // Thin line through tracks
-        g.setColour (getTheme().accent.brighter (0.38f).withAlpha (0.96f));
-        g.fillRect (x, rulerBounds.getY(),
-                    1, rulerBounds.getHeight() + clipGridBounds.getHeight());
+        const auto playheadColour = getTheme().accent.brighter (0.38f).withAlpha (0.96f);
+
+        // Line through ruler + tracks
+        g.setColour (playheadColour);
+        g.fillRect (x - 1, rulerBounds.getY(),
+                    2, rulerBounds.getHeight() + clipGridBounds.getHeight());
+
+        // Small triangular cap in the ruler, apex pointing down at the line
+        const float capW = 7.0f, capH = 6.0f;
+        juce::Path cap;
+        cap.addTriangle ((float) x - capW * 0.5f, (float) rulerBounds.getY(),
+                          (float) x + capW * 0.5f, (float) rulerBounds.getY(),
+                          (float) x,               (float) rulerBounds.getY() + capH);
+        g.setColour (playheadColour);
+        g.fillPath (cap);
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ArrangeView)

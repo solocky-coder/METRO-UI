@@ -54,25 +54,44 @@ public:
             g.setColour (info.colour);
             g.fillRect (rowR.withTrimmedLeft (3).withTrimmedRight (rowR.getWidth() - 7).toFloat());
 
-            // Mute button — semantic state colour, kept consistent across themes.
-            const int muteW  = juce::jlimit (20, 28, trackH - 8);
-            const int muteH  = juce::jlimit (12, 18, trackH - 8);
-            const auto muteR = rowR.withTrimmedLeft (rowR.getWidth() - muteW - 4)
-                                   .withSizeKeepingCentre (muteW, muteH);
+            // M / S / R button trio — mirrors TrackInspector's row, added here
+            // so the timeline header carries the same controls per the
+            // arranger redesign brief (was mute-only before).
+            const int btnW  = juce::jlimit (18, 24, trackH - 10);
+            const int btnH  = juce::jlimit (12, 18, trackH - 8);
+            const int btnGap = 3;
+            const auto recR  = rowR.withTrimmedLeft (rowR.getWidth() - btnW - 4)
+                                   .withSizeKeepingCentre (btnW, btnH);
+            const auto soloR = recR.translated (-(btnW + btnGap), 0);
+            const auto muteR = soloR.translated (-(btnW + btnGap), 0);
+
             g.setColour (info.enabled ? juce::Colour (0xFF2A8060) : juce::Colour (0xFF602020));
-            g.fillRoundedRectangle(muteR.toFloat(), 0.0f);
+            g.fillRoundedRectangle (muteR.toFloat(), 0.0f);
+            g.setColour (info.solo ? juce::Colour (0xFFD1B34C) : theme.button);
+            g.fillRoundedRectangle (soloR.toFloat(), 0.0f);
+            g.setColour (recordArmed[i] ? juce::Colour (0xFFD95454) : theme.button);
+            g.fillRoundedRectangle (recR.toFloat(), 0.0f);
+
             g.setColour (juce::Colours::white.withAlpha (0.7f));
             g.setFont (juce::Font (juce::jlimit (10.5f, 16.5f, (float)trackH * 0.22f), juce::Font::bold));
             g.drawText (info.enabled ? "M" : "m", muteR, juce::Justification::centred, false);
+            g.drawText ("S", soloR, juce::Justification::centred, false);
+            g.drawText ("R", recR,  juce::Justification::centred, false);
 
-            // MIDI RX dot — bright green when active is a fixed status colour
-            // used everywhere else in the app (see HeaderBar's global LED).
+            // Level meter — approximated from MIDI-activity hold counters
+            // (no continuous per-track level is plumbed from SequencerEngine
+            // yet; this is a discrete on/off proxy, not true peak metering).
+            const auto meterR = muteR.withTrimmedLeft (-(btnGap + 5))
+                                      .withWidth (3)
+                                      .translated (-(muteR.getWidth() + btnGap + 5), 0);
             const bool rxActive  = (i < kMaxTracks && midiHoldCounters[i] > 0);
-            const int  dotR      = juce::jlimit (4, 7, trackH / 8);
-            const auto dotCentre = juce::Point<int> (muteR.getX() - dotR - 4, rowR.getCentreY());
-            g.setColour (rxActive ? juce::Colour (0xFF00FF88) : theme.separator);
-            g.fillEllipse ((float)(dotCentre.x - dotR), (float)(dotCentre.y - dotR),
-                           (float)(dotR * 2), (float)(dotR * 2));
+            g.setColour (theme.separator);
+            g.fillRect (meterR);
+            if (rxActive)
+            {
+                g.setColour (theme.accent);
+                g.fillRect (meterR.withTrimmedTop (meterR.getHeight() * 3 / 5));
+            }
 
             // Track name
             g.setFont (juce::Font (juce::jlimit (12.0f, 16.0f, (float)trackH * 0.25f), juce::Font::bold));
@@ -124,15 +143,30 @@ public:
         }
 
         const auto rowR  = getRowBounds (i);
-        const int muteW  = juce::jlimit (20, 28, trackH - 8);
-        const int muteH  = juce::jlimit (12, 18, trackH - 8);
-        const auto muteR = rowR.withTrimmedLeft (rowR.getWidth() - muteW - 4)
-                               .withSizeKeepingCentre (muteW, muteH);
+        const int btnW   = juce::jlimit (18, 24, trackH - 10);
+        const int btnH   = juce::jlimit (12, 18, trackH - 8);
+        const int btnGap = 3;
+        const auto recR  = rowR.withTrimmedLeft (rowR.getWidth() - btnW - 4)
+                               .withSizeKeepingCentre (btnW, btnH);
+        const auto soloR = recR.translated (-(btnW + btnGap), 0);
+        const auto muteR = soloR.translated (-(btnW + btnGap), 0);
 
         if (muteR.contains (e.getPosition()))
         {
             engine.setTrackEnabled (i, ! info.enabled);
             if (onTrackMuted) onTrackMuted (i, ! info.enabled);
+        }
+        else if (soloR.contains (e.getPosition()))
+        {
+            engine.setTrackSolo (i, ! info.solo);
+        }
+        else if (recR.contains (e.getPosition()) && i < kMaxTracks)
+        {
+            // UI-only toggle for now — SequencerEngine has no per-track
+            // record-arm state yet, only the global isRecording() flag
+            // (see TrackInspector's recordButton). Flip this to read/write
+            // real engine state once that's added.
+            recordArmed[i] = ! recordArmed[i];
         }
         else
         {
@@ -196,6 +230,7 @@ private:
     static constexpr int kMaxTracks = SequencerEngine::kActivityFlagCount;
     static constexpr int kHoldTicks = 3;
     int midiHoldCounters[kMaxTracks] = {};
+    bool recordArmed[kMaxTracks] = {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrackHeaderStrip)
 };

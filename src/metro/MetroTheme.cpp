@@ -19,29 +19,28 @@ namespace MetroTheme
     {
         ThemeData t;
         t.name             = "metro";
-        // Anchors, updated for a more authentically flat-Metro feel: true-black
-        // canvas instead of a dimmed dark gray, a bigger step up to the next
-        // tier so panels/bars/buttons actually separate instead of blurring
-        // together, and a punchier accent (#2899F5, current Fluent "Windows
-        // blue") for more pop against true black. Swap to #0078D7 instead if
-        // you want the period-accurate Windows 8 accent rather than the
-        // modern Fluent one — everything below is derived from this one
-        // constant, so a single-line change re-tints the whole theme.
-        static const juce::Colour kAccent (0xFF2899F5);
-        t.background       = juce::Colour (0xFF000000);   // true-black canvas
-        t.waveformBg       = juce::Colour (0xFF0C0C0C);    // Bars, barely lifted off canvas
-        t.darkBar          = juce::Colour (0xFF0C0C0C);    // Bars, barely lifted off canvas
-        t.foreground       = juce::Colour (0xFFFFFFFF);   // Text
-        t.header           = juce::Colour (0xFF000000);   // top bar == Background
+        // Anchors, updated to match the arranger redesign brief: a blue-black
+        // canvas (#070B0D) instead of true black so panels read as tinted
+        // rather than neutral charcoal, and a cyan accent (#00D7E8) reserved
+        // for the strongest active state — playhead, selected item edge,
+        // active tool — per the brief's color rules. Everything below is
+        // derived from this one constant, so a single-line change re-tints
+        // the whole theme.
+        static const juce::Colour kAccent (0xFF00D7E8);
+        t.background       = juce::Colour (0xFF070B0D);   // blue-black canvas
+        t.waveformBg       = juce::Colour (0xFF0C1418);    // panel surface
+        t.darkBar          = juce::Colour (0xFF132027);    // raised bars/toolbar blocks
+        t.foreground       = juce::Colour (0xFFD7EEF2);   // Text
+        t.header           = juce::Colour (0xFF070B0D);   // top bar == Background
         t.waveform         = kAccent;                      // Accent waveform
         t.selectionOverlay = kAccent.withAlpha (0.22f);
         t.lockActive       = kAccent;                      // Accent
-        t.lockInactive     = juce::Colour (0xFF4A4A4A);   // muted secondary — not manual-anchored
-        t.gridLine         = juce::Colour (0xFF2B2B2B);    // Surface, brightened
+        t.lockInactive     = juce::Colour (0xFF78919A);   // muted secondary — --ui-muted
+        t.gridLine         = juce::Colour (0xFF1A282E);    // blue-tinted grid, subtle
         t.accent           = kAccent;                      // Accent
-        t.button           = juce::Colour (0xFF1F1F1F);    // Surface, clearly lifted off canvas
-        t.buttonHover      = juce::Colour (0xFF2B2B2B);    // Surface, brightened
-        t.separator        = juce::Colour (0xFF383838);    // Surface, brightened further
+        t.button           = juce::Colour (0xFF132027);    // --ui-raised
+        t.buttonHover      = juce::Colour (0xFF1A2C34);    // slightly lifted from --ui-raised
+        t.separator        = juce::Colour (0xFF29404A);    // --ui-rule
 
         // Windows/Metro tile colour set — flat, single-hue swatches, no neon —
         // used for slice colours across the pad grid / mixer / waveform.
