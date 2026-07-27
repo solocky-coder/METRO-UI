@@ -198,12 +198,14 @@ public:
  /** Docks (or undocks, with nullptrs) external view-switcher buttons — e.g.
      *  the Mixer / Arranger toggle — into the far left of the transport row.
      *  Ownership stays with the caller; TransportBar only reparents + positions. */
- void setViewButtons (juce::TextButton* mixerBtn, juce::TextButton* arrangeBtn)
+ void setViewButtons (juce::TextButton* mixerBtn, juce::TextButton* arrangeBtn, juce::TextButton* eqBtn)
     {
         viewMixerBtn   = mixerBtn;
         viewArrangeBtn = arrangeBtn;
+        viewEqBtn      = eqBtn;
  if (viewMixerBtn   != nullptr) addAndMakeVisible (*viewMixerBtn);
  if (viewArrangeBtn != nullptr) addAndMakeVisible (*viewArrangeBtn);
+ if (viewEqBtn      != nullptr) addAndMakeVisible (*viewEqBtn);
  resized();
     }
 
@@ -253,16 +255,20 @@ public:
 
 
  // ── Far left: view switcher (Mixer / Arranger), when docked ───────
- if (viewMixerBtn != nullptr || viewArrangeBtn != nullptr)
+ if (viewMixerBtn != nullptr || viewArrangeBtn != nullptr || viewEqBtn != nullptr)
         {
  constexpr int arrangeWidth = 92;
  constexpr int mixerWidth   = 70;
- auto left = b.removeFromLeft (mixerWidth + gap + arrangeWidth);
+ constexpr int eqWidth      = 58;
+ auto left = b.removeFromLeft (mixerWidth + gap + arrangeWidth + gap + eqWidth);
  if (viewMixerBtn != nullptr)
                 viewMixerBtn->setBounds (left.removeFromLeft (mixerWidth));
             left.removeFromLeft (gap);
  if (viewArrangeBtn != nullptr)
                 viewArrangeBtn->setBounds (left.removeFromLeft (arrangeWidth));
+            left.removeFromLeft (gap);
+ if (viewEqBtn != nullptr)
+                viewEqBtn->setBounds (left.removeFromLeft (eqWidth));
             b.removeFromLeft (gap * 2);
         }
 
@@ -325,9 +331,10 @@ private:
     juce::ComboBox    snapCombo;
 
 
- // Externally-owned view switcher (Mixer / Arranger), docked in via setViewButtons().
+ // Externally-owned view switcher (Mixer / Arranger / Eq), docked in via setViewButtons().
     juce::TextButton* viewMixerBtn   = nullptr;
     juce::TextButton* viewArrangeBtn = nullptr;
+    juce::TextButton* viewEqBtn      = nullptr;
 
 
  void timerCallback() override
