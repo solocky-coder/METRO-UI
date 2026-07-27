@@ -589,6 +589,14 @@ public:
     // MIDI activity counter for SF player LED: +1 on NoteOn, -1 on NoteOff (clamped ≥0)
     std::atomic<int>   sfzMidiActivity { 0 };
 
+    // ── SF2 preset preview demo-note timing (see SfzPlayer::previewPreset()) ──
+    // Audio-thread-only (touched only inside processBlock, never from the UI
+    // thread) — tracks the currently-sounding demo note so it can be
+    // auto-released after a short audition window, or cut short by a
+    // superseding preview/clearPreview() request.
+    int previewDemoNoteNumber      = -1;   // -1 = nothing currently sounding
+    int previewDemoNoteOffCountdown = 0;   // samples remaining until auto-release
+
     // SFZ-Player (sfzPlayer2) peak meters and MIDI activity
     std::atomic<float> sfz2PeakL { 0.0f };
     std::atomic<float> sfz2PeakR { 0.0f };

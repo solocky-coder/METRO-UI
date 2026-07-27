@@ -746,11 +746,6 @@ void DysektProcessor::rebuildChromaticChannelMask()
     }
     chromaticSliceChannelMask.store (mask, std::memory_order_relaxed);
 
-    // Let the SF2/FluidSynth engine know which channels are chromatic-owned,
-    // so preset preview/audition (which bypasses sfPlayerChannelMask entirely
-    // — see SfzPlayer::previewPreset) can refuse to load onto one of them.
-    sfzPlayer.setChromaticOwnedChannelMask (mask);
-
     // Evict any chromatic-owned channels from the SF player masks so the two
     // channel pools remain mutually exclusive.  Both the live routing mask and
     // the saved mask (which survives Slicer-mode zeroing) are scrubbed.
@@ -3920,6 +3915,45 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 sfzMidiBuf.addEvent (juce::MidiMessage::allSoundOff (resetChannel), 0);
             }
            #endif
+        }
+
+        // ── Inject SF2 preset-preview demo note (see SfzPlayer::previewPreset()) ──
+        // Real MIDI on the reserved preview channel — bypasses channel
+        // ownership, chromatic-collision guards, Arranger track selection,
+        // and keyboard routing entirely. Auto-released after a short
+        // audition window, or cut short by clearPreview()/a superseding
+        // previewPreset() call.
+        {
+            const int previewCh = SfzPlayer::getPreviewMidiChannel();
+            int note = 0;
+
+            if (sfzPlayer.takePendingPreviewNoteOn (note))
+            {
+                if (previewDemoNoteNumber >= 0)
+                    sfzMidiBuf.addEvent (juce::MidiMessage::noteOff (previewCh, previewDemoNoteNumber), 0);
+                sfzMidiBuf.addEvent (juce::MidiMessage::noteOn (previewCh, note, (juce::uint8) 100), 0);
+                previewDemoNoteNumber = note;
+                previewDemoNoteOffCountdown = (int) (getSampleRate() * 0.35); // ~350ms audition
+            }
+
+            if (sfzPlayer.takePendingPreviewNoteOff (note))
+            {
+                if (previewDemoNoteNumber >= 0)
+                {
+                    sfzMidiBuf.addEvent (juce::MidiMessage::noteOff (previewCh, previewDemoNoteNumber), 0);
+                    previewDemoNoteNumber = -1;
+                }
+                previewDemoNoteOffCountdown = 0;
+            }
+            else if (previewDemoNoteNumber >= 0)
+            {
+                previewDemoNoteOffCountdown -= numSamples;
+                if (previewDemoNoteOffCountdown <= 0)
+                {
+                    sfzMidiBuf.addEvent (juce::MidiMessage::noteOff (previewCh, previewDemoNoteNumber), 0);
+                    previewDemoNoteNumber = -1;
+                }
+            }
         }
 
         // (Second "TEMP diagnostic" — same audio-thread String-build +

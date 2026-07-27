@@ -81,13 +81,45 @@ public:
     /** Clear all pending channel-preset assignments (e.g. on SF2 unload). */
     void clearChannelPresets();
 
-    /** Preview mode: load bank/preset onto the dedicated preview channel (15)
-     *  and route live controller input to it.  Call from the UI thread.
-     *  A second call with the same bank/preset clears the preview (toggle). */
+    /** Preview mode: load bank/preset onto the dedicated preview channel and
+     *  arm a one-shot Middle-C demo-note request.  Call from the UI thread.
+     *  A second call with the same bank/preset clears the preview (toggle).
+     *
+     *  This never touches MIDI channel ownership, Arranger track selection,
+     *  or the live keyboard channel — PluginProcessor injects the demo note
+     *  as real MIDI on getPreviewMidiChannel() (see
+     *  takePendingPreviewNoteOn()/takePendingPreviewNoteOff()). */
     void previewPreset (int bank, int preset);
 
-    /** Stop any active preview: silence channel 15 and clear the live mask bit. */
+    /** Stop any active preview: silence the preview channel and request a
+     *  note-off for the demo note if it's still sounding. */
     void clearPreview();
+
+    /** MIDI channel (1-based) permanently reserved for preset preview/audition.
+     *  PluginProcessor injects the demo note-on/off requested by
+     *  previewPreset()/clearPreview() on this channel and nothing else. */
+    static constexpr int getPreviewMidiChannel() noexcept { return 16; }
+
+    /** Consumed once per block by PluginProcessor: if a demo note-on is
+     *  pending, returns true and writes the note number (0-127) to noteOut,
+     *  clearing the request. Call from the audio thread. */
+    bool takePendingPreviewNoteOn (int& noteOut) noexcept
+    {
+        if (! previewNoteOnPending.exchange (false, std::memory_order_acq_rel))
+            return false;
+        noteOut = previewNoteNumber.load (std::memory_order_relaxed);
+        return true;
+    }
+
+    /** Same as takePendingPreviewNoteOn(), for the matching note-off request
+     *  fired by clearPreview()/a superseding previewPreset() call. */
+    bool takePendingPreviewNoteOff (int& noteOut) noexcept
+    {
+        if (! previewNoteOffPending.exchange (false, std::memory_order_acq_rel))
+            return false;
+        noteOut = previewNoteOffNumber.load (std::memory_order_relaxed);
+        return true;
+    }
 
     /** Set which FluidSynth channels (bitmask, bit 0 = ch 0 … bit 15 = ch 15)
      *  should receive live controller input that arrives on MIDI channel 1.
@@ -101,17 +133,6 @@ public:
     uint16_t getLiveInputChannelMask() const noexcept
     {
         return liveInputChannelMask.load (std::memory_order_relaxed);
-    }
-
-    /** Bitmask (bit N = MIDI channel N, 1-based) of channels currently owned
-     *  by chromatic slices. DysektProcessor::rebuildChromaticChannelMask()
-     *  keeps this in sync. previewPreset() consults it so preset audition
-     *  can never load onto — and steal MIDI destined for — a channel a
-     *  chromatic slice is actively using, even though the preview channel
-     *  is otherwise untracked by sfPlayerChannelMask/sfzPlayer2ChannelMask. */
-    void setChromaticOwnedChannelMask (uint32_t mask) noexcept
-    {
-        chromaticOwnedChannelMask.store (mask, std::memory_order_relaxed);
     }
 
     float      getVolume()      const noexcept { return volume.load(); }
@@ -363,9 +384,15 @@ private:
     // Written from UI thread via setLiveInputChannelMask(); read on audio thread.
     std::atomic<uint16_t> liveInputChannelMask { 0 };
 
-    // Bitmask (bit N = MIDI channel N, 1-based) of channels owned by chromatic
-    // slices — see setChromaticOwnedChannelMask() doc comment above.
-    std::atomic<uint32_t> chromaticOwnedChannelMask { 0u };
+    // ── Preview (audition) demo-note request — see previewPreset()/clearPreview() ──
+    // PluginProcessor polls these once per block via takePendingPreviewNoteOn()/
+    // takePendingPreviewNoteOff() and injects a real MIDI note-on/off on
+    // getPreviewMidiChannel(). No MIDI channel ownership, Arranger track
+    // selection, or keyboard routing is consulted anywhere in this path.
+    std::atomic<bool> previewNoteOnPending  { false };
+    std::atomic<bool> previewNoteOffPending { false };
+    std::atomic<int>  previewNoteNumber     { 60 };   // Middle C default
+    std::atomic<int>  previewNoteOffNumber  { 60 };
 
     // ── Scratch buffer for FluidSynth interleaved → planar conversion ─────────
     std::vector<float> scratchL, scratchR;

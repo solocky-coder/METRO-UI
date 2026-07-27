@@ -517,9 +517,9 @@ void SfzPlayer::clearChannelPresets()
 }
 
 // =============================================================================
-//  Preview (audition) — channel 15 scratch slot
+//  Preview (audition) — channel 15 scratch slot, no MIDI-channel ownership
 // =============================================================================
-static constexpr int kPreviewChannel = 15;
+static constexpr int kPreviewChannel = 15;   // 0-based FluidSynth channel (MIDI ch 16)
 
 void SfzPlayer::previewPreset (int bank, int preset)
 {
@@ -530,38 +530,32 @@ void SfzPlayer::previewPreset (int bank, int preset)
     jassert (! isSfzFile);
     if (isSfzFile) return;
 
-    // Defense-in-depth only: channel 16 is now permanently reserved for SF2
-    // preview at the source (DysektProcessor's FieldChromaticChannel command
-    // handler clamps to 0-15, and project load sanitizes legacy saves) — so
-    // chromaMask should never actually have channel 16 set. This check stays
-    // as a backstop in case some future write path to Slice::chromaticChannel
-    // forgets the 0-15 constraint; if it ever fires, that's a bug upstream
-    // of here, not expected behavior.
-    const uint32_t chromaMask = chromaticOwnedChannelMask.load (std::memory_order_relaxed);
-    if (chromaMask & (1u << (kPreviewChannel + 1)))
-        return;
-
-    // Load onto the preview channel (15) only.  Do NOT touch channel 0 —
-    // it may hold a real user-assigned preset in multi-timbral mode, and
-    // stomping it here was the root cause of presets "going silent" after
-    // previewing.
+    // Load onto the preview channel only.  Do NOT touch channel 0 — it may
+    // hold a real user-assigned preset in multi-timbral mode, and stomping
+    // it here was the root cause of presets "going silent" after previewing.
     setPresetOnChannel (kPreviewChannel, bank, preset);
 
-    // Route live controller input to the preview channel.
-    const uint16_t mask = liveInputChannelMask.load (std::memory_order_relaxed);
-    liveInputChannelMask.store (mask | (uint16_t(1) << kPreviewChannel),
-                                std::memory_order_relaxed);
+    // Arm a fixed Middle-C (60) demo-note request. PluginProcessor injects
+    // this as a real MIDI note-on on getPreviewMidiChannel() next block and
+    // follows up with the matching note-off shortly after — no channel
+    // ownership, chromatic-collision guard, Arranger selection, or keyboard
+    // channel involved at any point in this path.
+    previewNoteNumber.store (60, std::memory_order_relaxed);
+    previewNoteOnPending.store (true, std::memory_order_release);
 }
 
 void SfzPlayer::clearPreview()
 {
-    // Remove channel 15 from the live mask.
-    const uint16_t mask = liveInputChannelMask.load (std::memory_order_relaxed);
-    liveInputChannelMask.store (mask & ~(uint16_t(1) << kPreviewChannel),
-                                std::memory_order_relaxed);
     // Reset the preview channel only — leave ch0 untouched so any
     // user-assigned preset on channel 1 (FluidSynth ch 0) is preserved.
     setPresetOnChannel (kPreviewChannel, 0, 0);
+
+    // Cancel any note-on that hasn't been injected yet, and request a
+    // note-off for the last-armed note in case it's still sounding.
+    previewNoteOnPending.store (false, std::memory_order_relaxed);
+    previewNoteOffNumber.store (previewNoteNumber.load (std::memory_order_relaxed),
+                                 std::memory_order_relaxed);
+    previewNoteOffPending.store (true, std::memory_order_release);
 }
 
 juce::File SfzPlayer::getLoadedFile() const
