@@ -530,14 +530,13 @@ void SfzPlayer::previewPreset (int bank, int preset)
     jassert (! isSfzFile);
     if (isSfzFile) return;
 
-    // Refuse to audition if a chromatic slice currently owns MIDI channel 16
-    // (kPreviewChannel, 0-based 15). Unlike the SF2 multi-timbral assignment
-    // path (SfzDropdownPanel::onChannelChanged), previewPreset() has no other
-    // way to know about chromatic ownership — the preview channel is fixed
-    // and never registered in sfPlayerChannelMask/savedSfPlayerChannelMask.
-    // Without this guard, a chromatic slice on channel 16 would have its
-    // note-on events land on whatever preset is currently highlighted in the
-    // browser instead of (or in addition to) the slice's own sample.
+    // Defense-in-depth only: channel 16 is now permanently reserved for SF2
+    // preview at the source (DysektProcessor's FieldChromaticChannel command
+    // handler clamps to 0-15, and project load sanitizes legacy saves) — so
+    // chromaMask should never actually have channel 16 set. This check stays
+    // as a backstop in case some future write path to Slice::chromaticChannel
+    // forgets the 0-15 constraint; if it ever fires, that's a bug upstream
+    // of here, not expected behavior.
     const uint32_t chromaMask = chromaticOwnedChannelMask.load (std::memory_order_relaxed);
     if (chromaMask & (1u << (kPreviewChannel + 1)))
         return;

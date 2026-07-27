@@ -1364,7 +1364,19 @@ void DysektProcessor::handleCommand (const Command& cmd)
                     case FieldEqMidFreq:       s.eqMidFreq       = val;       if (!skipLock) s.lockMask |= kLockEqMid;       break;
                     case FieldEqMidQ:          s.eqMidQ          = val;       if (!skipLock) s.lockMask |= kLockEqMid;       break;
                     case FieldEqHighGain:      s.eqHighGain      = val;       if (!skipLock) s.lockMask |= kLockEqHigh;      break;
-                    case FieldChromaticChannel: s.chromaticChannel = juce::jlimit (0, 16, (int) val); rebuildChromaticChannelMask(); break;
+                    case FieldChromaticChannel:
+                        // Channel 16 is permanently reserved as SfzPlayer's
+                        // SF2 preset-preview scratch slot (see
+                        // SfzPlayer::kPreviewChannel / previewPreset()).
+                        // Clamp to 0-15 here at the source so a chromatic
+                        // slice can never claim it via any path (UI cycle,
+                        // MIDI Learn, automation, scripted CmdSetSliceParam)
+                        // — the SliceControlBar picker already excludes 16
+                        // from new selections, but that's a UI-only filter;
+                        // this is the actual enforcement point.
+                        s.chromaticChannel = juce::jlimit (0, 15, (int) val);
+                        rebuildChromaticChannelMask();
+                        break;
                     case FieldChromaticLegato:  s.chromaticLegato  = (val > 0.5f); break;
                     case FieldMidiNote:
                         // SFZ-PLAYER (targetEngine2): rebuildMidiMap() would
@@ -4420,7 +4432,16 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
         parsed.filterCutoff      = (version >= 17) ? stream.readFloat() : 20000.0f;
         parsed.filterRes         = (version >= 17) ? stream.readFloat() : 0.0f;
         // v18 fields
-        parsed.chromaticChannel  = (version >= 18) ? stream.readInt() : 0;
+        // Channel 16 is now permanently reserved for SF2 preset preview
+        // (see FieldChromaticChannel handler in applyCommand()). Older
+        // project files saved before that reservation existed may still
+        // contain a slice with chromaticChannel == 16 on disk; drop it to
+        // Off rather than silently letting a loaded project reclaim the
+        // preview channel and re-trigger the same collision.
+        {
+            const int loadedChromaCh = (version >= 18) ? stream.readInt() : 0;
+            parsed.chromaticChannel = (loadedChromaCh >= 1 && loadedChromaCh <= 15) ? loadedChromaCh : 0;
+        }
         // v19 fields
         parsed.chromaticLegato   = (version >= 19) ? stream.readBool() : false;
         // v20 fields
