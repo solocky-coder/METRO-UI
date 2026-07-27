@@ -12,10 +12,23 @@
 class TransportLAF : public DysektLookAndFeel
 {
 public:
-    // Register a semantic colour for the indicator dot of each button.
-    void registerBtn (juce::Button* b, juce::Colour dotCol)
+    enum class Style
     {
-        colours[b] = dotCol;
+        // Always vividly filled with its semantic colour, regardless of
+        // toggle state — reads as a fixed-function key (PLAY/STOP/REC),
+        // matching the reference mockups where these are solid at rest,
+        // not just when active.
+        Solid,
+        // Dark tile, semantic-coloured border + text, filling in only when
+        // toggled on/pressed — for secondary controls (LOOP/LINK/BACK)
+        // that should read as line-art until engaged.
+        Outline
+    };
+
+    /** Register a semantic colour (and optional style) for a button. */
+    void registerBtn (juce::Button* b, juce::Colour col, Style style = Style::Solid)
+    {
+        entries[b] = { col, style };
     }
 
     void drawButtonBackground (juce::Graphics& g, juce::Button& btn,
@@ -23,33 +36,41 @@ public:
                                bool isHighlighted, bool isDown) override
     {
         auto bounds = btn.getLocalBounds().toFloat().reduced (1.0f);
-
-        // Flat Metro tile: every control carries a restrained, semantic tint.
-        // Pressed/toggled states intensify it without adding bevels or gradients.
         const auto& theme = getTheme();
-        const juce::Colour semantic = colours.count (&btn) ? colours.at (&btn)
-                                                            : juce::Colours::white;
+        const auto entry = entries.count (&btn) ? entries.at (&btn)
+                                                 : Entry { juce::Colours::white, Style::Outline };
         const bool on = btn.getToggleState();
-        const float tint = isDown ? 0.46f : (on ? 0.34f : (isHighlighted ? 0.20f : 0.10f));
-        g.setColour (theme.button.interpolatedWith (semantic, tint));
-        g.fillRoundedRectangle (bounds, 0.0f);
 
-        // Hairline border — just enough to separate the square Metro tiles.
-        g.setColour (semantic.withAlpha (on ? 0.72f : 0.28f));
-        g.drawRoundedRectangle (bounds, 0.0f, 0.5f);
+        if (entry.style == Style::Solid)
+        {
+            // Always near-full-strength; pressed/toggled just brightens further.
+            const float tint = isDown ? 1.0f : (on ? 0.92f : 0.85f);
+            g.setColour (theme.button.interpolatedWith (entry.colour, tint));
+            g.fillRoundedRectangle (bounds, 0.0f);
+            g.setColour (juce::Colours::black.withAlpha (0.35f));
+            g.drawRoundedRectangle (bounds, 0.0f, 0.5f);
+        }
+        else
+        {
+            const float tint = isDown ? 0.46f : (on ? 0.34f : (isHighlighted ? 0.20f : 0.0f));
+            g.setColour (theme.button.interpolatedWith (entry.colour, tint));
+            g.fillRoundedRectangle (bounds, 0.0f);
+            g.setColour (entry.colour.withAlpha (on ? 0.9f : 0.55f));
+            g.drawRoundedRectangle (bounds, 0.0f, 1.0f);
+        }
     }
 
     void drawButtonText (juce::Graphics& g, juce::TextButton& btn,
                          bool /*isHighlighted*/, bool isDown) override
     {
         const bool on = btn.getToggleState();
+        const auto entry = entries.count (&btn) ? entries.at (&btn)
+                                                 : Entry { juce::Colours::white, Style::Outline };
 
-        // Keep the function colour legible in every state, not just when toggled.
-        juce::Colour base = colours.count (&btn) ? colours.at (&btn)
-                                                 : juce::Colours::white;
-        const juce::Colour textCol = on    ? juce::Colours::white.withAlpha (0.98f)
-                                   : isDown ? juce::Colours::white.withAlpha (0.94f)
-                                           : base.brighter (0.22f).withAlpha (0.94f);
+        const juce::Colour textCol = entry.style == Style::Solid
+            ? juce::Colours::white.withAlpha (0.98f)
+            : (on || isDown) ? juce::Colours::white.withAlpha (0.96f)
+                             : entry.colour.brighter (0.25f).withAlpha (0.94f);
         g.setColour (textCol);
         g.setFont (juce::Font (10.5f, juce::Font::bold));
         g.drawText (btn.getButtonText(), btn.getLocalBounds(),
@@ -57,7 +78,8 @@ public:
     }
 
 private:
-    std::map<juce::Button*, juce::Colour> colours;
+    struct Entry { juce::Colour colour; Style style; };
+    std::map<juce::Button*, Entry> entries;
 };
 
 
@@ -85,22 +107,26 @@ public:
         const juce::Colour cFloat  = juce::Colour (0xff888888);
 
         auto addBtn = [&](juce::TextButton& b, const juce::String& glyph,
-                          juce::Colour col, bool isToggle = false)
+                          juce::Colour col, bool isToggle = false,
+                          TransportLAF::Style style = TransportLAF::Style::Solid)
         {
             b.setButtonText (glyph);
             b.setClickingTogglesState (isToggle);
             b.setLookAndFeel (&laf);
-            laf.registerBtn (&b, col);
+            laf.registerBtn (&b, col, style);
             addAndMakeVisible (b);
         };
 
-        // Text-label transport buttons (flat, no icons)
-        addBtn (rewindBtn, "BACK",    cRewind);        // one-shot action
+        // Text-label transport buttons (flat, no icons). PLAY/STOP/REC are
+        // always vividly filled (Solid) like fixed-function hardware keys,
+        // matching the reference mockup; BACK/LOOP/FLOAT stay Outline —
+        // dark until toggled/pressed.
+        addBtn (rewindBtn, "BACK",    cRewind, false, TransportLAF::Style::Outline);
         addBtn (playBtn,   "PLAY",    cPlay,  true);   // toggle — syncs to engine.isPlaying()
         addBtn (stopBtn,   "STOP",    cStop);
         addBtn (recBtn,    "REC",     cRec,   true);
-        addBtn (loopBtn,   "LOOP",    cLoop,  true);
-        addBtn (floatBtn,  "FLOAT",   cFloat);
+        addBtn (loopBtn,   "LOOP",    cLoop,  true, TransportLAF::Style::Outline);
+        addBtn (floatBtn,  "FLOAT",   cFloat, false, TransportLAF::Style::Outline);
         floatBtn.setTooltip ("Detach the transport into a floating panel");
         floatBtn.onClick = [this] { if (onFloatRequested) onFloatRequested(); };
 
@@ -152,7 +178,7 @@ public:
         // ── LINK button ──────────────────────────────────────────────────
         if (linkPtr != nullptr)
         {
-            addBtn (linkBtn, "LINK", cLink, true);
+            addBtn (linkBtn, "LINK", cLink, true, TransportLAF::Style::Outline);
             linkBtn.onStateChange = [this]
             {
                 if (linkPtr) linkPtr->setEnabled (linkBtn.getToggleState());

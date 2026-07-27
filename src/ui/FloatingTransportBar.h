@@ -90,8 +90,7 @@ private:
         juce::Rectangle<int> locatorsField;
         juce::Rectangle<int> transportRow;
         juce::Rectangle<int> setLeftButton, setRightButton;
-        juce::Rectangle<int> tempoCaption, tempoField;
-        juce::Rectangle<int> gridField;
+        juce::Rectangle<int> tempoField;
         juce::Rectangle<int> linkField;
         int divider1 = 0, divider2 = 0;
     };

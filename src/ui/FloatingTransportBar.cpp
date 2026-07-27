@@ -57,16 +57,23 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     pinButton.onStateChange = [this] { setAlwaysOnTop (pinButton.getToggleState()); };
     addAndMakeVisible (pinButton);
 
-    configureChrome (dockButton, "DOCK", "Dock the transport back into the main window");
+    // DOCK is a one-shot action (not a toggle), so it'd never pick up the
+    // default LAF's toggled-on highlight the way PIN can — give it a
+    // permanent cyan outline via TransportLAF instead, matching the mockup
+    // where DOCK reads as the panel's highlighted primary action.
+    dockButton.setButtonText ("DOCK");
+    dockButton.setTooltip ("Dock the transport back into the main window");
+    dockButton.setLookAndFeel (&laf);
+    laf.registerBtn (&dockButton, juce::Colour (0xff00d7e8), TransportLAF::Style::Outline);
     dockButton.onClick = [this] { if (onDockRequested) onDockRequested(); };
     addAndMakeVisible (dockButton);
 
-    // ── Tempo (BPM) — lives in the far-right BPM/GRID/LINK row ─────────────
+    // ── Tempo (BPM) — now the prominent readout, left of the small position field ──
     tempoLabel.setEditable (true, true, false);
     tempoLabel.setJustificationType (juce::Justification::centred);
     tempoLabel.setFont (DysektLookAndFeel::makeMonoFont (16.0f, true));
     tempoLabel.setColour (juce::Label::backgroundColourId, Base::Background);
-    tempoLabel.setColour (juce::Label::textColourId, Transport::Tempo);
+    tempoLabel.setColour (juce::Label::textColourId, juce::Colour (0xff00d7e8));
     tempoLabel.setTooltip ("Tempo in beats per minute (20-999)");
     tempoLabel.onEditorShow = [this]
     {
@@ -76,43 +83,49 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     tempoLabel.onTextChange = [this] { updateTempoFromEditor(); };
     addAndMakeVisible (tempoLabel);
 
-    // ── Musical position ─────────────────────────────────────────────────
+    // ── Musical position — a small muted secondary readout, not the
+    // dominant element it was before (see the mockup: BPM leads, position
+    // trails it in ordinary text) ────────────────────────────────────────
     positionLabel.setJustificationType (juce::Justification::centred);
-    positionLabel.setFont (DysektLookAndFeel::makeMonoFont (26.0f, true));
+    positionLabel.setFont (DysektLookAndFeel::makeMonoFont (12.0f));
     positionLabel.setColour (juce::Label::backgroundColourId, Base::Background);
-    positionLabel.setColour (juce::Label::textColourId, Accent::Orange);
+    positionLabel.setColour (juce::Label::textColourId, Text::Secondary);
     addAndMakeVisible (positionLabel);
 
     // ── Transport cluster ────────────────────────────────────────────────
     // Use ASCII labels here: the embedded UI typeface does not include the
     // Unicode transport glyphs, which otherwise render as missing characters
     // on the detached desktop component.
-    // Same TouchDAW colours as the docked TransportBar (TransportBar.h):
-    // rewind=grey, play=green, stop=amber, rec=red, loop=teal, link=purple.
+    // Same TouchDAW colours as the docked TransportBar (TransportBar.h) for
+    // PLAY/STOP/REC/LOOP: rewind=grey, play=green, stop=amber, rec=red,
+    // loop=teal. LINK uses cyan here rather than the docked bar's purple —
+    // see the note on this in the constructor below, since that's a real
+    // divergence from strict color-unity with the arranger, not an oversight.
     const juce::Colour cRewind = juce::Colour (0xff888888);
     const juce::Colour cPlay   = juce::Colour (0xff2ecc40);
     const juce::Colour cStop   = juce::Colour (0xffffb300);
     const juce::Colour cRec    = juce::Colour (0xffdd2222);
     const juce::Colour cLoop   = juce::Colour (0xff00bcd4);
-    const juce::Colour cLink   = juce::Colour (0xff7b68ee);
+    const juce::Colour cLink   = juce::Colour (0xff00d7e8);
 
     configureTransportButton (toStartButton, "|<", Text::Secondary, "Return to start");
     configureTransportButton (backButton,    "<<", cRewind,         "Step back one bar");
 
     auto registerLafBtn = [this] (juce::TextButton& b, const juce::String& text,
-                                  juce::Colour tint, bool isToggle, const juce::String& tooltip)
+                                  juce::Colour tint, bool isToggle, const juce::String& tooltip,
+                                  TransportLAF::Style style = TransportLAF::Style::Solid)
     {
         b.setButtonText (text);
         b.setTooltip (tooltip);
         b.setClickingTogglesState (isToggle);
         b.setLookAndFeel (&laf);
-        laf.registerBtn (&b, tint);
+        laf.registerBtn (&b, tint, style);
     };
 
     registerLafBtn (playButton,   "PLAY", cPlay, true,  "Play");
     registerLafBtn (stopButton,   "STOP", cStop, false, "Stop");
     registerLafBtn (recordButton, "REC",  cRec,  true,  "Record");
-    registerLafBtn (cycleButton,  "LOOP", cLoop, true,  "Toggle looping");
+    registerLafBtn (cycleButton,  "LOOP", cLoop, true,  "Toggle looping", TransportLAF::Style::Outline);
 
     toStartButton.onClick = [this] { engine.rewind(); };
     backButton.onClick = [this]
@@ -178,7 +191,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
         linkButton.setTooltip ("Toggle Ableton Link");
         linkButton.setClickingTogglesState (true);
         linkButton.setLookAndFeel (&laf);
-        laf.registerBtn (&linkButton, cLink);
+        laf.registerBtn (&linkButton, cLink, TransportLAF::Style::Outline);
         linkButton.onStateChange = [this] { if (linkPtr) linkPtr->setEnabled (linkButton.getToggleState()); };
         addAndMakeVisible (linkButton);
     }
@@ -188,7 +201,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
 
     // Compact single-row transport: position + transport, locators, and
     // BPM/GRID/LINK laid out side by side (see computeLayout()).
-    setSize (MetroMetrics::grid * 128, MetroMetrics::grid * 13);
+    setSize (MetroMetrics::grid * 118, MetroMetrics::grid * 13);
     startTimerHz (20);
 }
 
@@ -200,6 +213,7 @@ FloatingTransportBar::~FloatingTransportBar()
     recordButton.setLookAndFeel (nullptr);
     cycleButton.setLookAndFeel (nullptr);
     linkButton.setLookAndFeel (nullptr);
+    dockButton.setLookAndFeel (nullptr);
     if (isOnDesktop())
         savePosition();
 }
@@ -262,9 +276,10 @@ void FloatingTransportBar::mouseDoubleClick (const juce::MouseEvent& e)
 }
 
 //==============================================================================
-// A single transport-first row, sized to exactly what it needs — no dead
-// space above or below. Left to right: musical position + transport cluster,
-// then the editable L/R locators, then BPM / GRID / LINK on the far right.
+// A single transport-first row, matching the reference mockup's left-to-right
+// order: transport cluster, BPM, position readout, L/R locators, LINK. The
+// grid/snap combo is no longer laid out here — the mockup doesn't show one,
+// so gridCombo stays hidden (see resized()) until there's a real place for it.
 FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 {
     Layout L;
@@ -277,10 +292,14 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     const int rowH = MetroMetrics::largeControlHeight;
     auto row = area.removeFromTop (rowH);
 
-    // ── Left: musical position + transport cluster ──────────────────────
-    L.positionField = row.removeFromLeft (MetroMetrics::grid * 21);
-    row.removeFromLeft (MetroMetrics::grid);
+    // ── Left: transport cluster ──────────────────────────────────────────
     L.transportRow = row.removeFromLeft (MetroMetrics::grid * 37);
+    row.removeFromLeft (MetroMetrics::grid * 2);
+
+    // ── BPM, then the small muted position readout ───────────────────────
+    L.tempoField   = row.removeFromLeft (MetroMetrics::grid * 9);
+    row.removeFromLeft (MetroMetrics::grid * 4);   // room for the "BPM" suffix drawn in paint()
+    L.positionField = row.removeFromLeft (MetroMetrics::grid * 17);
 
     row.removeFromLeft (MetroMetrics::grid * 2);
     L.divider1 = row.getX();
@@ -293,12 +312,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     L.divider2 = row.getX();
     row.removeFromLeft (MetroMetrics::grid * 2);
 
-    // ── Far right: BPM, grid snap, link — one row, in that order ────────
-    L.tempoCaption = row.removeFromLeft (MetroMetrics::grid * 4);
-    L.tempoField   = row.removeFromLeft (MetroMetrics::grid * 6);
-    row.removeFromLeft (MetroMetrics::grid);
-    L.gridField    = row.removeFromLeft (MetroMetrics::grid * 9);
-    row.removeFromLeft (MetroMetrics::grid);
+    // ── Far right: LINK ───────────────────────────────────────────────────
     L.linkField    = row.removeFromLeft (MetroMetrics::grid * 8);
 
     return L;
@@ -309,8 +323,10 @@ void FloatingTransportBar::resized()
     const auto L = computeLayout();
 
     auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::quarterGrid);
-    pinButton.setBounds (strip.removeFromLeft (MetroMetrics::grid * 6));
-    dockButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 7));
+    auto stripRight = strip.removeFromRight (MetroMetrics::grid * 14);
+    pinButton.setBounds (stripRight.removeFromLeft (MetroMetrics::grid * 6));
+    stripRight.removeFromLeft (MetroMetrics::halfGrid);
+    dockButton.setBounds (stripRight.removeFromLeft (MetroMetrics::grid * 7));
 
     // L/R captions sit outside their fields so the numerical values stay truly centred.
     auto locators = L.locatorsField;
@@ -333,7 +349,7 @@ void FloatingTransportBar::resized()
     setLeftButton.setVisible (false);
     setRightButton.setVisible (false);
     tempoLabel.setBounds (L.tempoField);
-    gridCombo.setBounds (L.gridField);
+    gridCombo.setVisible (false);   // no grid/snap control in the reference mockup
     if (linkPtr != nullptr)
         linkButton.setBounds (L.linkField);
 }
@@ -357,9 +373,9 @@ void FloatingTransportBar::paint (juce::Graphics& g)
         g.fillRoundedRectangle ((float) stripCentre.x - 23.0f, (float) stripCentre.y - 4.0f + i * 6.0f,
                                 46.0f, 3.0f, 1.5f);
 
-    g.setColour (Text::Muted);
+    g.setColour (Text::Secondary);
     g.setFont (MetroTypography::caption());
-    g.drawText ("TRANSPORT", L.titleStrip.withTrimmedLeft (MetroMetrics::grid * 8), juce::Justification::centredLeft);
+    g.drawText ("TRANSPORT", L.titleStrip.withTrimmedLeft (MetroMetrics::grid * 2), juce::Justification::centredLeft);
 
     // Locator captions are painted separately so their editable values can be centred.
     g.setColour (Text::Muted);
@@ -367,13 +383,14 @@ void FloatingTransportBar::paint (juce::Graphics& g)
     g.drawText ("L", leftLocatorLabel.getBounds().translated (-MetroMetrics::grid * 2, 0), juce::Justification::centred);
     g.drawText ("R", rightLocatorLabel.getBounds().translated (-MetroMetrics::grid * 2, 0), juce::Justification::centred);
 
-    // BPM is the one far-right field whose value alone ("120.00") wouldn't
-    // otherwise be self-explanatory the way GRID (shows "1/16") and LINK
-    // (shows its own name) already are — everything else reads fine without
-    // a caption, which is what let row 1 shrink down to just the readouts.
+    // BPM's value alone ("120.00") wouldn't otherwise be self-explanatory —
+    // draw the unit as a small trailing suffix right after the number,
+    // matching the mockup's "120.0 BPM" treatment (was a leading caption box).
     g.setColour (Text::Muted);
     g.setFont (MetroTypography::caption());
-    g.drawText ("BPM", L.tempoCaption, juce::Justification::centredLeft);
+    g.drawText ("BPM", tempoLabel.getBounds().translated (MetroMetrics::halfGrid, 0)
+                                              .withWidth (MetroMetrics::grid * 3),
+                juce::Justification::centredLeft);
 
     g.setColour (Base::Border);
     for (int x : { L.divider1, L.divider2 })
