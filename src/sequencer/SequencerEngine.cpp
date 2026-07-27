@@ -739,6 +739,11 @@ void SequencerEngine::setRecordingTrack (int trackIndex) noexcept
     impl->openRecNotes.clearQuick();  // discard any held notes from previous selection
 }
 
+int SequencerEngine::getRecordingTrackIndex() const noexcept
+{
+    return impl->recordingTrackIndex.load (std::memory_order_relaxed);
+}
+
 //==============================================================================
 //  drainRecordedEvents()  —  MESSAGE THREAD ONLY.
 //

@@ -240,6 +240,13 @@ public:
      *  Pass -1 to disable recording. */
     void setRecordingTrack (int trackIndex) noexcept;
 
+    /** Which track index currently receives recorded MIDI, -1 if none.
+     *  Today this mirrors track selection (see ArrangeView's selection
+     *  handler) rather than an independent per-track arm state — added so
+     *  TrackHeaderStrip's R button can show the real target instead of a
+     *  UI-only stand-in. */
+    int getRecordingTrackIndex() const noexcept;
+
     /** Drains recorded-note events captured by the audio thread during
      *  processBlock() and applies them to the target clip via
      *  MidiClip::addNote()/setNoteDuration().

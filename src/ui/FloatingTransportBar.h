@@ -25,6 +25,8 @@
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/AbletonLink.h"
+#include "TransportBar.h"   // TransportLAF — shared flat-tile look so PLAY/STOP/REC/LOOP/LINK
+                            // render identically here and in the docked arranger transport.
 
 class SequencerEngine;
 
@@ -117,10 +119,17 @@ private:
     bool draggingTitleStrip = false;
 
     // ── Bottom row: transport controls ──────────────────────────────────
+    // playButton/stopButton/recordButton/cycleButton/linkButton share
+    // TransportLAF with the docked TransportBar (same flat tile render,
+    // same semantic colours) for visual unity between docked and floating
+    // states. toStartButton/backButton have no docked-transport equivalent
+    // (TransportBar only has a single "BACK" rewind action) so they keep
+    // their own neutral glyph styling via configureTransportButton().
+    TransportLAF laf;
     juce::TextButton toStartButton { "|<" };
     juce::TextButton backButton    { "<<" };
-    juce::TextButton playButton    { ">" };
-    juce::TextButton stopButton    { "[]" };
+    juce::TextButton playButton    { "PLAY" };
+    juce::TextButton stopButton    { "STOP" };
     juce::TextButton recordButton  { "REC" };
     juce::TextButton cycleButton   { "LOOP" };
     juce::TextButton setLeftButton  { "SET LEFT" };

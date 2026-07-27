@@ -87,15 +87,32 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     // Use ASCII labels here: the embedded UI typeface does not include the
     // Unicode transport glyphs, which otherwise render as missing characters
     // on the detached desktop component.
-    configureTransportButton (toStartButton, "|<",   Text::Secondary,   "Return to start");
-    configureTransportButton (backButton,    "<<",   Text::Secondary,   "Step back one bar");
-    configureTransportButton (playButton,    ">",    Transport::Play,   "Play");
-    configureTransportButton (stopButton,    "[]",   Accent::Orange,    "Stop");
-    configureTransportButton (recordButton,  "REC",  Transport::Record, "Record");
-    configureTransportButton (cycleButton,   "LOOP", Accent::Cyan,      "Toggle looping");
-    playButton.setClickingTogglesState (true);
-    recordButton.setClickingTogglesState (true);
-    cycleButton.setClickingTogglesState (true);
+    // Same TouchDAW colours as the docked TransportBar (TransportBar.h):
+    // rewind=grey, play=green, stop=amber, rec=red, loop=teal, link=purple.
+    const juce::Colour cRewind = juce::Colour (0xff888888);
+    const juce::Colour cPlay   = juce::Colour (0xff2ecc40);
+    const juce::Colour cStop   = juce::Colour (0xffffb300);
+    const juce::Colour cRec    = juce::Colour (0xffdd2222);
+    const juce::Colour cLoop   = juce::Colour (0xff00bcd4);
+    const juce::Colour cLink   = juce::Colour (0xff7b68ee);
+
+    configureTransportButton (toStartButton, "|<", Text::Secondary, "Return to start");
+    configureTransportButton (backButton,    "<<", cRewind,         "Step back one bar");
+
+    auto registerLafBtn = [this] (juce::TextButton& b, const juce::String& text,
+                                  juce::Colour tint, bool isToggle, const juce::String& tooltip)
+    {
+        b.setButtonText (text);
+        b.setTooltip (tooltip);
+        b.setClickingTogglesState (isToggle);
+        b.setLookAndFeel (&laf);
+        laf.registerBtn (&b, tint);
+    };
+
+    registerLafBtn (playButton,   "PLAY", cPlay, true,  "Play");
+    registerLafBtn (stopButton,   "STOP", cStop, false, "Stop");
+    registerLafBtn (recordButton, "REC",  cRec,  true,  "Record");
+    registerLafBtn (cycleButton,  "LOOP", cLoop, true,  "Toggle looping");
 
     toStartButton.onClick = [this] { engine.rewind(); };
     backButton.onClick = [this]
@@ -157,9 +174,11 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     // ── Ableton Link ─────────────────────────────────────────────────────
     if (linkPtr != nullptr)
     {
-        configureChrome (linkButton, "LINK", "Toggle Ableton Link");
+        linkButton.setButtonText ("LINK");
+        linkButton.setTooltip ("Toggle Ableton Link");
         linkButton.setClickingTogglesState (true);
-        linkButton.setColour (juce::TextButton::buttonOnColourId, Accent::Purple.withAlpha (0.35f));
+        linkButton.setLookAndFeel (&laf);
+        laf.registerBtn (&linkButton, cLink);
         linkButton.onStateChange = [this] { if (linkPtr) linkPtr->setEnabled (linkButton.getToggleState()); };
         addAndMakeVisible (linkButton);
     }
@@ -176,6 +195,11 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
 FloatingTransportBar::~FloatingTransportBar()
 {
     stopTimer();
+    playButton.setLookAndFeel (nullptr);
+    stopButton.setLookAndFeel (nullptr);
+    recordButton.setLookAndFeel (nullptr);
+    cycleButton.setLookAndFeel (nullptr);
+    linkButton.setLookAndFeel (nullptr);
     if (isOnDesktop())
         savePosition();
 }

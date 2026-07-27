@@ -37,6 +37,7 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const auto info  = engine.getTrackInfo (i);
+            const bool recordArmed = (i == engine.getRecordingTrackIndex());
             const auto rowR  = getRowBounds (i);
             const bool sel   = (i == selectedTrack);
 
@@ -65,16 +66,11 @@ public:
             const auto soloR = recR.translated (-(btnW + btnGap), 0);
             const auto muteR = soloR.translated (-(btnW + btnGap), 0);
 
-            // Reserved trailing width for the M/S/R cluster (3 buttons + 2 gaps)
-            // plus recR's own right margin, so the track name never draws under
-            // these buttons regardless of trackH.
-            const int muteW = btnW * 3 + btnGap * 2 + 4;
-
             g.setColour (info.enabled ? juce::Colour (0xFF2A8060) : juce::Colour (0xFF602020));
             g.fillRoundedRectangle (muteR.toFloat(), 0.0f);
             g.setColour (info.solo ? juce::Colour (0xFFD1B34C) : theme.button);
             g.fillRoundedRectangle (soloR.toFloat(), 0.0f);
-            g.setColour (recordArmed[i] ? juce::Colour (0xFFD95454) : theme.button);
+            g.setColour (recordArmed ? juce::Colour (0xFFD95454) : theme.button);
             g.fillRoundedRectangle (recR.toFloat(), 0.0f);
 
             g.setColour (juce::Colours::white.withAlpha (0.7f));
@@ -167,11 +163,13 @@ public:
         }
         else if (recR.contains (e.getPosition()) && i < kMaxTracks)
         {
-            // UI-only toggle for now — SequencerEngine has no per-track
-            // record-arm state yet, only the global isRecording() flag
-            // (see TrackInspector's recordButton). Flip this to read/write
-            // real engine state once that's added.
-            recordArmed[i] = ! recordArmed[i];
+            // Toggles the real recording-target track (SequencerEngine's
+            // recordingTrackIndex). Note this is also driven by track
+            // *selection* elsewhere (see ArrangeView's selection handler),
+            // so explicitly arming a track here and then selecting a
+            // different one will silently re-arm that one — decoupling
+            // "armed" from "selected" would need a change there too.
+            engine.setRecordingTrack (i == engine.getRecordingTrackIndex() ? -1 : i);
         }
         else
         {
@@ -235,7 +233,6 @@ private:
     static constexpr int kMaxTracks = SequencerEngine::kActivityFlagCount;
     static constexpr int kHoldTicks = 3;
     int midiHoldCounters[kMaxTracks] = {};
-    bool recordArmed[kMaxTracks] = {};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrackHeaderStrip)
 };
