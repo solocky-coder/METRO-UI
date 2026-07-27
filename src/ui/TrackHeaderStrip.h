@@ -94,12 +94,14 @@ public:
                 g.fillRect (meterR.withTrimmedTop (meterR.getHeight() * 3 / 5));
             }
 
-            // Track name
+            // Track name — width trimmed to clear the M/S/R + meter cluster
+            // on the right (meterR is its leftmost extent, computed above).
+            const int reservedRight = rowR.getRight() - meterR.getX() + 6;
             g.setFont (juce::Font (juce::jlimit (12.0f, 16.0f, (float)trackH * 0.25f), juce::Font::bold));
             g.setColour (sel ? info.colour : theme.foreground);
             g.drawText (info.name, rowR.getX() + 14, rowR.getY(),
-                        rowR.getWidth() - muteW - 22, trackH,
-                        juce::Justification::centredLeft, true);
+                        rowR.getWidth() - reservedRight - 14,
+                        trackH, juce::Justification::centredLeft, true);
 
             // Type + channel badge
             if (trackH >= 32)
