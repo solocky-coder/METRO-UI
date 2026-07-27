@@ -12,11 +12,11 @@ namespace dysekt::metro
 using Colour = juce::Colour;
 
 namespace Base {
-inline const Colour Background{0xFF181818};
-inline const Colour Surface{0xFF202020};
-inline const Colour SurfaceAlt{0xFF252525};
-inline const Colour Elevated{0xFF2A2A2A};
-inline const Colour Border{0xFF343434};
+inline const Colour Background{0xFF070B0D};   // matches MetroTheme.cpp's t.background
+inline const Colour Surface{0xFF0C1418};      // matches MetroTheme.cpp's t.waveformBg
+inline const Colour SurfaceAlt{0xFF132027};   // matches MetroTheme.cpp's t.darkBar
+inline const Colour Elevated{0xFF1A2C34};     // matches MetroTheme.cpp's t.buttonHover
+inline const Colour Border{0xFF29404A};       // matches MetroTheme.cpp's t.separator
 inline const Colour White{0xFFFFFFFF};
 inline const Colour Black{0xFF000000};
 inline const Colour Disabled{0xFF666666};
