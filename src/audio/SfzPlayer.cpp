@@ -235,7 +235,9 @@ void SfzPlayer::setPan (float p)
         // CC10 pan: 0 = hard L, 64 = centre, 127 = hard R
         const int cc10 = juce::jlimit (0, 127,
             juce::roundToInt ((p + 1.0f) * 0.5f * 127.0f));
-        for (int ch = 0; ch < 16; ++ch)
+        // Channels 0/1 (MIDI ch 1/2) are reserved for the Slicer/SFZ-Player —
+        // never write CC data there, even though no note ever routes to them.
+        for (int ch = 2; ch < 16; ++ch)
             fluid_synth_cc (synth, ch, 10, cc10);
     }
 #endif
@@ -254,7 +256,9 @@ void SfzPlayer::setFineTune (float cents)
     fineTune.store (juce::jlimit (-100.0f, 100.0f, cents), std::memory_order_relaxed);
 #if DYSEKT_HAS_FLUIDSYNTH
     if (synth != nullptr && !isSfzFile)
-        for (int ch = 0; ch < 16; ++ch)
+        // Channels 0/1 (MIDI ch 1/2) are reserved for the Slicer/SFZ-Player —
+        // never write generator data there, even though no note ever routes to them.
+        for (int ch = 2; ch < 16; ++ch)
             fluid_synth_set_gen (synth, ch, GEN_FINETUNE, cents);
 #endif
     // sfizz fine-tune is applied via pitch-bend offset on next note — no direct API
@@ -349,7 +353,12 @@ void SfzPlayer::setPresetByIndex (int idx)
 
 void SfzPlayer::setPresetOnChannel (int channel, int bank, int preset)
 {
-    if (channel < 0 || channel > 15) return;
+    // Channels 0/1 (MIDI ch 1/2) are permanently reserved for the
+    // Slicer/SFZ-Player. Every current caller already clamps to [2, 15],
+    // but that was caller discipline only — nothing here actually stopped
+    // a future call site from loading a preset onto a reserved channel.
+    // Guard it here too, same as previewPreset()'s isSfzFile check.
+    if (channel < 2 || channel > 15) return;
     // Pack bank + preset into a single int. Bank fits in upper 16 bits (max 16383),
     // preset in lower 16 bits (max 127 for GM, up to 16383 for extended SF2).
     const int packed = (juce::jlimit (0, 0x7FFF, bank) << 16)
@@ -371,9 +380,12 @@ void SfzPlayer::setPresetOnChannel (int channel, int bank, int preset)
 //  Per-channel mixer strip — UI-thread setters + audio-thread applicator
 // =============================================================================
 
+// Channels 0/1 (MIDI ch 1/2) are permanently reserved for the Slicer/SFZ-Player
+// throughout this file — every accessor below rejects them, not just callers.
+
 SfzPlayer::ChannelStrip SfzPlayer::getChannelStrip (int ch) const noexcept
 {
-    if (ch < 0 || ch >= 16) return {};
+    if (ch < 2 || ch >= 16) return {};
     const auto& s = channelStrips[ch];
     ChannelStrip out;
     out.volume     = s.volume    .load (std::memory_order_relaxed);
@@ -386,7 +398,7 @@ SfzPlayer::ChannelStrip SfzPlayer::getChannelStrip (int ch) const noexcept
 
 void SfzPlayer::setChannelVolume (int ch, float v) noexcept
 {
-    if (ch < 0 || ch >= 16) return;
+    if (ch < 2 || ch >= 16) return;
     channelStrips[ch].volume .store (juce::jlimit (0.f, 1.f, v), std::memory_order_relaxed);
     channelStrips[ch].dirty  .store (true,                        std::memory_order_relaxed);
     anyStripDirty            .store (true,                        std::memory_order_release);
@@ -394,7 +406,7 @@ void SfzPlayer::setChannelVolume (int ch, float v) noexcept
 
 void SfzPlayer::setChannelPan (int ch, float p) noexcept
 {
-    if (ch < 0 || ch >= 16) return;
+    if (ch < 2 || ch >= 16) return;
     channelStrips[ch].pan   .store (juce::jlimit (-1.f, 1.f, p), std::memory_order_relaxed);
     channelStrips[ch].dirty .store (true,                         std::memory_order_relaxed);
     anyStripDirty           .store (true,                         std::memory_order_release);
@@ -402,7 +414,7 @@ void SfzPlayer::setChannelPan (int ch, float p) noexcept
 
 void SfzPlayer::setChannelReverbSend (int ch, float s) noexcept
 {
-    if (ch < 0 || ch >= 16) return;
+    if (ch < 2 || ch >= 16) return;
     channelStrips[ch].reverbSend.store (juce::jlimit (0.f, 1.f, s), std::memory_order_relaxed);
     channelStrips[ch].dirty     .store (true,                        std::memory_order_relaxed);
     anyStripDirty               .store (true,                        std::memory_order_release);
@@ -410,7 +422,7 @@ void SfzPlayer::setChannelReverbSend (int ch, float s) noexcept
 
 void SfzPlayer::setChannelMuted (int ch, bool mute) noexcept
 {
-    if (ch < 0 || ch >= 16) return;
+    if (ch < 2 || ch >= 16) return;
     auto& s = channelStrips[ch];
     if (mute && ! s.muted.load (std::memory_order_relaxed))
         s.preMuteVol.store (s.volume.load (std::memory_order_relaxed), std::memory_order_relaxed);
@@ -421,8 +433,10 @@ void SfzPlayer::setChannelMuted (int ch, bool mute) noexcept
 
 void SfzPlayer::soloChannel (int ch) noexcept
 {
-    if (ch < 0 || ch >= 16) return;
-    for (int i = 0; i < 16; ++i)
+    if (ch < 2 || ch >= 16) return;
+    // i starts at 2 — channels 0/1 (MIDI ch 1/2) are reserved for the
+    // Slicer/SFZ-Player and must never be muted/unmuted by SF2 solo logic.
+    for (int i = 2; i < 16; ++i)
     {
         const bool shouldMute = (i != ch);
         auto& s = channelStrips[i];
@@ -436,7 +450,7 @@ void SfzPlayer::soloChannel (int ch) noexcept
 
 void SfzPlayer::clearSolo() noexcept
 {
-    for (int i = 0; i < 16; ++i)
+    for (int i = 2; i < 16; ++i)
     {
         auto& s = channelStrips[i];
         if (s.muted.load (std::memory_order_relaxed))
@@ -457,7 +471,11 @@ void SfzPlayer::applyDirtyStrips()
     if (! anyStripDirty.load (std::memory_order_acquire)) return;
     anyStripDirty.store (false, std::memory_order_relaxed);
 
-    for (int ch = 0; ch < 16; ++ch)
+    // Channels 0/1 (MIDI ch 1/2) are reserved for the Slicer/SFZ-Player.
+    // clearChannelPresets() marks every strip 0-15 dirty as part of its
+    // reset sweep, so this loop must exclude them explicitly rather than
+    // relying on the dirty flag alone.
+    for (int ch = 2; ch < 16; ++ch)
     {
         auto& s = channelStrips[ch];
         if (! s.dirty.load (std::memory_order_relaxed)) continue;
@@ -511,6 +529,18 @@ void SfzPlayer::previewPreset (int bank, int preset)
     // guard here too so a future refactor can't silently break it.
     jassert (! isSfzFile);
     if (isSfzFile) return;
+
+    // Refuse to audition if a chromatic slice currently owns MIDI channel 16
+    // (kPreviewChannel, 0-based 15). Unlike the SF2 multi-timbral assignment
+    // path (SfzDropdownPanel::onChannelChanged), previewPreset() has no other
+    // way to know about chromatic ownership — the preview channel is fixed
+    // and never registered in sfPlayerChannelMask/savedSfPlayerChannelMask.
+    // Without this guard, a chromatic slice on channel 16 would have its
+    // note-on events land on whatever preset is currently highlighted in the
+    // browser instead of (or in addition to) the slice's own sample.
+    const uint32_t chromaMask = chromaticOwnedChannelMask.load (std::memory_order_relaxed);
+    if (chromaMask & (1u << (kPreviewChannel + 1)))
+        return;
 
     // Load onto the preview channel (15) only.  Do NOT touch channel 0 —
     // it may hold a real user-assigned preset in multi-timbral mode, and
@@ -1186,7 +1216,8 @@ namespace
 // ── applyFluidAdsrFromUi ──────────────────────────────────────────────────────
 //  Writes the current UI A/D/S/R values (juceAdsrAttack/Decay/Sustain/Release —
 //  the same atomics the amp-envelope graph and LCD display read/write) into
-//  FluidSynth's per-channel generators on all 16 channels. FluidSynth then
+//  FluidSynth's per-channel generators on channels 2-15 (0-based; channels 0/1
+//  are reserved for the Slicer/SFZ-Player and are never touched). FluidSynth then
 //  shapes each voice's envelope internally and independently, so releasing
 //  one note no longer affects any other currently-sounding note the way the
 //  old shared post-mix JUCE ADSR did. Called after load, after every
@@ -1203,7 +1234,7 @@ void SfzPlayer::applyFluidAdsrFromUi()
     const float susCb = levelPercentToSustainCentibels (juceAdsrSustain.load (std::memory_order_relaxed) * 100.0f);
     const float relTc = secondsToTimecents (juceAdsrRelease.load (std::memory_order_relaxed));
 
-    for (int ch = 0; ch < 16; ++ch)
+    for (int ch = 2; ch < 16; ++ch)
     {
         fluid_synth_set_gen (synth, ch, GEN_VOLENVATTACK,  atkTc);
         fluid_synth_set_gen (synth, ch, GEN_VOLENVDECAY,   decTc);
@@ -1388,7 +1419,11 @@ void SfzPlayer::applyPendingChannelChanges()
 
     const int offset = fluid_synth_get_bank_offset (synth, sfontId);
 
-    for (int ch = 0; ch < 16; ++ch)
+    // Channels 0/1 (MIDI ch 1/2) are reserved for the Slicer/SFZ-Player.
+    // setPresetOnChannel() already refuses to populate pendingChannelAssignment[0/1],
+    // but starting this sweep at 2 keeps that invariant visible here too rather
+    // than depending solely on the write-side guard.
+    for (int ch = 2; ch < 16; ++ch)
     {
         const int packed = pendingChannelAssignment[ch].exchange (
                                -1, std::memory_order_acq_rel);

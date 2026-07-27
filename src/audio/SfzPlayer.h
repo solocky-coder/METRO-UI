@@ -103,6 +103,17 @@ public:
         return liveInputChannelMask.load (std::memory_order_relaxed);
     }
 
+    /** Bitmask (bit N = MIDI channel N, 1-based) of channels currently owned
+     *  by chromatic slices. DysektProcessor::rebuildChromaticChannelMask()
+     *  keeps this in sync. previewPreset() consults it so preset audition
+     *  can never load onto — and steal MIDI destined for — a channel a
+     *  chromatic slice is actively using, even though the preview channel
+     *  is otherwise untracked by sfPlayerChannelMask/sfzPlayer2ChannelMask. */
+    void setChromaticOwnedChannelMask (uint32_t mask) noexcept
+    {
+        chromaticOwnedChannelMask.store (mask, std::memory_order_relaxed);
+    }
+
     float      getVolume()      const noexcept { return volume.load(); }
     int        getTranspose()   const noexcept { return transpose.load(); }
     float      getPitchShift()  const noexcept { return pitchShift.load (std::memory_order_relaxed); }
@@ -351,6 +362,10 @@ private:
     // receive fan-out of incoming MIDI ch-1 controller input.
     // Written from UI thread via setLiveInputChannelMask(); read on audio thread.
     std::atomic<uint16_t> liveInputChannelMask { 0 };
+
+    // Bitmask (bit N = MIDI channel N, 1-based) of channels owned by chromatic
+    // slices — see setChromaticOwnedChannelMask() doc comment above.
+    std::atomic<uint32_t> chromaticOwnedChannelMask { 0u };
 
     // ── Scratch buffer for FluidSynth interleaved → planar conversion ─────────
     std::vector<float> scratchL, scratchR;

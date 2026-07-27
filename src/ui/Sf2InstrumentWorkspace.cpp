@@ -551,7 +551,9 @@ void Sf2InstrumentWorkspace::handleChannelAssigned (int presetIdx, int ch)
 
     if (ch == 0)
     {
-        for (int c = 0; c < 16; ++c)
+        // Channels 0/1 (MIDI ch 1/2) are reserved for the Slicer/SFZ-Player
+        // and are never valid targets, so the sweep starts at 2.
+        for (int c = 2; c < 16; ++c)
             processor.sfzPlayer.setPresetOnChannel (c, 0, 0);
 
         const auto& chMap = programGrid.getPresetChannels();

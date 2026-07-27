@@ -1944,6 +1944,17 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
      const bool sfIsOmni = ((sfMask & kOmniMask) == kOmniMask);
      const uint32_t excludeMask = (sfIsOmni || sfMask == 0) ? 0u : sfMask;
 
+     // Channel 16 is SfzPlayer's hardcoded preset-preview scratch slot
+     // (SfzPlayer::kPreviewChannel, 0-based 15) — see previewPreset(). It can
+     // be actively loaded with whatever preset is highlighted in the SF2
+     // browser regardless of savedSfPlayerChannelMask, including in the
+     // sfMask==0 / omni cases above where excludeMask is otherwise empty.
+     // Always keep it out of the picker so a chromatic slice can't silently
+     // collide with an in-progress preset audition. Still allow it through
+     // if it's already the slice's current value, so an existing assignment
+     // doesn't just vanish from the menu.
+     constexpr int kSf2PreviewMidiChannel = 16;
+
      // Build parallel arrays: display names and their actual channel values.
      // This is necessary because SF-owned channels may be skipped, making item
      // positions non-contiguous with channel numbers.
@@ -1954,6 +1965,8 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
      {
          if (excludeMask != 0 && (excludeMask & (1u << i)))
              continue;   // owned by SF2 multitimbral channel — not available
+         if (i == kSf2PreviewMidiChannel && i != cur)
+             continue;   // reserved for SF2 preset preview/audition
          chNames.add ("Channel " + juce::String (i));
          chValues.push_back (i);
      }

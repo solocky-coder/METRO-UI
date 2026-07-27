@@ -746,6 +746,11 @@ void DysektProcessor::rebuildChromaticChannelMask()
     }
     chromaticSliceChannelMask.store (mask, std::memory_order_relaxed);
 
+    // Let the SF2/FluidSynth engine know which channels are chromatic-owned,
+    // so preset preview/audition (which bypasses sfPlayerChannelMask entirely
+    // — see SfzPlayer::previewPreset) can refuse to load onto one of them.
+    sfzPlayer.setChromaticOwnedChannelMask (mask);
+
     // Evict any chromatic-owned channels from the SF player masks so the two
     // channel pools remain mutually exclusive.  Both the live routing mask and
     // the saved mask (which survives Slicer-mode zeroing) are scrubbed.
@@ -3849,28 +3854,25 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             const uint32_t sfMaskBuild = sfPlayerChannelMask.load (std::memory_order_relaxed)
                                           & kSf2AllowedMidiChannelMask;
 
-            if (sfMaskBuild != 0)
+            // Chromatic slices always win a channel they own, even in the
+            // "omni"/full-multitimbral configuration below. Previously the
+            // allChannels fast path forwarded every channel 3-16 unconditionally
+            // once sfMaskBuild had all 14 bits set, which bypassed
+            // rebuildChromaticChannelMask()'s eviction entirely and let a
+            // chromatic slice's notes leak straight into FluidSynth. Folding
+            // the exclusion into a single effective mask removes that gap —
+            // the "all channels" case is now just "every channel not chromatic-owned".
+            const uint32_t chromaMask   = chromaticSliceChannelMask.load (std::memory_order_relaxed);
+            const uint32_t effectiveMask = sfMaskBuild & ~chromaMask;
+
+            if (effectiveMask != 0)
             {
-                const bool allChannels = ((sfMaskBuild & kSf2AllowedMidiChannelMask) == kSf2AllowedMidiChannelMask); // bits 3-16 all set
-                if (allChannels)
+                for (const auto meta : midi)
                 {
-                    for (const auto meta : midi)
-                    {
-                        const auto& msg = meta.getMessage();
-                        const int ch = msg.getChannel();   // 1-based
-                        if (ch >= 3 && ch <= 16)
-                            sfzMidiBuf.addEvent (msg, meta.samplePosition);
-                    }
-                }
-                else
-                {
-                    for (const auto meta : midi)
-                    {
-                        const auto& msg = meta.getMessage();
-                        const int ch = msg.getChannel();   // 1-based
-                        if (ch >= 3 && ch <= 16 && (sfMaskBuild & (1u << ch)))
-                            sfzMidiBuf.addEvent (msg, meta.samplePosition);
-                    }
+                    const auto& msg = meta.getMessage();
+                    const int ch = msg.getChannel();   // 1-based
+                    if (ch >= 3 && ch <= 16 && (effectiveMask & (1u << ch)))
+                        sfzMidiBuf.addEvent (msg, meta.samplePosition);
                 }
             }
 

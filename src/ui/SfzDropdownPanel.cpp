@@ -58,7 +58,9 @@ SfzDropdownPanel::SfzDropdownPanel (DysektProcessor& p)
             // Deactivate — silence all FluidSynth channels, then reload only the
             // still-assigned presets.  This is the safest way to remove one
             // entry without needing to track which channel it was on here.
-            for (int c = 0; c < 16; ++c)
+            // Channels 0/1 (MIDI ch 1/2) are reserved for the Slicer/SFZ-Player
+            // and are never valid targets, so the sweep starts at 2.
+            for (int c = 2; c < 16; ++c)
                 processor.sfzPlayer.setPresetOnChannel (c, 0, 0);
 
             const auto& chMap = programGrid.getPresetChannels();
