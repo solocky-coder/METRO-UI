@@ -175,7 +175,10 @@ void GlobalEqPanel::paint (juce::Graphics& g)
     // ── EQ curve ─────────────────────────────────────────────────────────────
     auto curve = buildCurve();
 
-    // Filled area
+    // Filled area — the soft glow-under-curve look. Metro skips this; its
+    // flat aesthetic doesn't carry translucent fills the way the gradient
+    // themes do, so a bare stroke reads cleaner against the flat frame.
+    if (theme.name != "metro")
     {
         auto filled = curve;
         filled.lineTo (plot.getRight(), gainToY (0.f));
@@ -185,9 +188,10 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         g.fillPath (filled);
     }
 
-    // Curve stroke
-    g.setColour (theme.accent.withAlpha (0.85f));
-    g.strokePath (curve, juce::PathStrokeType (1.8f,
+    // Curve stroke — slightly thinner and fuller-alpha for Metro, matching
+    // its flat/precise line language rather than the softer glow strokes.
+    g.setColour (theme.accent.withAlpha (theme.name == "metro" ? 0.95f : 0.85f));
+    g.strokePath (curve, juce::PathStrokeType (theme.name == "metro" ? 1.4f : 1.8f,
                           juce::PathStrokeType::curved,
                           juce::PathStrokeType::rounded));
 
@@ -203,24 +207,44 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         float x   = n.pos.x;
         float y   = n.pos.y;
         auto  col = theme.accent.withAlpha (bandAlpha[i]);
+        const bool active = (dragBand == i);
 
-        // Shadow
-        g.setColour (juce::Colours::black.withAlpha (0.45f));
-        g.fillEllipse (x - kNodeRadius + 1.f, y - kNodeRadius + 1.f,
-                       kNodeRadius * 2.f, kNodeRadius * 2.f);
+        if (theme.name == "metro")
+        {
+            // Flat Metro tile, same restraint as TransportLAF: no shadow,
+            // no gradient — a semantic-tinted fill and a hairline border
+            // that brightens on interaction instead of adding depth.
+            g.setColour (theme.button.interpolatedWith (col, active ? 0.55f : 0.30f));
+            g.fillEllipse (x - kNodeRadius, y - kNodeRadius,
+                           kNodeRadius * 2.f, kNodeRadius * 2.f);
 
-        // Fill
-        g.setColour (col);
-        g.fillEllipse (x - kNodeRadius, y - kNodeRadius,
-                       kNodeRadius * 2.f, kNodeRadius * 2.f);
+            g.setColour (col.withAlpha (active ? 0.85f : 0.45f));
+            g.drawEllipse (x - kNodeRadius, y - kNodeRadius,
+                           kNodeRadius * 2.f, kNodeRadius * 2.f, 0.75f);
+        }
+        else
+        {
+            // Shadow
+            g.setColour (juce::Colours::black.withAlpha (0.45f));
+            g.fillEllipse (x - kNodeRadius + 1.f, y - kNodeRadius + 1.f,
+                           kNodeRadius * 2.f, kNodeRadius * 2.f);
 
-        // Border
-        g.setColour (theme.foreground.withAlpha (0.55f));
-        g.drawEllipse (x - kNodeRadius, y - kNodeRadius,
-                       kNodeRadius * 2.f, kNodeRadius * 2.f, 1.f);
+            // Fill
+            g.setColour (col);
+            g.fillEllipse (x - kNodeRadius, y - kNodeRadius,
+                           kNodeRadius * 2.f, kNodeRadius * 2.f);
 
-        // Label inside node
-        g.setColour (theme.background.withAlpha (0.90f));
+            // Border
+            g.setColour (theme.foreground.withAlpha (0.55f));
+            g.drawEllipse (x - kNodeRadius, y - kNodeRadius,
+                           kNodeRadius * 2.f, kNodeRadius * 2.f, 1.f);
+        }
+
+        // Label inside node — Metro's flat fill is lighter than the
+        // gradient themes' full-saturation fill, so a background-colour
+        // label doesn't read; use foreground instead.
+        g.setColour (theme.name == "metro" ? theme.foreground.withAlpha (0.90f)
+                                            : theme.background.withAlpha (0.90f));
         g.setFont (DysektLookAndFeel::makeFont (i == BLowMid || i == BHighMid ? 6.f : 7.5f, true));
         g.drawText (bandLabels[i],
                     juce::Rectangle<float> (x - kNodeRadius, y - kNodeRadius,
