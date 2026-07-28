@@ -678,19 +678,43 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         fineZone = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobCellH + 6,
                                           transZone.getWidth(), 16);
 
-        envelopeZone = c;   // remainder of col2 becomes the envelope
-        envelopeZone.setY (col2Zone.getY() + 200);
-        envelopeZone.setHeight (col2Zone.getHeight() - 200);
-        envelopeZone = envelopeZone.reduced (kPad, kPad);
+        auto bottom = c;   // remainder of col2, below the knob row
+        bottom.setY (col2Zone.getY() + 200);
+        bottom.setHeight (col2Zone.getHeight() - 200);
+        bottom = bottom.reduced (kPad, kPad);
 
-        auto env = envelopeZone;
-        auto labelRow = env.removeFromBottom (18);
-        envelopeGraphZone = env;
-        const int quarter = labelRow.getWidth() / 4;
-        envAttackLabelZone  = labelRow.removeFromLeft (quarter);
-        envDecayLabelZone   = labelRow.removeFromLeft (quarter);
-        envSustainLabelZone = labelRow.removeFromLeft (quarter);
-        envReleaseLabelZone = labelRow;
+        // Compact tab row: ENVELOPE / FILTER.
+        col2TabZone = bottom.removeFromTop (22);
+        envTabZone    = col2TabZone.removeFromLeft (col2TabZone.getWidth() / 2);
+        filterTabZone = col2TabZone;
+        bottom.removeFromTop (kPad);
+
+        // Clear the inactive mode's zones so hidden controls can't be clicked.
+        envelopeZone = {}; envelopeGraphZone = {};
+        envAttackLabelZone = {}; envDecayLabelZone = {};
+        envSustainLabelZone = {}; envReleaseLabelZone = {};
+        filterCutoffZone = {}; filterResonanceZone = {};
+
+        if (col2Mode == Col2Mode::Envelope)
+        {
+            envelopeZone = bottom;
+
+            auto env = envelopeZone;
+            auto labelRow = env.removeFromBottom (18);
+            envelopeGraphZone = env;
+            const int quarter = labelRow.getWidth() / 4;
+            envAttackLabelZone  = labelRow.removeFromLeft (quarter);
+            envDecayLabelZone   = labelRow.removeFromLeft (quarter);
+            envSustainLabelZone = labelRow.removeFromLeft (quarter);
+            envReleaseLabelZone = labelRow;
+        }
+        else
+        {
+            auto filt = bottom;
+            filterCutoffZone = filt.removeFromTop (34);
+            filt.removeFromTop (kPad);
+            filterResonanceZone = filt.removeFromTop (34);
+        }
     }
 
     // ── Column 3 — tabs, reverb sliders, MIDI input, output, keyboard ──────
@@ -781,13 +805,37 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
                                            transZone.getWidth(), 16);
         c.removeFromTop (26);
 
-        auto labelRow = c.removeFromBottom (18);
-        envelopeGraphZone = c;
-        const int quarter = labelRow.getWidth() / 4;
-        envAttackLabelZone  = labelRow.removeFromLeft (quarter);
-        envDecayLabelZone   = labelRow.removeFromLeft (quarter);
-        envSustainLabelZone = labelRow.removeFromLeft (quarter);
-        envReleaseLabelZone = labelRow;
+        // Compact tab row: ENVELOPE / FILTER.
+        col2TabZone = c.removeFromTop (22);
+        envTabZone    = col2TabZone.removeFromLeft (col2TabZone.getWidth() / 2);
+        filterTabZone = col2TabZone;
+        c.removeFromTop (kPad);
+
+        // Clear the inactive mode's zones so hidden controls can't be clicked.
+        envelopeZone = {}; envelopeGraphZone = {};
+        envAttackLabelZone = {}; envDecayLabelZone = {};
+        envSustainLabelZone = {}; envReleaseLabelZone = {};
+        filterCutoffZone = {}; filterResonanceZone = {};
+
+        if (col2Mode == Col2Mode::Envelope)
+        {
+            envelopeZone = c;   // the corresponding enclosing zone the heading is drawn against
+
+            auto labelRow = c.removeFromBottom (18);
+            envelopeGraphZone = c;
+            const int quarter = labelRow.getWidth() / 4;
+            envAttackLabelZone  = labelRow.removeFromLeft (quarter);
+            envDecayLabelZone   = labelRow.removeFromLeft (quarter);
+            envSustainLabelZone = labelRow.removeFromLeft (quarter);
+            envReleaseLabelZone = labelRow;
+        }
+        else
+        {
+            auto filt = c;
+            filterCutoffZone = filt.removeFromTop (32);
+            filt.removeFromTop (kPad);
+            filterResonanceZone = filt.removeFromTop (32);
+        }
     }
 
     {
@@ -851,10 +899,6 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     g.setFont (DysektLookAndFeel::makeFont (18.f, true));
     g.drawText ("SF2 INSTRUMENT PANEL", topBarZone.withTrimmedLeft (16),
                 juce::Justification::centredLeft);
-    g.setFont (DysektLookAndFeel::makeFont (14.f));
-    g.setColour (theme.foreground.withAlpha (0.55f));
-    g.drawText ("PRESET BROWSER  /  PERFORMANCE  /  ENVELOPE",
-                topBarZone.withTrimmedLeft (200), juce::Justification::centredLeft);
 
     if (! loadedPillZone.isEmpty())
     {
@@ -933,37 +977,55 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     g.drawText ("FINE " + juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c",
                 fineZone, juce::Justification::centred);
 
-    // ── Column 2 — amp envelope graph ──────────────────────────────────────
-    g.setFont (DysektLookAndFeel::makeFont (14.f, true));
-    g.setColour (theme.foreground.withAlpha (0.6f));
-    g.drawText ("AMP ENVELOPE", envelopeZone.withHeight (16), juce::Justification::centredLeft);
-    drawEnvelopeGraph (g, envelopeGraphZone);
+    // Shared active/inactive tab visual language — used by both the Column 2
+    // ENVELOPE/FILTER tabs and Column 3's PERFORMANCE & FX/CHANNEL MIXER tabs.
+    auto drawTab = [&] (juce::Rectangle<int> r, const juce::String& text, bool active, bool enabled)
+    {
+        g.setColour (active ? theme.accent.withAlpha (0.18f) : juce::Colours::transparentBlack);
+        g.fillRect (r);
+        g.setColour (active ? theme.accent : theme.foreground.withAlpha (enabled ? 0.6f : 0.25f));
+        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+        g.drawText (text, r, juce::Justification::centred);
+    };
 
-    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
-    g.setColour (theme.foreground.withAlpha (0.6f));
-    g.drawText ("A " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzAttack() * 1000.f)) + "ms",
-                envAttackLabelZone, juce::Justification::centred);
-    g.drawText ("D " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzDecay() * 1000.f)) + "ms",
-                envDecayLabelZone, juce::Justification::centred);
-    g.drawText ("S " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzSustain())) + "%",
-                envSustainLabelZone, juce::Justification::centred);
-    g.drawText ("R " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzRelease() * 1000.f)) + "ms",
-                envReleaseLabelZone, juce::Justification::centred);
+    // ── Column 2 — ENVELOPE / FILTER tabs ──────────────────────────────────
+    drawTab (envTabZone,    "ENVELOPE", col2Mode == Col2Mode::Envelope, true);
+    drawTab (filterTabZone, "FILTER",   col2Mode == Col2Mode::Filter,   true);
+
+    if (col2Mode == Col2Mode::Envelope)
+    {
+        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+        g.setColour (theme.foreground.withAlpha (0.6f));
+        g.drawText ("AMP ENVELOPE", envelopeZone.withHeight (16), juce::Justification::centredLeft);
+        drawEnvelopeGraph (g, envelopeGraphZone);
+
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+        g.setColour (theme.foreground.withAlpha (0.6f));
+        g.drawText ("A " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzAttack() * 1000.f)) + "ms",
+                    envAttackLabelZone, juce::Justification::centred);
+        g.drawText ("D " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzDecay() * 1000.f)) + "ms",
+                    envDecayLabelZone, juce::Justification::centred);
+        g.drawText ("S " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzSustain())) + "%",
+                    envSustainLabelZone, juce::Justification::centred);
+        g.drawText ("R " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzRelease() * 1000.f)) + "ms",
+                    envReleaseLabelZone, juce::Justification::centred);
+    }
+    else
+    {
+        const float cutoffHz = processor.sfzPlayer.getSf2FilterCutoff();
+        const juce::String cutoffStr = cutoffHz >= 1000.f
+            ? juce::String (cutoffHz / 1000.f, 2) + " kHz"
+            : juce::String (juce::roundToInt (cutoffHz)) + " Hz";
+
+        drawSlider (g, filterCutoffZone, cutoffToNorm (cutoffHz), "CUTOFF", cutoffStr);
+        drawSlider (g, filterResonanceZone, resonanceToNorm (processor.sfzPlayer.getSf2FilterResonance()),
+                    "RESONANCE", juce::String (juce::roundToInt (processor.sfzPlayer.getSf2FilterResonance())) + "%");
+    }
 
     // ── Column 3 — tabs ─────────────────────────────────────────────────────
-    {
-        auto drawTab = [&] (juce::Rectangle<int> r, const juce::String& text, bool active, bool enabled)
-        {
-            g.setColour (active ? theme.accent.withAlpha (0.18f) : juce::Colours::transparentBlack);
-            g.fillRect (r);
-            g.setColour (active ? theme.accent : theme.foreground.withAlpha (enabled ? 0.6f : 0.25f));
-            g.setFont (DysektLookAndFeel::makeFont (14.f, true));
-            g.drawText (text, r, juce::Justification::centred);
-        };
-        drawTab (perfFxTabZone,       "PERFORMANCE & FX", col3Mode == Col3Mode::PerformanceFx, true);
-        drawTab (channelMixerTabZone, "CHANNEL MIXER",    col3Mode == Col3Mode::ChannelMixer,
-                 channelMixerTabEnabled());
-    }
+    drawTab (perfFxTabZone,       "PERFORMANCE & FX", col3Mode == Col3Mode::PerformanceFx, true);
+    drawTab (channelMixerTabZone, "CHANNEL MIXER",    col3Mode == Col3Mode::ChannelMixer,
+             channelMixerTabEnabled());
 
     if (col3Mode == Col3Mode::PerformanceFx)
     {
@@ -1477,6 +1539,18 @@ void Sf2InstrumentWorkspace::mouseDown (const juce::MouseEvent& e)
 {
     const auto pos = e.getPosition();
 
+    // ── Column 2 tab clicks ─────────────────────────────────────────────────
+    if (envTabZone.contains (pos))
+    {
+        if (col2Mode != Col2Mode::Envelope) { col2Mode = Col2Mode::Envelope; resized(); repaint(); }
+        return;
+    }
+    if (filterTabZone.contains (pos))
+    {
+        if (col2Mode != Col2Mode::Filter) { col2Mode = Col2Mode::Filter; resized(); repaint(); }
+        return;
+    }
+
     // ── Column 3 tab clicks ─────────────────────────────────────────────────
     if (perfFxTabZone.contains (pos))
     {
@@ -1520,6 +1594,8 @@ void Sf2InstrumentWorkspace::mouseDown (const juce::MouseEvent& e)
         { fineZone,       ActiveKnob::FineTune,   fineToNorm (processor.sfzPlayer.getFineTune())   },
         { reverbSendZone, ActiveKnob::ReverbSend, processor.sfzPlayer.getReverbMix()  / 100.0f     },
         { reverbDampZone, ActiveKnob::ReverbDamp, processor.sfzPlayer.getReverbDamp() / 100.0f     },
+        { filterCutoffZone,    ActiveKnob::FilterCutoff,    cutoffToNorm    (processor.sfzPlayer.getSf2FilterCutoff())    },
+        { filterResonanceZone, ActiveKnob::FilterResonance, resonanceToNorm (processor.sfzPlayer.getSf2FilterResonance()) },
     };
     for (auto& c : controls)
     {
@@ -1547,6 +1623,8 @@ void Sf2InstrumentWorkspace::mouseDrag (const juce::MouseEvent& e)
         case ActiveKnob::FineTune:   processor.sfzPlayer.setFineTune   (normToFine  (newNorm)); break;
         case ActiveKnob::ReverbSend: processor.sfzPlayer.setReverbMix  (newNorm * 100.0f);      break;
         case ActiveKnob::ReverbDamp: processor.sfzPlayer.setReverbDamp (newNorm * 100.0f);      break;
+        case ActiveKnob::FilterCutoff:    processor.sfzPlayer.setSf2FilterCutoff    (normToCutoff    (newNorm)); break;
+        case ActiveKnob::FilterResonance: processor.sfzPlayer.setSf2FilterResonance (normToResonance (newNorm)); break;
         default: break;
     }
     repaint();
@@ -1566,6 +1644,10 @@ void Sf2InstrumentWorkspace::mouseDoubleClick (const juce::MouseEvent& e)
     if (fineZone.contains       (pos)) { processor.sfzPlayer.setFineTune  (0.0f);  repaint(); }
     if (reverbSendZone.contains (pos)) { processor.sfzPlayer.setReverbMix  (0.0f);  repaint(); }
     if (reverbDampZone.contains (pos)) { processor.sfzPlayer.setReverbDamp (50.0f); repaint(); }
+    if (filterCutoffZone.contains (pos))
+        { processor.sfzPlayer.setSf2FilterCutoff    (SfzPlayer::kSf2FilterCutoffDefaultHz);     repaint(); }
+    if (filterResonanceZone.contains (pos))
+        { processor.sfzPlayer.setSf2FilterResonance (SfzPlayer::kSf2FilterResonanceDefaultPct); repaint(); }
 }
 
 void Sf2InstrumentWorkspace::mouseWheelMove (const juce::MouseEvent& e,
@@ -1587,6 +1669,10 @@ void Sf2InstrumentWorkspace::mouseWheelMove (const juce::MouseEvent& e,
         processor.sfzPlayer.setReverbMix  (juce::jlimit (0.0f, 100.0f, processor.sfzPlayer.getReverbMix()  + step * 100.0f));
     else if (reverbDampZone.contains (pos))
         processor.sfzPlayer.setReverbDamp (juce::jlimit (0.0f, 100.0f, processor.sfzPlayer.getReverbDamp() + step * 100.0f));
+    else if (filterCutoffZone.contains (pos))
+        processor.sfzPlayer.setSf2FilterCutoff (normToCutoff (adjustNorm (cutoffToNorm (processor.sfzPlayer.getSf2FilterCutoff()), step)));
+    else if (filterResonanceZone.contains (pos))
+        processor.sfzPlayer.setSf2FilterResonance (juce::jlimit (0.0f, 100.0f, processor.sfzPlayer.getSf2FilterResonance() + step * 100.0f));
 
     repaint();
 }
@@ -1600,3 +1686,35 @@ float Sf2InstrumentWorkspace::panToNorm   (float p)      const { return (p + 1.0
 float Sf2InstrumentWorkspace::normToPan   (float n)      const { return n * 2.0f - 1.0f; }
 float Sf2InstrumentWorkspace::fineToNorm  (float cents)  const { return (cents + 100.0f) / 200.0f; }
 float Sf2InstrumentWorkspace::normToFine  (float n)      const { return n * 200.0f - 100.0f; }
+
+// Cutoff: logarithmic mapping across the full UI range, appropriate for a
+// frequency control (equal drag distance = equal perceived pitch change).
+float Sf2InstrumentWorkspace::cutoffToNorm (float hz) const
+{
+    const float lo = std::log2 (SfzPlayer::kSf2FilterCutoffMinHz);
+    const float hi = std::log2 (SfzPlayer::kSf2FilterCutoffMaxHz);
+    hz = juce::jlimit (SfzPlayer::kSf2FilterCutoffMinHz, SfzPlayer::kSf2FilterCutoffMaxHz, hz);
+    return juce::jlimit (0.f, 1.f, (std::log2 (hz) - lo) / (hi - lo));
+}
+
+float Sf2InstrumentWorkspace::normToCutoff (float n) const
+{
+    const float lo = std::log2 (SfzPlayer::kSf2FilterCutoffMinHz);
+    const float hi = std::log2 (SfzPlayer::kSf2FilterCutoffMaxHz);
+    n = juce::jlimit (0.f, 1.f, n);
+    return std::pow (2.0f, lo + n * (hi - lo));
+}
+
+// Resonance: plain linear mapping over its 0-100% UI range.
+float Sf2InstrumentWorkspace::resonanceToNorm (float pct) const
+{
+    return juce::jlimit (0.f, 1.f, (pct - SfzPlayer::kSf2FilterResonanceMinPct)
+                                  / (SfzPlayer::kSf2FilterResonanceMaxPct - SfzPlayer::kSf2FilterResonanceMinPct));
+}
+
+float Sf2InstrumentWorkspace::normToResonance (float n) const
+{
+    n = juce::jlimit (0.f, 1.f, n);
+    return SfzPlayer::kSf2FilterResonanceMinPct
+         + n * (SfzPlayer::kSf2FilterResonanceMaxPct - SfzPlayer::kSf2FilterResonanceMinPct);
+}

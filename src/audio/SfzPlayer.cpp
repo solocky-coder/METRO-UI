@@ -320,6 +320,20 @@ void SfzPlayer::setReverbFreeze (bool on) noexcept
     reverbFreeze.store (on, std::memory_order_relaxed);
 }
 
+// ── SF2 filter setters ───────────────────────────────────────────────────────
+
+void SfzPlayer::setSf2FilterCutoff (float hz) noexcept
+{
+    sf2FilterCutoffHz.store (juce::jlimit (kSf2FilterCutoffMinHz, kSf2FilterCutoffMaxHz, hz),
+                              std::memory_order_relaxed);
+}
+
+void SfzPlayer::setSf2FilterResonance (float pct) noexcept
+{
+    sf2FilterResonancePct.store (juce::jlimit (kSf2FilterResonanceMinPct, kSf2FilterResonanceMaxPct, pct),
+                                  std::memory_order_relaxed);
+}
+
 void SfzPlayer::updateReverbParams()
 {
     juce::dsp::Reverb::Parameters p;
@@ -879,6 +893,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     // silently reverting the UI-driven envelope if not reapplied.
     juceAdsrParamsDirty.exchange (false, std::memory_order_acquire);   // clear; consumed here instead of the old post-mix block
     applyFluidAdsrFromUi();
+    applyFluidFilterFromUi();
 
     // ── Forward MIDI to FluidSynth ────────────────────────────────────────────
     // Multi-timbral mode: route each message to its own FluidSynth channel (0-based).
@@ -1035,8 +1050,9 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
                 // Program change resets this channel's generators to the
                 // SoundFont's own defaults — reapply immediately so a
                 // note-on later in this same block still gets the UI's
-                // envelope shape rather than the raw SoundFont one.
+                // envelope/filter shape rather than the raw SoundFont one.
                 applyFluidAdsrFromUi();
+                applyFluidFilterFromUi();
             }
             else if (msg.isAllNotesOff() || msg.isAllSoundOff())
             {
@@ -1206,6 +1222,29 @@ namespace
     }
 }
 
+// ── Filter unit conversion (UI Hz/percent -> SF2 generator units) ────────────
+//  GEN_FILTERFC is absolute cents referenced to 8.176 Hz (MIDI note 0):
+//    hz = 8.176 * 2^(cents/1200)  =>  cents = 1200 * log2(hz / 8.176)
+//  GEN_FILTERQ is resonance in centibels above the SoundFont spec's 0 dB
+//  floor (no resonant peak); the spec's usable range runs 0-960 cB, but the
+//  conversion here is bounded well short of that ceiling to keep the control
+//  in a musically useful range rather than self-oscillating.
+// ─────────────────────────────────────────────────────────────────────────────
+namespace
+{
+    float hzToAbsoluteCents (float hz) noexcept
+    {
+        hz = juce::jmax (1.0f, hz);   // guard log2() against zero/negative input
+        return juce::jlimit (1500.0f, 13500.0f, 1200.0f * std::log2 (hz / 8.176f));
+    }
+
+    float resonancePercentToCentibels (float pct) noexcept
+    {
+        const float p = juce::jlimit (0.0f, 100.0f, pct);
+        return juce::jlimit (0.0f, 720.0f, p * 7.2f);   // 0-100% -> 0-720 cB (~0-72 dB)
+    }
+}
+
 // ── applyFluidAdsrFromUi ──────────────────────────────────────────────────────
 //  Writes the current UI A/D/S/R values (juceAdsrAttack/Decay/Sustain/Release —
 //  the same atomics the amp-envelope graph and LCD display read/write) into
@@ -1233,6 +1272,32 @@ void SfzPlayer::applyFluidAdsrFromUi()
         fluid_synth_set_gen (synth, ch, GEN_VOLENVDECAY,   decTc);
         fluid_synth_set_gen (synth, ch, GEN_VOLENVSUSTAIN, susCb);
         fluid_synth_set_gen (synth, ch, GEN_VOLENVRELEASE, relTc);
+    }
+#endif
+}
+
+// ── applyFluidFilterFromUi ─────────────────────────────────────────────────────
+//  Writes the current UI cutoff/resonance values (sf2FilterCutoffHz/
+//  sf2FilterResonancePct — the same atomics the Column 2 FILTER tab reads/
+//  writes) into FluidSynth's per-channel GEN_FILTERFC/GEN_FILTERQ generators
+//  on channels 2-15 (0-based; channels 0/1 are reserved for the Slicer/
+//  SFZ-Player and are never touched). Mirrors applyFluidAdsrFromUi() exactly:
+//  called after load, after every program/preset change (both reset a
+//  channel's generators back to the SoundFont's own defaults), and whenever
+//  the UI values change.
+// ─────────────────────────────────────────────────────────────────────────────
+void SfzPlayer::applyFluidFilterFromUi()
+{
+#if DYSEKT_HAS_FLUIDSYNTH
+    if (synth == nullptr) return;
+
+    const float cutoffCents = hzToAbsoluteCents (sf2FilterCutoffHz.load (std::memory_order_relaxed));
+    const float resCb       = resonancePercentToCentibels (sf2FilterResonancePct.load (std::memory_order_relaxed));
+
+    for (int ch = 2; ch < 16; ++ch)
+    {
+        fluid_synth_set_gen (synth, ch, GEN_FILTERFC, cutoffCents);
+        fluid_synth_set_gen (synth, ch, GEN_FILTERQ,  resCb);
     }
 #endif
 }
@@ -1390,6 +1455,12 @@ void SfzPlayer::applyPendingLoad()
     // so loaded notes are shaped independently instead of via a shared post-mix
     // envelope (see applyFluidAdsrFromUi doc comment).
     applyFluidAdsrFromUi();
+
+    // Same reasoning for the SF2 filter controls — a fresh synth/sfont load
+    // starts every channel at the SoundFont's own filter defaults, so reapply
+    // the UI-owned cutoff/resonance immediately (see applyFluidFilterFromUi
+    // doc comment).
+    applyFluidFilterFromUi();
 
     // Switch to omni so all incoming MIDI reaches FluidSynth without needing
     // the host to route on a specific channel.  In VST3, processMidi() already

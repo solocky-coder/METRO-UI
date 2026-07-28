@@ -44,11 +44,19 @@
 //    reading order are preserved. Flagging this here rather than baking it
 //    in silently — worth confirming against the design before shipping.
 //
-//  Column 2 bottom — Amp envelope: a real A/D/S/R curve (polyline + gridlines
-//    + per-stage labels), replacing the old 6-knob row's implicit envelope.
-//    Values come from SfzPlayer::getSfzAttack/Decay/Sustain/Release (seconds/
-//    seconds/percent/seconds) via the existing FieldSfzAttack..FieldSfzRelease
-//    SliceParamField path. Draggable per-stage handles, not knobs.
+//  Column 2 bottom — ENVELOPE / FILTER tabs (replaces the old permanently-shown
+//    envelope area, which was redundant with the LCD's own live ADSR display):
+//    • ENVELOPE (default) — the existing real A/D/S/R curve (polyline +
+//      gridlines + per-stage labels). Values come from SfzPlayer::getSfzAttack/
+//      Decay/Sustain/Release (seconds/seconds/percent/seconds) via the existing
+//      FieldSfzAttack..FieldSfzRelease SliceParamField path.
+//    • FILTER — live CUTOFF (Hz/kHz) and RESONANCE (%) sliders backed by
+//      SfzPlayer::getSf2FilterCutoff/Resonance and setSf2FilterCutoff/Resonance,
+//      which drive FluidSynth's GEN_FILTERFC/GEN_FILTERQ generators
+//      (see SfzPlayer::applyFluidFilterFromUi()). SF2/FluidSynth only.
+//    Only one mode's controls are laid out/painted/hit-tested at a time; the
+//    tab pair follows the same active/inactive visual language as Column 3's
+//    existing PERFORMANCE & FX / CHANNEL MIXER tabs.
 //
 //  Column 3 — Performance & FX:
 //    • REVERB SEND slider (SfzPlayer::getReverbMix/setReverbMix, 0-100%)
@@ -206,11 +214,22 @@ private:
     // primary knobs.
     juce::Rectangle<int> fineZone;
 
-    // ── Column 2 bottom — amp envelope graph ───────────────────────────────
+    // ── Column 2 bottom — ENVELOPE / FILTER tabs ───────────────────────────
+    //  Replaces the old permanently-shown envelope area: the same ADSR state
+    //  is already live in the LCD, so this space is now switchable between
+    //  the envelope graph and a pair of live SF2 filter controls.
+    enum class Col2Mode { Envelope, Filter };
+    Col2Mode col2Mode { Col2Mode::Envelope };   // Envelope by default — matches today's initial appearance
+    juce::Rectangle<int> col2TabZone, envTabZone, filterTabZone;
+
+    // Envelope sub-zones — used only when col2Mode == Col2Mode::Envelope.
     juce::Rectangle<int> envelopeZone, envelopeGraphZone;
     juce::Rectangle<int> envAttackLabelZone, envDecayLabelZone,
                           envSustainLabelZone, envReleaseLabelZone;
     void drawEnvelopeGraph (juce::Graphics& g, juce::Rectangle<int> bounds) const;
+
+    // Filter sub-zones — used only when col2Mode == Col2Mode::Filter.
+    juce::Rectangle<int> filterCutoffZone, filterResonanceZone;
 
     // ── Column 3 — Performance & FX / Channel Mixer toggle ─────────────────
     enum class Col3Mode { PerformanceFx, ChannelMixer };
@@ -257,7 +276,7 @@ private:
 
     enum class ActiveKnob { None, Level, Transpose, FineTune, Pan,
                              ReverbSend, ReverbDamp,
-                             EnvAttack, EnvDecay, EnvSustain, EnvRelease };
+                             FilterCutoff, FilterResonance };
     ActiveKnob activeKnob   { ActiveKnob::None };
     int        dragStartY   { 0 };
     float      dragStartVal { 0.f };
@@ -270,6 +289,13 @@ private:
     float normToPan    (float n)      const;
     float fineToNorm   (float cents)  const;
     float normToFine   (float n)      const;
+
+    // Filter cutoff uses a logarithmic UI mapping (appropriate for frequency);
+    // resonance uses a linear mapping.
+    float cutoffToNorm    (float hz)  const;
+    float normToCutoff    (float n)   const;
+    float resonanceToNorm (float pct) const;
+    float normToResonance (float n)   const;
 
     void showMidiLearnMenu (int fieldId, juce::Point<int> screenPos);
 

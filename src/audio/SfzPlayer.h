@@ -205,6 +205,22 @@ public:
     float getReverbMix()    const noexcept { return reverbMix   .load (std::memory_order_relaxed); }
     bool  getReverbFreeze() const noexcept { return reverbFreeze.load (std::memory_order_relaxed); }
 
+    // ── SF2 filter (FluidSynth GEN_FILTERFC / GEN_FILTERQ) — UI-driven, SF2 only ──
+    //  Same UI-atomic / private-apply-helper / reapply-on-reset pattern as the
+    //  ADSR controls above; see applyFluidFilterFromUi() doc comment.
+    static constexpr float kSf2FilterCutoffMinHz     = 20.0f;
+    static constexpr float kSf2FilterCutoffMaxHz     = 20000.0f;
+    static constexpr float kSf2FilterCutoffDefaultHz = 20000.0f; ///< fully open — neutral on first load
+    static constexpr float kSf2FilterResonanceMinPct     = 0.0f;
+    static constexpr float kSf2FilterResonanceMaxPct     = 100.0f;
+    static constexpr float kSf2FilterResonanceDefaultPct = 0.0f; ///< no resonance emphasis — neutral on first load
+
+    void setSf2FilterCutoff    (float hz)  noexcept;  ///< clamped to 20 Hz .. 20 kHz
+    void setSf2FilterResonance (float pct) noexcept;  ///< clamped to 0-100 %
+
+    float getSf2FilterCutoff()    const noexcept { return sf2FilterCutoffHz    .load (std::memory_order_relaxed); }
+    float getSf2FilterResonance() const noexcept { return sf2FilterResonancePct.load (std::memory_order_relaxed); }
+
     /**
      * Returns the cached preset list for the currently loaded SF2.
      * If the audio thread has posted new data since the last call,
@@ -419,6 +435,10 @@ private:
 
     void updateReverbParams();  ///< maps atomics → juce::dsp::Reverb::Parameters
 
+    // ── SF2 filter atomics (UI-written, audio-thread-read; see applyFluidFilterFromUi) ──
+    std::atomic<float> sf2FilterCutoffHz     { kSf2FilterCutoffDefaultHz };
+    std::atomic<float> sf2FilterResonancePct { kSf2FilterResonanceDefaultPct };
+
     // ── Per-channel mixer strip state ─────────────────────────────────────────
     // Written on UI thread via setChannel*(); read on audio thread in applyDirtyStrips().
     struct ChannelStripAtomics
@@ -489,6 +509,17 @@ private:
      *  a channel's generators back to the SoundFont's own defaults), and
      *  whenever the UI values themselves change. No-op for SFZ. */
     void applyFluidAdsrFromUi();
+
+    /** Converts the current UI SF2 filter atomics (sf2FilterCutoffHz /
+     *  sf2FilterResonancePct — the same values the Column 2 FILTER tab reads/
+     *  writes) into FluidSynth generator units and writes them to GEN_FILTERFC
+     *  / GEN_FILTERQ on channels 2-15, mirroring applyFluidAdsrFromUi() exactly
+     *  (same channel scope, same reapplication points — program-select/
+     *  program-change reset a channel's generators back to the SoundFont's
+     *  own defaults for filter cutoff/resonance the same way they do for the
+     *  envelope). Harmless no-op when FluidSynth is unavailable or no
+     *  synthesizer instance exists. No-op for SFZ. */
+    void applyFluidFilterFromUi();
 
     // ── Private helpers ───────────────────────────────────────────────────────
     void applyPendingLoad();             ///< called at top of process()
