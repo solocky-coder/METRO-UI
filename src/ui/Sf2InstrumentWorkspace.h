@@ -44,19 +44,20 @@
 //    reading order are preserved. Flagging this here rather than baking it
 //    in silently — worth confirming against the design before shipping.
 //
-//  Column 2 bottom — ENVELOPE / FILTER tabs (replaces the old permanently-shown
-//    envelope area, which was redundant with the LCD's own live ADSR display):
-//    • ENVELOPE (default) — the existing real A/D/S/R curve (polyline +
-//      gridlines + per-stage labels). Values come from SfzPlayer::getSfzAttack/
-//      Decay/Sustain/Release (seconds/seconds/percent/seconds) via the existing
-//      FieldSfzAttack..FieldSfzRelease SliceParamField path.
-//    • FILTER — live CUTOFF (Hz/kHz) and RESONANCE (%) sliders backed by
-//      SfzPlayer::getSf2FilterCutoff/Resonance and setSf2FilterCutoff/Resonance,
-//      which drive FluidSynth's GEN_FILTERFC/GEN_FILTERQ generators
-//      (see SfzPlayer::applyFluidFilterFromUi()). SF2/FluidSynth only.
-//    Only one mode's controls are laid out/painted/hit-tested at a time; the
-//    tab pair follows the same active/inactive visual language as Column 3's
-//    existing PERFORMANCE & FX / CHANNEL MIXER tabs.
+//  Column 2 bottom — SF2 filter controls (permanent, no tabs):
+//    Live CUTOFF (Hz/kHz) and RESONANCE (%) sliders backed by
+//    SfzPlayer::getSf2FilterCutoff/Resonance and setSf2FilterCutoff/Resonance,
+//    which drive FluidSynth's GEN_FILTERFC/GEN_FILTERQ generators (see
+//    SfzPlayer::applyFluidFilterFromUi()). SF2/FluidSynth only.
+//    ⚠ DEVIATION FROM THE LITERAL MOCKUP: the mockup shows a permanent AMP
+//    ENVELOPE display here instead. That was dropped rather than tabbed
+//    against Filter (an earlier iteration of this panel tried the tab
+//    approach) because the same A/D/S/R state this graph showed is already
+//    live in two other places on screen at once — the top-bar LCD text
+//    readout AND the draggable envelope overlay on the waveform view
+//    (Sf2WaveformLcd) — so a third, read-only copy added nothing. Filter is
+//    the only thing that wasn't already live elsewhere, so it now owns this
+//    space outright with no tab/mode switch needed.
 //
 //  Column 3 — Performance & FX:
 //    • REVERB SEND slider (SfzPlayer::getReverbMix/setReverbMix, 0-100%)
@@ -214,21 +215,14 @@ private:
     // primary knobs.
     juce::Rectangle<int> fineZone;
 
-    // ── Column 2 bottom — ENVELOPE / FILTER tabs ───────────────────────────
-    //  Replaces the old permanently-shown envelope area: the same ADSR state
-    //  is already live in the LCD, so this space is now switchable between
-    //  the envelope graph and a pair of live SF2 filter controls.
-    enum class Col2Mode { Envelope, Filter };
-    Col2Mode col2Mode { Col2Mode::Envelope };   // Envelope by default — matches today's initial appearance
-    juce::Rectangle<int> col2TabZone, envTabZone, filterTabZone;
-
-    // Envelope sub-zones — used only when col2Mode == Col2Mode::Envelope.
-    juce::Rectangle<int> envelopeZone, envelopeGraphZone;
-    juce::Rectangle<int> envAttackLabelZone, envDecayLabelZone,
-                          envSustainLabelZone, envReleaseLabelZone;
-    void drawEnvelopeGraph (juce::Graphics& g, juce::Rectangle<int> bounds) const;
-
-    // Filter sub-zones — used only when col2Mode == Col2Mode::Filter.
+    // ── Column 2 bottom — SF2 filter controls (permanent, no tabs) ────────
+    //  Previously a switchable ENVELOPE/FILTER pair. Dropped the ENVELOPE
+    //  side entirely: SfzPlayer's A/D/S/R is already shown live in two other
+    //  places on screen at once — the top-bar LCD text readout AND the
+    //  draggable envelope overlay on the waveform view (Sf2WaveformLcd) — so
+    //  a third, read-only copy of the same four numbers here added nothing.
+    //  Filter is the only thing that isn't already live elsewhere, so it now
+    //  owns this space outright.
     juce::Rectangle<int> filterCutoffZone, filterResonanceZone;
 
     // ── Column 3 — Performance & FX / Channel Mixer toggle ─────────────────

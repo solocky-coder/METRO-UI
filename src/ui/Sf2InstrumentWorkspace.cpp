@@ -683,38 +683,9 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         bottom.setHeight (col2Zone.getHeight() - 200);
         bottom = bottom.reduced (kPad, kPad);
 
-        // Compact tab row: ENVELOPE / FILTER.
-        col2TabZone = bottom.removeFromTop (22);
-        envTabZone    = col2TabZone.removeFromLeft (col2TabZone.getWidth() / 2);
-        filterTabZone = col2TabZone;
+        filterCutoffZone = bottom.removeFromTop (34);
         bottom.removeFromTop (kPad);
-
-        // Clear the inactive mode's zones so hidden controls can't be clicked.
-        envelopeZone = {}; envelopeGraphZone = {};
-        envAttackLabelZone = {}; envDecayLabelZone = {};
-        envSustainLabelZone = {}; envReleaseLabelZone = {};
-        filterCutoffZone = {}; filterResonanceZone = {};
-
-        if (col2Mode == Col2Mode::Envelope)
-        {
-            envelopeZone = bottom;
-
-            auto env = envelopeZone;
-            auto labelRow = env.removeFromBottom (18);
-            envelopeGraphZone = env;
-            const int quarter = labelRow.getWidth() / 4;
-            envAttackLabelZone  = labelRow.removeFromLeft (quarter);
-            envDecayLabelZone   = labelRow.removeFromLeft (quarter);
-            envSustainLabelZone = labelRow.removeFromLeft (quarter);
-            envReleaseLabelZone = labelRow;
-        }
-        else
-        {
-            auto filt = bottom;
-            filterCutoffZone = filt.removeFromTop (34);
-            filt.removeFromTop (kPad);
-            filterResonanceZone = filt.removeFromTop (34);
-        }
+        filterResonanceZone = bottom.removeFromTop (34);
     }
 
     // ── Column 3 — tabs, reverb sliders, MIDI input, output, keyboard ──────
@@ -805,37 +776,9 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
                                            transZone.getWidth(), 16);
         c.removeFromTop (26);
 
-        // Compact tab row: ENVELOPE / FILTER.
-        col2TabZone = c.removeFromTop (22);
-        envTabZone    = col2TabZone.removeFromLeft (col2TabZone.getWidth() / 2);
-        filterTabZone = col2TabZone;
+        filterCutoffZone = c.removeFromTop (32);
         c.removeFromTop (kPad);
-
-        // Clear the inactive mode's zones so hidden controls can't be clicked.
-        envelopeZone = {}; envelopeGraphZone = {};
-        envAttackLabelZone = {}; envDecayLabelZone = {};
-        envSustainLabelZone = {}; envReleaseLabelZone = {};
-        filterCutoffZone = {}; filterResonanceZone = {};
-
-        if (col2Mode == Col2Mode::Envelope)
-        {
-            envelopeZone = c;   // the corresponding enclosing zone the heading is drawn against
-
-            auto labelRow = c.removeFromBottom (18);
-            envelopeGraphZone = c;
-            const int quarter = labelRow.getWidth() / 4;
-            envAttackLabelZone  = labelRow.removeFromLeft (quarter);
-            envDecayLabelZone   = labelRow.removeFromLeft (quarter);
-            envSustainLabelZone = labelRow.removeFromLeft (quarter);
-            envReleaseLabelZone = labelRow;
-        }
-        else
-        {
-            auto filt = c;
-            filterCutoffZone = filt.removeFromTop (32);
-            filt.removeFromTop (kPad);
-            filterResonanceZone = filt.removeFromTop (32);
-        }
+        filterResonanceZone = c.removeFromTop (32);
     }
 
     {
@@ -977,8 +920,8 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     g.drawText ("FINE " + juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c",
                 fineZone, juce::Justification::centred);
 
-    // Shared active/inactive tab visual language — used by both the Column 2
-    // ENVELOPE/FILTER tabs and Column 3's PERFORMANCE & FX/CHANNEL MIXER tabs.
+    // Shared active/inactive tab visual language — used by Column 3's
+    // PERFORMANCE & FX/CHANNEL MIXER tabs.
     auto drawTab = [&] (juce::Rectangle<int> r, const juce::String& text, bool active, bool enabled)
     {
         g.setColour (active ? theme.accent.withAlpha (0.18f) : juce::Colours::transparentBlack);
@@ -988,29 +931,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         g.drawText (text, r, juce::Justification::centred);
     };
 
-    // ── Column 2 — ENVELOPE / FILTER tabs ──────────────────────────────────
-    drawTab (envTabZone,    "ENVELOPE", col2Mode == Col2Mode::Envelope, true);
-    drawTab (filterTabZone, "FILTER",   col2Mode == Col2Mode::Filter,   true);
-
-    if (col2Mode == Col2Mode::Envelope)
-    {
-        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
-        g.setColour (theme.foreground.withAlpha (0.6f));
-        g.drawText ("AMP ENVELOPE", envelopeZone.withHeight (16), juce::Justification::centredLeft);
-        drawEnvelopeGraph (g, envelopeGraphZone);
-
-        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
-        g.setColour (theme.foreground.withAlpha (0.6f));
-        g.drawText ("A " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzAttack() * 1000.f)) + "ms",
-                    envAttackLabelZone, juce::Justification::centred);
-        g.drawText ("D " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzDecay() * 1000.f)) + "ms",
-                    envDecayLabelZone, juce::Justification::centred);
-        g.drawText ("S " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzSustain())) + "%",
-                    envSustainLabelZone, juce::Justification::centred);
-        g.drawText ("R " + juce::String (juce::roundToInt (processor.sfzPlayer.getSfzRelease() * 1000.f)) + "ms",
-                    envReleaseLabelZone, juce::Justification::centred);
-    }
-    else
+    // ── Column 2 — SF2 filter controls (permanent, no tabs) ────────────────
     {
         const float cutoffHz = processor.sfzPlayer.getSf2FilterCutoff();
         const juce::String cutoffStr = cutoffHz >= 1000.f
@@ -1139,49 +1060,6 @@ void Sf2InstrumentWorkspace::drawSlider (juce::Graphics& g, juce::Rectangle<int>
     fill.setWidth (juce::jmax (0.f, fill.getWidth() * juce::jlimit (0.f, 1.f, normalised)));
     g.setColour (theme.accent);
     g.fillRoundedRectangle (fill, 1.f);
-}
-
-void Sf2InstrumentWorkspace::drawEnvelopeGraph (juce::Graphics& g, juce::Rectangle<int> bounds) const
-{
-    if (bounds.isEmpty()) return;
-    const auto& theme = getTheme();
-
-    const float attackSec  = juce::jmax (0.001f, processor.sfzPlayer.getSfzAttack());
-    const float decaySec   = juce::jmax (0.001f, processor.sfzPlayer.getSfzDecay());
-    const float sustainPct = juce::jlimit (0.f, 100.f, processor.sfzPlayer.getSfzSustain());
-    const float releaseSec = juce::jmax (0.001f, processor.sfzPlayer.getSfzRelease());
-
-    // Fixed visual proportions for A/D/(fixed sustain hold)/R — same
-    // simplification the mockup's polyline uses (it isn't time-accurate
-    // either; it's a schematic ADSR shape).
-    const float totalSec = attackSec + decaySec + releaseSec;
-    const float aFrac = juce::jlimit (0.05f, 0.5f, attackSec  / totalSec);
-    const float dFrac = juce::jlimit (0.05f, 0.5f, decaySec   / totalSec);
-    const float rFrac = juce::jlimit (0.05f, 0.5f, releaseSec / totalSec);
-    const float sFrac = juce::jmax (0.05f, 1.f - aFrac - dFrac - rFrac);
-
-    const float x0 = (float) bounds.getX();
-    const float x1 = x0 + (float) bounds.getWidth() * aFrac;
-    const float x2 = x1 + (float) bounds.getWidth() * dFrac;
-    const float x3 = x2 + (float) bounds.getWidth() * sFrac;
-    const float x4 = (float) bounds.getRight();
-    const float yBottom = (float) bounds.getBottom() - 4.f;
-    const float yTop    = (float) bounds.getY() + 4.f;
-    const float ySustain = yBottom - (yBottom - yTop) * (sustainPct / 100.f);
-
-    g.setColour (theme.separator);
-    for (float x : { x1, x2, x3 })
-        g.drawVerticalLine ((int) x, yTop, yBottom);
-    g.drawHorizontalLine ((int) yBottom, x0, x4);
-
-    juce::Path env;
-    env.startNewSubPath (x0, yBottom);
-    env.lineTo (x1, yTop);
-    env.lineTo (x2, ySustain);
-    env.lineTo (x3, ySustain);
-    env.lineTo (x4, yBottom);
-    g.setColour (theme.accent);
-    g.strokePath (env, juce::PathStrokeType (2.f));
 }
 
 void Sf2InstrumentWorkspace::drawNoteMeter (juce::Graphics& g, juce::Rectangle<int> bounds) const
@@ -1538,18 +1416,6 @@ void Sf2InstrumentWorkspace::adjustChannelRange (bool isLow, int delta)
 void Sf2InstrumentWorkspace::mouseDown (const juce::MouseEvent& e)
 {
     const auto pos = e.getPosition();
-
-    // ── Column 2 tab clicks ─────────────────────────────────────────────────
-    if (envTabZone.contains (pos))
-    {
-        if (col2Mode != Col2Mode::Envelope) { col2Mode = Col2Mode::Envelope; resized(); repaint(); }
-        return;
-    }
-    if (filterTabZone.contains (pos))
-    {
-        if (col2Mode != Col2Mode::Filter) { col2Mode = Col2Mode::Filter; resized(); repaint(); }
-        return;
-    }
 
     // ── Column 3 tab clicks ─────────────────────────────────────────────────
     if (perfFxTabZone.contains (pos))
