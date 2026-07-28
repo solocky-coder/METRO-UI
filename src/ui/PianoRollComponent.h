@@ -49,7 +49,7 @@ public:
     static constexpr int kRulerH    = 28;
     static constexpr int kVelocityH = 82;  // a real editable lane, not a footer
     static constexpr int kScrollH   = 10;
-    static constexpr int kToolbarH  = 34;
+    static constexpr int kToolbarH  = 42;  // 34px tool targets, with a comfortable hit area
     static constexpr int kNumNotes  = 128;
     static constexpr int kResizeZone = 7;   // px from note right edge = resize handle
 
@@ -250,9 +250,12 @@ public:
                 {
                     int idx = selectedNotes[i];
                     if (idx == dragNoteIdx) continue;
-                    const juce::ScopedReadLock sl (clip->getLock());
-                    if (! juce::isPositiveAndBelow (idx, clip->getNotes().size())) continue;
-                    const auto& n = clip->getNotes().getReference (idx);
+                    MidiNote n;
+                    {
+                        const juce::ScopedReadLock sl (clip->getLock());
+                        if (! juce::isPositiveAndBelow (idx, clip->getNotes().size())) continue;
+                        n = clip->getNotes().getReference (idx);
+                    }
                     clip->moveNote (idx,
                         juce::jmax ((int64_t)0, n.startTick + deltaTick - dragGroupDeltaTick),
                         juce::jlimit (0, 127, n.note + deltaPitch - dragGroupDeltaPitch));
@@ -270,10 +273,14 @@ public:
                 {
                     int idx = selectedNotes[i];
                     if (idx == dragNoteIdx) continue;
-                    const juce::ScopedReadLock sl (clip->getLock());
-                    if (! juce::isPositiveAndBelow (idx, clip->getNotes().size())) continue;
+                    int64_t duration = 0;
+                    {
+                        const juce::ScopedReadLock sl (clip->getLock());
+                        if (! juce::isPositiveAndBelow (idx, clip->getNotes().size())) continue;
+                        duration = clip->getNotes().getReference (idx).durationTick;
+                    }
                     clip->resizeNote (idx, juce::jmax ((int64_t)1,
-                        clip->getNotes().getReference(idx).durationTick + (newDur - dragOrigDuration)));
+                        duration + (newDur - dragOrigDuration)));
                 }
                 clip->resizeNote (dragNoteIdx, newDur);
                 break;
@@ -601,7 +608,7 @@ private:
 
             const auto colourId = getToggleState() ? juce::TextButton::textColourOnId
                                                      : juce::TextButton::textColourOffId;
-            drawToolIcon (g, tool, getLocalBounds().toFloat().reduced (6.0f), findColour (colourId));
+            drawToolIcon (g, tool, getLocalBounds().toFloat().reduced (4.0f), findColour (colourId));
         }
     };
 
@@ -668,13 +675,18 @@ private:
             }
             case Tool::Split:
             {
-                // Scissors — crossing blades over two ring handles.
-                juce::Path blades;
-                blades.addLineSegment ({ cx - s * 0.16f, cy - s * 0.32f, cx + s * 0.16f, cy + s * 0.20f }, s * 0.05f);
-                blades.addLineSegment ({ cx + s * 0.16f, cy - s * 0.32f, cx - s * 0.16f, cy + s * 0.20f }, s * 0.05f);
-                g.fillPath (blades);
-                g.drawEllipse (cx - s * 0.22f, cy + s * 0.14f, s * 0.14f, s * 0.14f, s * 0.035f);
-                g.drawEllipse (cx + s * 0.08f, cy + s * 0.14f, s * 0.14f, s * 0.14f, s * 0.035f);
+                // Scissors point upward. The converging blade tip is the exact
+                // cursor hotspot, so the visible cut point and resulting split
+                // never disagree.
+                const float tipY = cy - s * 0.34f;
+                const float pivotY = cy + s * 0.03f;
+                g.drawLine (cx, tipY, cx - s * 0.13f, pivotY, s * 0.055f);
+                g.drawLine (cx, tipY, cx + s * 0.13f, pivotY, s * 0.055f);
+                g.fillEllipse (cx - s * 0.055f, pivotY - s * 0.055f, s * 0.11f, s * 0.11f);
+                g.drawLine (cx - s * 0.10f, pivotY, cx - s * 0.20f, cy + s * 0.20f, s * 0.05f);
+                g.drawLine (cx + s * 0.10f, pivotY, cx + s * 0.20f, cy + s * 0.20f, s * 0.05f);
+                g.drawEllipse (cx - s * 0.29f, cy + s * 0.16f, s * 0.16f, s * 0.16f, s * 0.04f);
+                g.drawEllipse (cx + s * 0.13f, cy + s * 0.16f, s * 0.16f, s * 0.16f, s * 0.04f);
                 break;
             }
             case Tool::Glue:
@@ -711,7 +723,7 @@ private:
      *  shows which tool is active rather than a generic system arrow/crosshair. */
     static juce::MouseCursor makeToolCursor (Tool tool)
     {
-        constexpr int size = 24;
+        constexpr int size = 32;
         juce::Image img (juce::Image::ARGB, size, size, true);
         juce::Graphics g (img);
 
@@ -748,6 +760,7 @@ private:
         {
             case Tool::Select: hx = (int) (size * 0.22f); hy = (int) (size * 0.10f); break;
             case Tool::Draw:   hx = (int) (size * 0.25f); hy = (int) (size * 0.82f); break;
+            case Tool::Split:  hy = (int) (size * 0.19f); break;
             case Tool::Glue:   hy = (int) (size * 0.18f); break;
             default: break;
         }
@@ -951,11 +964,13 @@ private:
         pushUndo (clip);
         for (int idx : selectedNotes)
         {
-            const juce::ScopedReadLock sl (clip->getLock());
-            if (! juce::isPositiveAndBelow (idx, clip->getNotes().size())) continue;
-            const int64_t oldStart = clip->getNotes()[idx].startTick;
-            const int64_t snapped  = snap (oldStart);
-            clip->moveNote (idx, snapped);
+            int64_t oldStart = 0;
+            {
+                const juce::ScopedReadLock sl (clip->getLock());
+                if (! juce::isPositiveAndBelow (idx, clip->getNotes().size())) continue;
+                oldStart = clip->getNotes()[idx].startTick;
+            }
+            clip->moveNote (idx, snap (oldStart));
         }
         repaint();
     }
@@ -983,35 +998,38 @@ private:
 
     void glueNotes (MidiClip* clip, int64_t tick, int noteNum)
     {
-        // Find note at tick/noteNum and the next note on same pitch
+        // Find a note at the cursor and the truly adjacent note on its pitch.
         if (! clip) return;
-        const juce::ScopedReadLock sl (clip->getLock());
-        int idxA = -1;
-        for (int i = 0; i < clip->getNotes().size(); ++i)
+        int idxA = -1, idxB = -1;
+        int64_t newDur = 0;
         {
-            const auto& n = clip->getNotes().getReference (i);
-            if (n.note == noteNum && tick >= n.startTick && tick < n.endTick())
-                { idxA = i; break; }
-        }
-        if (idxA < 0) return;
+            const juce::ScopedReadLock sl (clip->getLock());
+            for (int i = 0; i < clip->getNotes().size(); ++i)
+            {
+                const auto& n = clip->getNotes().getReference (i);
+                if (n.note == noteNum && tick >= n.startTick && tick < n.endTick())
+                    { idxA = i; break; }
+            }
+            if (idxA < 0) return;
 
-        const int64_t aEnd = clip->getNotes()[idxA].endTick();
-        int idxB = -1;
-        for (int i = 0; i < clip->getNotes().size(); ++i)
-        {
-            if (i == idxA) continue;
-            const auto& n = clip->getNotes().getReference (i);
-            if (n.note == noteNum && n.startTick == aEnd)   // must be truly adjacent, not just "later"
-                { idxB = i; break; }
+            const int64_t aEnd = clip->getNotes()[idxA].endTick();
+            for (int i = 0; i < clip->getNotes().size(); ++i)
+            {
+                if (i == idxA) continue;
+                const auto& n = clip->getNotes().getReference (i);
+                if (n.note == noteNum && n.startTick == aEnd)
+                    { idxB = i; break; }
+            }
+            if (idxB < 0) return;
+            newDur = clip->getNotes()[idxB].endTick() - clip->getNotes()[idxA].startTick;
         }
-        if (idxB < 0) return;
 
+        // Do not hold a read lock while calling MidiClip's write-locked editing
+        // methods. Removing idxB alone preserves the resized first note even
+        // when storage order is unusual and idxB happens to precede idxA.
         pushUndo (clip);
-        const int64_t newDur = clip->getNotes()[idxB].endTick() - clip->getNotes()[idxA].startTick;
         clip->resizeNote (idxA, newDur);
-        // remove higher index first
-        if (idxB > idxA) clip->removeNote (idxB);
-        else { clip->removeNote (idxA); clip->removeNote (idxB); }
+        clip->removeNote (idxB);
         repaint();
     }
 
@@ -1337,7 +1355,7 @@ private:
     void layoutToolbar()
     {
         auto r = toolbarBounds.reduced (4, 4).withTrimmedLeft (104);
-        const int bw = 26, gap = 2;
+        const int bw = 34, gap = 2;
 
         btnSelect.setBounds  (r.removeFromLeft (bw)); r.removeFromLeft(gap);
         btnDraw.setBounds    (r.removeFromLeft (bw)); r.removeFromLeft(gap);
@@ -1360,10 +1378,13 @@ private:
             {&btnGlue,   Tool::Glue},
         };
         for (auto& p : pairs)
+        {
+            const bool active = currentTool == p.tool;
+            p.btn->setToggleState (active, juce::dontSendNotification);
             p.btn->setColour (juce::TextButton::buttonColourId,
-                currentTool == p.tool
-                    ? juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.25f)
-                    : juce::Colour (0xFF141820));
+                active ? juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.25f)
+                       : juce::Colour (0xFF141820));
+        }
     }
 
     //==========================================================================
