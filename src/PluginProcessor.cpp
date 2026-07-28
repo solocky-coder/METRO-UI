@@ -771,7 +771,7 @@ void DysektProcessor::setMidiRouteMode (MidiRouteMode mode)
 {
     // Called on the message thread whenever the UI tab changes focus.
     //
-    // midiRouteMode is a UI-display hint ONLY (SliceWaveformLcd::isSfPlayerMode,
+    // midiRouteMode is a UI-display hint ONLY (SliceWaveformLcd::isSfzPlayer2Mode,
     // SliceControlBar::isSfzPlayer2Mode, etc.) — it does NOT gate live MIDI
     // routing. Slicer (ch 1), SF-Player, and SFZ-Player2 each listen
     // concurrently on whatever channels they've been assigned, regardless of

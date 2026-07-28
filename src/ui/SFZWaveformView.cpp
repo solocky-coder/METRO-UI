@@ -217,7 +217,7 @@ void SFZWaveformView::drawLoopOverlay (juce::Graphics& g)
     const int x1 = juce::jlimit (0, getWidth(),      sampleToPixel (loopEnd));
     if (x1 <= x0) return;
 
-    const juce::Colour loopCol { 0xFFFFE800 };   // Radioactive Yellow — matches SfzWaveformLcd
+    const juce::Colour loopCol { 0xFFFFE800 };   // Radioactive Yellow
 
     g.setColour (loopCol.withAlpha (0.08f));
     g.fillRect (x0, 0, x1 - x0, getHeight());

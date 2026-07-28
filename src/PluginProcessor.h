@@ -737,8 +737,8 @@ public:
     // (0=Slicer, 1=SfzPlayer2, 2=SfPlayer) and is set ONLY from setUiMode().
     // Unlike midiRouteMode, this is NEVER overwritten when the Arranger opens
     // (syncMidiRouteMode() forces midiRouteMode to Sequencer for live-MIDI
-    // routing purposes, which made every isSfzPlayer2Mode()/isSfPlayerMode()
-    // display check across the UI silently fall back to Slicer once the
+    // routing purposes, which made every isSfzPlayer2Mode()-based display
+    // check across the UI silently fall back to Slicer once the
     // Arranger had focus). Display code should read activeUiTab; only the
     // live-MIDI routing path should still care about midiRouteMode.
     std::atomic<int>  activeUiTab      { 0 };       // 0=Slicer, 1=SfzPlayer2, 2=SfPlayer

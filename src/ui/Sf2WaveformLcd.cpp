@@ -117,6 +117,15 @@ void Sf2WaveformLcd::commitNodes()
     else if (dragRole == NodeRole::Release)
         processor.sfzPlayer.setSfzRelease (releaseMs / 1000.0f);
 
+    // Sync into the FluidSynth-facing ADSR atomics (applyFluidAdsrFromUi reads
+    // these, not sfzAttackSec/etc.) — without this the graph updates but the
+    // SF2 engine keeps playing whatever ADSR it last had.
+    processor.sfzPlayer.setJuceAdsr (
+        processor.sfzPlayer.getSfzAttack(),
+        processor.sfzPlayer.getSfzDecay(),
+        processor.sfzPlayer.getSfzSustain() * 0.01f,
+        processor.sfzPlayer.getSfzRelease());
+
     postCommitGuard = 4;
 }
 
