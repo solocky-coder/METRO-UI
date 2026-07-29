@@ -461,14 +461,37 @@ void SequencerEngine::rebuildSfTracks (const std::vector<Sf2PresetInfo>& presets
         if (t->type != TrackType::SfPlayer)
             next->push_back (t);
 
+    // Channels already claimed by ChromaticSlice tracks must never be handed
+    // out to a new SF2 preset track — otherwise a chromatic slice's live and
+    // recorded MIDI ends up sharing a channel with (and triggering) an SF2
+    // preset. midiChannel on a ChromaticSlice track is stored 0-based.
+    uint32_t chromaOccupied = 0u;
+    for (auto& t : *current)
+        if (t->type == TrackType::ChromaticSlice)
+        {
+            const int ch0 = t->midiChannel.load (std::memory_order_relaxed) & 0xF;
+            chromaOccupied |= (1u << ch0);
+        }
+
+    // 0-based channels 0/1 (MIDI ch 1/2) are reserved for Slicer/SFZ-Player;
+    // sequential FluidSynth channels for SF2 tracks start at 0-based 2 and
+    // skip any channel already owned by a chromatic slice.
+    std::vector<int> assignedChannels;
+    assignedChannels.reserve (presets.size());
+    int nextCh = 2;
     for (int i = 0; i < (int) presets.size(); ++i)
     {
+        while (nextCh <= 15 && (chromaOccupied & (1u << nextCh)))
+            ++nextCh;
+        const int ch = juce::jmin (nextCh, 15);
+        assignedChannels.push_back (ch);
+        if (nextCh <= 15)
+            ++nextCh;
+
         const juce::Colour col = paletteSize > 0
             ? palette[i % paletteSize] : juce::Colour (0xFF406080);
         auto track = SequencerTrack::makeSfPlayer (presets[i], col);
-        // 0-based channels 0/1 (MIDI ch 1/2) are reserved for Slicer/SFZ-Player;
-        // sequential FluidSynth channels for SF2 tracks start at 0-based 2.
-        track->midiChannel.store (juce::jmin (i + 2, 15), std::memory_order_relaxed);
+        track->midiChannel.store (ch, std::memory_order_relaxed);
         next->push_back (track);
     }
 
@@ -476,7 +499,7 @@ void SequencerEngine::rebuildSfTracks (const std::vector<Sf2PresetInfo>& presets
 
     if (impl->sfzPlayer != nullptr)
         for (int i = 0; i < (int) presets.size(); ++i)
-            impl->sfzPlayer->setPresetOnChannel (juce::jmin (i + 2, 15),
+            impl->sfzPlayer->setPresetOnChannel (assignedChannels[(size_t) i],
                                                   presets[i].bank,
                                                   presets[i].preset);
 }

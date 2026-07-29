@@ -3891,10 +3891,18 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // channels 3-16, and never a channel owned by an SFZ-instrument
             // arranger track (that's sfzPlayer2's job, not FluidSynth's), so
             // there's no raw fan-out and no double-dispatch between engines.
+            //
+            // A channel owned by a chromatic slice must be excluded here too
+            // (chromaMask, computed above for the non-standalone effectiveMask)
+            // — otherwise live-played or recorded notes on a chromatic slice's
+            // channel leak straight into FluidSynth/SF2 alongside the slice,
+            // the same collision effectiveMask already guards against for the
+            // plain `midi`-buffer path just above.
             const uint16_t sfzInstrumentMask = sequencer.getSfzInstrumentChannelMask();
-            auto isFluidSynthChannel = [sfzInstrumentMask] (int ch1Based)
+            auto isFluidSynthChannel = [sfzInstrumentMask, chromaMask] (int ch1Based)
             {
                 if (ch1Based < 3 || ch1Based > 16) return false;
+                if (chromaMask & (1u << ch1Based)) return false;
                 return (sfzInstrumentMask & (1u << (ch1Based - 1))) == 0;
             };
             for (const auto meta : standaloneSfLiveInput)
@@ -4572,12 +4580,17 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
             if (version >= 25)
             {
                 // New range-based routing — convert lo/hi range back to bitmask.
-                // Channels 1-2 are hardwired to the slicer/SFZ-player; clamp lo to 3 minimum.
+                // Channels 1-2 are hardwired to the slicer/SFZ-player; clamp lo to 3
+                // minimum. Clamp hi to 15, not 16 — channel 16 is permanently
+                // reserved as SfzPlayer::previewPreset()'s scratch channel (see
+                // SfzDropdownPanel::adjustChannel's isFree()), so a project saved
+                // before that exclusion existed must not resurrect a channel-16
+                // assignment on load.
                 const int lo = stream.readInt();
                 const int hi = stream.readInt();
                 uint32_t mask = 0u;
                 if (lo >= 1 && hi >= lo)
-                    for (int c = juce::jmax (lo, 3); c <= juce::jmin (hi, 16); ++c)
+                    for (int c = juce::jmax (lo, 3); c <= juce::jmin (hi, 15); ++c)
                         mask |= (1u << c);
                 mask &= kSf2AllowedMidiChannelMask;
                 sfPlayerChannelMask.store (mask, std::memory_order_relaxed);
@@ -4587,9 +4600,12 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
                 // v23/v24: single-channel value — map to one-channel mask,
                 // or the hardcoded ch3 default if it was 0 (old omni mode).
                 // Channels 1-2 are hardwired to the slicer/SFZ-player; never set those bits.
+                // Channel 16 is excluded too — permanently reserved for preset
+                // preview (see the v25 branch above) — and falls back to the
+                // same ch3 default as an invalid/omni value.
                 const int oldCh = stream.readInt();
                 uint32_t mask = 0u;
-                if (oldCh >= 3 && oldCh <= 16)
+                if (oldCh >= 3 && oldCh <= 15)
                     mask = (1u << oldCh);
                 else
                     mask = (1u << 3);   // legacy omni / reserved channel → hardcoded ch3 default

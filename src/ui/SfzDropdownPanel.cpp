@@ -804,9 +804,16 @@ void SfzDropdownPanel::mouseDown (const juce::MouseEvent& e)
 
         // Channels owned by chromatic slices, or currently occupied by the
         // SFZ-Player (sfzPlayer2), are not available to the SF2 player.
+        // Channel 16 is also excluded — it is permanently reserved as
+        // SfzPlayer::previewPreset()'s scratch channel (kPreviewChannel),
+        // which unconditionally overwrites whatever preset is loaded there
+        // every time any preset in the browser is auditioned. Letting a
+        // user assign a real live preset to channel 16 meant it would get
+        // silently clobbered the next time anything was previewed — see
+        // SfzPlayer::previewPreset()/getPreviewMidiChannel().
         const uint32_t chromaMask = processor.chromaticSliceChannelMask.load (std::memory_order_relaxed);
         const uint32_t sfz2Mask   = processor.sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
-        const uint32_t reservedMask = chromaMask | sfz2Mask;
+        const uint32_t reservedMask = chromaMask | sfz2Mask | (1u << 16);
         // Channels 1-2 are also never available to the SF player.
         auto isFree = [&](int ch) -> bool
         {
@@ -833,10 +840,12 @@ void SfzDropdownPanel::mouseDown (const juce::MouseEvent& e)
         }
         else
         {
-            int newHi = juce::jlimit (lo, 16, hi + delta);
-            while (newHi >= lo && newHi <= 16 && ! isFree (newHi))
+            // Upper bound is 15, not 16 — channel 16 is reserved for preset
+            // preview (see reservedMask above) and can never be spun into range.
+            int newHi = juce::jlimit (lo, 15, hi + delta);
+            while (newHi >= lo && newHi <= 15 && ! isFree (newHi))
                 newHi += delta > 0 ? 1 : -1;
-            newHi = juce::jlimit (lo, 16, newHi);
+            newHi = juce::jlimit (lo, 15, newHi);
             if (isFree (newHi))
             {
                 // Build mask for [lo, newHi] but skip chromatic-owned holes.
