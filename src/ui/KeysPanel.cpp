@@ -1204,11 +1204,11 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
         // Only draw note labels on C notes if key wide enough
         if ((kr.note % 12) == 0 && b.getWidth() >= 6.f)
         {
-            g.setFont   (DysektLookAndFeel::makeFont (8.0f));
-            g.setColour (hasSlice ? accent.withAlpha (0.9f) : juce::Colour (0xFF505050));
+            g.setFont   (DysektLookAndFeel::makeFont (11.0f, true));
+            g.setColour (hasSlice ? accent.withAlpha (0.9f) : juce::Colour (0xFF303030));
             g.drawText  (juce::MidiMessage::getMidiNoteName (kr.note, true, true, 3),
-                         kr.bounds.getX(), kr.bounds.getBottom() - 13,
-                         kr.bounds.getWidth(), 12, juce::Justification::centred);
+                         kr.bounds.getX(), kr.bounds.getBottom() - 16,
+                         kr.bounds.getWidth(), 14, juce::Justification::centred);
         }
 
         if (hasSlice)

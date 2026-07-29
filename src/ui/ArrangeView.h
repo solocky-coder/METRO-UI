@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "ToolIcons.h"
 #include "TransportBar.h"
 #include "FloatingTransportBar.h"
 #include "TrackHeaderStrip.h"
@@ -718,10 +719,14 @@ private:
         return { x, y, w, trackH - 1 };
     }
 
+    /** Snaps `t` to the grid resolution currently selected in the transport
+     *  bar's snap combo (1/1 .. 1/32, or "Free" == no snap). Used for clip
+     *  drag/resize/split in the arranger, so the grid dropdown actually
+     *  controls arranger snapping rather than being a piano-roll-only
+     *  control. */
     int64_t snapTick (int64_t t) const noexcept
     {
-        const int64_t snap = MidiClip::kPPQ;  // quarter-note snap
-        return ((t + snap / 2) / snap) * snap;
+        return TransportBar::snapTick (t, transport.getSnapTicks());
     }
 
     int64_t totalVisibleTicks() const noexcept
@@ -891,12 +896,16 @@ private:
         if (onClip)
         {
             juce::PopupMenu toolMenu;
+            const auto toolIconColour = findColour (juce::TextButton::textColourOffId);
             auto addToolItem = [&] (int itemId, const juce::String& text, Tool tool)
             {
                 juce::PopupMenu::Item item;
                 item.itemID = itemId;
                 item.text = text;
                 item.isTicked = (currentTool == tool);
+                // Same glyphs as PianoRollComponent's right-click Tool submenu
+                // (see ToolIcons.h) — Tool's enum order matches ToolIcons::Kind.
+                item.setImage (ToolIcons::makeMenuIcon (static_cast<ToolIcons::Kind> (static_cast<int> (tool)), toolIconColour));
                 toolMenu.addItem (item);
             };
             addToolItem (20, "Select (S)", Tool::Select);

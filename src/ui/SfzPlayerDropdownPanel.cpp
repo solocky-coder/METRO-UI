@@ -1765,6 +1765,20 @@ void SfzPlayerDropdownPanel::showAddZoneOverlay (const juce::File& sfzFile,
         reloadZones (sfzFile);
         keysPanel.autoScrollToZones();
         repaint();
+
+        // The two lines above only update sfzPlayer2's parser (for the UI
+        // matrix/keyboard) — sfzPlayer2.process() is never called from
+        // processBlock(). What voicePool2 actually plays back is the
+        // pre-rendered slice data in sliceManager2/sampleData2, populated by
+        // SoundFontLoader via loadSoundFontAsync(..., SoundFontLoadTarget::
+        // SfzPlayer2). Without re-running that render here, the zone we just
+        // appended shows up on the keyboard (note-on still lights up
+        // sfz2ActiveNotes) but sliceManager2.midiNoteToSlice() returns -1 for
+        // it, so no voice ever starts — the exact same bug writeSfzZoneChange()
+        // already works around for zone *edits*; this is the same fix for
+        // zone *creation*.
+        processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
+        processor.loadSoundFontAsync (sfzFile, SoundFontLoadTarget::SfzPlayer2);
     };
 
     showOverlay (addZoneOverlay, std::move (overlay));
