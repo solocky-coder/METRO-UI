@@ -9,24 +9,20 @@
 // Colour-emoji glyphs (like U+1F4C1) render from their own embedded colour
 // palette in most font backends, so Graphics::setColour() has no effect on
 // them — that's why the folder icon was stuck yellow regardless of theme.
-// This draws a simple vector folder outline that actually respects theme.accent.
+// This now draws the exact same tab+body silhouette as the toolbar's
+// "open browser" folder icon (see DualLcdControlFrame::drawIcon, type == 0:
+// a small rounded tab rectangle over a larger rounded body rectangle, both
+// solid-filled) instead of a stroked outline, so the icon that opens the
+// browser and the folder rows listed inside it read as the same glyph.
 static void drawFolderGlyph (juce::Graphics& g, juce::Rectangle<float> box, juce::Colour colour)
 {
-    const float tabW  = box.getWidth()  * 0.45f;
-    const float tabH  = box.getHeight() * 0.30f;
+    const float tabW  = box.getWidth()  * 0.55f;
+    const float tabH  = box.getHeight() * 0.22f;
     const float bodyY = box.getY() + tabH;
 
-    juce::Path p;
-    p.startNewSubPath (box.getX(),                      box.getBottom());
-    p.lineTo           (box.getX(),                      bodyY);
-    p.lineTo           (box.getX() + tabW,               bodyY);
-    p.lineTo           (box.getX() + tabW + tabH * 0.8f, box.getY());
-    p.lineTo           (box.getRight(),                  box.getY());
-    p.lineTo           (box.getRight(),                  box.getBottom());
-    p.closeSubPath();
-
     g.setColour (colour);
-    g.strokePath (p, juce::PathStrokeType (1.3f));
+    g.fillRoundedRectangle (box.getX(), box.getY(), tabW, tabH, 0.0f);
+    g.fillRoundedRectangle (box.getX(), bodyY, box.getWidth(), box.getBottom() - bodyY, 0.0f);
 }
 
 // =============================================================================
@@ -574,7 +570,7 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
         // real directories and zip subfolder rows.
         auto iconBox = juce::Rectangle<float> (3.0f * sf, (float) h * 0.28f,
                                                 (float) iconColW - 6.0f * sf, (float) h * 0.46f);
-        drawFolderGlyph (g, iconBox, theme.accent.withAlpha (0.75f));
+        drawFolderGlyph (g, iconBox, selected ? theme.accent : theme.foreground.withAlpha (0.85f));
 
         g.setFont (DysektLookAndFeel::makeFont (textSize));
         g.setColour (selected ? theme.accent : theme.foreground.withAlpha (0.80f));
