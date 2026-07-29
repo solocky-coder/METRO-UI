@@ -4,6 +4,7 @@
 #include "Sf2ProgramGrid.h"
 #include "DysektLookAndFeel.h"
 #include "IconManager.h"
+#include "UIHelpers.h"
 
 // ── Helper: theme access (same pattern used throughout the codebase) ──────────
 static const ThemeData& gridTheme() { return getTheme(); }
@@ -254,6 +255,11 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                 const int  assignedCh   = presetChannels.count (idx) ? presetChannels.at (idx) : 0;
                 const bool isAssigned   = (assignedCh > 0);
                 const bool isEditing    = (idx == editingIdx);
+                // Same colour the Arranger uses for this preset's track/MIDI
+                // part once it's assigned to a channel. Only meaningful while
+                // assigned — previewing presets aren't an Arranger object yet
+                // and keep the generic theme accent instead (see below).
+                const auto trackCol     = UIHelpers::sf2TrackColourForPreset (info);
 
                 // Cell background
                 if (isPreviewing)
@@ -273,18 +279,25 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                 }
                 else if (isEditing)
                 {
-                    // Assigned + currently selected for per-channel FX editing: bright solid border
-                    g.setColour (theme.accent.withAlpha (0.25f));
+                    // Assigned + currently selected for per-channel FX editing.
+                    // Still the same Arranger track object, so keep its track
+                    // colour rather than switching back to the generic accent.
+                    g.setColour (trackCol.withAlpha (0.25f));
                     g.fillRoundedRectangle (cell.toFloat(), r);
-                    g.setColour (theme.accent.withAlpha (1.0f));
+                    g.setColour (trackCol.withAlpha (1.0f));
                     g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), r, 1.5f);
                 }
                 else if (isAssigned)
                 {
-                    // Assigned but not currently editing: subtle tinted fill + accent border
-                    g.setColour (theme.accent.withAlpha (0.12f));
+                    // Assigned to a MIDI channel: this preset IS that channel's
+                    // Arranger track, so highlight it in that track's colour
+                    // (same colour as the track name + MIDI part in the
+                    // Arranger) instead of the generic theme accent. Presets
+                    // merely being previewed (handled above) intentionally
+                    // stay on the theme accent — see isPreviewing branch.
+                    g.setColour (trackCol.withAlpha (0.12f));
                     g.fillRoundedRectangle (cell.toFloat(), r);
-                    g.setColour (theme.accent.withAlpha (0.50f));
+                    g.setColour (trackCol.withAlpha (0.50f));
                     g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), r, 1.0f);
                 }
                 else if (isSelected)
@@ -359,8 +372,8 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                                            .withX (cell.getX() + 2).withY (cell.getY() + 2);
                     g.setFont (DysektLookAndFeel::makeFont (11.5f));
                     g.setColour (isPreviewing ? theme.accent.brighter (0.3f)
-                                 : isEditing  ? theme.accent.brighter (0.3f)
-                                 : isAssigned ? theme.accent.brighter (0.1f)
+                                 : isEditing  ? trackCol.brighter (0.3f)
+                                 : isAssigned ? trackCol.brighter (0.1f)
                                  : isSelected ? theme.accent.brighter (0.2f)
                                              : theme.foreground.withAlpha (0.30f));
                     g.drawText (juce::String (info.preset), badge,
@@ -374,7 +387,7 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                     const int bw = 26, bh = 14;
                     const auto badgeR = juce::Rectangle<int> (
                         cell.getRight() - bw - 2, cell.getBottom() - bh - 2, bw, bh);
-                    g.setColour (isEditing ? theme.accent : theme.accent.withAlpha (0.85f));
+                    g.setColour (isEditing ? trackCol : trackCol.withAlpha (0.85f));
                     g.fillRoundedRectangle (badgeR.toFloat(), rBadge);
                     g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
                     g.setColour (theme.darkBar);

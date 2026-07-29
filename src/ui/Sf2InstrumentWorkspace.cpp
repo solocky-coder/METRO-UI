@@ -18,14 +18,11 @@
 // =============================================================================
 juce::Colour Sf2InstrumentWorkspace::trackColourForPreset (const Sf2PresetInfo& preset)
 {
-    static const juce::Colour kPalette[] = {
-        juce::Colour (0xFF4060A0), juce::Colour (0xFF60A040),
-        juce::Colour (0xFFA04060), juce::Colour (0xFF40A0A0),
-        juce::Colour (0xFFA0A040), juce::Colour (0xFF8060C0),
-    };
-
-    const int colourIndex = (preset.bank * 128 + preset.preset) % (int) (sizeof (kPalette) / sizeof (kPalette[0]));
-    return kPalette[juce::jmax (0, colourIndex)];
+    // Palette now lives in UIHelpers::sf2TrackColourForPreset() so
+    // Sf2ProgramGrid can share the exact same colour without depending on
+    // this (heavier) workspace class. This wrapper is kept for existing
+    // call sites (PluginEditor.cpp, PresetListModel).
+    return UIHelpers::sf2TrackColourForPreset (preset);
 }
 
 // =============================================================================
@@ -1170,6 +1167,16 @@ void Sf2InstrumentWorkspace::notifyPresetChannelChanged (const juce::String& pre
         if (! found)
             sf2Presets.push_back ({ presetName, midiCh1Based });
     }
+
+    // programGrid.getPresetChannels() is what PresetListModel::paintListBoxItem
+    // reads to decide whether a row gets its Arranger-track colour. sf2Presets
+    // above is the source of truth, but nothing kept programGrid's map in sync
+    // with it at the moment of assignment — only panelDidShow()/setPresets()
+    // refreshed it (via restoreGridChannelAssignments()), so a freshly-assigned
+    // row wouldn't pick up its track colour until some later, unrelated
+    // refresh happened to run. Rebuild it here too so the colour appears the
+    // instant the channel is assigned or cleared.
+    restoreGridChannelAssignments();
 
     refreshChannelFxLabels();
     presetListBox.updateContent();

@@ -2,11 +2,35 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "ThemeData.h"
+#include "../audio/SfzPlayer.h"
 #include <cmath>
 #include <vector>
 
 namespace UIHelpers
 {
+
+// ── Shared SF2 track colour ─────────────────────────────────────────────────
+// A given preset (bank/preset pair) always maps to the same colour, and that
+// colour is what the Arranger uses for the track name + MIDI part once the
+// preset is assigned to a channel (see PluginEditor.cpp's
+// onPresetChannelAssigned -> pianoRollPanel.addOrUpdateSfPresetTrack). Both
+// Sf2InstrumentWorkspace's preset list and Sf2ProgramGrid's preset grid pull
+// from this single definition so an assigned preset always reads as the same
+// colour everywhere it appears — grid cell, workspace row, and Arranger track
+// alike. Presets that are merely being previewed (not assigned to a channel)
+// are NOT an Arranger object yet, so callers should keep those on the theme's
+// generic accent colour instead of calling this.
+inline juce::Colour sf2TrackColourForPreset (const Sf2PresetInfo& preset)
+{
+    static const juce::Colour kPalette[] = {
+        juce::Colour (0xFF4060A0), juce::Colour (0xFF60A040),
+        juce::Colour (0xFFA04060), juce::Colour (0xFF40A0A0),
+        juce::Colour (0xFFA0A040), juce::Colour (0xFF8060C0),
+    };
+
+    const int colourIndex = (preset.bank * 128 + preset.preset) % (int) (sizeof (kPalette) / sizeof (kPalette[0]));
+    return kPalette[juce::jmax (0, colourIndex)];
+}
 
 // ── Background texture pass ─────────────────────────────────────────────────
 // Shared "not a flat box" panel treatment: base gradient + cached grain +
