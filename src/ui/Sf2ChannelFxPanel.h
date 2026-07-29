@@ -167,7 +167,9 @@ private:
     // ── Knob IDs — mirrors the real SfzPlayer::ChannelStrip fields ────────────
     enum class Knob { None, Volume, Pan, ReverbSend };
 
-    static constexpr float kKnobH    = 44.f;   // px tall per knob row
+    static constexpr float kKnobH    = 72.f;   // px tall per knob row — was 44, too small to
+                                                // fit a label + circle + value stack without
+                                                // overlap (see paintKnob() fix below)
     static constexpr float kLabelH   = 20.f;   // preset name label
     static constexpr float kPadding  =  4.f;
 
@@ -305,11 +307,25 @@ private:
                     const ThemeData& theme,
                     bool dimmed)
     {
-        const float norm   = getCurrentNorm (ch, k);
-        const auto  kr     = knobRect (col, k);
-        const float cx     = kr.getCentreX();
-        const float cy     = kr.getCentreY();
-        const float radius = juce::jmin (kr.getWidth(), kr.getHeight()) * 0.38f;
+        const float norm = getCurrentNorm (ch, k);
+
+        // IMPORTANT: kr here is the FULL per-knob cell (label + circle +
+        // value), not just the circle. Carving three non-overlapping
+        // sub-rects out of it — rather than computing the top label and
+        // bottom value positions independently from kr while also sizing
+        // the circle from kr's full height — is what guarantees they can
+        // never visually collide. (Previously the label/value text and the
+        // knob circle all overlapped: kKnobH=44 only left room for either
+        // the label+circle+value stack OR the circle alone, not both. See
+        // Sf2InstrumentWorkspace::drawKnob for the same fix applied there.)
+        auto kr = knobRect (col, k);
+        auto topLabel = kr.removeFromTop (14.f);
+        auto botLabel = kr.removeFromBottom (16.f);
+        const auto& circleZone = kr;   // whatever's left in the middle
+
+        const float cx     = circleZone.getCentreX();
+        const float cy     = circleZone.getCentreY();
+        const float radius = juce::jmin (circleZone.getWidth(), circleZone.getHeight()) * 0.4f;
 
         // Track arc
         constexpr float startAngle = juce::MathConstants<float>::pi * 1.2f;
@@ -334,11 +350,9 @@ private:
         g.setColour (theme.accent.withMultipliedAlpha (alpha));
         g.drawLine (cx, cy, px, py, 1.5f);
 
-        // Label and value
+        // Label and value — each in its own carved-out row, never the circleZone.
         g.setFont (DysektLookAndFeel::makeFont(11.f));
         g.setColour (theme.foreground.withAlpha (0.6f * alpha));
-
-        const auto topLabel = kr.withHeight (13.f);
         g.drawText (label, topLabel.toNearestInt(), juce::Justification::centred);
 
         juce::String valStr;
@@ -356,7 +370,6 @@ private:
 
         g.setColour (theme.foreground.withMultipliedAlpha (alpha));
         g.setFont (DysektLookAndFeel::makeFont(13.f, true));
-        const auto botLabel = kr.withY (kr.getBottom() - 15.f).withHeight (15.f);
         g.drawText (valStr, botLabel.toNearestInt(), juce::Justification::centred);
     }
 
