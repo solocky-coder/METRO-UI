@@ -418,7 +418,7 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
 
     compactKeyboard = std::make_unique<CompactKeyboard> (*this);
     addAndMakeVisible (*compactKeyboard);
-    addChildComponent (channelFxPanel);   // hidden until Col3Mode::ChannelMixer
+    addAndMakeVisible (channelFxPanel);   // always visible — Column 3 has no tab switch
 
     startTimerHz (30);
 }
@@ -647,34 +647,21 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         reverbDampZone = bottom.removeFromTop (34);
     }
 
-    // ── Column 3 — tabs, note activity, keyboard ─────────────────────────────
+    // ── Column 3 — channel mixer, note activity, keyboard (always visible) ──
     {
         auto c = col3Zone.reduced (kPad);
-        col3TabZone = c.removeFromTop (22);
-        perfFxTabZone       = col3TabZone.removeFromLeft (col3TabZone.getWidth() / 2);
-        channelMixerTabZone = col3TabZone;
-        c.removeFromTop (kPad);
 
         keyboardZone = c.removeFromBottom (110);
         c.removeFromBottom (kPad);
         compactKeyboard->setBounds (keyboardZone);
 
-        if (col3Mode == Col3Mode::ChannelMixer)
-        {
-            channelFxPanel.setVisible (true);
-            channelFxPanel.setBounds (c);
-        }
-        else
-        {
-            channelFxPanel.setVisible (false);
-            channelFxPanel.setBounds ({});
+        // Note activity meter docked immediately above the keyboard.
+        c.removeFromBottom (18);
+        noteMeterZone = c.removeFromBottom (24);
+        noteActivityLabelZone = c.removeFromBottom (14);
+        c.removeFromBottom (kPad);
 
-            // Keep activity feedback docked immediately above the keyboard.
-            // Reserve the caption strip first, then place the meter flush to it.
-            c.removeFromBottom (18);
-            noteMeterZone = c.removeFromBottom (24);
-            noteActivityLabelZone = c.removeFromBottom (14);
-        }
+        channelFxPanel.setBounds (c);
     }
 }
 
@@ -733,29 +720,17 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
 
     {
         auto c = col3Zone.reduced (kPad);
-        col3TabZone = c.removeFromTop (22);
-        perfFxTabZone       = col3TabZone.removeFromLeft (col3TabZone.getWidth() / 2);
-        channelMixerTabZone = col3TabZone;
-        c.removeFromTop (kPad);
 
         keyboardZone = c.removeFromBottom (100);
         c.removeFromBottom (kPad);
         compactKeyboard->setBounds (keyboardZone);
 
-        if (col3Mode == Col3Mode::ChannelMixer)
-        {
-            channelFxPanel.setVisible (true);
-            channelFxPanel.setBounds (c);
-        }
-        else
-        {
-            channelFxPanel.setVisible (false);
-            channelFxPanel.setBounds ({});
+        c.removeFromBottom (18);
+        noteMeterZone = c.removeFromBottom (20);
+        noteActivityLabelZone = c.removeFromBottom (14);
+        c.removeFromBottom (kPad);
 
-            c.removeFromBottom (18);
-            noteMeterZone = c.removeFromBottom (20);
-            noteActivityLabelZone = c.removeFromBottom (14);
-        }
+        channelFxPanel.setBounds (c);
     }
 }
 
@@ -883,17 +858,6 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     g.drawText ("FINE " + juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c",
                 fineZone, juce::Justification::centred);
 
-    // Shared active/inactive tab visual language — used by Column 3's
-    // PERFORMANCE & FX/CHANNEL MIXER tabs.
-    auto drawTab = [&] (juce::Rectangle<int> r, const juce::String& text, bool active, bool enabled)
-    {
-        g.setColour (active ? theme.accent.withAlpha (0.18f) : juce::Colours::transparentBlack);
-        g.fillRect (r);
-        g.setColour (active ? theme.accent : theme.foreground.withAlpha (enabled ? 0.6f : 0.25f));
-        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
-        g.drawText (text, r, juce::Justification::centred);
-    };
-
     // ── Column 2 — SF2 filter controls (permanent, no tabs) ────────────────
     {
         const float cutoffHz = processor.sfzPlayer.getSf2FilterCutoff();
@@ -910,18 +874,11 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
                     juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
     }
 
-    // ── Column 3 — tabs ─────────────────────────────────────────────────────
-    drawTab (perfFxTabZone,       "PERFORMANCE & FX", col3Mode == Col3Mode::PerformanceFx, true);
-    drawTab (channelMixerTabZone, "CHANNEL MIXER",    col3Mode == Col3Mode::ChannelMixer,
-             channelMixerTabEnabled());
-
-    if (col3Mode == Col3Mode::PerformanceFx)
-    {
-        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
-        g.setColour (theme.foreground.withAlpha (0.55f));
-        g.drawText ("NOTE ACTIVITY", noteActivityLabelZone, juce::Justification::centredLeft);
-        drawNoteMeter (g, noteMeterZone);
-    }
+    // ── Column 3 — note activity meter (always visible, above keyboard) ────
+    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+    g.setColour (theme.foreground.withAlpha (0.55f));
+    g.drawText ("NOTE ACTIVITY", noteActivityLabelZone, juce::Justification::centredLeft);
+    drawNoteMeter (g, noteMeterZone);
 
     // ── Keyboard label ──────────────────────────────────────────────────────
     g.setFont (DysektLookAndFeel::makeFont (14.f, true));
@@ -1100,14 +1057,6 @@ void Sf2InstrumentWorkspace::timerCallback()
         repaint();
 }
 
-int Sf2InstrumentWorkspace::countAssignedChannels() const noexcept
-{
-    int n = 0;
-    for (int c = 0; c < 16; ++c)
-        if (assignedChannelMask & (1u << c)) ++n;
-    return n;
-}
-
 void Sf2InstrumentWorkspace::refreshChannelFxLabels()
 {
     uint16_t mask = 0;
@@ -1122,12 +1071,6 @@ void Sf2InstrumentWorkspace::refreshChannelFxLabels()
     for (auto& ap : sf2Presets)
         if (ap.ch >= 1 && ap.ch <= 16)
             channelFxPanel.setChannelLabel (ap.ch - 1, ap.name);
-
-    // If the mixer tab was showing but is no longer available (dropped back
-    // to <=1 channel), fall back to Performance & FX rather than leaving an
-    // empty/disabled tab selected.
-    if (! channelMixerTabEnabled() && col3Mode == Col3Mode::ChannelMixer)
-        col3Mode = Col3Mode::PerformanceFx;
 
     if (maskChanged)
         resized();
@@ -1314,18 +1257,6 @@ void Sf2InstrumentWorkspace::showMidiLearnMenu (int fieldId, juce::Point<int> sc
 void Sf2InstrumentWorkspace::mouseDown (const juce::MouseEvent& e)
 {
     const auto pos = e.getPosition();
-
-    // ── Column 3 tab clicks ─────────────────────────────────────────────────
-    if (perfFxTabZone.contains (pos))
-    {
-        if (col3Mode != Col3Mode::PerformanceFx) { col3Mode = Col3Mode::PerformanceFx; resized(); repaint(); }
-        return;
-    }
-    if (channelMixerTabZone.contains (pos) && channelMixerTabEnabled())
-    {
-        if (col3Mode != Col3Mode::ChannelMixer) { col3Mode = Col3Mode::ChannelMixer; resized(); repaint(); }
-        return;
-    }
 
     // ── Right-click — MIDI Learn menu on a knob/slider ────────────────────────
     if (e.mods.isRightButtonDown())
