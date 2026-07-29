@@ -14,6 +14,21 @@
 #include <cmath>
 
 // =============================================================================
+//  Shared SF2 track colour
+// =============================================================================
+juce::Colour Sf2InstrumentWorkspace::trackColourForPreset (const Sf2PresetInfo& preset)
+{
+    static const juce::Colour kPalette[] = {
+        juce::Colour (0xFF4060A0), juce::Colour (0xFF60A040),
+        juce::Colour (0xFFA04060), juce::Colour (0xFF40A0A0),
+        juce::Colour (0xFFA0A040), juce::Colour (0xFF8060C0),
+    };
+
+    const int colourIndex = (preset.bank * 128 + preset.preset) % (int) (sizeof (kPalette) / sizeof (kPalette[0]));
+    return kPalette[juce::jmax (0, colourIndex)];
+}
+
+// =============================================================================
 //  PresetListModel — backs column 1's juce::ListBox
 // =============================================================================
 //  Thin adapter: presents Sf2InstrumentWorkspace::presetList, filtered by
@@ -47,27 +62,40 @@ public:
 
         const bool isCurrent = presetIdx == owner.effectiveDisplayPresetIndex();
 
-        if (rowIsSelected || isCurrent)
-        {
-            g.setColour (theme.accent.withAlpha (0.16f));
-            g.fillRect (row);
-            g.setColour (theme.accent);
-            g.fillRect (row.removeFromLeft (4));
-        }
-
         const auto& chMap = owner.programGrid.getPresetChannels();
         const auto chIt = chMap.find (presetIdx);
         const bool assigned = chIt != chMap.end() && chIt->second >= 1;
+        const auto presetColour = Sf2InstrumentWorkspace::trackColourForPreset (info);
+
+        // An assigned preset is the same musical object as its Arranger track,
+        // so give it that track's colour. Preview-only rows deliberately retain
+        // the theme accent, preserving the existing audition treatment.
+        if (rowIsSelected || isCurrent)
+        {
+            const auto highlightColour = assigned ? presetColour : theme.accent;
+            g.setColour (highlightColour.withAlpha (0.16f));
+            g.fillRect (row);
+            g.setColour (highlightColour);
+            g.fillRect (row.removeFromLeft (4));
+        }
+        else if (assigned)
+        {
+            g.setColour (presetColour.withAlpha (0.08f));
+            g.fillRect (row);
+            g.setColour (presetColour.withAlpha (0.78f));
+            g.fillRect (row.removeFromLeft (4));
+        }
 
         auto textArea = row.reduced (12, 0);
         auto badgeArea = textArea.removeFromRight (48);
 
         g.setFont (DysektLookAndFeel::makeFont (17.f, isCurrent));
-        g.setColour (assigned ? theme.accent : theme.foreground);
+        g.setColour (assigned ? presetColour : theme.foreground);
         g.drawText (info.name, textArea, juce::Justification::centredLeft, true);
 
         g.setFont (DysektLookAndFeel::makeFont (14.f, true));
-        g.setColour (theme.foreground.withAlpha (0.55f));
+        g.setColour (assigned ? presetColour.withAlpha (0.82f)
+                              : theme.foreground.withAlpha (0.55f));
         juce::String badge = juce::String (info.preset).paddedLeft ('0', 3);
         if (assigned)
             badge = "CH" + juce::String (chIt->second);

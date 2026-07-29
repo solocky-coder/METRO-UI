@@ -127,6 +127,11 @@ public:
     /** Fired when the user right-clicks a preset row and assigns a MIDI channel. */
     std::function<void (const Sf2PresetInfo&, int midiChannel1Based)> onPresetChannelAssigned;
 
+    /** The shared arranger/preset-browser colour for an SF2 preset. Keeping this
+     *  lookup here ensures an assigned row always matches its Arranger track
+     *  name and MIDI clip. */
+    static juce::Colour trackColourForPreset (const Sf2PresetInfo& preset);
+
     /** Called by PluginEditor whenever a preset<->channel mapping changes. */
     void notifyPresetChannelChanged (const juce::String& presetName, int midiCh1Based);
 
