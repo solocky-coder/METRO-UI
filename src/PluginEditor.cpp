@@ -234,14 +234,10 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
                                    sfzDropdown.getProgramGrid().getPresetChannels());
 
 #if DYSEKT_STANDALONE
-     // Pick a colour based on the preset number (bank*128 + program).
-     static const juce::Colour kPalette[] = {
-         juce::Colour (0xFF4060A0), juce::Colour (0xFF60A040),
-         juce::Colour (0xFFA04060), juce::Colour (0xFF40A0A0),
-         juce::Colour (0xFFA0A040), juce::Colour (0xFF8060C0),
-     };
-     const int colIdx = (preset.bank * 128 + preset.preset) % 6;
-     pianoRollPanel.addOrUpdateSfPresetTrack (preset, midiChannel1Based, kPalette[colIdx]);
+     // Use the preset browser's shared lookup so its assigned row, the
+     // Arranger track name, and the corresponding MIDI part always match.
+     pianoRollPanel.addOrUpdateSfPresetTrack (
+         preset, midiChannel1Based, Sf2InstrumentWorkspace::trackColourForPreset (preset));
 #endif
  };
 
