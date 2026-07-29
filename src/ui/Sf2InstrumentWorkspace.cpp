@@ -697,6 +697,10 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         filterCutoffZone = bottom.removeFromTop (34);
         bottom.removeFromTop (kPad);
         filterResonanceZone = bottom.removeFromTop (34);
+        bottom.removeFromTop (kPad);
+        reverbSendZone = bottom.removeFromTop (34);
+        bottom.removeFromTop (kPad);
+        reverbDampZone = bottom.removeFromTop (34);
     }
 
     // ── Column 3 — tabs, reverb sliders, MIDI input, output, keyboard ──────
@@ -721,11 +725,6 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         {
             channelFxPanel.setVisible (false);
             channelFxPanel.setBounds ({});
-
-            reverbSendZone = c.removeFromTop (34);
-            c.removeFromTop (kPad);
-            reverbDampZone = c.removeFromTop (34);
-            c.removeFromTop (kPad);
 
             midiInputHeaderZone = c.removeFromTop (18);
             midiChannelReadoutZone = c.removeFromTop (34);
@@ -923,12 +922,19 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         g.setColour (theme.foreground.withAlpha (0.6f));
         g.drawText ("ACTIVE PRESET", header.removeFromTop (16),
                     juce::Justification::centredLeft);
+        auto nameRow = header.removeFromTop (26);
+        // Keep the technical bank/program/channel readout on the same line as
+        // the friendly preset name, reserving enough space for it first.
+        const int metaWidth = juce::jmin (300, nameRow.getWidth() * 2 / 3);
+        auto metaRow = nameRow.removeFromRight (metaWidth);
+        nameRow.removeFromRight (kPad);
+
         g.setFont (DysektLookAndFeel::makeFont (24.f, true));
         g.setColour (theme.foreground);
-        g.drawText (name, header.removeFromTop (26), juce::Justification::centredLeft);
+        g.drawFittedText (name, nameRow, juce::Justification::centredLeft, 1, 0.7f);
         g.setFont (DysektLookAndFeel::makeFont (14.f));
         g.setColour (theme.foreground.withAlpha (0.6f));
-        g.drawText (meta, header, juce::Justification::centredLeft);
+        g.drawFittedText (meta, metaRow, juce::Justification::centredRight, 1, 0.7f);
     }
 
     // ── Column 2 — 3 knobs + fine-tune stepper ─────────────────────────────
@@ -965,6 +971,10 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         drawSlider (g, filterCutoffZone, cutoffToNorm (cutoffHz), "CUTOFF", cutoffStr);
         drawSlider (g, filterResonanceZone, resonanceToNorm (processor.sfzPlayer.getSf2FilterResonance()),
                     "RESONANCE", juce::String (juce::roundToInt (processor.sfzPlayer.getSf2FilterResonance())) + "%");
+        drawSlider (g, reverbSendZone, processor.sfzPlayer.getReverbMix() / 100.f, "REVERB SEND",
+                    juce::String (juce::roundToInt (processor.sfzPlayer.getReverbMix())) + "%");
+        drawSlider (g, reverbDampZone, processor.sfzPlayer.getReverbDamp() / 100.f, "REVERB DAMP",
+                    juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
     }
 
     // ── Column 3 — tabs ─────────────────────────────────────────────────────
@@ -974,11 +984,6 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
 
     if (col3Mode == Col3Mode::PerformanceFx)
     {
-        drawSlider (g, reverbSendZone, processor.sfzPlayer.getReverbMix()  / 100.f, "REVERB SEND",
-                    juce::String (juce::roundToInt (processor.sfzPlayer.getReverbMix()))  + "%");
-        drawSlider (g, reverbDampZone, processor.sfzPlayer.getReverbDamp() / 100.f, "REVERB DAMP",
-                    juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
-
         g.setFont (DysektLookAndFeel::makeFont (14.f, true));
         g.setColour (theme.foreground.withAlpha (0.6f));
         g.drawText ("MIDI INPUT", midiInputHeaderZone, juce::Justification::centredLeft);

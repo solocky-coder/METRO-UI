@@ -215,7 +215,7 @@ private:
     // primary knobs.
     juce::Rectangle<int> fineZone;
 
-    // ── Column 2 bottom — SF2 filter controls (permanent, no tabs) ────────
+    // ── Column 2 bottom — filter + reverb controls (permanent, no tabs) ─────────
     //  Previously a switchable ENVELOPE/FILTER pair. Dropped the ENVELOPE
     //  side entirely: SfzPlayer's A/D/S/R is already shown live in two other
     //  places on screen at once — the top-bar LCD text readout AND the
@@ -224,6 +224,7 @@ private:
     //  Filter is the only thing that isn't already live elsewhere, so it now
     //  owns this space outright.
     juce::Rectangle<int> filterCutoffZone, filterResonanceZone;
+    juce::Rectangle<int> reverbSendZone, reverbDampZone;
 
     // ── Column 3 — Performance & FX / Channel Mixer toggle ─────────────────
     enum class Col3Mode { PerformanceFx, ChannelMixer };
@@ -232,7 +233,6 @@ private:
     juce::Rectangle<int> perfFxTabZone, channelMixerTabZone;
     bool channelMixerTabEnabled() const noexcept { return countAssignedChannels() > 1; }
 
-    juce::Rectangle<int> reverbSendZone, reverbDampZone;
     juce::Rectangle<int> midiInputHeaderZone, midiChannelReadoutZone, noteActivityLabelZone, noteMeterZone;
     juce::Rectangle<int> outputHeaderZone, masterBusLabelZone, settingsButtonZone;
     juce::Rectangle<int> keyboardZone;
