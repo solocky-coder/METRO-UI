@@ -896,10 +896,21 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         {
             const auto& info = presetList[(size_t) idx];
             name = info.name;
+
+            // Same lookup PresetListModel::paintListBoxItem() uses for each
+            // row's "CHxx" badge — the actual per-preset multitimbral channel
+            // assignment. (SfzPlayer::getMidiChannel() is a different, unrelated
+            // "filter channel" value for live-note filtering, defaults to 16,
+            // and was never the right source for this readout — it's why this
+            // line always showed "CH --" regardless of the preset's real
+            // assignment shown elsewhere, e.g. in the Performance & FX panel.)
+            const auto& chMap = programGrid.getPresetChannels();
+            const auto  chIt  = chMap.find (idx);
+            const bool  hasCh = chIt != chMap.end() && chIt->second >= 1;
+
             meta = "BANK " + juce::String (info.bank).paddedLeft ('0', 3)
                  + "  |  PROGRAM " + juce::String (info.preset).paddedLeft ('0', 3)
-                 + "  |  CH " + (processor.sfzPlayer.getMidiChannel() > 0
-                                       ? juce::String (processor.sfzPlayer.getMidiChannel()).paddedLeft ('0', 2)
+                 + "  |  CH " + (hasCh ? juce::String (chIt->second).paddedLeft ('0', 2)
                                        : juce::String ("--"));
         }
         // IMPORTANT: operate on a local copy. Calling removeFromTop() directly

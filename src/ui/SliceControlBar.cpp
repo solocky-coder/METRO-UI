@@ -1930,8 +1930,9 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
  }
  else if (fieldId == F::FieldChromaticChannel)
  {
-     const int      cur    = sl.chromaticChannel;
-     const uint32_t sfMask = processor.savedSfPlayerChannelMask.load (std::memory_order_relaxed);
+     const int      cur      = sl.chromaticChannel;
+     const uint32_t sfMask   = processor.savedSfPlayerChannelMask.load (std::memory_order_relaxed);
+     const uint32_t sfz2Mask = processor.sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
 
      // The SF2-Player defaults to hardcoded channel 3 (single bit) — that
      // channel is excluded below like any other SF-owned channel. Omni mode
@@ -1942,7 +1943,7 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
      // specific subset (the ch3 default, or an explicit partial multitimbral range).
      constexpr uint32_t kOmniMask = 0x1FFFEu;  // bits 1-16 all set (ch 1-16)
      const bool sfIsOmni = ((sfMask & kOmniMask) == kOmniMask);
-     const uint32_t excludeMask = (sfIsOmni || sfMask == 0) ? 0u : sfMask;
+     const uint32_t excludeMask = ((sfIsOmni || sfMask == 0) ? 0u : sfMask) | sfz2Mask;
 
      // Channel 16 is SfzPlayer's hardcoded preset-preview scratch slot
      // (SfzPlayer::kPreviewChannel, 0-based 15) — see previewPreset(). It can
@@ -1955,6 +1956,16 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
      // doesn't just vanish from the menu.
      constexpr int kSf2PreviewMidiChannel = 16;
 
+     // Channel 1 is the Slicer's own hardwired non-chromatic trigger channel
+     // (see the channel-ownership comment on chromaticSliceChannelMask in
+     // PluginProcessor.h: "channel 1 → slicer always, hardwired, not stored
+     // in any mask") — it was previously missing from excludeMask above
+     // (which only ever covered SF-owned channels), so this menu could
+     // silently assign a chromatic slice onto the Slicer's own channel.
+     // Excluded the same way as the ch16 preview slot: always kept out
+     // unless it's already the slice's current value.
+     constexpr int kSlicerMidiChannel = 1;
+
      // Build parallel arrays: display names and their actual channel values.
      // This is necessary because SF-owned channels may be skipped, making item
      // positions non-contiguous with channel numbers.
@@ -1964,9 +1975,11 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
      for (int i = 1; i <= 16; ++i)
      {
          if (excludeMask != 0 && (excludeMask & (1u << i)))
-             continue;   // owned by SF2 multitimbral channel — not available
+             continue;   // owned by SF2 multitimbral channel or SFZ-Player2 — not available
          if (i == kSf2PreviewMidiChannel && i != cur)
              continue;   // reserved for SF2 preset preview/audition
+         if (i == kSlicerMidiChannel && i != cur)
+             continue;   // reserved for the Slicer's own non-chromatic trigger channel
          chNames.add ("Channel " + juce::String (i));
          chValues.push_back (i);
      }
