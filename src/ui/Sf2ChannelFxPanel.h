@@ -91,21 +91,63 @@ public:
             return;
         }
 
-        const float colW = (float) getWidth() / (float) numActive;
-        int col = 0;
+        // Columns were previously squeezed to fit the panel's fixed width
+        // (colW = getWidth()/numActive) with no floor, so anything past
+        // ~5-6 simultaneously-active channels shrank below a usable size —
+        // knob circles and labels became illegible slivers, which reads as
+        // "channels just aren't showing" even though they were technically
+        // still being painted. Give every column a minimum width instead,
+        // and let the panel scroll horizontally (mouse wheel / trackpad)
+        // once more channels are active than fit at that minimum width.
+        const float colW = columnWidth (numActive);
+        clampScroll (colW * (float) numActive);
 
+        int col = 0;
         for (int ch = 0; ch < 16; ++ch)
         {
             if (! (activeMask & (1u << ch))) continue;
 
-            const float x = (float) col * colW;
-            const juce::Rectangle<float> colRect (x, 0.f, colW, (float) getHeight());
-            paintChannel (g, ch, colRect, theme);
+            const float x = (float) col * colW - scrollX;
+            if (x + colW >= 0.f && x <= (float) getWidth())   // skip fully off-screen columns
+            {
+                const juce::Rectangle<float> colRect (x, 0.f, colW, (float) getHeight());
+                paintChannel (g, ch, colRect, theme);
+            }
             ++col;
+        }
+
+        // Scroll hint: a thin track+thumb along the bottom edge, only shown
+        // once content is actually wider than the visible panel.
+        const float contentW = colW * (float) numActive;
+        if (contentW > (float) getWidth())
+        {
+            const float trackY = (float) getHeight() - 3.f;
+            g.setColour (theme.separator.withAlpha (0.5f));
+            g.fillRect (0.f, trackY, (float) getWidth(), 3.f);
+
+            const float thumbW = juce::jmax (24.f, (float) getWidth() * (float) getWidth() / contentW);
+            const float maxScroll = contentW - (float) getWidth();
+            const float thumbX = maxScroll > 0.f ? (scrollX / maxScroll) * ((float) getWidth() - thumbW) : 0.f;
+            g.setColour (theme.accent.withAlpha (0.6f));
+            g.fillRect (thumbX, trackY, thumbW, 3.f);
         }
     }
 
-    void resized() override {}
+    void resized() override { clampScroll (columnWidth (countActiveBits()) * (float) countActiveBits()); }
+
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override
+    {
+        const int numActive = countActiveBits();
+        const float cw = columnWidth (numActive) * (float) numActive;
+        if (cw <= (float) getWidth()) return;   // nothing to scroll
+
+        // Prefer horizontal wheel/trackpad delta; fall back to vertical so a
+        // plain mouse wheel still scrolls this horizontally-laid-out panel.
+        const float delta = (std::abs (wheel.deltaX) > std::abs (wheel.deltaY) ? wheel.deltaX : wheel.deltaY);
+        scrollX -= delta * 240.f;
+        clampScroll (cw);
+        repaint();
+    }
 
     void timerCallback() override
     {
@@ -170,6 +212,9 @@ private:
                                                 // overlap (see paintKnob() fix below)
     static constexpr float kLabelH   = 20.f;   // preset name label
     static constexpr float kPadding  =  4.f;
+    static constexpr float kMinColW  = 96.f;   // floor width so knobs/labels stay legible —
+                                                // panel scrolls horizontally past this instead
+                                                // of shrinking columns further
 
     struct DragState { int ch { -1 }; Knob knob { Knob::None }; };
 
@@ -180,6 +225,21 @@ private:
         int n = 0;
         for (int i = 0; i < 16; ++i) if (activeMask & (1u << i)) ++n;
         return n;
+    }
+
+    /** Column width: divide the panel evenly when few channels are active,
+     *  but never shrink below kMinColW — once numActive would need less
+     *  than that, the panel scrolls instead. */
+    float columnWidth (int numActive) const noexcept
+    {
+        if (numActive <= 0) return kMinColW;
+        return juce::jmax ((float) getWidth() / (float) numActive, kMinColW);
+    }
+
+    void clampScroll (float contentW) noexcept
+    {
+        const float maxScroll = juce::jmax (0.f, contentW - (float) getWidth());
+        scrollX = juce::jlimit (0.f, maxScroll, scrollX);
     }
 
     /** Returns the knob's normalised 0..1 display value from the live
@@ -225,12 +285,12 @@ private:
     {
         const int numActive = countActiveBits();
         if (numActive == 0) return {};
-        const float colW = (float) getWidth() / (float) numActive;
+        const float colW = columnWidth (numActive);
         int col = 0;
         for (int i = 0; i < 16; ++i)
         {
             if (! (activeMask & (1u << i))) continue;
-            if (i == ch) return { (float) col * colW, 0.f, colW, (float) getHeight() };
+            if (i == ch) return { (float) col * colW - scrollX, 0.f, colW, (float) getHeight() };
             ++col;
         }
         return {};
@@ -376,6 +436,7 @@ private:
     DysektProcessor& processor;
     uint16_t         activeMask  { 0x0000 };   // nothing shown until told otherwise
     juce::String     channelLabels[16];
+    float            scrollX     { 0.f };      // horizontal scroll offset, px
 
     DragState dragState;
     int       dragStartY   { 0 };
