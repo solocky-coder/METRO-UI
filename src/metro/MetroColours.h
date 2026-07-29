@@ -12,11 +12,11 @@ namespace dysekt::metro
 using Colour = juce::Colour;
 
 namespace Base {
-inline const Colour Background{0xFF1E1E1E};   // matches MetroTheme.cpp's t.background
-inline const Colour Surface{0xFF252526};      // matches MetroTheme.cpp's t.waveformBg
-inline const Colour SurfaceAlt{0xFF2D2D30};   // matches MetroTheme.cpp's t.darkBar
-inline const Colour Elevated{0xFF3A3A3A};     // matches MetroTheme.cpp's t.buttonHover
-inline const Colour Border{0xFF3A3A3A};       // matches MetroTheme.cpp's t.separator
+inline const Colour Background{0xFF000000};   // matches MetroTheme.cpp's t.background
+inline const Colour Surface{0xFF0A0A0C};      // matches MetroTheme.cpp's t.waveformBg
+inline const Colour SurfaceAlt{0xFF121214};   // matches MetroTheme.cpp's t.darkBar
+inline const Colour Elevated{0xFF26262A};     // matches MetroTheme.cpp's t.buttonHover
+inline const Colour Border{0xFF232326};       // matches MetroTheme.cpp's t.separator
 inline const Colour White{0xFFFFFFFF};
 inline const Colour Black{0xFF000000};
 inline const Colour Disabled{0xFF666666};
@@ -60,8 +60,8 @@ inline const Colour SelectedText=Base::White;
 
 namespace Workspace {
 inline const Colour Background=Base::Background;
-inline const Colour GridMajor{0xFF3D3D3D};
-inline const Colour GridMinor{0xFF2C2C2C};
+inline const Colour GridMajor{0xFF262629};
+inline const Colour GridMinor{0xFF18181A};
 inline const Colour Playhead=Base::White;
 }
 

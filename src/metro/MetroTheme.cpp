@@ -25,30 +25,30 @@ namespace MetroTheme
     {
         ThemeData t;
         t.name             = "metro";
-        // Anchors — re-matched to the reskin spec image's actual COLOR
-        // PALETTE panel: a neutral flat #1E1E1E canvas (NOT the blue-black
-        // #070B0D a previous "arranger redesign brief" had swapped in here —
-        // that brief's blue-tinted anchors never matched the spec image and
-        // are what this fix corrects), with the spec's cyan-blue Accent
-        // swatch (~#0EA7D6) reserved for the strongest active state —
-        // playhead, selected item edge, active tool. Everything below is
-        // derived from this one constant, so a single-line change re-tints
-        // the whole theme.
+        // Anchors — matched to the SF2 Player panel's black chassis (the
+        // "DYSEKT-SF" mockup) rather than the reskin spec's flat #1E1E1E
+        // grey canvas: that grey read as an inconsistent "washed out" tone
+        // next to the near-black panels the SF2 workspace already paints
+        // for itself, so the whole app now shares the same true-black base.
+        // The spec's cyan-blue Accent swatch (~#0EA7D6) is kept as-is for
+        // the strongest active state — playhead, selected item edge, active
+        // tool. Everything below is derived from this one constant, so a
+        // single-line change re-tints the whole theme.
         static const juce::Colour kAccent (0xFF0EA7D6);
-        t.background       = juce::Colour (0xFF1E1E1E);   // Background swatch
-        t.waveformBg       = juce::Colour (0xFF252526);   // Surface swatch
-        t.darkBar          = juce::Colour (0xFF2D2D30);   // Surface Alt swatch
+        t.background       = juce::Colour (0xFF000000);   // absolute black chassis
+        t.waveformBg       = juce::Colour (0xFF0A0A0C);   // near-void panel surface
+        t.darkBar          = juce::Colour (0xFF121214);   // charcoal panel/surface-alt bar
         t.foreground       = juce::Colour (0xFFFFFFFF);   // Text Primary swatch
-        t.header           = juce::Colour (0xFF1E1E1E);   // top bar == Background
+        t.header           = juce::Colour (0xFF000000);   // top bar == Background
         t.waveform         = kAccent;                      // Accent waveform
         t.selectionOverlay = kAccent.withAlpha (0.22f);
         t.lockActive       = kAccent;                      // Accent
         t.lockInactive     = kSecondaryText;                // Text Secondary swatch
-        t.gridLine         = juce::Colour (0xFF2A2A2A);    // neutral, subtle grid
+        t.gridLine         = juce::Colour (0xFF17181A);    // barely-visible grid on black
         t.accent           = kAccent;                      // Accent
-        t.button           = juce::Colour (0xFF2D2D30);    // Surface Alt swatch — raised chrome
-        t.buttonHover       = juce::Colour (0xFF3A3A3A);   // one step up from Surface Alt
-        t.separator        = juce::Colour (0xFF3A3A3A);    // Border / Line swatch
+        t.button           = juce::Colour (0xFF1A1A1D);    // raised chrome, still near-black
+        t.buttonHover       = juce::Colour (0xFF26262A);   // one step up from button
+        t.separator        = juce::Colour (0xFF232326);    // subtle divider on black
 
         // Windows/Metro tile colour set — flat, single-hue swatches, no neon —
         // used for slice colours across the pad grid / mixer / waveform.
