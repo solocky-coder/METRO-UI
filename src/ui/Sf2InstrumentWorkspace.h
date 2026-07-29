@@ -7,11 +7,11 @@
 //  three columns" build. Layout, per the mockup's 1370x414 reference panel:
 //
 //    [ Col 1 ~25.5% ] [ Col 2 ~34.8% ] [ Col 3 ~34.1% ]
-//     Preset browser    Active preset      Performance & FX
+//     Preset browser    Active preset      Channel mixer
 //                        + Amp envelope
 //
-//  Docked top bar (36px): title, "PRESET BROWSER / PERFORMANCE / ENVELOPE"
-//  caption, and a SOUNDFONT LOADED status pill (green dot when a file is
+//  Docked top bar (36px): workspace caption and a SOUNDFONT LOADED status
+//  pill (green dot when a file is
 //  loaded, per Sf2ProgramGrid's existing load-state signal).
 //
 //  Column 1 — Preset browser (mockup: no more 8-col grid):
@@ -59,9 +59,10 @@
 //    the only thing that wasn't already live elsewhere, so it now owns this
 //    space outright with no tab/mode switch needed.
 //
-//  Column 3 — Performance & FX:
-//    • REVERB SEND slider (SfzPlayer::getReverbMix/setReverbMix, 0-100%)
-//    • REVERB DAMP  slider (SfzPlayer::getReverbDamp/setReverbDamp, 0-100%)
+//  Column 3 — Channel mixer:
+//    • Per-channel volume, pan, reverb-send, and mute controls supplied by
+//      Sf2ChannelFxPanel. It remains visible for both single- and
+//      multi-channel assignments.
 //    • Decaying NOTE ACTIVITY meter (bars), driven by processor.sfzActiveNotes,
 //      docked immediately above the compact keyboard.
 //    • Compact keyboard, C3-C5 only, drawn by our own CompactKeyboard nested
@@ -72,14 +73,6 @@
 //      placeholder ate most of the height and the real keys got squeezed
 //      into a sliver, plus 75 white keys crammed into column 3's width read
 //      as "too narrow". A small dedicated component avoids all of that.
-//
-//  Column 3 ALSO carries the explicit mixer-toggle decided in the prior
-//    review: a small tab pair — "Performance & FX" (this literal-mockup
-//    state, shown whenever <=1 MIDI channel has an assigned preset) vs.
-//    "Channel Mixer" (Sf2ChannelFxPanel, shown once more than one channel is
-//    multitimbral-assigned). The mockup only depicts the single-preset
-//    state; the toggle is new UI not present in the SVG, added deliberately
-//    instead of silently keeping a 4th de-facto column.
 //
 //  Below ~760 px wide, columns stack top-to-bottom instead of side-by-side
 //  (kNarrowThreshold), same responsive behaviour as before.
@@ -164,7 +157,7 @@ private:
     // ── Layout — proportions taken from the 1370x414 reference panel ─────────
     static constexpr float kColPresetsFrac = 350.0f / 1370.0f;   // ~0.2555
     static constexpr float kColVoiceFrac   = 477.0f / 1370.0f;   // ~0.3482
-    // Column 3 (Performance & FX / Channel Mixer) gets the remainder (~0.396).
+    // Column 3 (channel mixer) gets the remainder (~0.396).
     static constexpr int   kNarrowThreshold = 760;   // px — below this, stack columns
     static constexpr int   kTopBarH         = 36;
     static constexpr int   kKnobW  = 64;
@@ -227,20 +220,15 @@ private:
     juce::Rectangle<int> filterCutoffZone, filterResonanceZone;
     juce::Rectangle<int> reverbSendZone, reverbDampZone;
 
-    // ── Column 3 — Performance & FX / Channel Mixer toggle ─────────────────
-    enum class Col3Mode { PerformanceFx, ChannelMixer };
-    Col3Mode col3Mode { Col3Mode::PerformanceFx };
-    juce::Rectangle<int> col3Zone, col3TabZone;
-    juce::Rectangle<int> perfFxTabZone, channelMixerTabZone;
-    bool channelMixerTabEnabled() const noexcept { return countAssignedChannels() > 1; }
+    // ── Column 3 — always-visible channel mixer, activity meter, keyboard ───
+    juce::Rectangle<int> col3Zone;
 
     juce::Rectangle<int> noteActivityLabelZone, noteMeterZone;
     juce::Rectangle<int> keyboardZone;
 
     std::unique_ptr<CompactKeyboard> compactKeyboard;
-    Sf2ChannelFxPanel channelFxPanel;   // shown only in Col3Mode::ChannelMixer
+    Sf2ChannelFxPanel channelFxPanel;
     uint16_t assignedChannelMask { 0 }; ///< bit N set = MIDI channel N (0-based bit) has a preset
-    int      countAssignedChannels() const noexcept;
     void     refreshChannelFxLabels();
 
     // Cached assignment range is retained for program-grid bookkeeping.

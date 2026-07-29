@@ -26,7 +26,7 @@
 //       channels changes (e.g. from Sf2ProgramGrid::onChannelChanged).
 //    3. Call setChannelLabel() with the preset name whenever a channel's
 //       assignment changes.
-//    4. The panel auto-hides when no SF2 file is loaded (isVisible() = false).
+//    4. The panel remains visible when no SF2 file is loaded and shows its empty state.
 // =============================================================================
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -109,10 +109,8 @@ public:
 
     void timerCallback() override
     {
-        // Show/hide based on whether SF2 is loaded
-        const bool shouldShow = processor.sfzPlayer.isLoaded();
-        if (shouldShow != isVisible()) setVisible (shouldShow);
-        if (! shouldShow) return;
+        // The workspace keeps this mixer visible even before a SoundFont is
+        // loaded, where paint() presents its empty-state message.
         repaint();
     }
 
@@ -286,7 +284,7 @@ private:
         // Shows the actual 1-based MIDI channel number alongside the preset
         // name (not just the name) so it's possible to confirm which channel
         // a controller needs to send on without switching back to the
-        // Performance & FX tab's MIDI INPUT readout.
+        // Workspace MIDI INPUT readout.
         g.setColour (strip.muted ? theme.foreground.withAlpha (0.35f) : theme.accent);
         g.setFont (DysektLookAndFeel::makeFont(13.f, true));
         const auto labelRect = col.withHeight (kLabelH).reduced (kPadding, 1.f);
