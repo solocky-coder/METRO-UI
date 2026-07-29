@@ -176,6 +176,14 @@ public:
         auto card = content.removeFromTop (52).toFloat();
         g.setColour (theme.button.brighter (0.06f));
         g.fillRoundedRectangle (card, 0.0f);
+
+        // Track-colour wash over the whole card — was previously just the
+        // 4px swatch below with a flat generic-button-colour card behind
+        // it, so the Inspector header didn't read as "this track's colour"
+        // the way the coloured clip in the Arranger timeline does.
+        g.setColour (info.colour.withAlpha (0.22f));
+        g.fillRoundedRectangle (card, 0.0f);
+
         g.setColour (theme.separator.brighter (0.12f));
         g.drawRoundedRectangle (card.reduced (0.5f), 0.0f, 1.0f);
         g.setColour (info.colour);

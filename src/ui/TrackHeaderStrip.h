@@ -41,14 +41,24 @@ public:
             const auto rowR  = getRowBounds (i);
             const bool sel   = (i == selectedTrack);
 
-            g.setColour (sel ? theme.accent.withAlpha (0.14f) : theme.header.withAlpha (0.92f));
+            g.setColour (theme.header.withAlpha (0.92f));
             g.fillRect (rowR);
 
-            // Flat left accent bar on the selected row — same visual language
-            // as Image 2's active sidebar-tab highlight.
+            // Track-colour wash across the whole row — was previously just
+            // the 4px swatch below with a flat dark background otherwise,
+            // so the header didn't read as "this track's colour" at a
+            // glance the way the coloured clip in the timeline does.
+            // Selected rows get a stronger wash so selection still reads
+            // clearly, but in the track's own colour rather than the
+            // generic app accent.
+            g.setColour (info.colour.withAlpha (sel ? 0.30f : 0.14f));
+            g.fillRect (rowR);
+
+            // Left accent bar on the selected row, now in the track's own
+            // colour (was theme.accent) so it matches the wash above.
             if (sel)
             {
-                g.setColour (theme.accent);
+                g.setColour (info.colour);
                 g.fillRect (rowR.getX(), rowR.getY(), 3, rowR.getHeight());
             }
 
