@@ -311,6 +311,10 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
     juce::Timer::callAfterDelay (500,  [enforceReadOnly] { enforceReadOnly(); });
 
     // ── Local folder bookmarks ────────────────────────────────────────────────
+    // Order matters here: physical drives first, then cloud/online storage
+    // folders, then whatever the user has bookmarked by hand — so the row
+    // always opens with every available storage location already visible.
+    detectLocalDrives();
     detectCloudFolders();
     loadCustomBookmarks();
     rebuildBookmarkBar();
@@ -775,6 +779,87 @@ void FileBrowserPanel::refreshTheme()
 }
 
 // ── Cloud bookmark detection ──────────────────────────────────────────────────
+
+void FileBrowserPanel::detectLocalDrives()
+{
+    // Enumerate every filesystem root the OS currently exposes. On Windows
+    // this is every drive letter present at launch — internal disks, USB
+    // sticks, external HDDs/SSDs, mapped network drives. On macOS/Linux it's
+    // "/" plus (below) whatever's actually mounted, same detection SfzFileBrowser
+    // already uses for its own drive-picker view (navigateToRoots()).
+    juce::Array<juce::File> roots;
+    juce::File::findFileSystemRoots (roots);
+
+#if JUCE_MAC
+    // findFileSystemRoots returns only / on macOS; /Volumes/* are the actual
+    // named mounts (external drives, network shares, other partitions).
+    auto volumes = juce::File ("/Volumes");
+    if (volumes.isDirectory())
+    {
+        auto vols = volumes.findChildFiles (juce::File::findDirectories, false);
+        vols.sort();
+        for (auto& v : vols)
+        {
+            bool dupe = false;
+            for (auto& r : roots)
+                if (r == v) { dupe = true; break; }
+            if (! dupe)
+                roots.add (v);
+        }
+    }
+#elif !JUCE_WINDOWS
+    // Linux: /media and /mnt are conventional mountpoints for removable drives.
+    for (const char* mp : { "/media", "/mnt", "/run/media" })
+    {
+        juce::File m (mp);
+        if (! m.isDirectory()) continue;
+        auto mounts = m.findChildFiles (juce::File::findDirectories, true);
+        for (auto& mnt : mounts)
+        {
+            bool dupe = false;
+            for (auto& r : roots)
+                if (r == mnt) { dupe = true; break; }
+            if (! dupe)
+                roots.add (mnt);
+        }
+    }
+#endif
+
+    for (auto& root : roots)
+    {
+        if (! root.isDirectory()) continue;
+
+        bool dupe = false;
+        for (auto& b : bookmarks)
+            if (b.path == root) { dupe = true; break; }
+        if (dupe) continue;
+
+        juce::String label;
+
+#if JUCE_WINDOWS
+        // Drive roots ("C:\") have no filename component to fall back on, so
+        // pull the friendly volume label from Win32 — e.g. "Local Disk (C:)"
+        // or "Backup Drive (E:)" — falling back to the bare drive letter for
+        // unlabelled/removable media.
+        wchar_t volName[MAX_PATH + 1] = {};
+        const auto rootPath = root.getFullPathName();
+        const auto drivePart = rootPath.dropLastCharacters (1); // "C:\" -> "C:"
+        if (GetVolumeInformationW (rootPath.toWideCharPointer(), volName, MAX_PATH,
+                                    nullptr, nullptr, nullptr, nullptr, 0)
+            && volName[0] != 0)
+            label = juce::String (volName) + " (" + drivePart + ")";
+        else
+            label = drivePart;
+#else
+        label = root.getFileName();
+#endif
+
+        if (label.isEmpty())
+            label = root.getFullPathName();
+
+        bookmarks.add ({ label, root, false });
+    }
+}
 
 void FileBrowserPanel::detectCloudFolders()
 {

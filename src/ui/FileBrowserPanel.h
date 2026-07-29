@@ -288,6 +288,7 @@ private:
     juce::TextButton                   addBmBtn;
     std::unique_ptr<juce::FileChooser> fileChooser;
 
+    void detectLocalDrives();
     void detectCloudFolders();
     void loadCustomBookmarks();
     void saveCustomBookmarks();
