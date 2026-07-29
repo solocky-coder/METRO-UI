@@ -102,7 +102,13 @@ class Sf2InstrumentWorkspace::ChannelRangePopup : public juce::Component
 public:
     explicit ChannelRangePopup (Sf2InstrumentWorkspace& ownerIn) : owner (ownerIn)
     {
-        setSize (220, 64);
+        // 112px tall: reduced(10) inset (20) + title row (20) + gap (4) +
+        // low row (28) + gap (8) + high row (28) = 108, +4px slack. The
+        // previous 64px was undersized — reduced(10) left only 44px of
+        // content for a 20+28+28=76px stack, so the high row's
+        // removeFromTop(28) silently clamped to 0 height, leaving the HIGH
+        // </> buttons with zero-size (invisible, unclickable) bounds.
+        setSize (220, 112);
         for (auto* b : { &lowDec, &lowInc, &highDec, &highInc })
         {
             addAndMakeVisible (b);
@@ -116,10 +122,17 @@ public:
 
     void resized() override
     {
+        // Computed once here and reused by paint() below, so the LOW/HIGH
+        // text always lines up with the row its buttons are actually in.
         auto b = getLocalBounds().reduced (10);
-        b.removeFromTop (20); // label row painted, not a component
-        auto lowRow  = b.removeFromTop (28);
-        auto highRow = b;
+        titleRowBounds = b.removeFromTop (20);
+        b.removeFromTop (4);
+        lowRowBounds  = b.removeFromTop (28);
+        b.removeFromTop (8);
+        highRowBounds = b.removeFromTop (28);
+
+        auto lowRow  = lowRowBounds;
+        auto highRow = highRowBounds;
         lowDec.setBounds  (lowRow.removeFromLeft (28));
         lowRow.removeFromLeft (48);
         lowInc.setBounds  (lowRow.removeFromLeft (28));
@@ -134,20 +147,18 @@ public:
         g.fillAll (theme.darkBar);
         g.setColour (theme.foreground);
         g.setFont (DysektLookAndFeel::makeFont (15.f, true));
-        g.drawText ("MULTITIMBRAL CHANNEL RANGE", getLocalBounds().removeFromTop (20),
-                    juce::Justification::centred);
+        g.drawText ("MULTITIMBRAL CHANNEL RANGE", titleRowBounds, juce::Justification::centred);
 
         g.setFont (DysektLookAndFeel::makeFont (16.f, true));
         g.drawText ("LOW " + (owner.cachedChLow  > 0 ? juce::String (owner.cachedChLow)  : juce::String ("-")),
-                    getLocalBounds().removeFromTop (48).removeFromBottom (28).withTrimmedLeft (58).withWidth (48),
-                    juce::Justification::centred);
+                    lowRowBounds.withTrimmedLeft (58).withWidth (48), juce::Justification::centred);
         g.drawText ("HIGH " + (owner.cachedChHigh > 0 ? juce::String (owner.cachedChHigh) : juce::String ("-")),
-                    getLocalBounds().removeFromBottom (28).withTrimmedLeft (58).withWidth (48),
-                    juce::Justification::centred);
+                    highRowBounds.withTrimmedLeft (58).withWidth (48), juce::Justification::centred);
     }
 
 private:
     Sf2InstrumentWorkspace& owner;
+    juce::Rectangle<int> titleRowBounds, lowRowBounds, highRowBounds;
     juce::TextButton lowDec  { "<" }, lowInc  { ">" };
     juce::TextButton highDec { "<" }, highInc { ">" };
 };
@@ -704,6 +715,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         {
             channelFxPanel.setVisible (true);
             channelFxPanel.setBounds (c);
+            settingsButton.setVisible (false);
         }
         else
         {
@@ -796,6 +808,7 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         {
             channelFxPanel.setVisible (true);
             channelFxPanel.setBounds (c);
+            settingsButton.setVisible (false);
         }
         else
         {
