@@ -59,6 +59,10 @@ public:
     static constexpr int kMinTrackH    = 28;
     static constexpr int kMaxTrackH    = 140;
 
+    /** Arranger editing tools. These intentionally match the Piano Roll's
+     *  right-click tool choices, but operate on whole MIDI clips. */
+    enum class Tool { Select, Draw, Erase, Split, Glue };
+
     /** Owner wires this to open the piano roll for the given track + clip. */
     std::function<void(int trackIndex, int clipIndex)> onClipDoubleClicked;
 
@@ -284,6 +288,29 @@ public:
             return;
         }
 
+        // Non-select tools act on whole MIDI clips at the clicked timeline
+        // position. Draw continues through to the empty-space creation path.
+        if (onClip && currentTool == Tool::Erase)
+        {
+            engine.removeClip (trackIdx, hitClip);
+            if (selectedTrack == trackIdx && selectedClip == hitClip)
+                selectedClip = 0;
+            repaint();
+            return;
+        }
+        if (onClip && currentTool == Tool::Split)
+        {
+            splitClipAt (trackIdx, hitClip, snapTick (xToTick (e.x)));
+            repaint();
+            return;
+        }
+        if (onClip && currentTool == Tool::Glue)
+        {
+            glueClipToNext (trackIdx, hitClip);
+            repaint();
+            return;
+        }
+
         // Resize handle — right edge of a clip
         if (onClip && e.x >= hitRect.getRight() - kResizeZone)
         {
@@ -466,6 +493,13 @@ public:
 
     bool keyPressed (const juce::KeyPress& k) override
     {
+        // Keep the arranger's tool shortcuts aligned with the Piano Roll.
+        if (k.getKeyCode() == 'S') { currentTool = Tool::Select; repaint(); return true; }
+        if (k.getKeyCode() == 'D') { currentTool = Tool::Draw;   repaint(); return true; }
+        if (k.getKeyCode() == 'E') { currentTool = Tool::Erase;  repaint(); return true; }
+        if (k.getKeyCode() == 'K') { currentTool = Tool::Split;  repaint(); return true; }
+        if (k.getKeyCode() == 'G') { currentTool = Tool::Glue;   repaint(); return true; }
+
         if (k == juce::KeyPress::spaceKey)
         {
             if (engine.isPlaying()) engine.stop();
@@ -807,6 +841,9 @@ private:
         repaint();
     }
 
+    // Currently selected whole-clip editing tool (mirrors the Piano Roll menu).
+    Tool currentTool = Tool::Select;
+
     //==========================================================================
     //  Cursor
     //==========================================================================
@@ -853,6 +890,23 @@ private:
 
         if (onClip)
         {
+            juce::PopupMenu toolMenu;
+            auto addToolItem = [&] (int itemId, const juce::String& text, Tool tool)
+            {
+                juce::PopupMenu::Item item;
+                item.itemID = itemId;
+                item.text = text;
+                item.isTicked = (currentTool == tool);
+                toolMenu.addItem (item);
+            };
+            addToolItem (20, "Select (S)", Tool::Select);
+            addToolItem (21, "Draw (D)",   Tool::Draw);
+            addToolItem (22, "Erase (E)",  Tool::Erase);
+            addToolItem (23, "Split (K)",  Tool::Split);
+            addToolItem (24, "Glue (G)",   Tool::Glue);
+            m.addSubMenu ("Tool", toolMenu);
+            m.addSeparator();
+
             m.addItem (1, "Open in piano roll");
             m.addSeparator();
             m.addItem (8, "Repeat clip");
@@ -902,6 +956,11 @@ private:
                         if (selectedTrack == trackIdx && selectedClip == clipIdx)
                             selectedClip = 0;
                         break;
+                    case 20: currentTool = Tool::Select; break;
+                    case 21: currentTool = Tool::Draw;   break;
+                    case 22: currentTool = Tool::Erase;  break;
+                    case 23: currentTool = Tool::Split;  break;
+                    case 24: currentTool = Tool::Glue;   break;
                     case 8:  // Repeat clip
                     {
                         MidiClip* src = engine.getClip (trackIdx, clipIdx);
@@ -924,6 +983,96 @@ private:
                 }
                 repaint(); trackStrip.repaint();
             });
+    }
+
+    /** Split a MIDI clip at a timeline tick, preserving and trimming notes
+     *  that cross the split point on both resulting clips. */
+    void splitClipAt (int trackIdx, int clipIdx, int64_t splitTick)
+    {
+        MidiClip* left = engine.getClip (trackIdx, clipIdx);
+        if (! left) return;
+
+        const auto info = engine.getClipInfo (trackIdx, clipIdx);
+        if (splitTick <= info.startTick || splitTick >= info.endTick()) return;
+
+        const int64_t offset = splitTick - info.startTick;
+        juce::Array<MidiNote> leftNotes, rightNotes;
+        {
+            const juce::ScopedReadLock sl (left->getLock());
+            for (const auto& note : left->getNotes())
+            {
+                if (note.startTick >= offset)
+                {
+                    auto right = note;
+                    right.startTick -= offset;
+                    rightNotes.add (right);
+                }
+                else if (note.endTick() <= offset)
+                {
+                    leftNotes.add (note);
+                }
+                else
+                {
+                    auto leftPart = note;
+                    leftPart.durationTick = offset - note.startTick;
+                    leftNotes.add (leftPart);
+
+                    auto rightPart = note;
+                    rightPart.startTick = 0;
+                    rightPart.durationTick = note.endTick() - offset;
+                    rightNotes.add (rightPart);
+                }
+            }
+        }
+
+        left->setNotes (leftNotes);
+        left->setLengthTicks (offset);
+        const int rightIndex = engine.addClip (trackIdx, splitTick, info.lengthTicks - offset);
+        if (MidiClip* right = engine.getClip (trackIdx, rightIndex))
+            right->setNotes (rightNotes);
+        selectedClip = clipIdx;
+    }
+
+    /** Glue this clip to a directly adjacent following clip on the same MIDI
+     *  track. Non-adjacent clips are deliberately left untouched. */
+    void glueClipToNext (int trackIdx, int clipIdx)
+    {
+        MidiClip* first = engine.getClip (trackIdx, clipIdx);
+        if (! first) return;
+        const auto firstInfo = engine.getClipInfo (trackIdx, clipIdx);
+
+        int nextIndex = -1;
+        for (int i = 0; i < engine.getNumClips (trackIdx); ++i)
+        {
+            if (i != clipIdx && engine.getClipInfo (trackIdx, i).startTick == firstInfo.endTick())
+            {
+                nextIndex = i;
+                break;
+            }
+        }
+        if (nextIndex < 0) return;
+
+        MidiClip* next = engine.getClip (trackIdx, nextIndex);
+        if (! next) return;
+        juce::Array<MidiNote> joined;
+        {
+            const juce::ScopedReadLock sl (first->getLock());
+            joined = first->getNotes();
+        }
+        {
+            const juce::ScopedReadLock sl (next->getLock());
+            for (auto note : next->getNotes())
+            {
+                note.startTick += firstInfo.lengthTicks;
+                joined.add (note);
+            }
+        }
+
+        const auto nextInfo = engine.getClipInfo (trackIdx, nextIndex);
+        first->setNotes (joined);
+        first->setLengthTicks (nextInfo.endTick() - firstInfo.startTick);
+        engine.removeClip (trackIdx, nextIndex);
+        selectedClip = clipIdx;
     }
 
     void duplicateClipToNextTrack (int srcTrack, int srcClipIdx)
