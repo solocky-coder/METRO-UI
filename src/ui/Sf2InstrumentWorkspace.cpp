@@ -3,10 +3,8 @@
 // =============================================================================
 //  See Sf2InstrumentWorkspace.h for the full design rationale. This is a
 //  from-scratch rewrite drafted against sf2-metro-reference-keyboard.svg,
-//  not a reflow of the old panel. Two deliberate deviations from the literal
-//  mockup are called out where they occur below: the FineTune stepper and
-//  the channel-range popup behind SETTINGS (neither control exists in the
-//  SVG, and both were real functionality on the old panel).
+//  not a reflow of the old panel. The FineTune stepper is retained as a
+//  deliberate compatibility deviation; it has no separate control in the SVG.
 // =============================================================================
 #include "Sf2InstrumentWorkspace.h"
 #include "DysektLookAndFeel.h"
@@ -90,77 +88,6 @@ public:
 
 private:
     Sf2InstrumentWorkspace& owner;
-};
-
-// ── Small popup for the MIDI channel-range spinner ─────────────────────────
-// Lives behind the SETTINGS button. See header comment: the literal mockup
-// has no room for a lo/hi spinner, only a static "CH 03" readout, so this
-// keeps multitimbral channel-range assignment reachable without adding a
-// widget the SVG doesn't show.
-class Sf2InstrumentWorkspace::ChannelRangePopup : public juce::Component
-{
-public:
-    explicit ChannelRangePopup (Sf2InstrumentWorkspace& ownerIn) : owner (ownerIn)
-    {
-        // 112px tall: reduced(10) inset (20) + title row (20) + gap (4) +
-        // low row (28) + gap (8) + high row (28) = 108, +4px slack. The
-        // previous 64px was undersized — reduced(10) left only 44px of
-        // content for a 20+28+28=76px stack, so the high row's
-        // removeFromTop(28) silently clamped to 0 height, leaving the HIGH
-        // </> buttons with zero-size (invisible, unclickable) bounds.
-        setSize (220, 112);
-        for (auto* b : { &lowDec, &lowInc, &highDec, &highInc })
-        {
-            addAndMakeVisible (b);
-            b->setColour (juce::TextButton::buttonColourId, getTheme().button);
-        }
-        lowDec.onClick  = [this] { owner.adjustChannelRange (true,  -1); repaint(); };
-        lowInc.onClick  = [this] { owner.adjustChannelRange (true,  +1); repaint(); };
-        highDec.onClick = [this] { owner.adjustChannelRange (false, -1); repaint(); };
-        highInc.onClick = [this] { owner.adjustChannelRange (false, +1); repaint(); };
-    }
-
-    void resized() override
-    {
-        // Computed once here and reused by paint() below, so the LOW/HIGH
-        // text always lines up with the row its buttons are actually in.
-        auto b = getLocalBounds().reduced (10);
-        titleRowBounds = b.removeFromTop (20);
-        b.removeFromTop (4);
-        lowRowBounds  = b.removeFromTop (28);
-        b.removeFromTop (8);
-        highRowBounds = b.removeFromTop (28);
-
-        auto lowRow  = lowRowBounds;
-        auto highRow = highRowBounds;
-        lowDec.setBounds  (lowRow.removeFromLeft (28));
-        lowRow.removeFromLeft (48);
-        lowInc.setBounds  (lowRow.removeFromLeft (28));
-        highDec.setBounds (highRow.removeFromLeft (28));
-        highRow.removeFromLeft (48);
-        highInc.setBounds (highRow.removeFromLeft (28));
-    }
-
-    void paint (juce::Graphics& g) override
-    {
-        const auto& theme = getTheme();
-        g.fillAll (theme.darkBar);
-        g.setColour (theme.foreground);
-        g.setFont (DysektLookAndFeel::makeFont (15.f, true));
-        g.drawText ("MULTITIMBRAL CHANNEL RANGE", titleRowBounds, juce::Justification::centred);
-
-        g.setFont (DysektLookAndFeel::makeFont (16.f, true));
-        g.drawText ("LOW " + (owner.cachedChLow  > 0 ? juce::String (owner.cachedChLow)  : juce::String ("-")),
-                    lowRowBounds.withTrimmedLeft (58).withWidth (48), juce::Justification::centred);
-        g.drawText ("HIGH " + (owner.cachedChHigh > 0 ? juce::String (owner.cachedChHigh) : juce::String ("-")),
-                    highRowBounds.withTrimmedLeft (58).withWidth (48), juce::Justification::centred);
-    }
-
-private:
-    Sf2InstrumentWorkspace& owner;
-    juce::Rectangle<int> titleRowBounds, lowRowBounds, highRowBounds;
-    juce::TextButton lowDec  { "<" }, lowInc  { ">" };
-    juce::TextButton highDec { "<" }, highInc { ">" };
 };
 
 // =============================================================================
@@ -464,14 +391,6 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     };
     addAndMakeVisible (browseButton);
 
-    // ── Column 3 — Performance & FX / Channel Mixer toggle, settings ──────────
-    settingsButton.onClick = [this]
-    {
-        auto popup = std::make_unique<ChannelRangePopup> (*this);
-        juce::CallOutBox::launchAsynchronously (std::move (popup), settingsButtonZone, this);
-    };
-    addAndMakeVisible (settingsButton);
-
     compactKeyboard = std::make_unique<CompactKeyboard> (*this);
     addAndMakeVisible (*compactKeyboard);
     addChildComponent (channelFxPanel);   // hidden until Col3Mode::ChannelMixer
@@ -703,7 +622,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         reverbDampZone = bottom.removeFromTop (34);
     }
 
-    // ── Column 3 — tabs, reverb sliders, MIDI input, output, keyboard ──────
+    // ── Column 3 — tabs, note activity, keyboard ─────────────────────────────
     {
         auto c = col3Zone.reduced (kPad);
         col3TabZone = c.removeFromTop (22);
@@ -719,26 +638,17 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         {
             channelFxPanel.setVisible (true);
             channelFxPanel.setBounds (c);
-            settingsButton.setVisible (false);
         }
         else
         {
             channelFxPanel.setVisible (false);
             channelFxPanel.setBounds ({});
 
-            midiInputHeaderZone = c.removeFromTop (18);
-            midiChannelReadoutZone = c.removeFromTop (34);
-            c.removeFromTop (kPad);
-            noteActivityLabelZone = c.removeFromTop (14);
-            noteMeterZone = c.removeFromTop (24);
-            c.removeFromTop (kPad);
-
-            outputHeaderZone = c.removeFromTop (18);
-            auto outRow = c.removeFromTop (28);
-            masterBusLabelZone = outRow.removeFromLeft (outRow.getWidth() - 110);
-            settingsButtonZone = outRow.removeFromRight (100);
-            settingsButton.setBounds (settingsButtonZone);
-            settingsButton.setVisible (true);
+            // Keep activity feedback docked immediately above the keyboard.
+            // Reserve the caption strip first, then place the meter flush to it.
+            c.removeFromBottom (18);
+            noteMeterZone = c.removeFromBottom (24);
+            noteActivityLabelZone = c.removeFromBottom (14);
         }
     }
 }
@@ -790,6 +700,10 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         filterCutoffZone = c.removeFromTop (32);
         c.removeFromTop (kPad);
         filterResonanceZone = c.removeFromTop (32);
+        c.removeFromTop (kPad);
+        reverbSendZone = c.removeFromTop (32);
+        c.removeFromTop (kPad);
+        reverbDampZone = c.removeFromTop (32);
     }
 
     {
@@ -807,31 +721,15 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         {
             channelFxPanel.setVisible (true);
             channelFxPanel.setBounds (c);
-            settingsButton.setVisible (false);
         }
         else
         {
             channelFxPanel.setVisible (false);
             channelFxPanel.setBounds ({});
 
-            reverbSendZone = c.removeFromTop (32);
-            c.removeFromTop (kPad);
-            reverbDampZone = c.removeFromTop (32);
-            c.removeFromTop (kPad);
-
-            midiInputHeaderZone = c.removeFromTop (16);
-            midiChannelReadoutZone = c.removeFromTop (30);
-            c.removeFromTop (kPad);
-            noteActivityLabelZone = c.removeFromTop (14);
-            noteMeterZone = c.removeFromTop (20);
-            c.removeFromTop (kPad);
-
-            outputHeaderZone = c.removeFromTop (16);
-            auto outRow = c.removeFromTop (24);
-            masterBusLabelZone = outRow.removeFromLeft (outRow.getWidth() - 90);
-            settingsButtonZone = outRow.removeFromRight (84);
-            settingsButton.setBounds (settingsButtonZone);
-            settingsButton.setVisible (true);
+            c.removeFromBottom (18);
+            noteMeterZone = c.removeFromBottom (20);
+            noteActivityLabelZone = c.removeFromBottom (14);
         }
     }
 }
@@ -984,29 +882,10 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
 
     if (col3Mode == Col3Mode::PerformanceFx)
     {
-        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
-        g.setColour (theme.foreground.withAlpha (0.6f));
-        g.drawText ("MIDI INPUT", midiInputHeaderZone, juce::Justification::centredLeft);
-        g.setColour (juce::Colour::fromString ("FF091116"));
-        g.fillRect (midiChannelReadoutZone);
-        g.setColour (theme.foreground);
-        g.setFont (DysektLookAndFeel::makeFont (22.f, true));
-        const juce::String chText = cachedChHigh > cachedChLow
-            ? "CH " + juce::String (cachedChLow) + "-" + juce::String (cachedChHigh)
-            : (cachedChLow > 0 ? "CH " + juce::String (cachedChLow).paddedLeft ('0', 2) : "CH --");
-        g.drawText (chText, midiChannelReadoutZone.reduced (10, 0), juce::Justification::centredLeft);
-
         g.setFont (DysektLookAndFeel::makeFont (13.f, true));
         g.setColour (theme.foreground.withAlpha (0.55f));
         g.drawText ("NOTE ACTIVITY", noteActivityLabelZone, juce::Justification::centredLeft);
         drawNoteMeter (g, noteMeterZone);
-
-        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
-        g.setColour (theme.foreground.withAlpha (0.6f));
-        g.drawText ("OUTPUT", outputHeaderZone, juce::Justification::centredLeft);
-        g.setFont (DysektLookAndFeel::makeFont (18.f, true));
-        g.setColour (theme.foreground);
-        g.drawText ("MASTER BUS", masterBusLabelZone, juce::Justification::centredLeft);
     }
 
     // ── Keyboard label ──────────────────────────────────────────────────────
@@ -1138,7 +1017,7 @@ void Sf2InstrumentWorkspace::timerCallback()
         presetListBox.updateContent();
     }
 
-    // ── MIDI channel range (feeds the settings popup + MIDI INPUT readout) ──
+    // ── MIDI channel range (keeps program-grid assignment state current) ───────
     {
         const uint32_t mask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & DysektProcessor::kSf2AllowedMidiChannelMask;
         cachedChLow  = 0;
@@ -1381,61 +1260,6 @@ void Sf2InstrumentWorkspace::showMidiLearnMenu (int fieldId, juce::Point<int> sc
             if (result == 1)      { processor.midiLearn.armLearn (fieldId);     repaint(); }
             else if (result == 2) { processor.midiLearn.clearMapping (fieldId); repaint(); }
         });
-}
-
-// =============================================================================
-//  Channel-range adjustment (used by the SETTINGS popup)
-// =============================================================================
-
-void Sf2InstrumentWorkspace::adjustChannelRange (bool isLow, int delta)
-{
-    const uint32_t curMask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & DysektProcessor::kSf2AllowedMidiChannelMask;
-    int lo = 0, hi = 0;
-    if (curMask != 0)
-    {
-        for (int c = 3; c <= 16; ++c)  if (curMask & (1u << c)) { lo = c; break; }
-        for (int c = 16; c >= 3; --c)  if (curMask & (1u << c)) { hi = c; break; }
-    }
-    if (lo == 0) lo = 3;
-    if (hi == 0) hi = lo;
-
-    const uint32_t reservedMask = processor.chromaticSliceChannelMask.load (std::memory_order_relaxed)
-                                 | processor.sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
-    auto isFree = [&] (int ch) -> bool
-    {
-        if (ch < 3 || ch > 16) return false;
-        return ! (reservedMask & (1u << ch));
-    };
-
-    if (isLow)
-    {
-        int newLo = juce::jlimit (3, hi, lo + delta);
-        while (newLo >= 3 && newLo <= hi && ! isFree (newLo))
-            newLo += delta > 0 ? 1 : -1;
-        newLo = juce::jlimit (3, hi, newLo);
-        if (isFree (newLo))
-        {
-            uint32_t mask = 0u;
-            for (int c = newLo; c <= hi; ++c) if (isFree (c)) mask |= (1u << c);
-            processor.sfPlayerChannelMask.store      (mask, std::memory_order_relaxed);
-            processor.savedSfPlayerChannelMask.store (mask, std::memory_order_relaxed);
-        }
-    }
-    else
-    {
-        int newHi = juce::jlimit (lo, 16, hi + delta);
-        while (newHi >= lo && newHi <= 16 && ! isFree (newHi))
-            newHi += delta > 0 ? 1 : -1;
-        newHi = juce::jlimit (lo, 16, newHi);
-        if (isFree (newHi))
-        {
-            uint32_t mask = 0u;
-            for (int c = lo; c <= newHi; ++c) if (isFree (c)) mask |= (1u << c);
-            processor.sfPlayerChannelMask.store      (mask, std::memory_order_relaxed);
-            processor.savedSfPlayerChannelMask.store (mask, std::memory_order_relaxed);
-        }
-    }
-    repaint();
 }
 
 // =============================================================================

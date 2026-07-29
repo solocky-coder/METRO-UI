@@ -62,11 +62,8 @@
 //  Column 3 — Performance & FX:
 //    • REVERB SEND slider (SfzPlayer::getReverbMix/setReverbMix, 0-100%)
 //    • REVERB DAMP  slider (SfzPlayer::getReverbDamp/setReverbDamp, 0-100%)
-//    • MIDI INPUT: channel readout + decaying note-activity meter (bars),
-//      driven by processor.sfzActiveNotes, matching the mockup's bar-meter
-//      treatment (not the old panel's continuous VU-style meter)
-//    • OUTPUT: "MASTER BUS" label + SETTINGS button (opens the same
-//      MIDI-learn / routing menu the old panel used)
+//    • Decaying NOTE ACTIVITY meter (bars), driven by processor.sfzActiveNotes,
+//      docked immediately above the compact keyboard.
 //    • Compact keyboard, C3-C5 only, drawn by our own CompactKeyboard nested
 //      class rather than the shared KeysPanel. KeysPanel is a full 128-key
 //      component with an attached sample-zone matrix ("+ ZONE" editor, "No
@@ -157,7 +154,6 @@ private:
     // get automatic access to our private members per C++11 nested-class
     // access rules, without needing friend declarations.
     class PresetListModel;
-    class ChannelRangePopup;
     class CompactKeyboard;
 
     // ── Layout — proportions taken from the 1370x414 reference panel ─────────
@@ -233,10 +229,8 @@ private:
     juce::Rectangle<int> perfFxTabZone, channelMixerTabZone;
     bool channelMixerTabEnabled() const noexcept { return countAssignedChannels() > 1; }
 
-    juce::Rectangle<int> midiInputHeaderZone, midiChannelReadoutZone, noteActivityLabelZone, noteMeterZone;
-    juce::Rectangle<int> outputHeaderZone, masterBusLabelZone, settingsButtonZone;
+    juce::Rectangle<int> noteActivityLabelZone, noteMeterZone;
     juce::Rectangle<int> keyboardZone;
-    juce::TextButton settingsButton { "SETTINGS" };
 
     std::unique_ptr<CompactKeyboard> compactKeyboard;
     Sf2ChannelFxPanel channelFxPanel;   // shown only in Col3Mode::ChannelMixer
@@ -244,15 +238,9 @@ private:
     int      countAssignedChannels() const noexcept;
     void     refreshChannelFxLabels();
 
-    // MIDI channel-range (multitimbral fan-out). The literal mockup shows only
-    // a static "CH 03" readout with no lo/hi spinner — that control has no
-    // home in the SVG. Rather than silently dropping multi-channel assignment
-    // (a real feature, not cosmetic), it lives behind the SETTINGS button as
-    // a small popup, reusing the exact same range/collision logic the old
-    // panel had inline.
+    // Cached assignment range is retained for program-grid bookkeeping.
     int cachedChLow  { 0 };
     int cachedChHigh { 0 };
-    void adjustChannelRange (bool isLow, int delta);
 
     void drawKnob      (juce::Graphics& g, juce::Rectangle<int> bounds,
                          float normalised, const juce::String& label,
