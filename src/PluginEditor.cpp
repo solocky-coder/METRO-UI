@@ -226,7 +226,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
  sfzDropdown.onPresetChannelAssigned = [this] (const Sf2PresetInfo& preset, int midiChannel1Based)
  {
      // Keep the inline channel-FX panel in sync
-     sfzDropdown.notifyPresetChannelChanged (preset.name, midiChannel1Based);
+     sfzDropdown.notifyPresetChannelChanged (preset, midiChannel1Based);
 
      // Update the SF2 mixer panel — rebuild strips from the current
      // preset→channel map so the new assignment appears immediately.

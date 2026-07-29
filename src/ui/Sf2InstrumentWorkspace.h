@@ -126,7 +126,7 @@ public:
     static juce::Colour trackColourForPreset (const Sf2PresetInfo& preset);
 
     /** Called by PluginEditor whenever a preset<->channel mapping changes. */
-    void notifyPresetChannelChanged (const juce::String& presetName, int midiCh1Based);
+    void notifyPresetChannelChanged (const Sf2PresetInfo& preset, int midiCh1Based);
 
     /** Called by PluginEditor when the Arranger's selected track is a genuine
      *  SF2 preset track (see ArrangeView::onTrackTypeSelected). Looks up
@@ -198,7 +198,7 @@ private:
      *  active preset instead of "No preset selected". */
     int effectiveDisplayPresetIndex() const;
 
-    struct AssignedPreset { juce::String name; int ch { 0 }; };
+    struct AssignedPreset { Sf2PresetInfo preset; int ch { 0 }; };
     std::vector<AssignedPreset> sf2Presets;
 
     // ── Column 2 top — active preset + 3 knobs ─────────────────────────────

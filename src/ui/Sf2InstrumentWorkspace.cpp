@@ -453,10 +453,12 @@ void Sf2InstrumentWorkspace::handlePresetLeftClicked (int idx)
     const auto& chMap = programGrid.getPresetChannels();
     if (chMap.count (idx) && chMap.at (idx) >= 1)
     {
+        channelFxPanel.setSelectedChannel (chMap.at (idx) - 1);
         repaint();
         return;   // already routed on a real channel — just select, don't re-preview
     }
 
+    channelFxPanel.setSelectedChannel (-1);
     processor.sfzPlayer.previewPreset (info.bank, info.preset);
     repaint();
 }
@@ -1068,9 +1070,14 @@ void Sf2InstrumentWorkspace::refreshChannelFxLabels()
     assignedChannelMask = mask;
 
     channelFxPanel.setActiveChannelMask (mask);
-    for (auto& ap : sf2Presets)
+    for (int ch = 0; ch < 16; ++ch)
+        channelFxPanel.setChannelColour (ch, {});
+    for (const auto& ap : sf2Presets)
         if (ap.ch >= 1 && ap.ch <= 16)
-            channelFxPanel.setChannelLabel (ap.ch - 1, ap.name);
+        {
+            channelFxPanel.setChannelLabel (ap.ch - 1, ap.preset.name);
+            channelFxPanel.setChannelColour (ap.ch - 1, trackColourForPreset (ap.preset));
+        }
 
     if (maskChanged)
         resized();
@@ -1093,7 +1100,8 @@ void Sf2InstrumentWorkspace::restoreGridChannelAssignments()
     {
         for (int i = 0; i < (int) presetList.size(); ++i)
         {
-            if (presetList[(size_t) i].name == ap.name)
+            if (presetList[(size_t) i].bank == ap.preset.bank
+                && presetList[(size_t) i].preset == ap.preset.preset)
             {
                 chMap[i] = ap.ch;
                 break;
@@ -1103,34 +1111,29 @@ void Sf2InstrumentWorkspace::restoreGridChannelAssignments()
     programGrid.setPresetChannels (chMap);
 }
 
-void Sf2InstrumentWorkspace::notifyPresetChannelChanged (const juce::String& presetName,
+void Sf2InstrumentWorkspace::notifyPresetChannelChanged (const Sf2PresetInfo& preset,
                                                           int midiCh1Based)
 {
+    const auto matchesPreset = [&] (const AssignedPreset& ap)
+    {
+        return ap.preset.bank == preset.bank && ap.preset.preset == preset.preset;
+    };
+
     if (midiCh1Based == 0)
     {
-        sf2Presets.erase (std::remove_if (sf2Presets.begin(), sf2Presets.end(),
-            [&] (const AssignedPreset& ap) { return ap.name == presetName; }),
-            sf2Presets.end());
+        sf2Presets.erase (std::remove_if (sf2Presets.begin(), sf2Presets.end(), matchesPreset),
+                          sf2Presets.end());
     }
     else
     {
         bool found = false;
         for (auto& ap : sf2Presets)
-            if (ap.name == presetName) { ap.ch = midiCh1Based; found = true; break; }
+            if (matchesPreset (ap)) { ap.preset = preset; ap.ch = midiCh1Based; found = true; break; }
         if (! found)
-            sf2Presets.push_back ({ presetName, midiCh1Based });
+            sf2Presets.push_back ({ preset, midiCh1Based });
     }
 
-    // programGrid.getPresetChannels() is what PresetListModel::paintListBoxItem
-    // reads to decide whether a row gets its Arranger-track colour. sf2Presets
-    // above is the source of truth, but nothing kept programGrid's map in sync
-    // with it at the moment of assignment — only panelDidShow()/setPresets()
-    // refreshed it (via restoreGridChannelAssignments()), so a freshly-assigned
-    // row wouldn't pick up its track colour until some later, unrelated
-    // refresh happened to run. Rebuild it here too so the colour appears the
-    // instant the channel is assigned or cleared.
     restoreGridChannelAssignments();
-
     refreshChannelFxLabels();
     presetListBox.updateContent();
     resized();

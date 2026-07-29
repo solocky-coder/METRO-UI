@@ -69,6 +69,23 @@ public:
         repaint();
     }
 
+    /** Set the Arranger-track colour for channel `ch` (0-15). An invalid
+     *  colour restores the standard theme accent. */
+    void setChannelColour (int ch, juce::Colour colour)
+    {
+        if (ch < 0 || ch >= 16) return;
+        channelColours[ch] = colour;
+        repaint();
+    }
+
+    /** Highlight and reveal a channel. Pass -1 to clear the focus. */
+    void setSelectedChannel (int ch)
+    {
+        selectedChannel = (ch >= 0 && ch < 16 && (activeMask & (1u << ch))) ? ch : -1;
+        if (selectedChannel >= 0) scrollToChannel (selectedChannel);
+        repaint();
+    }
+
     // ── Component ─────────────────────────────────────────────────────────────
 
     void paint (juce::Graphics& g) override
@@ -242,6 +259,25 @@ private:
         scrollX = juce::jlimit (0.f, maxScroll, scrollX);
     }
 
+    void scrollToChannel (int ch)
+    {
+        if (! (activeMask & (1u << ch))) return;
+        const int numActive = countActiveBits();
+        const float colW = columnWidth (numActive);
+        int ordinal = 0;
+        for (int i = 0; i < ch; ++i) if (activeMask & (1u << i)) ++ordinal;
+        const float left = ordinal * colW;
+        const float right = left + colW;
+        if (left < scrollX) scrollX = left;
+        else if (right > scrollX + (float) getWidth()) scrollX = right - (float) getWidth();
+        clampScroll (colW * (float) numActive);
+    }
+
+    juce::Colour accentFor (int ch, const ThemeData& theme) const
+    {
+        return channelColours[ch].isTransparent() ? theme.accent : channelColours[ch];
+    }
+
     /** Returns the knob's normalised 0..1 display value from the live
      *  ChannelStrip snapshot.  Pan is remapped from -1..+1 to 0..1. */
     float getCurrentNorm (int ch, Knob k) const noexcept
@@ -334,9 +370,20 @@ private:
                        const juce::Rectangle<float>& col,
                        const ThemeData& theme)
     {
-        // Separator
+        const auto accent = accentFor (ch, theme);
+
+        // Track-colour tab makes the mixer column match its preset row/track.
+        g.setColour (accent.withAlpha (0.85f));
+        g.fillRect (col.getX(), col.getY(), 3.f, col.getHeight());
+
+        // Separator and selected-channel focus outline.
         g.setColour (theme.separator);
         g.drawLine (col.getX(), col.getY(), col.getX(), col.getBottom(), 1.f);
+        if (ch == selectedChannel)
+        {
+            g.setColour (accent.withAlpha (0.95f));
+            g.drawRect (col.reduced (1.f), 2.f);
+        }
 
         const auto strip = processor.sfzPlayer.getChannelStrip (ch);
 
@@ -345,7 +392,7 @@ private:
         // name (not just the name) so it's possible to confirm which channel
         // a controller needs to send on without switching back to the
         // Workspace MIDI INPUT readout.
-        g.setColour (strip.muted ? theme.foreground.withAlpha (0.35f) : theme.accent);
+        g.setColour (strip.muted ? accent.withAlpha (0.35f) : accent);
         g.setFont (DysektLookAndFeel::makeFont(13.f, true));
         const auto labelRect = col.withHeight (kLabelH).reduced (kPadding, 1.f);
         juce::String label = "CH " + juce::String (ch + 1) + "  "
@@ -354,15 +401,16 @@ private:
         g.drawText (label, labelRect.toNearestInt(), juce::Justification::centredLeft, true);
 
         // Draw each knob
-        paintKnob (g, ch, Knob::Volume,     col, "VOL",  theme, strip.muted);
-        paintKnob (g, ch, Knob::Pan,        col, "PAN",  theme, strip.muted);
-        paintKnob (g, ch, Knob::ReverbSend, col, "REV",  theme, strip.muted);
+        paintKnob (g, ch, Knob::Volume,     col, "VOL",  theme, accent, strip.muted);
+        paintKnob (g, ch, Knob::Pan,        col, "PAN",  theme, accent, strip.muted);
+        paintKnob (g, ch, Knob::ReverbSend, col, "REV",  theme, accent, strip.muted);
     }
 
     void paintKnob (juce::Graphics& g, int ch, Knob k,
                     const juce::Rectangle<float>& col,
                     const char* label,
                     const ThemeData& theme,
+                    juce::Colour accent,
                     bool dimmed)
     {
         const float norm = getCurrentNorm (ch, k);
@@ -399,13 +447,13 @@ private:
 
         juce::Path fillArc;
         fillArc.addCentredArc (cx, cy, radius, radius, 0.f, startAngle, fillAngle, true);
-        g.setColour (theme.accent.withMultipliedAlpha (alpha));
+        g.setColour (accent.withMultipliedAlpha (alpha));
         g.strokePath (fillArc, juce::PathStrokeType (3.f));
 
         // Pointer
         const float px = cx + radius * 0.6f * std::sin (fillAngle);
         const float py = cy - radius * 0.6f * std::cos (fillAngle);
-        g.setColour (theme.accent.withMultipliedAlpha (alpha));
+        g.setColour (accent.withMultipliedAlpha (alpha));
         g.drawLine (cx, cy, px, py, 1.5f);
 
         // Label and value — each in its own carved-out row, never the circleZone.
@@ -436,6 +484,8 @@ private:
     DysektProcessor& processor;
     uint16_t         activeMask  { 0x0000 };   // nothing shown until told otherwise
     juce::String     channelLabels[16];
+    juce::Colour     channelColours[16];
+    int              selectedChannel { -1 };
     float            scrollX     { 0.f };      // horizontal scroll offset, px
 
     DragState dragState;
