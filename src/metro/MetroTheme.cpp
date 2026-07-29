@@ -10,37 +10,45 @@ namespace MetroTheme
     // a feature only Metro uses), so they live here as the canonical
     // reference values for any Metro-specific code that wants them —
     // MixerPanel's meter already lands close to these by convention.
-    const juce::Colour kSuccess       (0xFF16C60C);
-    const juce::Colour kWarning       (0xFFFFB900);
-    const juce::Colour kDanger        (0xFFE81123);
-    const juce::Colour kSecondaryText (0xFFC8C8C8);   // Secondary (Engineering Manual v1)
+    //
+    // Values below were re-sampled directly from the reskin spec's palette
+    // swatches (not guessed from generic "Windows system colour" names) —
+    // they're softer/more muted than the stock Windows 8 tile colours a
+    // previous pass had used here (e.g. kWarning was the saturated Windows
+    // "Amber" #FFB900; the spec's actual Warning swatch is the paler #F9B04D).
+    const juce::Colour kSuccess       (0xFF60C560);   // Success swatch
+    const juce::Colour kWarning       (0xFFF9B04D);   // Warning swatch
+    const juce::Colour kDanger        (0xFFEC6168);   // Error swatch
+    const juce::Colour kSecondaryText (0xFF7E7E7E);   // Text Secondary swatch
 
     ThemeData build()
     {
         ThemeData t;
         t.name             = "metro";
-        // Anchors, updated to match the arranger redesign brief: a blue-black
-        // canvas (#070B0D) instead of true black so panels read as tinted
-        // rather than neutral charcoal, and a cyan accent (#00D7E8) reserved
-        // for the strongest active state — playhead, selected item edge,
-        // active tool — per the brief's color rules. Everything below is
+        // Anchors — re-matched to the reskin spec image's actual COLOR
+        // PALETTE panel: a neutral flat #1E1E1E canvas (NOT the blue-black
+        // #070B0D a previous "arranger redesign brief" had swapped in here —
+        // that brief's blue-tinted anchors never matched the spec image and
+        // are what this fix corrects), with the spec's cyan-blue Accent
+        // swatch (~#0EA7D6) reserved for the strongest active state —
+        // playhead, selected item edge, active tool. Everything below is
         // derived from this one constant, so a single-line change re-tints
         // the whole theme.
-        static const juce::Colour kAccent (0xFF00D7E8);
-        t.background       = juce::Colour (0xFF070B0D);   // blue-black canvas
-        t.waveformBg       = juce::Colour (0xFF0C1418);    // panel surface
-        t.darkBar          = juce::Colour (0xFF132027);    // raised bars/toolbar blocks
-        t.foreground       = juce::Colour (0xFFD7EEF2);   // Text
-        t.header           = juce::Colour (0xFF070B0D);   // top bar == Background
+        static const juce::Colour kAccent (0xFF0EA7D6);
+        t.background       = juce::Colour (0xFF1E1E1E);   // Background swatch
+        t.waveformBg       = juce::Colour (0xFF252526);   // Surface swatch
+        t.darkBar          = juce::Colour (0xFF2D2D30);   // Surface Alt swatch
+        t.foreground       = juce::Colour (0xFFFFFFFF);   // Text Primary swatch
+        t.header           = juce::Colour (0xFF1E1E1E);   // top bar == Background
         t.waveform         = kAccent;                      // Accent waveform
         t.selectionOverlay = kAccent.withAlpha (0.22f);
         t.lockActive       = kAccent;                      // Accent
-        t.lockInactive     = juce::Colour (0xFF78919A);   // muted secondary — --ui-muted
-        t.gridLine         = juce::Colour (0xFF1A282E);    // blue-tinted grid, subtle
+        t.lockInactive     = kSecondaryText;                // Text Secondary swatch
+        t.gridLine         = juce::Colour (0xFF2A2A2A);    // neutral, subtle grid
         t.accent           = kAccent;                      // Accent
-        t.button           = juce::Colour (0xFF132027);    // --ui-raised
-        t.buttonHover      = juce::Colour (0xFF1A2C34);    // slightly lifted from --ui-raised
-        t.separator        = juce::Colour (0xFF29404A);    // --ui-rule
+        t.button           = juce::Colour (0xFF2D2D30);    // Surface Alt swatch — raised chrome
+        t.buttonHover       = juce::Colour (0xFF3A3A3A);   // one step up from Surface Alt
+        t.separator        = juce::Colour (0xFF3A3A3A);    // Border / Line swatch
 
         // Windows/Metro tile colour set — flat, single-hue swatches, no neon —
         // used for slice colours across the pad grid / mixer / waveform.

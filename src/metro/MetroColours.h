@@ -12,11 +12,11 @@ namespace dysekt::metro
 using Colour = juce::Colour;
 
 namespace Base {
-inline const Colour Background{0xFF070B0D};   // matches MetroTheme.cpp's t.background
-inline const Colour Surface{0xFF0C1418};      // matches MetroTheme.cpp's t.waveformBg
-inline const Colour SurfaceAlt{0xFF132027};   // matches MetroTheme.cpp's t.darkBar
-inline const Colour Elevated{0xFF1A2C34};     // matches MetroTheme.cpp's t.buttonHover
-inline const Colour Border{0xFF29404A};       // matches MetroTheme.cpp's t.separator
+inline const Colour Background{0xFF1E1E1E};   // matches MetroTheme.cpp's t.background
+inline const Colour Surface{0xFF252526};      // matches MetroTheme.cpp's t.waveformBg
+inline const Colour SurfaceAlt{0xFF2D2D30};   // matches MetroTheme.cpp's t.darkBar
+inline const Colour Elevated{0xFF3A3A3A};     // matches MetroTheme.cpp's t.buttonHover
+inline const Colour Border{0xFF3A3A3A};       // matches MetroTheme.cpp's t.separator
 inline const Colour White{0xFFFFFFFF};
 inline const Colour Black{0xFF000000};
 inline const Colour Disabled{0xFF666666};
@@ -24,19 +24,19 @@ inline const Colour Disabled{0xFF666666};
 
 namespace Text {
 inline const Colour Primary{0xFFFFFFFF};
-inline const Colour Secondary{0xFFB8B8B8};
-inline const Colour Muted{0xFF7A7A7A};
-inline const Colour Disabled{0xFF5F5F5F};
+inline const Colour Secondary{0xFF7E7E7E};
+inline const Colour Muted{0xFF5F5F5F};
+inline const Colour Disabled{0xFF4A4A4A};
 }
 
 namespace Accent {
-inline const Colour Blue{0xFF3AA8FF};
-inline const Colour Green{0xFF4CAF50};
-inline const Colour Orange{0xFFF68A1F};
+inline const Colour Blue{0xFF0EA7D6};
+inline const Colour Green{0xFF60C560};
+inline const Colour Orange{0xFFF9B04D};
 inline const Colour Yellow{0xFFD9C12B};
 inline const Colour Purple{0xFF7663F5};
 inline const Colour Pink{0xFFCC4C7B};
-inline const Colour Red{0xFFE04F5F};
+inline const Colour Red{0xFFEC6168};
 inline const Colour Cyan{0xFF48D7FF};
 }
 
