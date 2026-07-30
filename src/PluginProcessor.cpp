@@ -6,6 +6,7 @@
 #include <BinaryData.h>
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace
 {
@@ -3016,6 +3017,38 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             // sliceManager2 was just cleared above (or this load arrived after
             // a previous one — clearAll() again is harmless/idempotent here).
             sliceManager2.clearAll();
+
+            // ── DYSEKT-addzone-nomidi fix ────────────────────────────────────
+            // SliceManager::createSlice() is a legacy wrapper (written for the
+            // Slicer's sequential auto-slicing) that calls rebuildMidiMap()
+            // internally as a side effect — and rebuildMidiMap() reassigns
+            // EVERY currently-active slice's midiNote to rootNote+index, not
+            // just the slice that was just created. Previously this loop
+            // called pinSliceMidiNote() right after each createSlice() call,
+            // which looked safe in isolation, but the *next* zone's
+            // createSlice() call (a few lines later, same loop) would trigger
+            // another rebuildMidiMap() and silently wipe out every pin applied
+            // so far, reassigning those earlier slices back to sequential
+            // rootNote+i notes. Only the last zone/note processed in a given
+            // reload ever kept its correct mapping — every zone before it lost
+            // its real key and became unplayable (or got misrouted to a low
+            // note near rootNote), matching the reported "no MIDI" symptom.
+            // Fix: split into two passes. Pass 1 only allocates slice slots
+            // (and does the head/tail loop split); pass 2 applies every
+            // pinSliceMidiNote() call after ALL createSlice() calls — and
+            // therefore all of createSlice()'s internal rebuildMidiMap()
+            // calls — have already happened, so nothing can clobber a pin
+            // after it's been applied.
+            struct PendingZonePin
+            {
+                int      sliceIdx;
+                int      midiNote;
+                bool     hasColour;
+                uint32_t colourArgb;
+            };
+            std::vector<PendingZonePin> pendingZonePins;
+            pendingZonePins.reserve (zonesOwner2->slices.size());
+
             for (auto& desc : zonesOwner2->slices)
             {
                 const bool hasLoop = (desc.loopStart >= 0 && desc.loopEnd > desc.loopStart
@@ -3032,50 +3065,54 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // No (valid) loop region for this note — plain one-shot slice.
                     int idx = sliceManager2.createSlice (desc.startSample, desc.endSample);
                     if (idx >= 0)
-                    {
-                        sliceManager2.pinSliceMidiNote (idx, desc.midiNote);
-                        if (hasZoneColour)
-                            sliceManager2.getSlice (idx).colour = juce::Colour (desc.zoneColourArgb);
-                    }
+                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb });
                     continue;
                 }
 
                 // Two-slice split: one-shot attack head [startSample, loopStart),
                 // chained on natural end into a looping sustain tail
                 // [loopStart, endSample). Only the head is pinned to a MIDI
-                // note (pinSliceMidiNote, NOT rebuildMidiMap — that call
-                // reassigns every slice's midiNote sequentially from
-                // rootNote and would destroy this exact-key-zone mapping).
-                // The tail is reached only via the chain, never directly
-                // MIDI-triggerable: see Slice::nextSliceIdx.
+                // note (pinSliceMidiNote, deferred to pass 2 below — NOT
+                // rebuildMidiMap, which reassigns every slice's midiNote
+                // sequentially from rootNote and would destroy this
+                // exact-key-zone mapping). The tail is reached only via the
+                // chain, never directly MIDI-triggerable: see Slice::nextSliceIdx.
                 const int headIdx = sliceManager2.createSlice (desc.startSample, desc.loopStart);
                 const int tailIdx = sliceManager2.createSlice (desc.loopStart,   desc.endSample);
 
                 if (headIdx >= 0 && tailIdx >= 0)
                 {
-                    sliceManager2.pinSliceMidiNote (headIdx, desc.midiNote);
                     sliceManager2.getSlice (headIdx).nextSliceIdx = tailIdx;
 
                     // Tail is intentionally left unpinned (midiMap never
                     // points to it) and marked as the actual loop region.
                     sliceManager2.getSlice (tailIdx).loopMode = 1;   // forward loop, whole-slice
 
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb });
+
+                    // Head + tail belong to the same zone — same colour on
+                    // both so the loop-split doesn't look like two zones.
+                    // (Head's colour is applied in pass 2 below with its pin.)
                     if (hasZoneColour)
-                    {
-                        // Head + tail belong to the same zone — same colour
-                        // on both so the loop-split doesn't look like two zones.
-                        sliceManager2.getSlice (headIdx).colour = juce::Colour (desc.zoneColourArgb);
                         sliceManager2.getSlice (tailIdx).colour = juce::Colour (desc.zoneColourArgb);
-                    }
                 }
                 else if (headIdx >= 0)
                 {
                     // Tail creation failed (cap reached) — fall back to a
                     // plain one-shot head so the note still plays something.
-                    sliceManager2.pinSliceMidiNote (headIdx, desc.midiNote);
-                    if (hasZoneColour)
-                        sliceManager2.getSlice (headIdx).colour = juce::Colour (desc.zoneColourArgb);
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb });
                 }
+            }
+
+            // Pass 2 — every createSlice() call above (and therefore every
+            // rebuildMidiMap() it triggered internally) has already happened,
+            // so applying pins here means nothing later in this reload can
+            // undo them.
+            for (auto& pin : pendingZonePins)
+            {
+                sliceManager2.pinSliceMidiNote (pin.sliceIdx, pin.midiNote);
+                if (pin.hasColour)
+                    sliceManager2.getSlice (pin.sliceIdx).colour = juce::Colour (pin.colourArgb);
             }
 
             // Reapply anything captured above, just before clearAll(), for
