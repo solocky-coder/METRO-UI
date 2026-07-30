@@ -199,10 +199,23 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
                                     rowIndex, z);
     sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
                                        z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
-    // clearSummary=false — this is a live edit of the currently-selected row,
-    // not a fresh load/add/discard, so the SCB readout the line above just
-    // wrote should stay on screen instead of being wiped by the refresh.
-    refreshZoneBuilderMatrix (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz, false);
+    // ── DYSEKT-zoneedit-stale-engine fix ─────────────────────────────────────
+    // This used to call refreshZoneBuilderMatrix() directly, which ONLY
+    // re-parses the file into the visual ZONES matrix -- it never touches
+    // sfzPlayer2/sliceManager2, the actual live playback engine. That meant
+    // dragging lokey/hikey/root (or pitch/pan/volume/release) in the SCB
+    // updated the on-disk SFZ and the matrix display, but sliceManager2 kept
+    // playing whatever mapping/render existed before the edit, forever --
+    // until some unrelated action (tab switch, Add Zone, Save+reload)
+    // happened to trigger a full refreshZoneBuilderPreview(). Any zone whose
+    // key range was widened/moved via an SCB edit after creation would look
+    // correct in the matrix but never actually become playable at the new
+    // notes. Fix: go through refreshZoneBuilderPreview() here too (which
+    // reloads sfzPlayer2 + re-derives sliceManager2's slices via
+    // loadSoundFontAsync), just with clearSummary=false so the live readout
+    // set two lines above isn't immediately wiped by the matrix refresh at
+    // the end of it.
+    refreshZoneBuilderPreview (false);
 };
  addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
  zoneBuilderKeysPanel.getProperties().set ("dysektThemeKey", "accent");
@@ -2688,7 +2701,7 @@ void DysektEditor::ensureZoneBuilderScratchExists()
 // just ran), otherwise the real on-disk target. Called after every staged
 // operation so the matrix and slice/waveform preview immediately reflect
 // what was just written to disk.
-void DysektEditor::refreshZoneBuilderPreview()
+void DysektEditor::refreshZoneBuilderPreview (bool clearSummary)
 {
     const juce::File previewFile = (zoneBuilderDirty && zoneBuilderScratchFile.existsAsFile())
                                   ? zoneBuilderScratchFile : zoneBuilderTargetSfz;
@@ -2701,7 +2714,7 @@ void DysektEditor::refreshZoneBuilderPreview()
     // sliceManager2/sampleData2 are only populated by the async soundfont
     // decode, not by sfzPlayer2.loadFile() alone.
     processor.loadSoundFontAsync (previewFile, SoundFontLoadTarget::SfzPlayer2);
-    refreshZoneBuilderMatrix (previewFile);
+    refreshZoneBuilderMatrix (previewFile, clearSummary);
 }
 
 // Right-click "Delete Zone" -> stage removal of one <region> block, via the

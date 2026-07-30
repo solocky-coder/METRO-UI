@@ -1835,7 +1835,11 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
      dragStartValue = processor.voicePool.legatoGlideMs.load (std::memory_order_relaxed);
      break;
  case kFieldRootNote:
-     dragStartValue = (float) processor.sliceManager.rootNote.load (std::memory_order_relaxed);
+     // DYSEKT-rootnote-wrongengine fix: was unconditionally sliceManager,
+     // which is wrong for SFZ-PLAYER mode -- see CmdSetRootNote handler.
+     dragStartValue = (float) (sfzMode ? processor.sliceManager2.rootNote
+                                       : processor.sliceManager.rootNote)
+                                  .load (std::memory_order_relaxed);
      break;
  default: dragStartValue = 0.f; break;
  }
@@ -2133,6 +2137,10 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
         DysektProcessor::Command cmd;
         cmd.type      = DysektProcessor::CmdSetRootNote;
         cmd.intParam1 = newRoot;
+        // DYSEKT-rootnote-wrongengine fix: was missing entirely -- command
+        // defaulted to targeting sliceManager regardless of which tab was
+        // active. See CmdSetRootNote handler in PluginProcessor.cpp.
+        cmd.targetEngine2 = sfzMode;
         processor.pushCommand (cmd);
         repaint(); return;
     }
@@ -2349,7 +2357,10 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
  // ROOT NOTE special case -- commits via CmdSetRootNote, not CmdSetSliceParam
  if (cell.fieldId == kFieldRootNote)
  {
-     const int liveRoot = processor.sliceManager.rootNote.load (std::memory_order_relaxed);
+     // DYSEKT-rootnote-wrongengine fix: was unconditionally sliceManager.
+     const int liveRoot = (sfzMode ? processor.sliceManager2.rootNote
+                                   : processor.sliceManager.rootNote)
+                               .load (std::memory_order_relaxed);
      textEditor = std::make_unique<juce::TextEditor>();
      addAndMakeVisible (*textEditor);
      textEditor->setBounds (cell.x + kParamCellTextX, cell.y + 14,
@@ -2366,6 +2377,7 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
          DysektProcessor::Command cmd;
          cmd.type      = DysektProcessor::CmdSetRootNote;
          cmd.intParam1 = val;
+         cmd.targetEngine2 = sfzMode;
          processor.pushCommand (cmd);
          textEditor.reset(); repaint();
      };

@@ -1718,9 +1718,18 @@ void DysektProcessor::handleCommand (const Command& cmd)
         }
 
         case CmdSetRootNote:
-            sliceManager.rootNote.store (juce::jlimit (0, 127, cmd.intParam1),
-                                         std::memory_order_relaxed);
+        {
+            // DYSEKT-rootnote-wrongengine fix: this previously always wrote
+            // to sliceManager (the Slicer engine), even when the command
+            // originated from the SFZ-PLAYER tab -- SliceControlBar never
+            // threaded targetEngine2 through for this command, so root-note
+            // edits made in SFZ-PLAYER mode silently landed on the wrong
+            // engine and sliceManager2's rootNote never changed at all.
+            SliceManager& sm = cmd.targetEngine2 ? sliceManager2 : sliceManager;
+            sm.rootNote.store (juce::jlimit (0, 127, cmd.intParam1),
+                                std::memory_order_relaxed);
             break;
+        }
 
         case CmdApplyTrim:
             // Intentionally empty. This command still exists purely so the
@@ -2682,6 +2691,17 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
             }
 
             const int sliceIdx = sliceManager2.midiNoteToSlice (note);
+            // DYSEKT-addzone-nomidi diagnostic: there was previously zero
+            // runtime visibility into this path at all (the only MIDI debug
+            // logging lived in SfzPlayer.cpp's process(), which is dead code
+            // for playback -- sliceManager2/voicePool2 do the real work).
+            // Log every live note-on's slice-resolution result so a failing
+            // repro shows definitively whether the note reached here and
+            // whether midiNoteToSlice() found a mapping for it.
+            crashLogger.log ("processMidi2: NOTE-ON note=" + juce::String (note)
+                + " ch=" + juce::String (ch)
+                + "  sliceIdx=" + juce::String (sliceIdx)
+                + (sliceIdx < 0 ? "  -> NO SLICE MAPPED, note will not sound" : ""));
             if (sliceIdx >= 0)
             {
                 // Unconditional — matches WaveformView's mouse-click selection for
