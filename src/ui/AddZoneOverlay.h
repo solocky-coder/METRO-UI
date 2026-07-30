@@ -100,85 +100,79 @@ public:
         const int padX = 18;
 
         // Title
-        g.setFont (DysektLookAndFeel::makeFont (13.0f, true));
+        g.setFont (DysektLookAndFeel::makeFont (16.0f, true));
         g.setColour (T.accent);
         g.drawText (title,
-                    box.getX() + padX, box.getY() + 14,
-                    box.getWidth() - padX * 2, 20,
+                    box.getX() + padX, box.getY() + 16,
+                    box.getWidth() - padX * 2, 24,
                     juce::Justification::centredLeft, true);
 
 
         // Row labels + note readouts
-        g.setFont (DysektLookAndFeel::makeFont (10.5f));
-        g.setColour (T.foreground.withAlpha (0.60f));
-
-        const auto rows = spinnerRows (box);
+        const auto rows = clusterRows (box);
 
         const char* labels[] = { "loKey", "hiKey", "root" };
         const int   vals[]   = { loKey,   hiKey,   rootKey };
 
         for (int i = 0; i < 3; ++i)
         {
-            const auto& r = rows[i];
+            const auto& c = rows[i];
 
             // Label
-            g.setColour (T.foreground.withAlpha (0.55f));
+            g.setFont (DysektLookAndFeel::makeFont (13.5f, true));
+            g.setColour (T.foreground.withAlpha (0.85f));
             g.drawText (labels[i],
-                        r.getX(), r.getY(),
-                        50, r.getHeight(),
+                        c.labelX, c.y,
+                        kLabelW, kRowH,
                         juce::Justification::centredLeft, false);
 
             // Note name readout (centred between the two spinner buttons)
-            g.setFont (DysektLookAndFeel::makeFont (13.0f, true));
+            g.setFont (DysektLookAndFeel::makeFont (19.0f, true));
             g.setColour (T.foreground);
             g.drawText (noteName (vals[i]),
-                        r.getX() + 56 + kArrowW + 4,
-                        r.getY(),
-                        kReadoutW, r.getHeight(),
+                        c.readoutX, c.y,
+                        kReadoutW, kRowH,
                         juce::Justification::centred, false);
 
             // MIDI number subscript
-            g.setFont (DysektLookAndFeel::makeFont (8.5f));
-            g.setColour (T.foreground.withAlpha (0.38f));
+            g.setFont (DysektLookAndFeel::makeFont (11.0f));
+            g.setColour (T.foreground.withAlpha (0.55f));
             g.drawText ("(" + juce::String (vals[i]) + ")",
-                        r.getX() + 56 + kArrowW + 4 + kReadoutW,
-                        r.getY(),
-                        30, r.getHeight(),
+                        c.subX, c.y,
+                        kSubW, kRowH,
                         juce::Justification::centredLeft, false);
         }
 
         // Hint line
-        g.setFont (DysektLookAndFeel::makeFont (9.5f));
-        g.setColour (T.foreground.withAlpha (0.35f));
+        g.setFont (DysektLookAndFeel::makeFont (11.5f));
+        g.setColour (T.foreground.withAlpha (0.55f));
         g.drawText ("Default is one key. Expand the range before confirming.",
                     box.getX() + padX,
-                    rows[2].getBottom() + 6,
+                    rowsBottom (box) + 10,
                     box.getWidth() - padX * 2,
-                    14,
-                    juce::Justification::centredLeft, false);
+                    18,
+                    juce::Justification::centred, false);
     }
 
     void resized() override
     {
         const auto box  = dialogBox();
-        const auto rows = spinnerRows (box);
+        const auto rows = clusterRows (box);
+
+        juce::TextButton* dn[] = { &loDown, &hiDown, &rtDown };
+        juce::TextButton* up[] = { &loUp,   &hiUp,   &rtUp   };
 
         for (int i = 0; i < 3; ++i)
         {
-            const auto& r = rows[i];
-            const int spinX = r.getX() + 56;           // after label
-
-            juce::TextButton* dn[] = { &loDown, &hiDown, &rtDown };
-            juce::TextButton* up[] = { &loUp,   &hiUp,   &rtUp   };
-
-            dn[i]->setBounds (spinX,                       r.getY() + 3, kArrowW, r.getHeight() - 6);
-            up[i]->setBounds (spinX + kArrowW + kReadoutW + 38, r.getY() + 3, kArrowW, r.getHeight() - 6);
+            const auto& c = rows[i];
+            dn[i]->setBounds (c.downX, c.y + 3, kArrowW, kRowH - 6);
+            up[i]->setBounds (c.upX,   c.y + 3, kArrowW, kRowH - 6);
         }
 
         // Confirm / Cancel buttons
-        const int btnH  = 28;
-        const int btnW  = 110;
-        const int gap   = 10;
+        const int btnH  = 34;
+        const int btnW  = 130;
+        const int gap   = 12;
         const int btnY  = box.getBottom() - btnH - 14;
         const int totalW = btnW * 2 + gap;
         const int btnX  = box.getCentreX() - totalW / 2;
@@ -194,9 +188,11 @@ public:
     }
 
 private:
-    static constexpr int kArrowW   = 20;
-    static constexpr int kReadoutW = 48;
-    static constexpr int kRowH     = 30;
+    static constexpr int kArrowW   = 30;
+    static constexpr int kReadoutW = 64;
+    static constexpr int kRowH     = 42;
+    static constexpr int kLabelW   = 60;
+    static constexpr int kSubW     = 40;
 
     int loKey, hiKey, rootKey;
     juce::String title;
@@ -240,26 +236,55 @@ private:
 
     juce::Rectangle<int> dialogBox() const
     {
-        const int w = juce::jmin (420, getWidth() - 40);
-        const int h = 230;
+        const int w = juce::jmin (520, getWidth() - 40);
+        const int h = 300;
         return juce::Rectangle<int> (
             (getWidth()  - w) / 2,
             (getHeight() - h) / 2,
             w, h);
     }
 
-    /** Three evenly-spaced rows for lo / hi / root spinners. */
-    std::array<juce::Rectangle<int>, 3> spinnerRows (const juce::Rectangle<int>& box) const
+    /** One row's laid-out x-positions, centred as a block within the box. */
+    struct ClusterRow
     {
-        const int padX   = 18;
+        int y, labelX, downX, readoutX, upX, subX;
+    };
+
+    /** Three evenly-spaced rows for lo / hi / root, each centred horizontally
+        as a single label+spinner+readout+subscript cluster (not left-aligned
+        to the box edge). */
+    std::array<ClusterRow, 3> clusterRows (const juce::Rectangle<int>& box) const
+    {
+        constexpr int gapLblArrow = 10;
+        constexpr int gapArrowRdt = 10;
+        constexpr int gapRdtArrow = 10;
+        constexpr int gapArrowSub = 14;
+
+        constexpr int clusterW = kLabelW + gapLblArrow + kArrowW + gapArrowRdt
+                                + kReadoutW + gapRdtArrow + kArrowW + gapArrowSub + kSubW;
+
         const int startY = box.getY() + 46;
-        std::array<juce::Rectangle<int>, 3> r;
+        const int rowX   = box.getCentreX() - clusterW / 2;
+
+        std::array<ClusterRow, 3> r;
         for (int i = 0; i < 3; ++i)
-            r[i] = juce::Rectangle<int> (box.getX() + padX,
-                                          startY + i * (kRowH + 4),
-                                          box.getWidth() - padX * 2,
-                                          kRowH);
+        {
+            const int y       = startY + i * (kRowH + 4);
+            const int labelX  = rowX;
+            const int downX   = labelX + kLabelW + gapLblArrow;
+            const int readoutX= downX  + kArrowW  + gapArrowRdt;
+            const int upX     = readoutX + kReadoutW + gapRdtArrow;
+            const int subX    = upX + kArrowW + gapArrowSub;
+
+            r[i] = { y, labelX, downX, readoutX, upX, subX };
+        }
         return r;
+    }
+
+    /** Bottom y of the last cluster row, for placing the hint line beneath it. */
+    int rowsBottom (const juce::Rectangle<int>& box) const
+    {
+        return clusterRows (box)[2].y + kRowH;
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AddZoneOverlay)
