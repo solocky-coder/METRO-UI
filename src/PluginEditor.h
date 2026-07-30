@@ -34,7 +34,7 @@
 #include "ui/GlobalEqPanel.h"
 #include "ui/PadGridView.h"
 #include "ui/KeysPanel.h"
-#include "ui/AddZoneOverlay.h"
+#include "ui/AddZonePanel.h"
 #include "ui/SaveSfzOverlay.h"
 #if DYSEKT_STANDALONE
 #include "ui/PianoRollPanel.h"
@@ -154,11 +154,11 @@ private:
     juce::File zoneBuilderTargetSfz;   // .sfz currently being built/edited, may be empty
     int        zoneBuilderPrevHiKey = -1;
     std::unique_ptr<juce::FileChooser> zoneBuilderSampleChooser;
-    std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;
+    std::unique_ptr<AddZonePanel>      zoneAddPanel;
     std::unique_ptr<SaveSfzOverlay>    zoneSaveOverlay;
 
     // ── Staged-but-unsaved zones ─────────────────────────────────────────────
-    // Zones added via AddZoneOverlay are no longer written straight to
+    // Zones added via AddZonePanel are no longer written straight to
     // zoneBuilderTargetSfz — they're held here and only committed to disk when
     // the user clicks SAVE (or confirms "Save" on the ZONES toggle-off
     // prompt). This lets several zones be staged/auditioned in one sitting
@@ -179,10 +179,10 @@ private:
     // without ever touching the real target file until SAVE.
     juce::File zoneBuilderScratchFile;
 
-    void openZoneBuilderAddZone();               // [+ ZONE] click -> pick sample -> AddZoneOverlay
-    void showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
-                                         const juce::File& sampleFile,
-                                         int prevHiKey);
+    void openZoneBuilderAddZone();               // [+ ZONE] click -> pick sample -> AddZonePanel
+    void showZoneBuilderAddZonePanel (const juce::File& sfzFile,
+                                       const juce::File& sampleFile,
+                                       int prevHiKey);
     void openZoneBuilderSaveAsNew (const juce::File& sampleFile); // no SFZ loaded yet -> name one first
     static juce::String buildZoneRegionText (const juce::File& sfzFile, const juce::File& sampleFile,
                                               int loKey, int hiKey, int rootKey);

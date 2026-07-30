@@ -2556,23 +2556,22 @@ void DysektEditor::openZoneBuilderAddZone()
                 return;
             }
 
-            showZoneBuilderAddZoneOverlay (zoneBuilderTargetSfz, chosen, zoneBuilderPrevHiKey);
+            showZoneBuilderAddZonePanel (zoneBuilderTargetSfz, chosen, zoneBuilderPrevHiKey);
         });
 }
 
-void DysektEditor::showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
-                                                   const juce::File& sampleFile,
-                                                   int prevHiKey)
+void DysektEditor::showZoneBuilderAddZonePanel (const juce::File& sfzFile,
+                                                 const juce::File& sampleFile,
+                                                 int prevHiKey)
 {
     const int defaultLo = (prevHiKey < 0) ? 0 : juce::jmin (prevHiKey + 1, 127);
 
-    zoneAddOverlay = std::make_unique<AddZoneOverlay> (
-        sampleFile.getFileNameWithoutExtension(), defaultLo);
+    zoneAddPanel = std::make_unique<AddZonePanel> (sampleFile, defaultLo);
 
-    zoneAddOverlay->onResult = [this, sfzFile, sampleFile] (int lo, int hi, int root, bool confirmed)
+    zoneAddPanel->onResult = [this, sfzFile, sampleFile] (int lo, int hi, int root, bool confirmed)
     {
         // Defer the reset so it runs after onResult has returned and
-        // AddZoneOverlay is no longer on the call stack (use-after-free fix,
+        // AddZonePanel is no longer on the call stack (use-after-free fix,
         // matching the pattern in SfzPlayerDropdownPanel).
         juce::MessageManager::callAsync ([this] { hideZoneBuilderOverlays(); });
 
@@ -2611,9 +2610,9 @@ void DysektEditor::showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
         repaint();
     };
 
-    addAndMakeVisible (*zoneAddOverlay);
-    zoneAddOverlay->setBounds (getLocalBounds());
-    zoneAddOverlay->toFront (true);
+    zoneAddPanel->onDismiss = [this] { juce::MessageManager::callAsync ([this] { hideZoneBuilderOverlays(); }); };
+
+    zoneAddPanel->show();
 }
 
 // Builds the raw "<region>...</region>"-style text block for one zone.
@@ -2794,7 +2793,7 @@ void DysektEditor::discardZoneBuilderPendingZones()
 }
 
 // Called after the user has already picked a sample but no SFZ is loaded yet.
-// Shows "Name your SFZ file", creates a blank file, then proceeds to AddZoneOverlay.
+// Shows "Name your SFZ file", creates a blank file, then proceeds to AddZonePanel.
 void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
 {
     const auto defaultPath = sampleFile.getParentDirectory().getChildFile ("Custom.sfz");
@@ -2823,7 +2822,7 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
 
         processor.sfzPlayer2.loadFile (dest, processor.fileLoadPool);
         processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
-        // See showZoneBuilderAddZoneOverlay's onResult for why this call is
+        // See showZoneBuilderAddZonePanel's onResult for why this call is
         // required: sliceManager2/sampleData2 are only populated by the async
         // soundfont decode, not by sfzPlayer2.loadFile() alone.
         processor.loadSoundFontAsync (dest, SoundFontLoadTarget::SfzPlayer2);
@@ -2837,7 +2836,7 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
         // Now show the key-range dialog with the already-chosen sample.
         juce::MessageManager::callAsync ([this, sampleFile]
         {
-            showZoneBuilderAddZoneOverlay (zoneBuilderTargetSfz, sampleFile, zoneBuilderPrevHiKey);
+            showZoneBuilderAddZonePanel (zoneBuilderTargetSfz, sampleFile, zoneBuilderPrevHiKey);
         });
     };
 
@@ -2848,10 +2847,10 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
 
 void DysektEditor::hideZoneBuilderOverlays()
 {
-    if (zoneAddOverlay)
+    if (zoneAddPanel)
     {
-        removeChildComponent (zoneAddOverlay.get());
-        zoneAddOverlay.reset();
+        zoneAddPanel->hide();
+        zoneAddPanel.reset();
     }
     if (zoneSaveOverlay)
     {
