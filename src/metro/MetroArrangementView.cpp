@@ -66,72 +66,87 @@ juce::Rectangle<int> MetroArrangementView::clipBounds (int trackIndex, int clipI
 
 void MetroArrangementView::paint (juce::Graphics& graphics)
 {
+    // The arrangement is deliberately a quiet, high-contrast editing surface:
+    // charcoal grid, fine subdivision lines, and no coloured panels competing
+    // with clips.  The ruler is the sole place time is labelled.
     const auto bounds = getLocalBounds();
-    const auto beatWidth = beatWidthPx();
-    graphics.fillAll (Base::Background);
+    const int rulerH = MetroMetrics::timelineHeight;
+    const int beatWidth = beatWidthPx();
+    const int scrollOffset = static_cast<int> (scrollPixels);
+    const int firstBeat = scrollOffset / beatWidth;
+    const int startX = firstBeat * beatWidth - scrollOffset;
+    const auto ruler = bounds.removeFromTop (rulerH).reduced (4, 0);
+    const auto grid = bounds.reduced (4, 0);
+
+    graphics.fillAll (juce::Colour (0xFF151617));
+
+    // Timeline ruler — a restrained, flat strip with bar and beat positions.
+    graphics.setColour (juce::Colour (0xFF101112));
+    graphics.fillRect (ruler);
+    graphics.setColour (juce::Colour (0xFF9CA1A5));
+    graphics.drawRect (ruler, 1);
     graphics.setFont (MetroTypography::small());
 
-    const auto scrollOffset = static_cast<int> (scrollPixels);
-    const auto firstBeat = scrollOffset / beatWidth;
-    const auto startX = firstBeat * beatWidth - scrollOffset;
-
-    for (int x = startX, beat = firstBeat; x < bounds.getWidth(); x += beatWidth, ++beat)
+    for (int x = startX, beat = firstBeat; x < grid.getRight(); x += beatWidth, ++beat)
     {
-        graphics.setColour (Base::Border.withAlpha (0.55f));
-        graphics.drawVerticalLine (x, 0.0f, static_cast<float> (bounds.getHeight()));
-        graphics.setColour (Text::Disabled);
-        graphics.drawText (juce::String (beat + 1), x + MetroMetrics::grid, 0,
-                           beatWidth, MetroMetrics::grid * 3,
-                           juce::Justification::centredLeft);
+        if (x < grid.getX()) continue;
+        const bool isBar = (beat % 4 == 0);
+        graphics.setColour (isBar ? juce::Colour (0xFF575A5D)
+                                  : juce::Colour (0xFF303235));
+        graphics.drawVerticalLine (x, (float) ruler.getY(), (float) grid.getBottom());
+
+        const int bar = beat / 4 + 1;
+        const int beatInBar = beat % 4 + 1;
+        const auto label = beatInBar == 1 ? juce::String (bar)
+                                          : juce::String (bar) + "." + juce::String (beatInBar);
+        graphics.setColour (juce::Colour (0xFFCACCCE));
+        graphics.drawText (label, x + 4, ruler.getY() + 1, beatWidth - 6,
+                           ruler.getHeight() - 3, juce::Justification::centredLeft, false);
     }
 
+    // Fine horizontal rows give an empty arrangement the same useful visual
+    // cadence as a DAW grid, before any clips or additional tracks exist.
+    constexpr int horizontalStep = 9;
+    graphics.setColour (juce::Colour (0xFF252729));
+    for (int y = grid.getY(); y < grid.getBottom(); y += horizontalStep)
+        graphics.drawHorizontalLine (y, (float) grid.getX(), (float) grid.getRight());
+
+    // A stronger divider retains the real track boundaries beneath the fine
+    // grid, which becomes important once several tracks have been added.
     for (int index = 0; index < engine.getNumTracks(); ++index)
     {
-        auto row = trackRowBounds (index);
-        const auto track = engine.getTrackInfo (index);
-        const bool trackSelected = selection.isTrack() && selection.trackIndex == index;
-
-        graphics.setColour (trackSelected ? Base::Elevated
-                                           : Base::Surface.withAlpha (0.75f));
-        graphics.fillRect (row);
-        graphics.setColour (Base::Border);
-        graphics.drawHorizontalLine (row.getBottom() - 1, 0.0f, static_cast<float> (bounds.getWidth()));
-        graphics.setColour (track.colour.brighter (0.2f));
-        graphics.fillRect (row.removeFromLeft (MetroMetrics::grid / 2));
-        if (trackSelected)
+        const auto row = trackRowBounds (index);
+        if (! row.intersects (grid)) continue;
+        const bool selected = selection.isTrack() && selection.trackIndex == index;
+        if (selected)
         {
-            graphics.setColour (State::Focus);
-            graphics.drawRect (trackRowBounds (index), 1);
+            graphics.setColour (juce::Colour (0xFF252729));
+            graphics.fillRect (row.getIntersection (grid));
         }
-        graphics.setColour (Text::Primary);
-        graphics.drawText (track.name, MetroMetrics::grid * 2, row.getY(),
-                           MetroMetrics::grid * 18, MetroMetrics::trackHeight,
-                           juce::Justification::centredLeft);
+        graphics.setColour (juce::Colour (0xFF3A3C3F));
+        graphics.drawHorizontalLine (row.getBottom() - 1, (float) grid.getX(), (float) grid.getRight());
 
         for (int clipIndex = 0; clipIndex < engine.getNumClips (index); ++clipIndex)
         {
-            const auto clipRect = clipBounds (index, clipIndex, row.getY());
-            const bool clipSelected = selection.isClip() && selection.trackIndex == index && selection.clipIndex == clipIndex;
-
-            graphics.setColour (track.colour.withAlpha (clipSelected ? 0.95f : 0.78f));
+            const auto clipRect = clipBounds (index, clipIndex, row.getY()).getIntersection (grid);
+            const bool clipSelected = selection.isClip() && selection.trackIndex == index
+                                                        && selection.clipIndex == clipIndex;
+            const auto track = engine.getTrackInfo (index);
+            graphics.setColour (track.colour.withAlpha (clipSelected ? 0.88f : 0.68f));
             graphics.fillRect (clipRect);
-            if (clipSelected)
-            {
-                graphics.setColour (State::Focus);
-                graphics.drawRect (clipRect, 2);
-            }
-            graphics.setColour (Text::Primary);
-            graphics.drawText ("Clip " + juce::String (clipIndex + 1),
-                               clipRect.reduced (MetroMetrics::grid),
-                               juce::Justification::centredLeft, true);
+            graphics.setColour (juce::Colour (0xFFE4E6E7).withAlpha (clipSelected ? 0.8f : 0.36f));
+            graphics.drawRect (clipRect, 1);
         }
     }
 
-    graphics.setColour (Accent::Blue);
-    graphics.drawVerticalLine (static_cast<int> (engine.getPlayheadBeats()) * beatWidth - scrollOffset,
-                               0.0f, static_cast<float> (bounds.getHeight()));
+    // The playhead is intentionally neutral; colour is reserved for actual clips.
+    const int playheadX = static_cast<int> (engine.getPlayheadBeats()) * beatWidth - scrollOffset;
+    if (playheadX >= grid.getX() && playheadX <= grid.getRight())
+    {
+        graphics.setColour (juce::Colour (0xFFC3C6C8).withAlpha (0.75f));
+        graphics.drawVerticalLine (playheadX, (float) ruler.getY(), (float) grid.getBottom());
+    }
 }
-
 int MetroArrangementView::hitTestTrack (juce::Point<int> position, int& clipIndexOut) const
 {
     clipIndexOut = -1;

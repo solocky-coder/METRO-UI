@@ -2371,7 +2371,7 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
      textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
      textEditor->setText (juce::String (liveRoot), false);
      textEditor->selectAll(); textEditor->grabKeyboardFocus();
-     textEditor->onReturnKey = [this] {
+     textEditor->onReturnKey = [this, sfzMode] {
          if (! textEditor) return;
          const int val = juce::jlimit (0, 127, textEditor->getText().getIntValue());
          DysektProcessor::Command cmd;

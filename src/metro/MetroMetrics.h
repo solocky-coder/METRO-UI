@@ -50,7 +50,7 @@ struct MetroMetrics final
 
     // Arrangement workspace
     static constexpr int timelineHeight       = grid * 3;
-    static constexpr int trackHeight          = grid * 7;
+    static constexpr int trackHeight          = grid * 4;
     static constexpr int minimumTrackHeight   = grid * 5;
     static constexpr int timelineBeatWidth    = grid * 8;
     static constexpr int clipInset            = grid;
