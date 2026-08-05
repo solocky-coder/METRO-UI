@@ -887,6 +887,34 @@ public:
     std::atomic<int>  nextLoadToken  { 0 };
     std::atomic<int>  latestLoadToken{ 0 };
     std::atomic<int>  latestLoadKind { (int) LoadKindReplace };
+
+    /** Generation-token pair for the SFZ-PLAYER preview pipeline
+     *  (completedLoadData2/pendingPreviewZones2), mirroring
+     *  nextLoadToken/latestLoadToken above. Unlike the Slicer's pipeline,
+     *  this one previously had no ordering guard at all -- SoundFontLoader
+     *  dispatches each SfzPlayer2-target load as a ThreadPoolJob, and two
+     *  loads issued close together (e.g. two Add Zone confirms in quick
+     *  succession) can complete out of order. Without a token check, an
+     *  older job finishing after a newer one would silently overwrite
+     *  sliceManager2 with stale (pre-edit) zone data -- the zone still shows
+     *  up in the zone-builder matrix (read synchronously from the sfz file
+     *  text) but has no MIDI mapping, since the slice rebuild that actually
+     *  creates the mapping used the stale payload. nextPreviewToken2 is
+     *  bumped and latestPreviewToken2 updated by SoundFontLoader::load() on
+     *  every SfzPlayer2-target dispatch; each SfzPreviewZonePayload/decoded2
+     *  result carries the token it was built for, and processBlock discards
+     *  the result if a newer load has been requested since. */
+    std::atomic<int>  nextPreviewToken2  { 0 };
+    std::atomic<int>  latestPreviewToken2{ 0 };
+
+    /** Same guard as nextPreviewToken2/latestPreviewToken2 above, for the
+     *  SF2-PLAYER preview pipeline (completedLoadData3/pendingPreviewZones3).
+     *  SfPlayer-target loads are dispatched the same way (ThreadPoolJob,
+     *  presetBank/presetProgram-scoped) so the same out-of-order-completion
+     *  risk applies -- e.g. clicking two preset rows in Sf2InstrumentWorkspace
+     *  in quick succession. Bumped and checked identically. */
+    std::atomic<int>  nextPreviewToken3  { 0 };
+    std::atomic<int>  latestPreviewToken3{ 0 };
     // Holds the fully-prepared payload for the primary (Slicer) sample-load
     // pipeline. Built as a SnapshotPtr entirely on the loader worker thread
     // (see requestSampleLoad()'s onSuccess lambda) so that processBlock()

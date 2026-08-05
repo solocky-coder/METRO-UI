@@ -985,6 +985,27 @@ private:
         }
         else if (target == SoundFontLoadTarget::SfzPlayer2)
         {
+            // DYSEKT-addzone-nomidi (part 2): SfzPlayer2-target loads are
+            // dispatched as ThreadPoolJobs and can finish out of order. If a
+            // newer preview load has been requested since THIS job started
+            // (e.g. two Add Zone confirms in quick succession, or an Add
+            // Zone landing while the initial file-load preview is still
+            // rendering), applying this job's now-stale result would silently
+            // overwrite sliceManager2 with a zone list that's missing
+            // whatever the newer load added -- the zone-builder matrix still
+            // shows the zone correctly (it reads the sfz text directly, not
+            // this pipeline) but the note has no MIDI mapping. Discard rather
+            // than post in that case; whichever job actually matches the
+            // latest request will supersede it. Mirrors the Slicer's
+            // token/latestLoadToken guard, via nextPreviewToken2/
+            // latestPreviewToken2 instead (see PluginProcessor.h).
+            if (token != processor.latestPreviewToken2.load (std::memory_order_acquire))
+            {
+                delete payload;
+                processor.mainLoadInFlight.store (false, std::memory_order_release);
+                return jobHasFinished;
+            }
+
             // SFZ-PLAYER preview: sfzPlayer2 handles MIDI internally, so the
             // slice descriptors are never turned into real slices — but they
             // ARE reused as a read-only "preview zones" overlay so the
@@ -1008,6 +1029,20 @@ private:
         }
         else // SoundFontLoadTarget::SfPlayer
         {
+            // Same guard as the SfzPlayer2 branch above (DYSEKT-addzone-nomidi
+            // part 3): SfPlayer-target loads are dispatched as ThreadPoolJobs
+            // too and can finish out of order — e.g. clicking two preset rows
+            // in Sf2InstrumentWorkspace in quick succession, or a click
+            // landing while the initial file-load render is still in flight.
+            // Discard rather than post if a newer SF2-PLAYER preview load has
+            // been requested since this job started.
+            if (token != processor.latestPreviewToken3.load (std::memory_order_acquire))
+            {
+                delete payload;
+                processor.sf2PreviewRenderInFlight.store (false, std::memory_order_release);
+                return jobHasFinished;
+            }
+
             // SF2-PLAYER preview — mirrors the SfzPlayer2 branch above exactly,
             // posting to the parallel completedLoadData3/pendingPreviewZones3
             // pipeline instead, so the two preview tabs never share a buffer.
@@ -1261,9 +1296,14 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
     }
     else if (target == SoundFontLoadTarget::SfzPlayer2)
     {
-        // SFZ-PLAYER preview pipeline is independent of the Slicer's token
-        // sequence — it never checks tokens, so there's nothing to bump here.
-        // Just discard any stale preview payload from a previous preview load.
+        // Own token sequence, independent of the Slicer's nextLoadToken --
+        // see nextPreviewToken2/latestPreviewToken2's declaration in
+        // PluginProcessor.h and the staleness check in finishAndPost() for
+        // why this pipeline needs one too (DYSEKT-addzone-nomidi part 2).
+        token = processor.nextPreviewToken2.fetch_add (1, std::memory_order_relaxed) + 1;
+        processor.latestPreviewToken2.store (token, std::memory_order_release);
+
+        // Discard any stale preview payload from a previous preview load.
         processor.exchangeCompletedLoadData2 (nullptr);
         delete processor.pendingPreviewZones2.exchange (nullptr, std::memory_order_acq_rel);
 
@@ -1273,6 +1313,12 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
     }
     else // SoundFontLoadTarget::SfPlayer
     {
+        // Own token sequence, mirroring nextPreviewToken2/latestPreviewToken2
+        // above — see nextPreviewToken3/latestPreviewToken3's declaration in
+        // PluginProcessor.h and the staleness check in finishAndPost().
+        token = processor.nextPreviewToken3.fetch_add (1, std::memory_order_relaxed) + 1;
+        processor.latestPreviewToken3.store (token, std::memory_order_release);
+
         // SF2-PLAYER preview pipeline — mirrors SfzPlayer2 exactly, own buffer.
         processor.exchangeCompletedLoadData3 (nullptr);
         delete processor.pendingPreviewZones3.exchange (nullptr, std::memory_order_acq_rel);
