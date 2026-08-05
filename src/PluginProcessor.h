@@ -265,6 +265,34 @@ public:
         bool         midiSelectsSlice   { false };
     };
 
+    // ── MIDI-learn snapshot (Add Zone panel: LO/HI/ROOT key learn) ─────────────
+    // Lock-free mailbox for the *latest* incoming note-on, published by
+    // processBlock() and polled from PluginEditor's UI timer. Deliberately a
+    // single packed atomic rather than a queue: v1 scope is "arm one target,
+    // play one note", so only the newest note-on matters and any in-between
+    // note-ons that get overwritten before the next UI poll were never going
+    // to be assigned anyway. See METRO-UI-MIDI-Learn-Zone-Keys-Implementation.md
+    // section 1 for the full design note. If a future feature needs every
+    // note-on (chords, fast streams), replace this with a project-compatible
+    // lock-free SPSC queue instead of widening this struct.
+    struct MidiLearnEvent
+    {
+        uint32_t sequence = 0;   // 0 == "nothing published yet"
+        uint8_t  channel  = 1;
+        uint8_t  note     = 0;
+        uint8_t  velocity = 0;
+    };
+
+    /** Read-only snapshot of the latest accepted note-on, safe to call from
+     *  the message thread at any time (including while the audio thread is
+     *  concurrently publishing a new one — worst case the caller sees the
+     *  previous or the new value, never a torn one, since it's a single
+     *  atomic load). */
+    MidiLearnEvent getLatestMidiLearnEvent() const noexcept
+    {
+        return unpackMidiLearnEvent (midiLearnPacked.load (std::memory_order_acquire));
+    }
+
     // ── Oscilloscope ring buffer size ─────────────────────────────────────────
     static constexpr int kOscRingBufferSize = 4096;  // must be power of 2
 
@@ -756,6 +784,33 @@ public:
     std::atomic<int>  sampleAvailability { (int) SampleStateEmpty };
     std::atomic<bool> sampleMissing      { false };
     juce::String      missingFilePath;
+
+    // ── MIDI-learn mailbox storage (see getLatestMidiLearnEvent() above) ───────
+    // Packed as: [sequence:32][channel:8][note:8][velocity:8][unused:8].
+    // midiLearnSeqCounter is audio-thread-only (never touched by the UI
+    // thread), so it's a plain member, not atomic; only the packed snapshot
+    // that gets published to the UI thread needs to be atomic.
+    std::atomic<uint64_t> midiLearnPacked   { 0 };
+    uint32_t              midiLearnSeqCounter { 0 };
+
+    static uint64_t packMidiLearnEvent (uint32_t sequence, uint8_t channel,
+                                         uint8_t note, uint8_t velocity) noexcept
+    {
+        return (uint64_t) sequence << 32
+             | (uint64_t) channel  << 24
+             | (uint64_t) note     << 16
+             | (uint64_t) velocity << 8;
+    }
+
+    static MidiLearnEvent unpackMidiLearnEvent (uint64_t packed) noexcept
+    {
+        MidiLearnEvent e;
+        e.sequence = (uint32_t) (packed >> 32);
+        e.channel  = (uint8_t)  (packed >> 24);
+        e.note     = (uint8_t)  (packed >> 16);
+        e.velocity = (uint8_t)  (packed >> 8);
+        return e;
+    }
 
     /** Set by setStateInformation when restoring an SF2 preset index.
      *  The editor polls this on its timer and applies it once the preset

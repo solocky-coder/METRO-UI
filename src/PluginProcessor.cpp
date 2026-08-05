@@ -2810,6 +2810,26 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
 
+    // ── Publish latest MIDI-learn note-on (Add Zone LO/HI/ROOT learn) ──────────
+    // Scans the ORIGINAL incoming buffer, before any routing/transformation
+    // below can add, remove, or replace events in `midi`. Observational only:
+    // never mutates `midi`, so this has zero effect on what the SFZ player
+    // hears. isNoteOn() already excludes zero-velocity "note-on" (treated as
+    // note-off) by default, so those correctly fall through unpublished.
+    for (const auto metadata : midi)
+    {
+        const auto msg = metadata.getMessage();
+        if (msg.isNoteOn())
+        {
+            ++midiLearnSeqCounter;
+            midiLearnPacked.store (packMidiLearnEvent (midiLearnSeqCounter,
+                                                         (uint8_t) msg.getChannel(),
+                                                         (uint8_t) msg.getNoteNumber(),
+                                                         (uint8_t) msg.getVelocity()),
+                                    std::memory_order_release);
+        }
+    }
+
     // ── Poll global EQ param changes ──────────────────────────────────────────
     {
         static float cachedEqLow = -999.f, cachedEqLowF = -999.f,

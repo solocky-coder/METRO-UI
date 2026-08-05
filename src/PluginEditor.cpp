@@ -1968,6 +1968,20 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
 
 void DysektEditor::timerCallback()
 {
+ // ── Add Zone: forward MIDI-learn note-ons (message thread only) ────────────
+ // Polls the processor's lock-free MIDI-learn mailbox and forwards a newly
+ // observed note-on to the open Add Zone panel. Only ever touches
+ // zoneAddPanel from here (the message thread) — never from processBlock().
+ if (zoneAddPanel != nullptr)
+ {
+ const auto midiLearnEvent = processor.getLatestMidiLearnEvent();
+ if (midiLearnEvent.sequence != lastMidiLearnSequence)
+ {
+ lastMidiLearnSequence = midiLearnEvent.sequence;
+ zoneAddPanel->acceptMidiLearnNote ((int) midiLearnEvent.note);
+ }
+ }
+
  bool uiChanged = false, viewportChanged = false;
  const bool previewActive = waveformView.hasActiveSlicePreview();
  const bool waveformInteracting = waveformView.isInteracting();
@@ -2580,6 +2594,12 @@ void DysektEditor::showZoneBuilderAddZonePanel (const juce::File& sfzFile,
     const int defaultLo = (prevHiKey < 0) ? 0 : juce::jmin (prevHiKey + 1, 127);
 
     zoneAddPanel = std::make_unique<AddZonePanel> (sampleFile, defaultLo);
+
+    // Snapshot the processor's current MIDI-learn sequence now, before the
+    // panel is shown/armed, so timerCallback()'s forwarding never applies a
+    // note that was played before this Add Zone window (or a LEARN button
+    // on it) existed.
+    lastMidiLearnSequence = processor.getLatestMidiLearnEvent().sequence;
 
     zoneAddPanel->onResult = [this, sfzFile, sampleFile] (int lo, int hi, int root, bool confirmed)
     {

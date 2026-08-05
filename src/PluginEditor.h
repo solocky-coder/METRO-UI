@@ -157,6 +157,13 @@ private:
     std::unique_ptr<AddZonePanel>      zoneAddPanel;
     std::unique_ptr<SaveSfzOverlay>    zoneSaveOverlay;
 
+    /** Last processor MidiLearnEvent::sequence forwarded to zoneAddPanel.
+     *  Initialized from the processor's current snapshot whenever the panel
+     *  opens (see showZoneBuilderAddZonePanel), so a note played before the
+     *  panel/LEARN button was armed is never applied retroactively. Polled
+     *  each timerCallback(); see the MIDI-learn forwarding block there. */
+    uint32_t lastMidiLearnSequence = 0;
+
     // ── Staged-but-unsaved zones ─────────────────────────────────────────────
     // Zones added via AddZonePanel are no longer written straight to
     // zoneBuilderTargetSfz — they're held here and only committed to disk when

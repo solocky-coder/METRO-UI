@@ -40,6 +40,15 @@ public:
     /** Window closed via [X] or Esc. */
     std::function<void()> onDismiss;
 
+    /** Which key field, if any, is currently armed for MIDI learn. */
+    enum class LearnTarget
+    {
+        none,
+        lowKey,
+        highKey,
+        rootKey
+    };
+
     /** @param sampleFile  the sample this zone will be built from; its bare
      *                     filename is shown in the title bar subtitle
      *  @param defaultLo   suggested loKey (= prevHiKey + 1, or 0 if first zone)
@@ -97,12 +106,33 @@ public:
         hiDown.setButtonText ("<");  hiUp.setButtonText (">");
         rtDown.setButtonText ("<");  rtUp.setButtonText (">");
 
-        loDown.onClick = [this] { adjust (loKey, -1, true);  };
-        loUp  .onClick = [this] { adjust (loKey, +1, true);  };
-        hiDown.onClick = [this] { adjust (hiKey, -1, false); };
-        hiUp  .onClick = [this] { adjust (hiKey, +1, false); };
-        rtDown.onClick = [this] { rootKey = juce::jlimit (0, 127, rootKey - 1); repaint(); };
-        rtUp  .onClick = [this] { rootKey = juce::jlimit (0, 127, rootKey + 1); repaint(); };
+        // Manual arrows remain available for correction; using one on a row
+        // cancels that row's active learn state (spec section 6).
+        loDown.onClick = [this] { cancelLearnFor (LearnTarget::lowKey);  adjust (loKey, -1, true);  };
+        loUp  .onClick = [this] { cancelLearnFor (LearnTarget::lowKey);  adjust (loKey, +1, true);  };
+        hiDown.onClick = [this] { cancelLearnFor (LearnTarget::highKey); adjust (hiKey, -1, false); };
+        hiUp  .onClick = [this] { cancelLearnFor (LearnTarget::highKey); adjust (hiKey, +1, false); };
+        rtDown.onClick = [this] { cancelLearnFor (LearnTarget::rootKey); rootKey = juce::jlimit (0, 127, rootKey - 1); repaint(); };
+        rtUp  .onClick = [this] { cancelLearnFor (LearnTarget::rootKey); rootKey = juce::jlimit (0, 127, rootKey + 1); repaint(); };
+
+        // ── MIDI-learn buttons ───────────────────────────────────────────
+        // One per row, placed between the readout and the up-arrow (see
+        // clusterRows()). Selecting a button arms that row's learn target;
+        // selecting a different one cancels the previous target; clicking
+        // the already-armed button again cancels learning.
+        for (auto* b : { &loLearnButton, &hiLearnButton, &rootLearnButton })
+        {
+            b->setColour (juce::TextButton::buttonColourId,  T.darkBar);
+            b->setColour (juce::TextButton::textColourOffId, T.foreground);
+            b->setMouseCursor (juce::MouseCursor::NormalCursor);
+            addAndMakeVisible (*b);
+        }
+
+        loLearnButton  .onClick = [this] { toggleLearnTarget (LearnTarget::lowKey);  };
+        hiLearnButton  .onClick = [this] { toggleLearnTarget (LearnTarget::highKey); };
+        rootLearnButton.onClick = [this] { toggleLearnTarget (LearnTarget::rootKey); };
+
+        updateLearnButtonCaptions();
 
         // ── Confirm / Cancel ─────────────────────────────────────────────
         UIHelpers::stylePrimaryPopupButton   (confirmBtn, T);
@@ -161,6 +191,44 @@ public:
 
     bool isFloating() const noexcept { return isOnDesktop(); }
 
+    /** Message-thread-only. Forwards one newly-observed MIDI note-on from
+     *  PluginEditor's UI-timer poll of the processor's MIDI-learn snapshot
+     *  (see PluginEditor::timerCallback). No-op if no target is armed. */
+    void acceptMidiLearnNote (int midiNote)
+    {
+        midiNote = juce::jlimit (0, 127, midiNote);
+
+        switch (learnTarget)
+        {
+            case LearnTarget::lowKey:
+                loKey = midiNote;
+                if (loKey > hiKey)
+                    hiKey = loKey;
+                break;
+
+            case LearnTarget::highKey:
+                hiKey = midiNote;
+                if (hiKey < loKey)
+                    loKey = hiKey;
+                break;
+
+            case LearnTarget::rootKey:
+                // Intentionally NOT clamped into [loKey, hiKey] — SFZ permits
+                // a pitch center outside the played range, and advanced users
+                // may intentionally use it. This differs from adjust(), which
+                // does clamp root when lo/hi move via the manual arrows.
+                rootKey = midiNote;
+                break;
+
+            case LearnTarget::none:
+                return;
+        }
+
+        learnTarget = LearnTarget::none;
+        updateLearnButtonCaptions();
+        repaint();
+    }
+
     // ── Layout ────────────────────────────────────────────────────────────
     void resized() override
     {
@@ -203,13 +271,15 @@ public:
         rowsArea = db.reduced (24, 12);
 
         const auto rows = clusterRows();
-        juce::TextButton* dn[] = { &loDown, &hiDown, &rtDown };
-        juce::TextButton* up[] = { &loUp,   &hiUp,   &rtUp   };
+        juce::TextButton* dn[]    = { &loDown, &hiDown, &rtDown };
+        juce::TextButton* up[]    = { &loUp,   &hiUp,   &rtUp   };
+        juce::TextButton* learn[] = { &loLearnButton, &hiLearnButton, &rootLearnButton };
 
         for (int i = 0; i < 3; ++i)
         {
             const auto& c = rows[i];
             dn[i]->setBounds (c.downX, c.y + 3, kArrowW, kRowH - 6);
+            learn[i]->setBounds (c.learnX, c.y + 5, kLearnW, kRowH - 10);
             up[i]->setBounds (c.upX,   c.y + 3, kArrowW, kRowH - 6);
         }
     }
@@ -266,14 +336,23 @@ public:
         // Hint line
         g.setFont (DysektLookAndFeel::makeFont (11.5f));
         g.setColour (T.foreground.withAlpha (0.55f));
-        g.drawText ("Default is one key. Expand the range before confirming.",
-                    hintBounds, juce::Justification::centred, false);
+        g.drawText (getHintText(), hintBounds, juce::Justification::centred, false);
     }
 
     bool keyPressed (const juce::KeyPress& key) override
     {
         if (key == juce::KeyPress::escapeKey)
         {
+            // Escape first cancels an armed learn target; only closes/cancels
+            // the whole window if nothing was armed (spec section 3).
+            if (learnTarget != LearnTarget::none)
+            {
+                learnTarget = LearnTarget::none;
+                updateLearnButtonCaptions();
+                repaint();
+                return true;
+            }
+
             fire (false);
             return true;
         }
@@ -302,11 +381,14 @@ public:
     }
 
 private:
-    static constexpr int kDefaultWidth  = 560;
+    // Widened vs. the pre-MIDI-learn v1 (560x480 / min 480x380 / max 900x700)
+    // to fit the LEARN button in each row without the MIDI controls
+    // overlapping at the minimum resizable size (see clusterRows() below).
+    static constexpr int kDefaultWidth  = 660;
     static constexpr int kDefaultHeight = 480;
-    static constexpr int kMinWidth      = 480;
+    static constexpr int kMinWidth      = 560;
     static constexpr int kMinHeight     = 380;
-    static constexpr int kMaxWidth      = 900;
+    static constexpr int kMaxWidth      = 980;
     static constexpr int kMaxHeight     = 700;
 
     static constexpr int kTitleBarH  = 40;
@@ -315,6 +397,7 @@ private:
 
     static constexpr int kArrowW   = 30;
     static constexpr int kReadoutW = 64;
+    static constexpr int kLearnW   = 86;   // fits "PLAY NOTE…"
     static constexpr int kRowH     = 46;
     static constexpr int kLabelW   = 60;
     static constexpr int kSubW     = 40;
@@ -322,12 +405,15 @@ private:
     juce::File sampleFile;
     int loKey, hiKey, rootKey;
 
+    LearnTarget learnTarget = LearnTarget::none;
+
     juce::Label      titleLabel, subtitleLabel;
     juce::TextButton closeBtn;
 
     juce::TextButton loDown, loUp;
     juce::TextButton hiDown, hiUp;
     juce::TextButton rtDown, rtUp;
+    juce::TextButton loLearnButton, hiLearnButton, rootLearnButton;
     juce::TextButton confirmBtn, cancelBtn;
 
     juce::ComponentBoundsConstrainer  resizeConstrainer;
@@ -363,29 +449,89 @@ private:
 
     void fire (bool confirmed)
     {
+        // Close, Cancel, and Add Zone must all clear any armed learn target.
+        learnTarget = LearnTarget::none;
+
         if (onResult)
             onResult (loKey, hiKey, rootKey, confirmed);
+    }
+
+    /** Cancels the given row's learn target if it's the one currently armed;
+     *  no-op otherwise. Used when a manual arrow is used on that row. */
+    void cancelLearnFor (LearnTarget target)
+    {
+        if (learnTarget == target)
+        {
+            learnTarget = LearnTarget::none;
+            updateLearnButtonCaptions();
+        }
+    }
+
+    /** Selecting a learn button arms its target; selecting the currently
+     *  armed one again cancels learning; selecting a different one moves
+     *  the armed target (implicitly cancelling the previous one). */
+    void toggleLearnTarget (LearnTarget target)
+    {
+        learnTarget = (learnTarget == target) ? LearnTarget::none : target;
+        updateLearnButtonCaptions();
+        repaint();
+    }
+
+    /** Restyles the three learn buttons: the armed one gets the panel's
+     *  accent colour and a "PLAY NOTE…" caption; the other two show the
+     *  normal "LEARN" caption in the default button colour. */
+    void updateLearnButtonCaptions()
+    {
+        const auto& T = getTheme();
+        struct Row { juce::TextButton* button; LearnTarget target; };
+        const Row rows[] = { { &loLearnButton,   LearnTarget::lowKey  },
+                              { &hiLearnButton,   LearnTarget::highKey },
+                              { &rootLearnButton, LearnTarget::rootKey } };
+
+        for (const auto& r : rows)
+        {
+            const bool armed = (learnTarget == r.target);
+            r.button->setButtonText (armed ? "PLAY NOTE\xe2\x80\xa6" : "LEARN");
+            r.button->setColour (juce::TextButton::buttonColourId,
+                                  armed ? T.accent : T.darkBar);
+            r.button->setColour (juce::TextButton::textColourOffId,
+                                  armed ? T.background : T.foreground);
+        }
+    }
+
+    /** Hint text under the button row: the normal instructions, or a
+     *  learn-specific prompt while a target is armed (spec section 3). */
+    juce::String getHintText() const
+    {
+        if (learnTarget != LearnTarget::none)
+            return "Select LEARN, then play one MIDI note.";
+        return "Default is one key. Expand the range before confirming.";
     }
 
     /** One row's laid-out x-positions, centred as a block within rowsArea. */
     struct ClusterRow
     {
-        int y, labelX, downX, readoutX, upX, subX;
+        int y, labelX, downX, readoutX, learnX, upX, subX;
     };
 
     /** Three evenly-spaced rows for lo / hi / root, each centred horizontally
-        as a single label+spinner+readout+subscript cluster, vertically
-        centred as a block within rowsArea so extra window height just adds
-        breathing room rather than stretching the rows themselves. */
+        as a single label+spinner+readout+LEARN+spinner+subscript cluster,
+        vertically centred as a block within rowsArea so extra window height
+        just adds breathing room rather than stretching the rows themselves.
+        LEARN sits between the readout (the displayed value) and the up
+        arrow, so the `<` `>` pair still brackets the readout on the outside
+        while LEARN reads as the readout's companion control. */
     std::array<ClusterRow, 3> clusterRows() const
     {
         constexpr int gapLblArrow = 10;
         constexpr int gapArrowRdt = 10;
-        constexpr int gapRdtArrow = 10;
+        constexpr int gapRdtLearn = 10;
+        constexpr int gapLearnUp  = 10;
         constexpr int gapArrowSub = 14;
 
         constexpr int clusterW = kLabelW + gapLblArrow + kArrowW + gapArrowRdt
-                                + kReadoutW + gapRdtArrow + kArrowW + gapArrowSub + kSubW;
+                                + kReadoutW + gapRdtLearn + kLearnW + gapLearnUp
+                                + kArrowW + gapArrowSub + kSubW;
 
         constexpr int gapRows = 6;
         constexpr int blockH  = kRowH * 3 + gapRows * 2;
@@ -400,10 +546,11 @@ private:
             const int labelX   = rowX;
             const int downX    = labelX + kLabelW + gapLblArrow;
             const int readoutX = downX  + kArrowW  + gapArrowRdt;
-            const int upX      = readoutX + kReadoutW + gapRdtArrow;
+            const int learnX   = readoutX + kReadoutW + gapRdtLearn;
+            const int upX      = learnX + kLearnW + gapLearnUp;
             const int subX     = upX + kArrowW + gapArrowSub;
 
-            r[i] = { y, labelX, downX, readoutX, upX, subX };
+            r[i] = { y, labelX, downX, readoutX, learnX, upX, subX };
         }
         return r;
     }
