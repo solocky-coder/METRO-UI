@@ -158,10 +158,35 @@ zoneBuilderKeysPanel.onRowRightClicked = [this] (int rowIndex, juce::Point<int> 
     if (rowIndex < 0 || rowIndex >= (int) zones.size())
         return;
 
+    // Same 16-colour named palette as "Slice Color" in the slicer
+    // (SliceLane.cpp) — kept identical so the picker UX matches everywhere
+    // in the app a zone/slice can be recoloured.
+    static const struct { const char* name; juce::uint32 argb; } kPal[] = {
+        { "Cyan",    0xFF00C8FF }, { "Green",   0xFF00FF87 },
+        { "Yellow",  0xFFFFE800 }, { "Orange",  0xFFFF6B00 },
+        { "Red",     0xFFFF2D55 }, { "Pink",    0xFFFF2D9A },
+        { "Violet",  0xFFB44FFF }, { "Blue",    0xFF4A80FF },
+        { "Sky",     0xFF00BFFF }, { "Mint",    0xFF00FFD0 },
+        { "Lime",    0xFFA8FF3E }, { "Gold",    0xFFFFD700 },
+        { "Coral",   0xFFFF7F50 }, { "Magenta", 0xFFFF00FF },
+        { "White",   0xFFE8E8E8 }, { "Silver",  0xFF888888 },
+    };
+
+    const juce::Colour curCol = zones[(size_t) rowIndex].colour;
+    juce::PopupMenu colourSub;
+    for (int ci = 0; ci < 16; ++ci)
+    {
+        juce::Colour c ((juce::uint32) kPal[ci].argb);
+        colourSub.addColouredItem (20 + ci, kPal[ci].name, c,
+                                   true, c.toDisplayString (false) == curCol.toDisplayString (false));
+    }
+
     auto* topLvl = getTopLevelComponent();
     float ms = DysektLookAndFeel::getMenuScale();
     juce::PopupMenu menu;
     menu.addItem (1, "Delete Zone");
+    menu.addSeparator();
+    menu.addSubMenu ("Zone Color", colourSub);
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
@@ -170,7 +195,19 @@ zoneBuilderKeysPanel.onRowRightClicked = [this] (int rowIndex, juce::Point<int> 
         [this, rowIndex] (int result)
         {
             if (result == 1)
+            {
                 deleteZoneBuilderZone (rowIndex);
+            }
+            else if (result >= 20 && result < 36)
+            {
+                static const juce::uint32 kPalARGB[] = {
+                    0xFF00C8FF, 0xFF00FF87, 0xFFFFE800, 0xFFFF6B00,
+                    0xFFFF2D55, 0xFFFF2D9A, 0xFFB44FFF, 0xFF4A80FF,
+                    0xFF00BFFF, 0xFF00FFD0, 0xFFA8FF3E, 0xFFFFD700,
+                    0xFFFF7F50, 0xFFFF00FF, 0xFFE8E8E8, 0xFF888888,
+                };
+                setZoneBuilderZoneColour (rowIndex, juce::Colour (kPalARGB[result - 20]));
+            }
         });
 };
 sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float value)
@@ -199,23 +236,10 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
                                     rowIndex, z);
     sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
                                        z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
-    // ── DYSEKT-zoneedit-stale-engine fix ─────────────────────────────────────
-    // This used to call refreshZoneBuilderMatrix() directly, which ONLY
-    // re-parses the file into the visual ZONES matrix -- it never touches
-    // sfzPlayer2/sliceManager2, the actual live playback engine. That meant
-    // dragging lokey/hikey/root (or pitch/pan/volume/release) in the SCB
-    // updated the on-disk SFZ and the matrix display, but sliceManager2 kept
-    // playing whatever mapping/render existed before the edit, forever --
-    // until some unrelated action (tab switch, Add Zone, Save+reload)
-    // happened to trigger a full refreshZoneBuilderPreview(). Any zone whose
-    // key range was widened/moved via an SCB edit after creation would look
-    // correct in the matrix but never actually become playable at the new
-    // notes. Fix: go through refreshZoneBuilderPreview() here too (which
-    // reloads sfzPlayer2 + re-derives sliceManager2's slices via
-    // loadSoundFontAsync), just with clearSummary=false so the live readout
-    // set two lines above isn't immediately wiped by the matrix refresh at
-    // the end of it.
-    refreshZoneBuilderPreview (false);
+    // clearSummary=false — this is a live edit of the currently-selected row,
+    // not a fresh load/add/discard, so the SCB readout the line above just
+    // wrote should stay on screen instead of being wiped by the refresh.
+    refreshZoneBuilderMatrix (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz, false);
 };
  addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
  zoneBuilderKeysPanel.getProperties().set ("dysektThemeKey", "accent");
@@ -239,7 +263,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
  sfzDropdown.onPresetChannelAssigned = [this] (const Sf2PresetInfo& preset, int midiChannel1Based)
  {
      // Keep the inline channel-FX panel in sync
-     sfzDropdown.notifyPresetChannelChanged (preset, midiChannel1Based);
+     sfzDropdown.notifyPresetChannelChanged (preset.name, midiChannel1Based);
 
      // Update the SF2 mixer panel — rebuild strips from the current
      // preset→channel map so the new assignment appears immediately.
@@ -247,10 +271,14 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
                                    sfzDropdown.getProgramGrid().getPresetChannels());
 
 #if DYSEKT_STANDALONE
-     // Use the preset browser's shared lookup so its assigned row, the
-     // Arranger track name, and the corresponding MIDI part always match.
-     pianoRollPanel.addOrUpdateSfPresetTrack (
-         preset, midiChannel1Based, Sf2InstrumentWorkspace::trackColourForPreset (preset));
+     // Pick a colour based on the preset number (bank*128 + program).
+     static const juce::Colour kPalette[] = {
+         juce::Colour (0xFF4060A0), juce::Colour (0xFF60A040),
+         juce::Colour (0xFFA04060), juce::Colour (0xFF40A0A0),
+         juce::Colour (0xFFA0A040), juce::Colour (0xFF8060C0),
+     };
+     const int colIdx = (preset.bank * 128 + preset.preset) % 6;
+     pianoRollPanel.addOrUpdateSfPresetTrack (preset, midiChannel1Based, kPalette[colIdx]);
 #endif
  };
 
@@ -1968,20 +1996,6 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
 
 void DysektEditor::timerCallback()
 {
- // ── Add Zone: forward MIDI-learn note-ons (message thread only) ────────────
- // Polls the processor's lock-free MIDI-learn mailbox and forwards a newly
- // observed note-on to the open Add Zone panel. Only ever touches
- // zoneAddPanel from here (the message thread) — never from processBlock().
- if (zoneAddPanel != nullptr)
- {
- const auto midiLearnEvent = processor.getLatestMidiLearnEvent();
- if (midiLearnEvent.sequence != lastMidiLearnSequence)
- {
- lastMidiLearnSequence = midiLearnEvent.sequence;
- zoneAddPanel->acceptMidiLearnNote ((int) midiLearnEvent.note);
- }
- }
-
  bool uiChanged = false, viewportChanged = false;
  const bool previewActive = waveformView.hasActiveSlicePreview();
  const bool waveformInteracting = waveformView.isInteracting();
@@ -2583,28 +2597,23 @@ void DysektEditor::openZoneBuilderAddZone()
                 return;
             }
 
-            showZoneBuilderAddZonePanel (zoneBuilderTargetSfz, chosen, zoneBuilderPrevHiKey);
+            showZoneBuilderAddZoneOverlay (zoneBuilderTargetSfz, chosen, zoneBuilderPrevHiKey);
         });
 }
 
-void DysektEditor::showZoneBuilderAddZonePanel (const juce::File& sfzFile,
-                                                 const juce::File& sampleFile,
-                                                 int prevHiKey)
+void DysektEditor::showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
+                                                   const juce::File& sampleFile,
+                                                   int prevHiKey)
 {
     const int defaultLo = (prevHiKey < 0) ? 0 : juce::jmin (prevHiKey + 1, 127);
 
-    zoneAddPanel = std::make_unique<AddZonePanel> (sampleFile, defaultLo);
+    zoneAddOverlay = std::make_unique<AddZoneOverlay> (
+        sampleFile.getFileNameWithoutExtension(), defaultLo);
 
-    // Snapshot the processor's current MIDI-learn sequence now, before the
-    // panel is shown/armed, so timerCallback()'s forwarding never applies a
-    // note that was played before this Add Zone window (or a LEARN button
-    // on it) existed.
-    lastMidiLearnSequence = processor.getLatestMidiLearnEvent().sequence;
-
-    zoneAddPanel->onResult = [this, sfzFile, sampleFile] (int lo, int hi, int root, bool confirmed)
+    zoneAddOverlay->onResult = [this, sfzFile, sampleFile] (int lo, int hi, int root, bool confirmed)
     {
         // Defer the reset so it runs after onResult has returned and
-        // AddZonePanel is no longer on the call stack (use-after-free fix,
+        // AddZoneOverlay is no longer on the call stack (use-after-free fix,
         // matching the pattern in SfzPlayerDropdownPanel).
         juce::MessageManager::callAsync ([this] { hideZoneBuilderOverlays(); });
 
@@ -2643,9 +2652,9 @@ void DysektEditor::showZoneBuilderAddZonePanel (const juce::File& sfzFile,
         repaint();
     };
 
-    zoneAddPanel->onDismiss = [this] { juce::MessageManager::callAsync ([this] { hideZoneBuilderOverlays(); }); };
-
-    zoneAddPanel->show();
+    addAndMakeVisible (*zoneAddOverlay);
+    zoneAddOverlay->setBounds (getLocalBounds());
+    zoneAddOverlay->toFront (true);
 }
 
 // Builds the raw "<region>...</region>"-style text block for one zone.
@@ -2721,7 +2730,7 @@ void DysektEditor::ensureZoneBuilderScratchExists()
 // just ran), otherwise the real on-disk target. Called after every staged
 // operation so the matrix and slice/waveform preview immediately reflect
 // what was just written to disk.
-void DysektEditor::refreshZoneBuilderPreview (bool clearSummary)
+void DysektEditor::refreshZoneBuilderPreview()
 {
     const juce::File previewFile = (zoneBuilderDirty && zoneBuilderScratchFile.existsAsFile())
                                   ? zoneBuilderScratchFile : zoneBuilderTargetSfz;
@@ -2734,7 +2743,7 @@ void DysektEditor::refreshZoneBuilderPreview (bool clearSummary)
     // sliceManager2/sampleData2 are only populated by the async soundfont
     // decode, not by sfzPlayer2.loadFile() alone.
     processor.loadSoundFontAsync (previewFile, SoundFontLoadTarget::SfzPlayer2);
-    refreshZoneBuilderMatrix (previewFile, clearSummary);
+    refreshZoneBuilderMatrix (previewFile);
 }
 
 // Right-click "Delete Zone" -> stage removal of one <region> block, via the
@@ -2752,6 +2761,33 @@ void DysektEditor::deleteZoneBuilderZone (int rowIndex)
     SfzPlayerDropdownPanel::deleteSfzZone (zoneBuilderScratchFile, rowIndex);
 
     refreshZoneBuilderPreview();
+    repaint();
+}
+
+// Right-click "Zone Color" -> recolour one zone (same picker UX as "Slice
+// Color" in the slicer), staged through the same scratch-mutation path as
+// field edits / Add Zone / Delete Zone. The colour is persisted into the
+// .sfz text itself (see writeSfzZoneChange's dysekt_zone_color opcode) so it
+// survives reload instead of falling back to the deterministic per-index
+// default the next time the file is parsed.
+void DysektEditor::setZoneBuilderZoneColour (int rowIndex, juce::Colour colour)
+{
+    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
+    if (rowIndex < 0 || rowIndex >= (int) zones.size())
+        return;
+
+    auto z = zones[(size_t) rowIndex];
+    z.colour = colour;
+
+    ensureZoneBuilderScratchExists();
+    if (! zoneBuilderScratchFile.existsAsFile())
+        return;
+
+    sfzPlayerDropdown.writeSfzZoneChange (zoneBuilderScratchFile, rowIndex, z);
+
+    // clearSummary=false — recolouring shouldn't wipe the currently-selected
+    // row's readout in the SliceControlBar, matching the field-edit path.
+    refreshZoneBuilderMatrix (zoneBuilderScratchFile, false);
     repaint();
 }
 
@@ -2826,7 +2862,7 @@ void DysektEditor::discardZoneBuilderPendingZones()
 }
 
 // Called after the user has already picked a sample but no SFZ is loaded yet.
-// Shows "Name your SFZ file", creates a blank file, then proceeds to AddZonePanel.
+// Shows "Name your SFZ file", creates a blank file, then proceeds to AddZoneOverlay.
 void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
 {
     const auto defaultPath = sampleFile.getParentDirectory().getChildFile ("Custom.sfz");
@@ -2855,7 +2891,7 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
 
         processor.sfzPlayer2.loadFile (dest, processor.fileLoadPool);
         processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
-        // See showZoneBuilderAddZonePanel's onResult for why this call is
+        // See showZoneBuilderAddZoneOverlay's onResult for why this call is
         // required: sliceManager2/sampleData2 are only populated by the async
         // soundfont decode, not by sfzPlayer2.loadFile() alone.
         processor.loadSoundFontAsync (dest, SoundFontLoadTarget::SfzPlayer2);
@@ -2869,7 +2905,7 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
         // Now show the key-range dialog with the already-chosen sample.
         juce::MessageManager::callAsync ([this, sampleFile]
         {
-            showZoneBuilderAddZonePanel (zoneBuilderTargetSfz, sampleFile, zoneBuilderPrevHiKey);
+            showZoneBuilderAddZoneOverlay (zoneBuilderTargetSfz, sampleFile, zoneBuilderPrevHiKey);
         });
     };
 
@@ -2880,10 +2916,10 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
 
 void DysektEditor::hideZoneBuilderOverlays()
 {
-    if (zoneAddPanel)
+    if (zoneAddOverlay)
     {
-        zoneAddPanel->hide();
-        zoneAddPanel.reset();
+        removeChildComponent (zoneAddOverlay.get());
+        zoneAddOverlay.reset();
     }
     if (zoneSaveOverlay)
     {

@@ -34,7 +34,7 @@
 #include "ui/GlobalEqPanel.h"
 #include "ui/PadGridView.h"
 #include "ui/KeysPanel.h"
-#include "ui/AddZonePanel.h"
+#include "ui/AddZoneOverlay.h"
 #include "ui/SaveSfzOverlay.h"
 #if DYSEKT_STANDALONE
 #include "ui/PianoRollPanel.h"
@@ -154,18 +154,11 @@ private:
     juce::File zoneBuilderTargetSfz;   // .sfz currently being built/edited, may be empty
     int        zoneBuilderPrevHiKey = -1;
     std::unique_ptr<juce::FileChooser> zoneBuilderSampleChooser;
-    std::unique_ptr<AddZonePanel>      zoneAddPanel;
+    std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;
     std::unique_ptr<SaveSfzOverlay>    zoneSaveOverlay;
 
-    /** Last processor MidiLearnEvent::sequence forwarded to zoneAddPanel.
-     *  Initialized from the processor's current snapshot whenever the panel
-     *  opens (see showZoneBuilderAddZonePanel), so a note played before the
-     *  panel/LEARN button was armed is never applied retroactively. Polled
-     *  each timerCallback(); see the MIDI-learn forwarding block there. */
-    uint32_t lastMidiLearnSequence = 0;
-
     // ── Staged-but-unsaved zones ─────────────────────────────────────────────
-    // Zones added via AddZonePanel are no longer written straight to
+    // Zones added via AddZoneOverlay are no longer written straight to
     // zoneBuilderTargetSfz — they're held here and only committed to disk when
     // the user clicks SAVE (or confirms "Save" on the ZONES toggle-off
     // prompt). This lets several zones be staged/auditioned in one sitting
@@ -186,10 +179,10 @@ private:
     // without ever touching the real target file until SAVE.
     juce::File zoneBuilderScratchFile;
 
-    void openZoneBuilderAddZone();               // [+ ZONE] click -> pick sample -> AddZonePanel
-    void showZoneBuilderAddZonePanel (const juce::File& sfzFile,
-                                       const juce::File& sampleFile,
-                                       int prevHiKey);
+    void openZoneBuilderAddZone();               // [+ ZONE] click -> pick sample -> AddZoneOverlay
+    void showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
+                                         const juce::File& sampleFile,
+                                         int prevHiKey);
     void openZoneBuilderSaveAsNew (const juce::File& sampleFile); // no SFZ loaded yet -> name one first
     static juce::String buildZoneRegionText (const juce::File& sfzFile, const juce::File& sampleFile,
                                               int loKey, int hiKey, int rootKey);
@@ -211,13 +204,9 @@ private:
     void toggleZoneBuilder (bool on);
 
     void ensureZoneBuilderScratchExists();   // rebuild scratch file from pending zones, reload preview + matrix
-    // re-derive + load whichever file (scratch/target) is current, reload the
-    // real sfzPlayer2/sliceManager2 engine, and refresh the matrix.
-    // clearSummary=false for in-place SCB field edits (onSfzZoneParamEdited)
-    // so the live readout the caller just wrote isn't immediately wiped by
-    // the matrix refresh that follows the engine reload.
-    void refreshZoneBuilderPreview (bool clearSummary = true);
+    void refreshZoneBuilderPreview();       // re-derive + load whichever file (scratch/target) is current, refresh matrix
     void deleteZoneBuilderZone (int rowIndex); // remove a zone from the scratch file and refresh
+    void setZoneBuilderZoneColour (int rowIndex, juce::Colour colour); // recolour a zone, persist + refresh
     void commitZoneBuilderPendingZones();   // SAVE: write pending zones to zoneBuilderTargetSfz, clear staging
     void discardZoneBuilderPendingZones();  // DISCARD: drop pending zones, restore preview to on-disk state
 

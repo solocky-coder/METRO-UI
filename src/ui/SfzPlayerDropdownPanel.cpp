@@ -1098,6 +1098,7 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
     bool         inRegion = false;
     int          colIdx   = 0;
     juce::String sampleName;
+    juce::String customColourHex;   // set from a persisted dysekt_zone_color= opcode, if present
 
     auto flush = [&]
     {
@@ -1111,14 +1112,21 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
             z.rootPitch= -1;
             z.isLooped = false;
             z.isSfz    = true;   // SFZ zones are editable — must set explicitly (default is false)
-            z.colour   = zoneColourDP (colIdx++);
+            // A user-picked "Zone Color" (persisted via writeSfzZoneChange's
+            // dysekt_zone_color opcode) takes priority over the deterministic
+            // per-index default so a recoloured zone keeps its colour across
+            // reloads instead of reverting to the palette hash.
+            z.colour   = customColourHex.isNotEmpty()
+                       ? juce::Colour::fromString (customColourHex)
+                       : zoneColourDP (colIdx);
+            ++colIdx;
             // Use the sample filename (without extension) as the zone name,
             // falling back to a generic "Zone N" label if none was found.
             z.name     = sampleName.isNotEmpty()
                        ? sampleName
                        : "Zone " + juce::String (colIdx);
             zones.push_back (z);
-            loKey = 0; hiKey = 127; sampleName = {};
+            loKey = 0; hiKey = 127; sampleName = {}; customColourHex = {};
         }
         inRegion = false;
     };
@@ -1130,7 +1138,7 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
         const auto lineLower = line.trim().toLowerCase();
         const auto lineOrig  = line.trim();
 
-        if (lineLower.startsWith ("<region>")) { flush(); inRegion = true; loKey = 0; hiKey = 127; sampleName = {}; }
+        if (lineLower.startsWith ("<region>")) { flush(); inRegion = true; loKey = 0; hiKey = 127; sampleName = {}; customColourHex = {}; }
         else if (lineLower.startsWith ("<group>") || lineLower.startsWith ("<global>")) flush();
 
         if (inRegion)
@@ -1243,6 +1251,18 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
                 if (bare.contains ("."))
                     bare = bare.upToLastOccurrenceOf (".", false, false);
                 sampleName = bare.isNotEmpty() ? bare : rawPath;
+            }
+
+            // Extract a persisted dysekt_zone_color= value (see
+            // writeSfzZoneChange). Written via z.colour.toString(), an
+            // 8-digit AARRGGBB hex string with no embedded spaces, so the
+            // generic getOpcodeValue token scan (split on the next space)
+            // is safe to reuse here.
+            if (customColourHex.isEmpty())
+            {
+                auto cRaw = getOpcodeValue (lineLower, "dysekt_zone_color=");
+                if (cRaw.isNotEmpty())
+                    customColourHex = cRaw;
             }
         }
     }
@@ -1666,6 +1686,13 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
     else
         setOpcode (lines, regionLine, "loop_mode", "no_loop");
 
+    // Persist the zone's colour as a custom (non-standard) opcode. Real SFZ
+    // players (sfizz, etc.) ignore opcodes they don't recognise, so this is
+    // safe to leave in the file — it only round-trips through parseSfzZones
+    // below so a user-picked "Zone Color" survives reload instead of falling
+    // back to the deterministic per-index default every time.
+    setOpcode (lines, regionLine, "dysekt_zone_color", z.colour.toString());
+
     // Write back — join with \n (preserve original line endings best-effort)
     const bool crlf = f.loadFileAsString().contains ("\r\n");
     const auto newContent = lines.joinIntoString (crlf ? "\r\n" : "\n");
@@ -1765,20 +1792,6 @@ void SfzPlayerDropdownPanel::showAddZoneOverlay (const juce::File& sfzFile,
         reloadZones (sfzFile);
         keysPanel.autoScrollToZones();
         repaint();
-
-        // The two lines above only update sfzPlayer2's parser (for the UI
-        // matrix/keyboard) — sfzPlayer2.process() is never called from
-        // processBlock(). What voicePool2 actually plays back is the
-        // pre-rendered slice data in sliceManager2/sampleData2, populated by
-        // SoundFontLoader via loadSoundFontAsync(..., SoundFontLoadTarget::
-        // SfzPlayer2). Without re-running that render here, the zone we just
-        // appended shows up on the keyboard (note-on still lights up
-        // sfz2ActiveNotes) but sliceManager2.midiNoteToSlice() returns -1 for
-        // it, so no voice ever starts — the exact same bug writeSfzZoneChange()
-        // already works around for zone *edits*; this is the same fix for
-        // zone *creation*.
-        processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
-        processor.loadSoundFontAsync (sfzFile, SoundFontLoadTarget::SfzPlayer2);
     };
 
     showOverlay (addZoneOverlay, std::move (overlay));
