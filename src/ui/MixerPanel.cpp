@@ -3,7 +3,6 @@
 static constexpr int kMaxMeterSlices = DysektProcessor::kMaxMeterSlices;
 #include "DysektLookAndFeel.h"
 #include "IconManager.h"
-#include "UIHelpers.h"
 #include "../audio/Slice.h"
 #include "../params/ParamIds.h"
 #include <cmath>
@@ -691,7 +690,7 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
     // ── Full-lane slice colour tint ──────────────────────────────────────
     // Subtle wash across the entire row so each slice is immediately
     // identifiable at a glance, matching the waveform lane colours.
-    g.setColour (sl.colour.withAlpha (selected ? 0.16f : 0.10f));
+    g.setColour (sl.colour.withAlpha (selected ? 0.34f : 0.24f));
     g.fillRect (kNameColW, ry, getWidth() - kNameColW, kRowH);
 
     // Row bottom divider
@@ -1089,8 +1088,14 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
                       : theme.darkBar.brighter (0.02f));
     g.fillRect (0, ry, getWidth(), kSf2ChRowH);
 
-    // Share the preset row and Arranger track's authoritative colour.
-    const juce::Colour chCol = UIHelpers::sf2TrackColourForPreset (preset);
+    // Left indent stripe using a colour derived from the channel number
+    static const juce::Colour kChanPalette[] = {
+        juce::Colour (0xFF4060A0), juce::Colour (0xFF60A040),
+        juce::Colour (0xFFA04060), juce::Colour (0xFF40A0A0),
+        juce::Colour (0xFFA0A040), juce::Colour (0xFF8060C0),
+        juce::Colour (0xFF60A0C0), juce::Colour (0xFFC08040),
+    };
+    const juce::Colour chCol = kChanPalette[channel % (int) std::size (kChanPalette)];
 
     g.setColour (chCol.withAlpha (0.7f));
     g.fillRect (0, ry, 3, kSf2ChRowH);

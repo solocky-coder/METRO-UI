@@ -393,7 +393,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
         g.fillRect (0, ry, kStripeW, kRowH);
 
         // ── Name column ───────────────────────────────────────────────────────
-        g.setColour (zc.withAlpha (0.08f));
+        g.setColour (zc.withAlpha (0.28f));
         g.fillRect (kStripeW, ry, kNameColW - kStripeW, kRowH);
 
         g.setFont (fMain);
@@ -1204,11 +1204,11 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
         // Only draw note labels on C notes if key wide enough
         if ((kr.note % 12) == 0 && b.getWidth() >= 6.f)
         {
-            g.setFont   (DysektLookAndFeel::makeFont (15.0f, true));
-            g.setColour (hasSlice ? accent.withAlpha (0.9f) : juce::Colours::black);
+            g.setFont   (DysektLookAndFeel::makeFont (8.0f));
+            g.setColour (hasSlice ? accent.withAlpha (0.9f) : juce::Colour (0xFF505050));
             g.drawText  (juce::MidiMessage::getMidiNoteName (kr.note, true, true, 3),
-                         kr.bounds.getX(), kr.bounds.getBottom() - 20,
-                         kr.bounds.getWidth(), 18, juce::Justification::centred);
+                         kr.bounds.getX(), kr.bounds.getBottom() - 13,
+                         kr.bounds.getWidth(), 12, juce::Justification::centred);
         }
 
         if (hasSlice)
