@@ -64,7 +64,8 @@ public:
     double dragPixelsPerOctave = 120.0;
 
 private:
-    static constexpr int kEdgeGrabPx = 6;
+    static constexpr int kMinEdgeGrabPx = 8;
+    static constexpr int kMaxEdgeGrabPx = 28;
 
     enum class Edge { None, Start, End };
 
@@ -84,9 +85,24 @@ private:
         const int thumbEnd   = toPx (cur.getEnd());
         const int axis = isVertical() ? p.y : p.x;
 
-        if (std::abs (axis - thumbStart) <= kEdgeGrabPx) return Edge::Start;
-        if (std::abs (axis - thumbEnd)   <= kEdgeGrabPx) return Edge::End;
-        return Edge::None;
+        // A short bar (typically the vertical one — a handful of tracks
+        // rarely overflow the view, so the thumb often fills nearly the
+        // whole bar and its two edges sit almost on top of each other,
+        // right at the component's own extremes) needs a much more
+        // forgiving grab zone than a fixed few pixels would give it, or
+        // the edges become effectively unreachable. Scale with bar length
+        // instead of using a flat constant.
+        const int grab = juce::jlimit (kMinEdgeGrabPx, kMaxEdgeGrabPx, full / 5);
+
+        const int distStart = std::abs (axis - thumbStart);
+        const int distEnd   = std::abs (axis - thumbEnd);
+        if (distStart > grab && distEnd > grab)
+            return Edge::None;
+
+        // Edges can end up coincident (or nearly so) when the thumb fills
+        // the whole bar — pick whichever is genuinely closer rather than
+        // always favouring Start.
+        return (distStart <= distEnd) ? Edge::Start : Edge::End;
     }
 
     void mouseMove (const juce::MouseEvent& e) override
