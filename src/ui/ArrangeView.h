@@ -911,17 +911,52 @@ private:
     //==========================================================================
     //  Cursor
     //==========================================================================
-    static juce::MouseCursor toolCursorFor (Tool t)
+    /** Builds an actual mouse cursor out of the same ToolIcons glyph shown on
+     *  the right-click Tool submenu, so the OS cursor over the clip grid always
+     *  shows which tool is active — mirrors PianoRollComponent::makeToolCursor(). */
+    static juce::MouseCursor makeToolCursor (Tool tool)
     {
-        switch (t)
+        constexpr int size = 32;
+        juce::Image img (juce::Image::ARGB, size, size, true);
+        juce::Graphics g (img);
+
+        // Same fixed box for every stamp below (outline pass + fill pass) so
+        // position-anchored glyphs (e.g. the Select arrow) don't desync
+        // between passes and warp out of shape.
+        const auto b = juce::Rectangle<float> (2.0f, 2.0f, (float) size - 4.0f, (float) size - 4.0f);
+        const auto kind = static_cast<ToolIcons::Kind> (static_cast<int> (tool));
+
+        static const int offs[][2] = { {-1,0}, {1,0}, {0,-1}, {0,1}, {-1,-1}, {1,-1}, {-1,1}, {1,1} };
+        for (auto& o : offs)
         {
-            case Tool::Erase: return juce::MouseCursor::CrosshairCursor;
-            case Tool::Split: return juce::MouseCursor::CrosshairCursor;
-            case Tool::Glue:  return juce::MouseCursor::CrosshairCursor;
-            case Tool::Draw:  return juce::MouseCursor::CrosshairCursor;
-            case Tool::Select:
-            default:          return juce::MouseCursor::NormalCursor;
+            juce::Graphics::ScopedSaveState save (g);
+            g.addTransform (juce::AffineTransform::translation ((float) o[0], (float) o[1]));
+            ToolIcons::draw (g, kind, b, juce::Colours::black);
         }
+        ToolIcons::draw (g, kind, b, juce::Colours::white);
+
+        // Hotspot: the "business end" of each glyph — Erase/Split/Glue have
+        // no single sharp point, so their hotspot is just the icon's centre.
+        int hx = size / 2, hy = size / 2;
+        switch (tool)
+        {
+            case Tool::Select: hx = (int) (size * 0.22f); hy = (int) (size * 0.10f); break;
+            case Tool::Draw:   hx = (int) (size * 0.25f); hy = (int) (size * 0.82f); break;
+            case Tool::Split:  hy = (int) (size * 0.19f); break;
+            default: break;
+        }
+        return juce::MouseCursor (img, hx, hy);
+    }
+
+    /** Cached per-tool cursors — built once, since makeToolCursor() rasterises
+     *  an image and mouseMove fires far too often to redo that every call. */
+    static const juce::MouseCursor& toolCursorFor (Tool t)
+    {
+        static const juce::MouseCursor cursors[] = {
+            makeToolCursor (Tool::Select), makeToolCursor (Tool::Draw), makeToolCursor (Tool::Erase),
+            makeToolCursor (Tool::Split),  makeToolCursor (Tool::Glue)
+        };
+        return cursors[(int) t];
     }
 
     void updateCursor (const juce::MouseEvent& e)
