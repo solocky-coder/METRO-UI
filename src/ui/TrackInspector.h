@@ -151,6 +151,13 @@ public:
         auto area = getLocalBounds().reduced (12);
         area.removeFromTop (18); // "SELECTED TRACK" caption
         area.removeFromTop (52); // selected-track identity card
+
+        // M/S/R button row sits a few px below the identity card. Derived
+        // from the live cursor (rather than a hardcoded literal) so it can
+        // never drift out of sync with the caption/card heights above again —
+        // that mismatch is exactly what caused the buttons to overlap the
+        // name card after the "SELECTED TRACK" caption was added.
+        const int buttonY = area.getY() + 3;
         area.removeFromTop (31); // performance control row + breathing room
 
         if (channelBox.isVisible())
@@ -165,7 +172,6 @@ public:
         layoutField (area, panSlider);
 
         const int buttonW = juce::jmax (25, (getWidth() - 24 - 2 * 5) / 3);
-        const int buttonY = 67;
         constexpr int buttonGap = 5;
         muteButton  .setBounds (12 + 0 * (buttonW + buttonGap), buttonY, buttonW, 25);
         soloButton  .setBounds (12 + 1 * (buttonW + buttonGap), buttonY, buttonW, 25);

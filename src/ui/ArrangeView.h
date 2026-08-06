@@ -7,6 +7,7 @@
 #include "DysektLookAndFeel.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
+#include <limits>
 
 //==============================================================================
 //  ArrangeView  —  Cubase-style arrange window
@@ -47,6 +48,18 @@ class ArrangeView : public juce::Component,
                     private juce::ScrollBar::Listener
 {
 public:
+    /** Clip-grid tool, selected via the clip right-click "Tool" submenu or the
+     *  S/D/E/K/G shortcuts — same names/keys as PianoRollComponent::Tool, but
+     *  operating on whole clips rather than notes:
+     *   Select — default: click to select/move a clip, drag right edge to resize,
+     *            click empty space to create a clip (unchanged pre-existing behaviour)
+     *   Draw   — click empty space creates a clip; click an existing clip just selects it
+     *   Erase  — click a clip deletes it
+     *   Split  — click a clip cuts it into two clips at the click point
+     *   Glue   — click a clip merges it with the next clip on the same track
+     */
+    enum class Tool { Select, Draw, Erase, Split, Glue };
+
     static constexpr int kTransportH   = 32;
     static constexpr int kInspectorW   = 216;
     static constexpr int kStripW       = 196;
@@ -311,6 +324,25 @@ public:
             return;
         }
 
+        // Non-Select tools act on a single left-click instead of the
+        // Select tool's move/resize/create-on-empty-space behaviour below.
+        if (currentTool != Tool::Select)
+        {
+            switch (currentTool)
+            {
+                case Tool::Draw:
+                    if (onClip) { selectTrack (trackIdx); selectedClip = hitClip; }
+                    else        handleDrawClipDown (trackIdx, e);
+                    break;
+                case Tool::Erase: if (onClip) handleEraseClipDown (trackIdx, hitClip); break;
+                case Tool::Split: if (onClip) handleSplitClipDown (trackIdx, hitClip, e); break;
+                case Tool::Glue:  if (onClip) handleGlueClipDown  (trackIdx, hitClip); break;
+                default: break;
+            }
+            repaint(); trackStrip.repaint();
+            return;
+        }
+
         // Resize handle — right edge of a clip
         if (onClip && e.x >= hitRect.getRight() - kResizeZone)
         {
@@ -534,6 +566,13 @@ public:
             return true;
         }
 
+        // Tool shortcuts — same letters/keys as PianoRollComponent's Tool.
+        if (k.getKeyCode() == 'S') { setActiveTool (Tool::Select); return true; }
+        if (k.getKeyCode() == 'D') { setActiveTool (Tool::Draw);   return true; }
+        if (k.getKeyCode() == 'E') { setActiveTool (Tool::Erase);  return true; }
+        if (k.getKeyCode() == 'K') { setActiveTool (Tool::Split);  return true; }
+        if (k.getKeyCode() == 'G') { setActiveTool (Tool::Glue);   return true; }
+
         return false;
     }
 
@@ -611,6 +650,11 @@ private:
     enum class RulerDrag { None, Scrub, LoopSet };
     DragMode  dragMode       = DragMode::None;
     RulerDrag rulerDrag      = RulerDrag::None;
+
+    // Clip-grid tool — mirrors PianoRollComponent::Tool so the two right-click
+    // "Tool" submenus (and their S/D/E/K/G shortcuts) match; the actions mean
+    // clip-level things here rather than note-level things.
+    Tool      currentTool    = Tool::Select;
     int       dragTrack      = -1;
     int       dragClip       = -1;   // which clip slot is being dragged/resized
     int       dragStartX     = 0;
@@ -849,8 +893,36 @@ private:
     }
 
     //==========================================================================
+    //  Tool
+    //==========================================================================
+    /** Switches the active clip-grid tool — from the right-click "Tool"
+     *  submenu, a keyboard shortcut (S/D/E/K/G), or eventually a toolbar.
+     *  Mirrors PianoRollComponent::setActiveTool()'s immediate-feedback
+     *  pattern: apply the tool's cursor right away rather than waiting for
+     *  the next mouseMove. */
+    void setActiveTool (Tool t)
+    {
+        currentTool = t;
+        setMouseCursor (toolCursorFor (t));
+        repaint();
+    }
+
+    //==========================================================================
     //  Cursor
     //==========================================================================
+    static juce::MouseCursor toolCursorFor (Tool t)
+    {
+        switch (t)
+        {
+            case Tool::Erase: return juce::MouseCursor::CrosshairCursor;
+            case Tool::Split: return juce::MouseCursor::CrosshairCursor;
+            case Tool::Glue:  return juce::MouseCursor::CrosshairCursor;
+            case Tool::Draw:  return juce::MouseCursor::CrosshairCursor;
+            case Tool::Select:
+            default:          return juce::MouseCursor::NormalCursor;
+        }
+    }
+
     void updateCursor (const juce::MouseEvent& e)
     {
         if (dragMode == DragMode::ResizeRight)
@@ -863,6 +935,15 @@ private:
             const int trackIdx = trackFromY (e.y);
             if (juce::isPositiveAndBelow (trackIdx, engine.getNumTracks()))
             {
+                // Non-Select tools act with a single click rather than
+                // move/resize, so signal that with the tool's own cursor
+                // for the whole grid instead of the Select-tool hover cues.
+                if (currentTool != Tool::Select)
+                {
+                    setMouseCursor (toolCursorFor (currentTool));
+                    return;
+                }
+
                 for (int ci = 0; ci < engine.getNumClips (trackIdx); ++ci)
                 {
                     const auto clipR = clipRectForClip (trackIdx, ci);
@@ -891,6 +972,25 @@ private:
         const auto info  = engine.getTrackInfo (trackIdx);
         const bool onClip = (clipIdx >= 0);
         juce::PopupMenu m;
+
+        // Tool submenu — same entry as PianoRollComponent's clip/note-grid
+        // right-click menu, so switching tools works the same way in both views.
+        juce::PopupMenu toolMenu;
+        auto addToolItem = [&] (int itemId, const juce::String& text, Tool tool)
+        {
+            juce::PopupMenu::Item item;
+            item.itemID   = itemId;
+            item.text     = text;
+            item.isTicked = (currentTool == tool);
+            toolMenu.addItem (item);
+        };
+        addToolItem (30, "Select (S)", Tool::Select);
+        addToolItem (31, "Draw (D)",   Tool::Draw);
+        addToolItem (32, "Erase (E)",  Tool::Erase);
+        addToolItem (33, "Split (K)",  Tool::Split);
+        addToolItem (34, "Glue (G)",   Tool::Glue);
+        m.addSubMenu ("Tool", toolMenu);
+        m.addSeparator();
 
         if (onClip)
         {
@@ -961,6 +1061,11 @@ private:
                         }
                         break;
                     }
+                    case 30: setActiveTool (Tool::Select); break;
+                    case 31: setActiveTool (Tool::Draw);   break;
+                    case 32: setActiveTool (Tool::Erase);  break;
+                    case 33: setActiveTool (Tool::Split);  break;
+                    case 34: setActiveTool (Tool::Glue);   break;
                     default: break;
                 }
                 repaint(); trackStrip.repaint();
@@ -980,6 +1085,126 @@ private:
         const juce::ScopedReadLock sl (src->getLock());
         dst->setNotes (src->getNotes());
         repaint();
+    }
+
+    //==========================================================================
+    //  Tool handlers — clip-grid equivalents of PianoRollComponent's
+    //  Draw/Erase/Split/Glue handlers, operating on whole clips.
+    //==========================================================================
+    void handleDrawClipDown (int trackIdx, const juce::MouseEvent& e)
+    {
+        const int64_t clickTick = snapTick (xToTick (e.x));
+        const int64_t defLen    = MidiClip::kPPQ * 4 * 4;  // 4 bars default
+        const int newIdx = engine.addClip (trackIdx, clickTick, defLen);
+        selectTrack (trackIdx);
+        selectedClip = newIdx;
+    }
+
+    void handleEraseClipDown (int trackIdx, int clipIdx)
+    {
+        engine.removeClip (trackIdx, clipIdx);
+        if (selectedTrack == trackIdx && selectedClip == clipIdx)
+            selectedClip = 0;
+    }
+
+    /** Cuts the clicked clip into two clips at the click point: the original
+     *  clip is shortened in place, and a new clip is created for the tail,
+     *  each keeping only the notes (re-based to their own clip-local ticks)
+     *  that fall on their side of the cut. No-ops if the click lands too
+     *  close to either end to leave two clips with positive length. */
+    void handleSplitClipDown (int trackIdx, int clipIdx, const juce::MouseEvent& e)
+    {
+        MidiClip* clip = engine.getClip (trackIdx, clipIdx);
+        if (! clip) return;
+
+        const auto info = engine.getClipInfo (trackIdx, clipIdx);
+        const int64_t cutTick = snapTick (xToTick (e.x));
+        const int64_t cutOffsetInClip = cutTick - info.startTick;
+        if (cutOffsetInClip <= 0 || cutOffsetInClip >= info.lengthTicks)
+            return;   // click wasn't inside this clip's body
+
+        juce::Array<MidiNote> headNotes, tailNotes;
+        {
+            const juce::ScopedReadLock sl (clip->getLock());
+            for (const auto& n : clip->getNotes())
+            {
+                if (n.startTick < cutOffsetInClip)
+                    headNotes.add (n);
+                else
+                {
+                    MidiNote moved = n;
+                    moved.startTick -= cutOffsetInClip;
+                    tailNotes.add (moved);
+                }
+            }
+        }
+
+        const int64_t tailLen = info.lengthTicks - cutOffsetInClip;
+        const int tailIdx = engine.addClip (trackIdx, cutTick, tailLen);
+        if (MidiClip* tail = engine.getClip (trackIdx, tailIdx))
+            tail->setNotes (tailNotes);
+
+        engine.setClipLengthTicks (trackIdx, clipIdx, cutOffsetInClip);
+        clip->setNotes (headNotes);
+
+        selectTrack (trackIdx);
+        selectedClip = clipIdx;
+    }
+
+    /** Merges the clicked clip with the next clip on the same track (the
+     *  clip with the lowest startTick that is >= this clip's end), extending
+     *  the clicked clip to cover both and re-basing the merged-in clip's
+     *  notes by its start offset relative to the clicked clip. No-ops if
+     *  there's no next clip on the track. */
+    void handleGlueClipDown (int trackIdx, int clipIdx)
+    {
+        MidiClip* clip = engine.getClip (trackIdx, clipIdx);
+        if (! clip) return;
+        const auto info = engine.getClipInfo (trackIdx, clipIdx);
+
+        int nextIdx = -1;
+        int64_t nextStart = std::numeric_limits<int64_t>::max();
+        const int numClips = engine.getNumClips (trackIdx);
+        for (int ci = 0; ci < numClips; ++ci)
+        {
+            if (ci == clipIdx) continue;
+            const auto ci_info = engine.getClipInfo (trackIdx, ci);
+            if (ci_info.startTick >= info.endTick() && ci_info.startTick < nextStart)
+            {
+                nextStart = ci_info.startTick;
+                nextIdx   = ci;
+            }
+        }
+        if (nextIdx < 0) return;   // nothing to glue to
+
+        MidiClip* next = engine.getClip (trackIdx, nextIdx);
+        if (! next) return;
+        const auto nextInfo = engine.getClipInfo (trackIdx, nextIdx);
+        const int64_t offset = nextInfo.startTick - info.startTick;
+
+        juce::Array<MidiNote> merged;
+        {
+            const juce::ScopedReadLock sl (clip->getLock());
+            merged = clip->getNotes();
+        }
+        {
+            const juce::ScopedReadLock sl (next->getLock());
+            for (const auto& n : next->getNotes())
+            {
+                MidiNote moved = n;
+                moved.startTick += offset;
+                merged.add (moved);
+            }
+        }
+
+        engine.setClipLengthTicks (trackIdx, clipIdx, offset + nextInfo.lengthTicks);
+        clip->setNotes (merged);
+        engine.removeClip (trackIdx, nextIdx);
+
+        // If the removed clip's index was below ours, the clicked clip's own
+        // index has now shifted down by one to fill the gap.
+        selectTrack (trackIdx);
+        selectedClip = (nextIdx < clipIdx) ? clipIdx - 1 : clipIdx;
     }
 
     //==========================================================================
