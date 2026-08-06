@@ -8,6 +8,7 @@
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
 #include "ToolIcons.h"
+#include "ZoomableScrollBar.h"
 #include <limits>
 
 //==============================================================================
@@ -68,8 +69,7 @@ public:
     static constexpr int kRulerH       = 32;
     static constexpr int kScrollH      = 10;
     static constexpr int kScrollW      = 10;
-    static constexpr int kOverviewH    = 54;   // "ARRANGEMENT OVERVIEW" caption + minimap strip
-    static constexpr int kMinClipPx    = 6;
+        static constexpr int kMinClipPx    = 6;
     static constexpr int kResizeZone   = 10;
     static constexpr int kDefaultTrackH = 64;
     static constexpr int kMinTrackH    = 28;
@@ -148,6 +148,34 @@ public:
         hScroll.addListener (this);
         addAndMakeVisible (hScroll);
 
+        // Drag either end of the thumb to zoom horizontally (pixelsPerTick),
+        // anchored on the opposite edge of the currently-visible range —
+        // replaces the old "ARRANGEMENT OVERVIEW" minimap strip.
+        hScroll.minScale = 0.003;
+        hScroll.maxScale = 6.0;
+        hScroll.getScale = [this] { return pixelsPerTick; };
+        hScroll.applyZoom = [this] (bool draggingStartEdge, double newScale)
+        {
+            const double viewW = (double) clipGridBounds.getWidth();
+            if (draggingStartEdge)
+            {
+                // Left edge of the thumb dragged — keep the tick currently
+                // at the RIGHT edge of the view fixed on screen.
+                const double anchorTick = (scrollX + viewW) / pixelsPerTick;
+                pixelsPerTick = newScale;
+                scrollX = juce::jmax (0.0, anchorTick * pixelsPerTick - viewW);
+            }
+            else
+            {
+                // Right edge dragged — keep the LEFT edge fixed.
+                const double anchorTick = scrollX / pixelsPerTick;
+                pixelsPerTick = newScale;
+                scrollX = juce::jmax (0.0, anchorTick * pixelsPerTick);
+            }
+            updateScrollRanges();
+            repaint();
+        };
+
         // ── Vertical scrollbar ────────────────────────────────────────────────
         vScroll.setRangeLimits (0.0, 1.0);
         vScroll.setCurrentRange (0.0, 1.0);
@@ -155,6 +183,35 @@ public:
         styleScrollBar (vScroll);
         vScroll.addListener (this);
         addAndMakeVisible (vScroll);
+
+        // Same idea vertically: drag either end of the thumb to zoom track
+        // height (trackH), anchored on the opposite edge.
+        vScroll.minScale = (double) kMinTrackH;
+        vScroll.maxScale = (double) kMaxTrackH;
+        vScroll.getScale = [this] { return (double) trackH; };
+        vScroll.applyZoom = [this] (bool draggingStartEdge, double newScale)
+        {
+            const int viewH = clipGridBounds.getHeight();
+            const int newTrackH = juce::jlimit (kMinTrackH, kMaxTrackH, (int) juce::roundToInt (newScale));
+            if (draggingStartEdge)
+            {
+                // Top edge of the thumb dragged — keep the BOTTOM edge fixed.
+                const double anchorTrackPos = (double) (scrollY + viewH) / (double) trackH;
+                trackH = newTrackH;
+                scrollY = juce::jmax (0, (int) (anchorTrackPos * trackH) - viewH);
+            }
+            else
+            {
+                // Bottom edge dragged — keep the TOP edge fixed.
+                const double anchorTrackPos = (double) scrollY / (double) trackH;
+                trackH = newTrackH;
+                scrollY = juce::jmax (0, (int) (anchorTrackPos * trackH));
+            }
+            trackStrip.setTrackHeight (trackH);
+            updateScrollRanges();
+            trackStrip.repaint();
+            repaint();
+        };
 
         // ── Track-strip callbacks ─────────────────────────────────────────────
         trackStrip.onTrackSelected = [this] (int idx)
@@ -190,12 +247,6 @@ public:
         auto hScrollR = r.removeFromBottom (kScrollH).withTrimmedRight (kScrollW);
         auto vScrollR = r.removeFromRight  (kScrollW);
 
-        // Arrangement-overview minimap, docked above the horizontal scrollbar,
-        // spanning the same width as the ruler/clip grid (left of it are the
-        // inspector + track-header columns, which the mockup's overview
-        // strip does not run under).
-        auto overviewR = r.removeFromBottom (kOverviewH);
-
         hScroll.setBounds (hScrollR.withTrimmedLeft (kLeftW));
         vScroll.setBounds (vScrollR);
 
@@ -211,11 +262,6 @@ public:
         gridArea      = r;
         rulerBounds   = gridArea.removeFromTop (kRulerH);
         clipGridBounds = gridArea;
-
-        overviewBounds = overviewR.withTrimmedLeft (kLeftW);
-        auto overviewBar = overviewBounds;
-        overviewBar.removeFromTop (16 + 6); // caption line + gap
-        overviewBarBounds = overviewBar.reduced (0, 2);
 
         updateScrollRanges();
     }
@@ -240,7 +286,6 @@ public:
         paintTrackRows (g);
         paintLoopOverlay (g);
         paintPlayhead (g);
-        paintArrangementOverview (g);
 
         // Corner fill between scrollbars
         if (getWidth() > kLeftW + 8 && getHeight() > kTransportH + kScrollH + 8)
@@ -265,19 +310,6 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         grabKeyboardFocus();
-
-        // ── Arrangement-overview minimap ─────────────────────────────────────
-        if (overviewBarBounds.contains (e.getPosition()))
-        {
-            const auto totalTicks = arrangementContentTicks();
-            if (totalTicks > 0 && overviewBarBounds.getWidth() > 0)
-            {
-                const double ratio = juce::jlimit (0.0, 1.0,
-                    (double) (e.x - overviewBarBounds.getX()) / (double) overviewBarBounds.getWidth());
-                engine.seekToTick ((int64_t) (ratio * (double) totalTicks));
-            }
-            return;
-        }
 
         // ── Ruler ─────────────────────────────────────────────────────────────
         if (rulerBounds.contains (e.getPosition()))
@@ -619,12 +651,11 @@ private:
     std::unique_ptr<FloatingTransportBar> floatingTransport;
     TrackInspector        inspector;
     TrackHeaderStrip      trackStrip;
-    juce::ScrollBar       hScroll { false };
-    juce::ScrollBar       vScroll { true  };
+    ZoomableScrollBar     hScroll { false };
+    ZoomableScrollBar     vScroll { true  };
 
     juce::Rectangle<int>  gridArea, rulerBounds, clipGridBounds;
-    juce::Rectangle<int>  overviewBounds, overviewBarBounds;
-
+    
     int      selectedTrack  = -1;
     int      trackH         = kDefaultTrackH;
 
@@ -782,19 +813,6 @@ private:
                 maxEnd = juce::jmax (maxEnd, info.endTick());
             }
         return juce::jmax (maxEnd * 2, MidiClip::kPPQ * 4 * 32);
-    }
-
-    /** Actual extent of the arrangement's content (unlike totalVisibleTicks(),
-        which pads out to a minimum scrollable range) — used by the overview
-        minimap so clips fill the whole strip rather than being squeezed into
-        a sliver at the left. */
-    int64_t arrangementContentTicks() const noexcept
-    {
-        int64_t maxEnd = MidiClip::kPPQ * 4; // at least one bar
-        for (int ti = 0; ti < engine.getNumTracks(); ++ti)
-            for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
-                maxEnd = juce::jmax (maxEnd, engine.getClipInfo (ti, ci).endTick());
-        return maxEnd;
     }
 
     //==========================================================================
@@ -1632,71 +1650,6 @@ private:
                           (float) x,               (float) rulerBounds.getY() + capH);
         g.setColour (playheadColour);
         g.fillPath (cap);
-    }
-
-    //==========================================================================
-    //  Arrangement-overview minimap — a single flattened strip summarising
-    //  every track's clips across the whole session, with its own playhead
-    //  tick and click-to-seek (see mouseDown()).
-    //==========================================================================
-    void paintArrangementOverview (juce::Graphics& g) const
-    {
-        if (overviewBounds.getWidth() < 10 || overviewBounds.getHeight() < 10)
-            return;
-
-        const auto& theme = getTheme();
-
-        auto caption = overviewBounds.withHeight (16);
-        g.setColour (theme.foreground.withAlpha (0.48f));
-        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
-        g.drawText ("ARRANGEMENT OVERVIEW", caption, juce::Justification::centredLeft, false);
-
-        if (overviewBarBounds.getWidth() < 4 || overviewBarBounds.getHeight() < 4)
-            return;
-
-        const auto barR = overviewBarBounds.toFloat();
-        g.setColour (theme.waveformBg.darker (0.15f));
-        g.fillRoundedRectangle (barR, 3.0f);
-
-        const auto totalTicks = arrangementContentTicks();
-        if (totalTicks > 0)
-        {
-            g.saveState();
-            g.reduceClipRegion (overviewBarBounds);
-
-            const float pxPerTick = (float) overviewBarBounds.getWidth() / (float) totalTicks;
-
-            // Flatten every track's clips into one row. Later tracks are
-            // painted first so earlier (higher, more prominent) tracks in
-            // the list win where clips overlap in time — matching the
-            // vertical stacking order of the main grid above.
-            for (int ti = engine.getNumTracks() - 1; ti >= 0; --ti)
-            {
-                const auto info = engine.getTrackInfo (ti);
-                for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
-                {
-                    const auto clip = engine.getClipInfo (ti, ci);
-                    const int x = overviewBarBounds.getX() + (int) ((float) clip.startTick * pxPerTick);
-                    const int w = juce::jmax (1, (int) ((float) clip.lengthTicks * pxPerTick));
-                    g.setColour (info.colour);
-                    g.fillRect (x, overviewBarBounds.getY(), w, overviewBarBounds.getHeight());
-                }
-            }
-
-            g.restoreState();
-
-            const int64_t playTick = engine.getPlayheadTick();
-            if (playTick >= 0 && playTick <= totalTicks)
-            {
-                const float px = overviewBarBounds.getX() + (float) playTick * pxPerTick;
-                g.setColour (getTheme().accent.brighter (0.38f).withAlpha (0.96f));
-                g.fillRect (px - 1.0f, (float) overviewBarBounds.getY(),
-                            2.0f, (float) overviewBarBounds.getHeight());
-            }
-        }
-
-        g.setColour (theme.separator);
-        g.drawRoundedRectangle (barR.reduced (0.5f), 3.0f, 1.0f);
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ArrangeView)
