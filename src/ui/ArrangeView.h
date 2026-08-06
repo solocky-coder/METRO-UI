@@ -7,6 +7,7 @@
 #include "DysektLookAndFeel.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
+#include "ToolIcons.h"
 #include <limits>
 
 //==============================================================================
@@ -975,13 +976,18 @@ private:
 
         // Tool submenu — same entry as PianoRollComponent's clip/note-grid
         // right-click menu, so switching tools works the same way in both views.
+        // Icons come from the shared ToolIcons.h glyph set so the two menus
+        // are visually identical, not just structurally the same.
         juce::PopupMenu toolMenu;
+        const auto toolIconColour = findColour (juce::TextButton::textColourOffId);
         auto addToolItem = [&] (int itemId, const juce::String& text, Tool tool)
         {
             juce::PopupMenu::Item item;
             item.itemID   = itemId;
             item.text     = text;
             item.isTicked = (currentTool == tool);
+            item.setImage (ToolIcons::makeMenuIcon (static_cast<ToolIcons::Kind> (static_cast<int> (tool)),
+                                                     toolIconColour));
             toolMenu.addItem (item);
         };
         addToolItem (30, "Select (S)", Tool::Select);
