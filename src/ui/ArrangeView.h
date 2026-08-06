@@ -1,10 +1,10 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "ToolIcons.h"
 #include "TransportBar.h"
 #include "FloatingTransportBar.h"
 #include "TrackHeaderStrip.h"
 #include "TrackInspector.h"
+#include "DysektLookAndFeel.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
 
@@ -54,15 +54,12 @@ public:
     static constexpr int kRulerH       = 32;
     static constexpr int kScrollH      = 10;
     static constexpr int kScrollW      = 10;
+    static constexpr int kOverviewH    = 54;   // "ARRANGEMENT OVERVIEW" caption + minimap strip
     static constexpr int kMinClipPx    = 6;
     static constexpr int kResizeZone   = 10;
     static constexpr int kDefaultTrackH = 64;
     static constexpr int kMinTrackH    = 28;
     static constexpr int kMaxTrackH    = 140;
-
-    /** Arranger editing tools. These intentionally match the Piano Roll's
-     *  right-click tool choices, but operate on whole MIDI clips. */
-    enum class Tool { Select, Draw, Erase, Split, Glue };
 
     /** Owner wires this to open the piano roll for the given track + clip. */
     std::function<void(int trackIndex, int clipIndex)> onClipDoubleClicked;
@@ -179,6 +176,12 @@ public:
         auto hScrollR = r.removeFromBottom (kScrollH).withTrimmedRight (kScrollW);
         auto vScrollR = r.removeFromRight  (kScrollW);
 
+        // Arrangement-overview minimap, docked above the horizontal scrollbar,
+        // spanning the same width as the ruler/clip grid (left of it are the
+        // inspector + track-header columns, which the mockup's overview
+        // strip does not run under).
+        auto overviewR = r.removeFromBottom (kOverviewH);
+
         hScroll.setBounds (hScrollR.withTrimmedLeft (kLeftW));
         vScroll.setBounds (vScrollR);
 
@@ -194,6 +197,11 @@ public:
         gridArea      = r;
         rulerBounds   = gridArea.removeFromTop (kRulerH);
         clipGridBounds = gridArea;
+
+        overviewBounds = overviewR.withTrimmedLeft (kLeftW);
+        auto overviewBar = overviewBounds;
+        overviewBar.removeFromTop (16 + 6); // caption line + gap
+        overviewBarBounds = overviewBar.reduced (0, 2);
 
         updateScrollRanges();
     }
@@ -218,6 +226,7 @@ public:
         paintTrackRows (g);
         paintLoopOverlay (g);
         paintPlayhead (g);
+        paintArrangementOverview (g);
 
         // Corner fill between scrollbars
         if (getWidth() > kLeftW + 8 && getHeight() > kTransportH + kScrollH + 8)
@@ -242,6 +251,19 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         grabKeyboardFocus();
+
+        // ── Arrangement-overview minimap ─────────────────────────────────────
+        if (overviewBarBounds.contains (e.getPosition()))
+        {
+            const auto totalTicks = arrangementContentTicks();
+            if (totalTicks > 0 && overviewBarBounds.getWidth() > 0)
+            {
+                const double ratio = juce::jlimit (0.0, 1.0,
+                    (double) (e.x - overviewBarBounds.getX()) / (double) overviewBarBounds.getWidth());
+                engine.seekToTick ((int64_t) (ratio * (double) totalTicks));
+            }
+            return;
+        }
 
         // ── Ruler ─────────────────────────────────────────────────────────────
         if (rulerBounds.contains (e.getPosition()))
@@ -286,29 +308,6 @@ public:
         if (e.mods.isRightButtonDown())
         {
             showContextMenu (trackIdx, hitClip, e);
-            return;
-        }
-
-        // Non-select tools act on whole MIDI clips at the clicked timeline
-        // position. Draw continues through to the empty-space creation path.
-        if (onClip && currentTool == Tool::Erase)
-        {
-            engine.removeClip (trackIdx, hitClip);
-            if (selectedTrack == trackIdx && selectedClip == hitClip)
-                selectedClip = 0;
-            repaint();
-            return;
-        }
-        if (onClip && currentTool == Tool::Split)
-        {
-            splitClipAt (trackIdx, hitClip, snapTick (xToTick (e.x)));
-            repaint();
-            return;
-        }
-        if (onClip && currentTool == Tool::Glue)
-        {
-            glueClipToNext (trackIdx, hitClip);
-            repaint();
             return;
         }
 
@@ -494,13 +493,6 @@ public:
 
     bool keyPressed (const juce::KeyPress& k) override
     {
-        // Keep the arranger's tool shortcuts aligned with the Piano Roll.
-        if (k.getKeyCode() == 'S') { currentTool = Tool::Select; repaint(); return true; }
-        if (k.getKeyCode() == 'D') { currentTool = Tool::Draw;   repaint(); return true; }
-        if (k.getKeyCode() == 'E') { currentTool = Tool::Erase;  repaint(); return true; }
-        if (k.getKeyCode() == 'K') { currentTool = Tool::Split;  repaint(); return true; }
-        if (k.getKeyCode() == 'G') { currentTool = Tool::Glue;   repaint(); return true; }
-
         if (k == juce::KeyPress::spaceKey)
         {
             if (engine.isPlaying()) engine.stop();
@@ -591,6 +583,7 @@ private:
     juce::ScrollBar       vScroll { true  };
 
     juce::Rectangle<int>  gridArea, rulerBounds, clipGridBounds;
+    juce::Rectangle<int>  overviewBounds, overviewBarBounds;
 
     int      selectedTrack  = -1;
     int      trackH         = kDefaultTrackH;
@@ -719,14 +712,10 @@ private:
         return { x, y, w, trackH - 1 };
     }
 
-    /** Snaps `t` to the grid resolution currently selected in the transport
-     *  bar's snap combo (1/1 .. 1/32, or "Free" == no snap). Used for clip
-     *  drag/resize/split in the arranger, so the grid dropdown actually
-     *  controls arranger snapping rather than being a piano-roll-only
-     *  control. */
     int64_t snapTick (int64_t t) const noexcept
     {
-        return TransportBar::snapTick (t, transport.getSnapTicks());
+        const int64_t snap = MidiClip::kPPQ;  // quarter-note snap
+        return ((t + snap / 2) / snap) * snap;
     }
 
     int64_t totalVisibleTicks() const noexcept
@@ -739,6 +728,19 @@ private:
                 maxEnd = juce::jmax (maxEnd, info.endTick());
             }
         return juce::jmax (maxEnd * 2, MidiClip::kPPQ * 4 * 32);
+    }
+
+    /** Actual extent of the arrangement's content (unlike totalVisibleTicks(),
+        which pads out to a minimum scrollable range) — used by the overview
+        minimap so clips fill the whole strip rather than being squeezed into
+        a sliver at the left. */
+    int64_t arrangementContentTicks() const noexcept
+    {
+        int64_t maxEnd = MidiClip::kPPQ * 4; // at least one bar
+        for (int ti = 0; ti < engine.getNumTracks(); ++ti)
+            for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
+                maxEnd = juce::jmax (maxEnd, engine.getClipInfo (ti, ci).endTick());
+        return maxEnd;
     }
 
     //==========================================================================
@@ -846,9 +848,6 @@ private:
         repaint();
     }
 
-    // Currently selected whole-clip editing tool (mirrors the Piano Roll menu).
-    Tool currentTool = Tool::Select;
-
     //==========================================================================
     //  Cursor
     //==========================================================================
@@ -895,27 +894,6 @@ private:
 
         if (onClip)
         {
-            juce::PopupMenu toolMenu;
-            const auto toolIconColour = findColour (juce::TextButton::textColourOffId);
-            auto addToolItem = [&] (int itemId, const juce::String& text, Tool tool)
-            {
-                juce::PopupMenu::Item item;
-                item.itemID = itemId;
-                item.text = text;
-                item.isTicked = (currentTool == tool);
-                // Same glyphs as PianoRollComponent's right-click Tool submenu
-                // (see ToolIcons.h) — Tool's enum order matches ToolIcons::Kind.
-                item.setImage (ToolIcons::makeMenuIcon (static_cast<ToolIcons::Kind> (static_cast<int> (tool)), toolIconColour));
-                toolMenu.addItem (item);
-            };
-            addToolItem (20, "Select (S)", Tool::Select);
-            addToolItem (21, "Draw (D)",   Tool::Draw);
-            addToolItem (22, "Erase (E)",  Tool::Erase);
-            addToolItem (23, "Split (K)",  Tool::Split);
-            addToolItem (24, "Glue (G)",   Tool::Glue);
-            m.addSubMenu ("Tool", toolMenu);
-            m.addSeparator();
-
             m.addItem (1, "Open in piano roll");
             m.addSeparator();
             m.addItem (8, "Repeat clip");
@@ -965,11 +943,6 @@ private:
                         if (selectedTrack == trackIdx && selectedClip == clipIdx)
                             selectedClip = 0;
                         break;
-                    case 20: currentTool = Tool::Select; break;
-                    case 21: currentTool = Tool::Draw;   break;
-                    case 22: currentTool = Tool::Erase;  break;
-                    case 23: currentTool = Tool::Split;  break;
-                    case 24: currentTool = Tool::Glue;   break;
                     case 8:  // Repeat clip
                     {
                         MidiClip* src = engine.getClip (trackIdx, clipIdx);
@@ -992,96 +965,6 @@ private:
                 }
                 repaint(); trackStrip.repaint();
             });
-    }
-
-    /** Split a MIDI clip at a timeline tick, preserving and trimming notes
-     *  that cross the split point on both resulting clips. */
-    void splitClipAt (int trackIdx, int clipIdx, int64_t splitTick)
-    {
-        MidiClip* left = engine.getClip (trackIdx, clipIdx);
-        if (! left) return;
-
-        const auto info = engine.getClipInfo (trackIdx, clipIdx);
-        if (splitTick <= info.startTick || splitTick >= info.endTick()) return;
-
-        const int64_t offset = splitTick - info.startTick;
-        juce::Array<MidiNote> leftNotes, rightNotes;
-        {
-            const juce::ScopedReadLock sl (left->getLock());
-            for (const auto& note : left->getNotes())
-            {
-                if (note.startTick >= offset)
-                {
-                    auto right = note;
-                    right.startTick -= offset;
-                    rightNotes.add (right);
-                }
-                else if (note.endTick() <= offset)
-                {
-                    leftNotes.add (note);
-                }
-                else
-                {
-                    auto leftPart = note;
-                    leftPart.durationTick = offset - note.startTick;
-                    leftNotes.add (leftPart);
-
-                    auto rightPart = note;
-                    rightPart.startTick = 0;
-                    rightPart.durationTick = note.endTick() - offset;
-                    rightNotes.add (rightPart);
-                }
-            }
-        }
-
-        left->setNotes (leftNotes);
-        left->setLengthTicks (offset);
-        const int rightIndex = engine.addClip (trackIdx, splitTick, info.lengthTicks - offset);
-        if (MidiClip* right = engine.getClip (trackIdx, rightIndex))
-            right->setNotes (rightNotes);
-        selectedClip = clipIdx;
-    }
-
-    /** Glue this clip to a directly adjacent following clip on the same MIDI
-     *  track. Non-adjacent clips are deliberately left untouched. */
-    void glueClipToNext (int trackIdx, int clipIdx)
-    {
-        MidiClip* first = engine.getClip (trackIdx, clipIdx);
-        if (! first) return;
-        const auto firstInfo = engine.getClipInfo (trackIdx, clipIdx);
-
-        int nextIndex = -1;
-        for (int i = 0; i < engine.getNumClips (trackIdx); ++i)
-        {
-            if (i != clipIdx && engine.getClipInfo (trackIdx, i).startTick == firstInfo.endTick())
-            {
-                nextIndex = i;
-                break;
-            }
-        }
-        if (nextIndex < 0) return;
-
-        MidiClip* next = engine.getClip (trackIdx, nextIndex);
-        if (! next) return;
-        juce::Array<MidiNote> joined;
-        {
-            const juce::ScopedReadLock sl (first->getLock());
-            joined = first->getNotes();
-        }
-        {
-            const juce::ScopedReadLock sl (next->getLock());
-            for (auto note : next->getNotes())
-            {
-                note.startTick += firstInfo.lengthTicks;
-                joined.add (note);
-            }
-        }
-
-        const auto nextInfo = engine.getClipInfo (trackIdx, nextIndex);
-        first->setNotes (joined);
-        first->setLengthTicks (nextInfo.endTick() - firstInfo.startTick);
-        engine.removeClip (trackIdx, nextIndex);
-        selectedClip = clipIdx;
     }
 
     void duplicateClipToNextTrack (int srcTrack, int srcClipIdx)
@@ -1474,6 +1357,71 @@ private:
                           (float) x,               (float) rulerBounds.getY() + capH);
         g.setColour (playheadColour);
         g.fillPath (cap);
+    }
+
+    //==========================================================================
+    //  Arrangement-overview minimap — a single flattened strip summarising
+    //  every track's clips across the whole session, with its own playhead
+    //  tick and click-to-seek (see mouseDown()).
+    //==========================================================================
+    void paintArrangementOverview (juce::Graphics& g) const
+    {
+        if (overviewBounds.getWidth() < 10 || overviewBounds.getHeight() < 10)
+            return;
+
+        const auto& theme = getTheme();
+
+        auto caption = overviewBounds.withHeight (16);
+        g.setColour (theme.foreground.withAlpha (0.48f));
+        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+        g.drawText ("ARRANGEMENT OVERVIEW", caption, juce::Justification::centredLeft, false);
+
+        if (overviewBarBounds.getWidth() < 4 || overviewBarBounds.getHeight() < 4)
+            return;
+
+        const auto barR = overviewBarBounds.toFloat();
+        g.setColour (theme.waveformBg.darker (0.15f));
+        g.fillRoundedRectangle (barR, 3.0f);
+
+        const auto totalTicks = arrangementContentTicks();
+        if (totalTicks > 0)
+        {
+            g.saveState();
+            g.reduceClipRegion (overviewBarBounds);
+
+            const float pxPerTick = (float) overviewBarBounds.getWidth() / (float) totalTicks;
+
+            // Flatten every track's clips into one row. Later tracks are
+            // painted first so earlier (higher, more prominent) tracks in
+            // the list win where clips overlap in time — matching the
+            // vertical stacking order of the main grid above.
+            for (int ti = engine.getNumTracks() - 1; ti >= 0; --ti)
+            {
+                const auto info = engine.getTrackInfo (ti);
+                for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
+                {
+                    const auto clip = engine.getClipInfo (ti, ci);
+                    const int x = overviewBarBounds.getX() + (int) ((float) clip.startTick * pxPerTick);
+                    const int w = juce::jmax (1, (int) ((float) clip.lengthTicks * pxPerTick));
+                    g.setColour (info.colour);
+                    g.fillRect (x, overviewBarBounds.getY(), w, overviewBarBounds.getHeight());
+                }
+            }
+
+            g.restoreState();
+
+            const int64_t playTick = engine.getPlayheadTick();
+            if (playTick >= 0 && playTick <= totalTicks)
+            {
+                const float px = overviewBarBounds.getX() + (float) playTick * pxPerTick;
+                g.setColour (getTheme().accent.brighter (0.38f).withAlpha (0.96f));
+                g.fillRect (px - 1.0f, (float) overviewBarBounds.getY(),
+                            2.0f, (float) overviewBarBounds.getHeight());
+            }
+        }
+
+        g.setColour (theme.separator);
+        g.drawRoundedRectangle (barR.reduced (0.5f), 3.0f, 1.0f);
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ArrangeView)

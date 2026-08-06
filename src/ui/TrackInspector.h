@@ -28,16 +28,27 @@ public:
         for (int channel = 1; channel <= 16; ++channel)
             channelBox.addItem ("Part " + juce::String (channel), channel);
 
-        volumeSlider.setSliderStyle (juce::Slider::LinearBar);
+        // Mockup styling: VOLUME is a bordered, gradient-filled bar with a
+        // glowing round thumb and a plain "0.0 dB" readout to its right.
+        // PAN is a thin unboxed line with the same glowing thumb, but the
+        // L/C/R readout is drawn *inside* the thumb instead of in a text box.
+        volumeSlider.setLookAndFeel (&mockupSliderLnF);
+        volumeSlider.getProperties().set ("mockupPan", false);
+        volumeSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         volumeSlider.setRange (-60.0, 6.0, 0.1);
         volumeSlider.setValue (0.0, juce::dontSendNotification);
-        volumeSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 18);
+        volumeSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 56, 18);
+        volumeSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colours::white);
+        volumeSlider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+        volumeSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         volumeSlider.setTextValueSuffix (" dB");
 
-        panSlider.setSliderStyle (juce::Slider::LinearBar);
+        panSlider.setLookAndFeel (&mockupSliderLnF);
+        panSlider.getProperties().set ("mockupPan", true);
+        panSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         panSlider.setRange (-100.0, 100.0, 1.0);
         panSlider.setValue (0.0, juce::dontSendNotification);
-        panSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 18);
+        panSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
         panSlider.textFromValueFunction = [] (double value)
         {
             if (std::abs (value) < 0.5) return juce::String ("C");
@@ -96,7 +107,12 @@ public:
         startTimerHz (12);
     }
 
-    ~TrackInspector() override { stopTimer(); }
+    ~TrackInspector() override
+    {
+        stopTimer();
+        volumeSlider.setLookAndFeel (nullptr);
+        panSlider.setLookAndFeel (nullptr);
+    }
 
     void setSelectedTrack (int trackIndex)
     {
@@ -133,6 +149,7 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (12);
+        area.removeFromTop (18); // "SELECTED TRACK" caption
         area.removeFromTop (52); // selected-track identity card
         area.removeFromTop (31); // performance control row + breathing room
 
@@ -172,30 +189,29 @@ public:
             return;
         }
 
+        // "SELECTED TRACK" caption — same muted-caps treatment as the
+        // "CHANNEL" section label below, for visual consistency.
+        auto caption = content.removeFromTop (18);
+        g.setColour (theme.foreground.withAlpha (0.48f));
+        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+        g.drawText ("SELECTED TRACK", caption, juce::Justification::centredLeft, false);
+
         const auto info = engine.getTrackInfo (selectedTrack);
         auto card = content.removeFromTop (52).toFloat();
         g.setColour (theme.button.brighter (0.06f));
-        g.fillRoundedRectangle (card, 0.0f);
+        g.fillRoundedRectangle (card, 5.0f);
+        g.setColour (theme.accent.withAlpha (0.55f));
+        g.drawRoundedRectangle (card.reduced (0.5f), 5.0f, 1.0f);
+        g.setColour (theme.accent);
+        g.fillRoundedRectangle ({ card.getX(), card.getY(), 4.0f, card.getHeight() }, 2.0f);
 
-        // Track-colour wash over the whole card — was previously just the
-        // 4px swatch below with a flat generic-button-colour card behind
-        // it, so the Inspector header didn't read as "this track's colour"
-        // the way the coloured clip in the Arranger timeline does.
-        g.setColour (info.colour.withAlpha (0.22f));
-        g.fillRoundedRectangle (card, 0.0f);
-
-        g.setColour (theme.separator.brighter (0.12f));
-        g.drawRoundedRectangle (card.reduced (0.5f), 0.0f, 1.0f);
-        g.setColour (info.colour);
-        g.fillRoundedRectangle ({ card.getX(), card.getY(), 4.0f, card.getHeight() }, 0.0f);
-
-        auto title = card.toNearestInt().withTrimmedLeft (13).reduced (0, 7).removeFromTop (19);
+        auto title = card.toNearestInt().withTrimmedLeft (16).reduced (0, 7).removeFromTop (19);
         g.setColour (theme.foreground);
         g.setFont (DysektLookAndFeel::makeFont (15.0f, true));
         g.drawFittedText (info.name.toUpperCase(), title, juce::Justification::centredLeft, 1);
 
-        auto subtitle = card.toNearestInt().withTrimmedLeft (13).withTrimmedTop (29).removeFromTop (13);
-        g.setColour (info.colour.withAlpha (0.90f));
+        auto subtitle = card.toNearestInt().withTrimmedLeft (16).withTrimmedTop (29).removeFromTop (13);
+        g.setColour (theme.foreground.withAlpha (0.55f));
         g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
         g.drawText (trackTypeName (info.type), subtitle, juce::Justification::centredLeft, false);
 
@@ -214,9 +230,76 @@ public:
     }
 
 private:
+    //==========================================================================
+    //  MockupSliderLnF — draws VOLUME/PAN per the mockup: VOLUME is a bordered
+    //  track with a blue gradient fill; PAN is a bare line. Both get a glowing
+    //  round thumb; PAN's thumb carries its L/C/R readout instead of a text box.
+    //  Selected per-slider via the "mockupPan" component property.
+    //==========================================================================
+    struct MockupSliderLnF : public juce::LookAndFeel_V4
+    {
+        void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+                                float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
+                                const juce::Slider::SliderStyle, juce::Slider& slider) override
+        {
+            const bool isPan = slider.getProperties().getWithDefault ("mockupPan", false);
+            const float centreY = (float) y + (float) height * 0.5f;
+            const juce::Colour accent (0xFF3AA8FF);
+
+            if (isPan)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.16f));
+                g.drawLine ((float) x, centreY, (float) (x + width), centreY, 1.5f);
+            }
+            else
+            {
+                const juce::Rectangle<float> box ((float) x, (float) y + 2.0f,
+                                                    (float) width, (float) height - 4.0f);
+                g.setColour (juce::Colour (0xFF10191F));
+                g.fillRoundedRectangle (box, 3.0f);
+
+                const float fillW = juce::jlimit (0.0f, box.getWidth(), sliderPos - box.getX());
+                if (fillW > 0.5f)
+                {
+                    auto fill = box.withWidth (fillW);
+                    juce::ColourGradient grad (juce::Colour (0xFF1C6FA8), fill.getX(), fill.getCentreY(),
+                                                accent, fill.getRight(), fill.getCentreY(), false);
+                    g.setGradientFill (grad);
+                    g.fillRoundedRectangle (fill, 3.0f);
+                }
+
+                g.setColour (juce::Colour (0xFF2B4552));
+                g.drawRoundedRectangle (box, 3.0f, 1.0f);
+            }
+
+            const float radius = isPan ? 9.0f : 8.0f;
+            const juce::Point<float> centre (sliderPos, centreY);
+
+            for (int i = 3; i >= 1; --i)
+            {
+                g.setColour (accent.withAlpha (0.09f * (float) i));
+                g.fillEllipse (juce::Rectangle<float> (radius * 2.0f + i * 3.0f, radius * 2.0f + i * 3.0f)
+                                   .withCentre (centre));
+            }
+            g.setColour (accent);
+            g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (centre));
+
+            if (isPan)
+            {
+                g.setColour (juce::Colours::white);
+                g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
+                g.drawText (slider.getTextFromValue (slider.getValue()),
+                            juce::Rectangle<float> (radius * 2.0f, radius * 2.0f)
+                                .withCentre (centre).toNearestInt(),
+                            juce::Justification::centred, false);
+            }
+        }
+    };
+
     SequencerEngine& engine;
     int  selectedTrack   = -1;
 
+    MockupSliderLnF  mockupSliderLnF;
     juce::TextButton muteButton, soloButton, recordButton;
     juce::ComboBox   channelBox;
     juce::Slider     volumeSlider, panSlider;
