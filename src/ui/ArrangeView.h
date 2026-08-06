@@ -342,39 +342,49 @@ public:
         if (! clipGridBounds.contains (e.getPosition())) return;
 
         const int trackIdx = trackFromY (e.y);
-        if (! juce::isPositiveAndBelow (trackIdx, engine.getNumTracks())) return;
+        const bool validTrack = juce::isPositiveAndBelow (trackIdx, engine.getNumTracks());
 
-        // Hit test all clips on this track
-        const int numClips = engine.getNumClips (trackIdx);
+        // Hit test all clips on this track (none if the click is below the
+        // last track row — that's still valid space to start a rubber-band
+        // drag from, it just can't hit a clip or fall back to creating one).
         int hitClip = -1;
         juce::Rectangle<int> hitRect;
-        for (int ci = 0; ci < numClips; ++ci)
+        if (validTrack)
         {
-            const auto r = clipRectForClip (trackIdx, ci);
-            if (r.contains (e.getPosition())) { hitClip = ci; hitRect = r; break; }
+            const int numClips = engine.getNumClips (trackIdx);
+            for (int ci = 0; ci < numClips; ++ci)
+            {
+                const auto r = clipRectForClip (trackIdx, ci);
+                if (r.contains (e.getPosition())) { hitClip = ci; hitRect = r; break; }
+            }
         }
         const bool onClip = (hitClip >= 0);
 
         if (e.mods.isRightButtonDown())
         {
-            showContextMenu (trackIdx, hitClip, e);
+            if (validTrack)
+                showContextMenu (trackIdx, hitClip, e);
             return;
         }
 
         // Non-Select tools act on a single left-click instead of the
         // Select tool's move/resize/create-on-empty-space behaviour below.
+        // They all need a real track under the cursor.
         if (currentTool != Tool::Select)
         {
-            switch (currentTool)
+            if (validTrack)
             {
-                case Tool::Draw:
-                    if (onClip) { selectSingleClip (trackIdx, hitClip); }
-                    else        handleDrawClipDown (trackIdx, e);
-                    break;
-                case Tool::Erase: if (onClip) handleEraseClipDown (trackIdx, hitClip); break;
-                case Tool::Split: if (onClip) handleSplitClipDown (trackIdx, hitClip, e); break;
-                case Tool::Glue:  if (onClip) handleGlueClipDown  (trackIdx, hitClip); break;
-                default: break;
+                switch (currentTool)
+                {
+                    case Tool::Draw:
+                        if (onClip) { selectSingleClip (trackIdx, hitClip); }
+                        else        handleDrawClipDown (trackIdx, e);
+                        break;
+                    case Tool::Erase: if (onClip) handleEraseClipDown (trackIdx, hitClip); break;
+                    case Tool::Split: if (onClip) handleSplitClipDown (trackIdx, hitClip, e); break;
+                    case Tool::Glue:  if (onClip) handleGlueClipDown  (trackIdx, hitClip); break;
+                    default: break;
+                }
             }
             repaint(); trackStrip.repaint();
             return;
@@ -409,10 +419,14 @@ public:
             repaint(); return;
         }
 
-        // Empty track space — a plain click still creates a new clip here
-        // (unchanged pre-existing behaviour), but a drag starts a
-        // rubber-band selection instead; mouseUp tells the two apart by
-        // whether rubberBandRect ever grew past a couple of pixels.
+        // Empty space — a plain click on an existing track still creates a
+        // new clip there (unchanged pre-existing behaviour), but a drag
+        // starts a rubber-band selection instead; mouseUp tells the two
+        // apart by whether rubberBandRect ever grew past a couple of
+        // pixels. This also fires below the last track row (validTrack
+        // false, dragTrack -1) so a rubber-band can be started anywhere in
+        // the arranger — mouseUp's click-fallback clip creation already
+        // checks dragTrack is a real track before acting on it.
         {
             rubberBandStart = e.getPosition();
             rubberBandRect  = juce::Rectangle<int> (rubberBandStart, rubberBandStart);
