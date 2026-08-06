@@ -152,7 +152,7 @@ public:
         // anchored on the opposite edge of the currently-visible range —
         // replaces the old "ARRANGEMENT OVERVIEW" minimap strip.
         hScroll.minScale = 0.003;
-        hScroll.maxScale = 6.0;
+        hScroll.maxScale = 0.4;
         hScroll.getScale = [this] { return pixelsPerTick; };
         hScroll.applyZoom = [this] (bool draggingStartEdge, double newScale)
         {
@@ -532,7 +532,7 @@ public:
             // Zoom around mouse position
             const double tickAtMouse = xToTick (e.x);
             const double factor      = w.deltaY > 0 ? 1.18 : (1.0 / 1.18);
-            pixelsPerTick = juce::jlimit (0.003, 6.0, pixelsPerTick * factor);
+            pixelsPerTick = juce::jlimit (0.003, 0.4, pixelsPerTick * factor);
             scrollX = juce::jmax (0.0,
                 tickAtMouse * pixelsPerTick - (e.x - clipGridBounds.getX()));
         }
@@ -1388,6 +1388,30 @@ private:
             if (rowTop + trackH < clipGridBounds.getY()) continue;  // above view
             if (rowTop > clipGridBounds.getBottom()) break;          // below view
             paintOneTrack (g, i);
+        }
+
+        // Empty space below the last track never got a row painted above, but
+        // the grid still needs to continue through it so it doesn't look
+        // "gone" once you scroll (or zoom) past the end of the track list.
+        const int contentBottom = trackTopY (n);
+        if (contentBottom < clipGridBounds.getBottom())
+        {
+            const juce::Rectangle<int> emptyR (
+                clipGridBounds.getX(),
+                contentBottom,
+                clipGridBounds.getWidth(),
+                clipGridBounds.getBottom() - contentBottom);
+
+            g.saveState();
+            g.reduceClipRegion (clipGridBounds);
+
+            const auto& theme = getTheme();
+            g.setColour (theme.waveformBg);
+            g.fillRect (emptyR);
+
+            paintGridLines (g, emptyR);
+
+            g.restoreState();
         }
     }
 
