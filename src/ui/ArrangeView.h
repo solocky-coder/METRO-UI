@@ -757,9 +757,18 @@ private:
         return { x, y, w, trackH - 1 };
     }
 
+    /** Grid-quantize resolution for clip create/move/resize/split, read live
+     *  from whichever transport bar is currently showing the GRID combo
+     *  (floating, if undocked; the docked TransportBar otherwise) — this was
+     *  previously hardcoded to a fixed quarter-note snap regardless of what
+     *  the combo showed, making the combo purely cosmetic. A 0 result (the
+     *  combo's "Free" option, docked only) means no snapping. */
     int64_t snapTick (int64_t t) const noexcept
     {
-        const int64_t snap = MidiClip::kPPQ;  // quarter-note snap
+        const int64_t snap = (floatingTransport != nullptr && floatingTransport->isFloating())
+                                  ? floatingTransport->getSnapTicks()
+                                  : transport.getSnapTicks();
+        if (snap <= 0) return t;
         return ((t + snap / 2) / snap) * snap;
     }
 

@@ -67,6 +67,12 @@ public:
  bool isFloating() const noexcept { return isOnDesktop(); }
 
 
+ /** Grid-snap resolution selected in the GRID combo, in ticks (MidiClip::kPPQ
+     *  units) — same mapping TransportBar::getSnapTicks() uses for its own
+     *  snapCombo, so the two controls behave identically. 0 means no snap. */
+ int64_t getSnapTicks() const;
+
+
  /** Fired when the user double-clicks the title strip, or presses the
         dock button — the host owns what "docking" means (e.g. re-parenting
         this component back inline, or simply hiding it in favour of an

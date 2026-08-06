@@ -230,6 +230,26 @@ void FloatingTransportBar::hide()
 
 
 //==============================================================================
+int64_t FloatingTransportBar::getSnapTicks() const
+{
+ // Same item-id -> tick mapping as TransportBar::getSnapTicks(); gridCombo
+ // has no "Free" entry here, so an unrecognised/unset id also falls
+ // through to 0 (no snap) rather than crashing on a missing case.
+ const int64_t ppq = MidiClip::kPPQ;
+ switch (gridCombo.getSelectedId())
+ {
+ case 1: return ppq * 4;
+ case 2: return ppq * 2;
+ case 3: return ppq;
+ case 4: return ppq / 2;
+ case 5: return ppq / 4;
+ case 6: return ppq / 8;
+ default: return 0;
+ }
+}
+
+
+//==============================================================================
 void FloatingTransportBar::mouseDown (const juce::MouseEvent& e)
 {
  // Capture eligibility at mouse-down. Once the desktop component moves,
