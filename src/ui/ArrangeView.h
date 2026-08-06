@@ -10,6 +10,9 @@
 #include "ToolIcons.h"
 #include "ZoomableScrollBar.h"
 #include <limits>
+#include <algorithm>
+#include <vector>
+#include <utility>
 
 //==============================================================================
 //  ArrangeView  —  Cubase-style arrange window
@@ -286,6 +289,7 @@ public:
         paintTrackRows (g);
         paintLoopOverlay (g);
         paintPlayhead (g);
+        paintRubberBand (g);
 
         // Corner fill between scrollbars
         if (getWidth() > kLeftW + 8 && getHeight() > kTransportH + kScrollH + 8)
@@ -364,7 +368,7 @@ public:
             switch (currentTool)
             {
                 case Tool::Draw:
-                    if (onClip) { selectTrack (trackIdx); selectedClip = hitClip; }
+                    if (onClip) { selectSingleClip (trackIdx, hitClip); }
                     else        handleDrawClipDown (trackIdx, e);
                     break;
                 case Tool::Erase: if (onClip) handleEraseClipDown (trackIdx, hitClip); break;
@@ -379,40 +383,43 @@ public:
         // Resize handle — right edge of a clip
         if (onClip && e.x >= hitRect.getRight() - kResizeZone)
         {
+            beginClipSelection (trackIdx, hitClip, e.mods.isShiftDown());
             dragMode       = DragMode::ResizeRight;
             dragTrack      = trackIdx;
             dragClip       = hitClip;
             dragStartX     = e.x;
             dragStartTicks = engine.getClipInfo (trackIdx, hitClip).lengthTicks;
             dragResizeLen  = dragStartTicks;
-            selectTrack (trackIdx);
-            selectedClip   = hitClip;
             updateCursor (e);
             repaint(); return;
         }
 
-        // Clip body — move
+        // Clip body — move (whole selection moves together if this clip is
+        // part of a multi-clip selection; see clipRectForClip)
         if (onClip)
         {
+            beginClipSelection (trackIdx, hitClip, e.mods.isShiftDown());
             dragMode       = DragMode::MoveClip;
             dragTrack      = trackIdx;
             dragClip       = hitClip;
             dragStartX     = e.x;
             dragStartTicks = engine.getClipInfo (trackIdx, hitClip).startTick;
             dragLiveOffset = dragStartTicks;
-            selectTrack (trackIdx);
-            selectedClip   = hitClip;
             updateCursor (e);
             repaint(); return;
         }
 
-        // Empty track space — create new clip at click position
+        // Empty track space — a plain click still creates a new clip here
+        // (unchanged pre-existing behaviour), but a drag starts a
+        // rubber-band selection instead; mouseUp tells the two apart by
+        // whether rubberBandRect ever grew past a couple of pixels.
         {
-            const int64_t clickTick = snapTick (xToTick (e.x));
-            const int64_t defLen    = MidiClip::kPPQ * 4 * 4;  // 4 bars default
-            const int newIdx = engine.addClip (trackIdx, clickTick, defLen);
-            selectTrack (trackIdx);
-            selectedClip  = newIdx;
+            rubberBandStart = e.getPosition();
+            rubberBandRect  = juce::Rectangle<int> (rubberBandStart, rubberBandStart);
+            rubberBandBaseSelection = e.mods.isShiftDown() ? selectedClips
+                                                            : std::vector<std::pair<int,int>>{};
+            dragMode  = DragMode::RubberBand;
+            dragTrack = trackIdx;   // track to create the click-fallback clip on
             repaint(); return;
         }
     }   // end mouseDown
@@ -443,6 +450,15 @@ public:
         }
 
         if (dragMode == DragMode::None) return;
+
+        if (dragMode == DragMode::RubberBand)
+        {
+            rubberBandRect = juce::Rectangle<int>::leftTopRightBottom (
+                juce::jmin (rubberBandStart.x, e.x), juce::jmin (rubberBandStart.y, e.y),
+                juce::jmax (rubberBandStart.x, e.x), juce::jmax (rubberBandStart.y, e.y));
+            updateRubberBandSelection();
+            repaint(); return;
+        }
 
         const int dx = e.x - dragStartX;
 
@@ -482,20 +498,89 @@ public:
             dragResizeLen = 0;
         }
 
-        // Commit clip move
+        // Commit clip move — every clip in selectedClips moves together by
+        // the same delta the anchor (dragTrack/dragClip) moved by. Falls
+        // back to just the anchor if nothing is in the multi-selection
+        // (e.g. a plain, non-multi drag).
         if (dragMode == DragMode::MoveClip && dragTrack >= 0)
         {
-            if (dragLiveOffset != engine.getClipInfo (dragTrack, dragClip).startTick)
+            const int64_t delta = dragLiveOffset - dragStartTicks;
+            if (delta != 0)
             {
-                // Shift all notes within the clip are clip-relative, so just move the slot
-                engine.setClipStartTick (dragTrack, dragClip, dragLiveOffset);
-                // Re-find clip index after sort (sortClips may have changed order)
-                // Use dragLiveOffset to locate it
-                for (int ci = 0; ci < engine.getNumClips (dragTrack); ++ci)
-                    if (engine.getClipInfo (dragTrack, ci).startTick == dragLiveOffset)
-                        { selectedClip = ci; break; }
+                // Snapshot (track, oldStart, newStart) triples before touching
+                // the engine — moving one clip can re-sort its track's clip
+                // list and invalidate every other clip's index on that same
+                // track mid-loop, so indices must be re-resolved by tick
+                // rather than reused across calls.
+                struct PendingMove { int track; int64_t oldStart; int64_t newStart; };
+                std::vector<PendingMove> moves;
+
+                if (selectedClips.empty())
+                {
+                    moves.push_back ({ dragTrack, dragStartTicks, dragLiveOffset });
+                }
+                else
+                {
+                    for (auto& sel : selectedClips)
+                    {
+                        const auto info = engine.getClipInfo (sel.first, sel.second);
+                        const int64_t newStart = juce::jmax ((int64_t) 0, info.startTick + delta);
+                        moves.push_back ({ sel.first, info.startTick, newStart });
+                    }
+                }
+
+                auto findClipIndexAtStart = [this] (int track, int64_t startTick) -> int
+                {
+                    for (int ci = 0; ci < engine.getNumClips (track); ++ci)
+                        if (engine.getClipInfo (track, ci).startTick == startTick)
+                            return ci;
+                    return -1;
+                };
+
+                for (auto& mv : moves)
+                {
+                    const int ci = findClipIndexAtStart (mv.track, mv.oldStart);
+                    if (ci >= 0)
+                        engine.setClipStartTick (mv.track, ci, mv.newStart);
+                }
+
+                // Re-sync selectedClips (and the primary selectedTrack/
+                // selectedClip) to the clips' post-move, post-sort indices.
+                std::vector<std::pair<int,int>> updated;
+                for (auto& mv : moves)
+                {
+                    const int ci = findClipIndexAtStart (mv.track, mv.newStart);
+                    if (ci >= 0) updated.emplace_back (mv.track, ci);
+                }
+                if (! selectedClips.empty())
+                    selectedClips = updated;
+                if (! updated.empty())
+                {
+                    selectTrack (updated.back().first);
+                    selectedClip = updated.back().second;
+                }
             }
             dragLiveOffset = 0;
+        }
+
+        // Finalize the rubber-band drag: a real drag (rect grew past a
+        // couple of pixels) just leaves the live-updated selectedClips in
+        // place; anything smaller is treated as the plain click empty
+        // space has always meant — create a new clip there — and that new
+        // clip becomes the sole selection.
+        if (dragMode == DragMode::RubberBand)
+        {
+            const bool wasRealDrag = rubberBandRect.getWidth()  > 2
+                                   || rubberBandRect.getHeight() > 2;
+            if (! wasRealDrag && juce::isPositiveAndBelow (dragTrack, engine.getNumTracks()))
+            {
+                const int64_t clickTick = snapTick (xToTick (rubberBandStart.x));
+                const int64_t defLen    = MidiClip::kPPQ * 4 * 4;  // 4 bars default
+                const int newIdx = engine.addClip (dragTrack, clickTick, defLen);
+                selectSingleClip (dragTrack, newIdx);
+            }
+            rubberBandRect = {};
+            rubberBandBaseSelection.clear();
         }
 
         rulerDrag  = RulerDrag::None;
@@ -678,10 +763,18 @@ private:
     int64_t  lastAutoScrollTick = -1;
 
     // Drag state
-    enum class DragMode  { None, MoveClip, ResizeRight };
+    enum class DragMode  { None, MoveClip, ResizeRight, RubberBand };
     enum class RulerDrag { None, Scrub, LoopSet };
     DragMode  dragMode       = DragMode::None;
     RulerDrag rulerDrag      = RulerDrag::None;
+
+    // Rubber-band drag-select (empty-space drag with the Select tool)
+    juce::Point<int>      rubberBandStart;
+    juce::Rectangle<int>  rubberBandRect;
+    // Selection the rubber-band drag started from — non-empty only when the
+    // drag began with Shift held, so the drag adds to it rather than
+    // replacing it.
+    std::vector<std::pair<int,int>> rubberBandBaseSelection;
 
     // Clip-grid tool — mirrors PianoRollComponent::Tool so the two right-click
     // "Tool" submenus (and their S/D/E/K/G shortcuts) match; the actions mean
@@ -695,6 +788,14 @@ private:
     int64_t   dragResizeLen  = 0;   // live preview length during ResizeRight
 
     int       selectedClip   = 0;   // which clip is selected on selectedTrack
+
+    // Multi-clip selection — (trackIdx, clipIdx) pairs. selectedTrack/
+    // selectedClip above still track the "primary" clip (whichever was
+    // most recently clicked/toggled) so all pre-existing single-clip code
+    // (paint's row highlight, the context menu, piano-roll open, Delete)
+    // keeps working unchanged; selectedClips is only consulted by the new
+    // group-move / rubber-band code.
+    std::vector<std::pair<int,int>> selectedClips;
 
     //==========================================================================
     //  Timer — repaints + auto-scroll
@@ -776,9 +877,16 @@ private:
         int64_t startTick  = info.startTick;
         int64_t lengthTicks = info.lengthTicks;
 
-        // Live overrides during drag
-        if (dragMode == DragMode::MoveClip && dragTrack == trackIdx && dragClip == clipIdx)
-            startTick = dragLiveOffset;
+        // Live overrides during drag — a multi-clip move previews every
+        // selected clip sliding together by the same delta as the clip
+        // actually under the mouse (dragTrack/dragClip), not just that anchor.
+        if (dragMode == DragMode::MoveClip)
+        {
+            if (dragTrack == trackIdx && dragClip == clipIdx)
+                startTick = dragLiveOffset;
+            else if (isClipSelected (dragTrack, dragClip) && isClipSelected (trackIdx, clipIdx))
+                startTick = info.startTick + (dragLiveOffset - dragStartTicks);
+        }
         if (dragMode == DragMode::ResizeRight && dragTrack == trackIdx && dragClip == clipIdx)
             lengthTicks = dragResizeLen;
 
@@ -801,6 +909,84 @@ private:
                                   : transport.getSnapTicks();
         if (snap <= 0) return t;
         return ((t + snap / 2) / snap) * snap;
+    }
+
+    //==========================================================================
+    //  Multi-selection helpers
+    //==========================================================================
+    /** True if (trackIdx, clipIdx) is part of the current multi-clip selection. */
+    bool isClipSelected (int trackIdx, int clipIdx) const noexcept
+    {
+        for (auto& p : selectedClips)
+            if (p.first == trackIdx && p.second == clipIdx)
+                return true;
+        return false;
+    }
+
+    /** Replaces the whole selection with a single clip, and updates the
+     *  legacy selectedTrack/selectedClip "primary" pointer to match, so
+     *  every pre-existing single-clip code path keeps working unchanged. */
+    void selectSingleClip (int trackIdx, int clipIdx)
+    {
+        selectedClips.clear();
+        selectedClips.emplace_back (trackIdx, clipIdx);
+        selectTrack (trackIdx);
+        selectedClip = clipIdx;
+    }
+
+    /** Click-to-select behaviour shared by the resize-handle and clip-body
+     *  mouseDown branches: Shift adds the clicked clip to whatever's
+     *  already selected without disturbing the rest of the group; a plain
+     *  click on a clip that's already part of a multi-clip selection
+     *  leaves the whole group selected (so it can be dragged together); a
+     *  plain click on a clip that ISN'T already selected replaces the
+     *  selection with just that clip. */
+    void beginClipSelection (int trackIdx, int clipIdx, bool shiftDown)
+    {
+        if (shiftDown)
+        {
+            if (! isClipSelected (trackIdx, clipIdx))
+                selectedClips.emplace_back (trackIdx, clipIdx);
+            selectTrack (trackIdx);
+            selectedClip = clipIdx;
+        }
+        else if (! isClipSelected (trackIdx, clipIdx))
+        {
+            selectSingleClip (trackIdx, clipIdx);
+        }
+        else
+        {
+            selectTrack (trackIdx);
+            selectedClip = clipIdx;
+        }
+    }
+
+    /** Recomputes selectedClips as rubberBandBaseSelection (empty unless the
+     *  drag was Shift-started) plus every clip whose on-screen rect
+     *  currently intersects rubberBandRect. Called live from mouseDrag so
+     *  the selection updates as the rectangle grows. */
+    void updateRubberBandSelection()
+    {
+        selectedClips = rubberBandBaseSelection;
+
+        const int numTracks = engine.getNumTracks();
+        for (int ti = 0; ti < numTracks; ++ti)
+        {
+            const int numClips = engine.getNumClips (ti);
+            for (int ci = 0; ci < numClips; ++ci)
+            {
+                if (isClipSelected (ti, ci)) continue;
+                if (clipRectForClip (ti, ci).intersects (rubberBandRect))
+                    selectedClips.emplace_back (ti, ci);
+            }
+        }
+
+        if (! selectedClips.empty())
+        {
+            const auto& primary = selectedClips.back();
+            selectTrack (primary.first);
+            selectedClip = primary.second;
+        }
     }
 
     int64_t totalVisibleTicks() const noexcept
@@ -1164,8 +1350,7 @@ private:
         const int64_t clickTick = snapTick (xToTick (e.x));
         const int64_t defLen    = MidiClip::kPPQ * 4 * 4;  // 4 bars default
         const int newIdx = engine.addClip (trackIdx, clickTick, defLen);
-        selectTrack (trackIdx);
-        selectedClip = newIdx;
+        selectSingleClip (trackIdx, newIdx);
     }
 
     void handleEraseClipDown (int trackIdx, int clipIdx)
@@ -1434,6 +1619,25 @@ private:
                             (float)clipGridBounds.getBottom());
     }
 
+    /** Draws the live rubber-band selection rectangle while the user is
+     *  dragging in empty space. Clipped to the clip grid so it can't paint
+     *  over the ruler or track strip. */
+    void paintRubberBand (juce::Graphics& g) const
+    {
+        if (dragMode != DragMode::RubberBand || rubberBandRect.isEmpty()) return;
+
+        g.saveState();
+        g.reduceClipRegion (clipGridBounds);
+
+        const auto& theme = getTheme();
+        g.setColour (theme.accent.withAlpha (0.14f));
+        g.fillRect (rubberBandRect);
+        g.setColour (theme.accent.withAlpha (0.75f));
+        g.drawRect (rubberBandRect, 1);
+
+        g.restoreState();
+    }
+
     void paintOneTrack (juce::Graphics& g, int i) const
     {
         const auto info  = engine.getTrackInfo (i);
@@ -1468,7 +1672,7 @@ private:
         const int numClips = engine.getNumClips (i);
         for (int ci = 0; ci < numClips; ++ci)
         {
-            const bool isSelClip = isSel && (ci == selectedClip);
+            const bool isSelClip = isClipSelected (i, ci);
             paintClip (g, i, ci, info, isSelClip, muted);
         }
 
