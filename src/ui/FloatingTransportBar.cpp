@@ -68,6 +68,22 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
  addAndMakeVisible (dockButton);
 
 
+ // ── View switcher — Mixer / Arranger / Global EQ ────────────────────────
+ configureChrome (mixerButton, "MIXER", "Switch to the mixer");
+ configureChrome (arrangeButton, "ARRANGER", "Switch to the arranger");
+ configureChrome (eqButton, "GLOBAL EQ", "Switch to the global EQ");
+ for (auto* b : { &mixerButton, &arrangeButton, &eqButton })
+    {
+        b->setColour (juce::TextButton::textColourOffId, Base::White);
+        b->setColour (juce::TextButton::textColourOnId, Base::White);
+    }
+    mixerButton.onClick   = [this] { if (onMixerRequested)    onMixerRequested(); };
+    arrangeButton.onClick = [this] { if (onArrangerRequested) onArrangerRequested(); };
+    eqButton.onClick      = [this] { if (onGlobalEqRequested) onGlobalEqRequested(); };
+ for (auto* b : { &mixerButton, &arrangeButton, &eqButton })
+addAndMakeVisible (*b);
+
+
  // ── Tempo (BPM) — lives in the far-right BPM/GRID/LINK row ─────────────
     tempoLabel.setEditable (true, true, false);
     tempoLabel.setJustificationType (juce::Justification::centred);
@@ -295,6 +311,18 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
 
     L.titleStrip = area.removeFromTop (MetroMetrics::grid * 3);
+
+    // ── Title strip: view switcher on the left, pin+dock grouped on the right ──
+    {
+        auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::quarterGrid);
+        strip.removeFromLeft (MetroMetrics::grid * 6); // leave room for the drag grip / left margin
+        L.mixerButtonField   = strip.removeFromLeft (MetroMetrics::grid * 6);
+        strip.removeFromLeft (MetroMetrics::halfGrid);
+        L.arrangeButtonField = strip.removeFromLeft (MetroMetrics::grid * 8);
+        strip.removeFromLeft (MetroMetrics::halfGrid);
+        L.eqButtonField      = strip.removeFromLeft (MetroMetrics::grid * 8);
+    }
+
     area.reduce (MetroMetrics::grid, 0);
     area.removeFromTop (MetroMetrics::grid * 2);
 
@@ -342,8 +370,13 @@ void FloatingTransportBar::resized()
 
 
  auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::quarterGrid);
-    pinButton.setBounds (strip.removeFromLeft (MetroMetrics::grid * 6));
     dockButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 7));
+    strip.removeFromRight (MetroMetrics::halfGrid);
+    pinButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 6));
+
+    mixerButton.setBounds (L.mixerButtonField);
+    arrangeButton.setBounds (L.arrangeButtonField);
+    eqButton.setBounds (L.eqButtonField);
 
 
  // L/R captions sit outside their fields so the numerical values stay truly centred.
@@ -396,11 +429,6 @@ void FloatingTransportBar::paint (juce::Graphics& g)
  for (int i = 0; i < 2; ++i)
         g.fillRoundedRectangle ((float) stripCentre.x - 23.0f, (float) stripCentre.y - 4.0f + i * 6.0f,
  46.0f, 3.0f, 1.5f);
-
-
-    g.setColour (Text::Muted);
-    g.setFont (MetroTypography::caption());
-    g.drawText ("TRANSPORT", L.titleStrip.withTrimmedLeft (MetroMetrics::grid * 8), juce::Justification::centredLeft);
 
 
  // Locator captions are painted separately so their editable values can be centred.

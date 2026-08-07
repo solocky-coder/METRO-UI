@@ -720,6 +720,9 @@ public:
         {
             floatingTransport = std::make_unique<FloatingTransportBar> (engine, linkPtr);
             floatingTransport->onDockRequested = [this] { dockTransport(); };
+            floatingTransport->onMixerRequested   = [this] { if (onMixerRequested)   onMixerRequested(); };
+            floatingTransport->onArrangerRequested = [this] { if (onArrangerRequested) onArrangerRequested(); };
+            floatingTransport->onGlobalEqRequested = [this] { if (onGlobalEqRequested) onGlobalEqRequested(); };
         }
 
         transport.setVisible (false);
@@ -739,6 +742,13 @@ public:
     /** Lets an owner (e.g. SlotWindowContent) dock extra controls — such as the
      *  Mixer / Arranger view switcher — into the far left of the transport row. */
     TransportBar& getTransportBar() noexcept { return transport; }
+
+    /** Fired when the floating transport's MIXER / ARRANGER / GLOBAL EQ
+     *  buttons are clicked — set by the owner (e.g. SlotWindowContent) to
+     *  switch views, mirroring how it wires up its own switcher buttons. */
+    std::function<void()> onMixerRequested;
+    std::function<void()> onArrangerRequested;
+    std::function<void()> onGlobalEqRequested;
 
 private:
     //==========================================================================

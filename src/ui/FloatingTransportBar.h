@@ -80,6 +80,14 @@ public:
         desktop window lifecycle; it never re-parents itself. */
     std::function<void()> onDockRequested;
 
+    /** Fired when the MIXER / ARRANGER / GLOBAL EQ title-strip buttons are
+        clicked — the host (ArrangeView, forwarding from SlotWindowContent)
+        decides what showing that view means; this panel only reports the
+        request. */
+    std::function<void()> onMixerRequested;
+    std::function<void()> onArrangerRequested;
+    std::function<void()> onGlobalEqRequested;
+
 
  void paint (juce::Graphics&) override;
  void resized() override;
@@ -100,6 +108,7 @@ private:
  struct Layout
     {
         juce::Rectangle<int> titleStrip;
+        juce::Rectangle<int> mixerButtonField, arrangeButtonField, eqButtonField;
         juce::Rectangle<int> positionField;
         juce::Rectangle<int> locatorsField;
         juce::Rectangle<int> transportRow;
@@ -133,6 +142,9 @@ private:
  // ── Title strip chrome ──────────────────────────────────────────────
     juce::TextButton pinButton   { "Pin" };
     juce::TextButton dockButton  { "Dock" };
+    juce::TextButton mixerButton   { "Mixer" };
+    juce::TextButton arrangeButton { "Arranger" };
+    juce::TextButton eqButton      { "Global Eq" };
     juce::ComponentDragger dragger;
  bool draggingTitleStrip = false;
 

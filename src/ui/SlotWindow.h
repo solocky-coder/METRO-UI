@@ -47,6 +47,12 @@ public:
         addChildComponent (mixerButton);
         addChildComponent (arrangeButton);
         addChildComponent (eqButton);
+
+        // Same switching, reachable from the floating transport panel's own
+        // MIXER / ARRANGER / GLOBAL EQ buttons (see FloatingTransportBar).
+        arrangeView.onMixerRequested    = [this] { selectView (Content::Mixer); };
+        arrangeView.onArrangerRequested = [this] { selectView (Content::Arrange); };
+        arrangeView.onGlobalEqRequested = [this] { selectView (Content::Eq); };
     }
 
     /** Show exactly one of Mixer / Eq / Arrange (or None to hide all three). */
