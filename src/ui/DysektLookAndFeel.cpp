@@ -103,6 +103,21 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
 
     const bool toggled = button.getToggleState();
 
+    // Opt-in outline style — set the "flatOutline" property on a button to
+    // get the DYSEKT-SF chassis look (transparent fill, 1px cyan hairline,
+    // squared corners) instead of the app's default solid flat fill. Used
+    // by TrackInspector's M/S/R row so it matches the SELECTED TRACK card's
+    // border treatment; left opt-in rather than global so every other
+    // button in the app (transport, mixer, etc.) keeps its existing fill.
+    if (button.getProperties().getWithDefault ("flatOutline", false))
+    {
+        auto outline = toggled ? getTheme().accent
+                                : getTheme().accent.withAlpha (isHighlighted ? 0.85f : 0.55f);
+        g.setColour (outline);
+        g.drawRect (bounds, 1.0f);
+        return;
+    }
+
     auto fill = isDown        ? getTheme().accent
               : toggled       ? getTheme().accent
               : isHighlighted ? getTheme().buttonHover
@@ -114,13 +129,25 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
 void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
                                          bool /*isHighlighted*/, bool /*isDown*/)
 {
-    auto textCol = button.findColour (button.getToggleState()
+    juce::Colour textCol;
+
+    // flatOutline buttons always read cyan-on-black, ignoring any per-role
+    // colour (amber/yellow/red) passed via textColourOffId — the outline
+    // style is monochrome accent, same as the card border it sits under.
+    if (button.getProperties().getWithDefault ("flatOutline", false))
+    {
+        textCol = getTheme().accent;
+    }
+    else
+    {
+        textCol = button.findColour (button.getToggleState()
                                        ? juce::TextButton::textColourOnId
                                        : juce::TextButton::textColourOffId);
-    if (textCol.isTransparent())
-        textCol = button.getToggleState()
-                ? getTheme().accent
-                : getTheme().foreground.withAlpha (0.85f);
+        if (textCol.isTransparent())
+            textCol = button.getToggleState()
+                    ? getTheme().accent
+                    : getTheme().foreground.withAlpha (0.85f);
+    }
 
     g.setColour (textCol);
 

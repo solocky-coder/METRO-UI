@@ -20,9 +20,16 @@ class TrackInspector : public juce::Component,
 public:
     explicit TrackInspector (SequencerEngine& sequencer) : engine (sequencer)
     {
+        // DYSEKT-SF border pass: M/S/R are flat cyan-outline buttons now
+        // (matching the SF panel's chrome) instead of filled amber/yellow/
+        // red swatches — the colour argument to configureButton is unused
+        // for flatOutline buttons (see drawButtonText) but kept so callers
+        // don't need two separate helpers.
         configureButton (muteButton,    "M", juce::Colour (0xffc99140));
         configureButton (soloButton,    "S", juce::Colour (0xffd1b34c));
         configureButton (recordButton,  "R", juce::Colour (0xffd95454));
+        for (auto* b : { &muteButton, &soloButton, &recordButton })
+            b->getProperties().set ("flatOutline", true);
 
         channelBox.setVisible (false);
         for (int channel = 1; channel <= 16; ++channel)
@@ -210,12 +217,12 @@ public:
 
         const auto info = engine.getTrackInfo (selectedTrack);
         auto card = content.removeFromTop (52).toFloat();
-        g.setColour (theme.button.brighter (0.06f));
-        g.fillRoundedRectangle (card, 5.0f);
-        g.setColour (theme.accent.withAlpha (0.55f));
-        g.drawRoundedRectangle (card.reduced (0.5f), 5.0f, 1.0f);
+        // DYSEKT-SF border pass: flat, squared, full-opacity cyan hairline —
+        // no fill and no left accent stripe, matching the outlined-box
+        // language of the SF panel's own chassis instead of the old
+        // rounded/filled/tinted-edge card.
         g.setColour (theme.accent);
-        g.fillRoundedRectangle ({ card.getX(), card.getY(), 4.0f, card.getHeight() }, 2.0f);
+        g.drawRect (card.reduced (0.5f), 1.0f);
 
         auto title = card.toNearestInt().withTrimmedLeft (16).reduced (0, 7).removeFromTop (19);
         g.setColour (theme.foreground);

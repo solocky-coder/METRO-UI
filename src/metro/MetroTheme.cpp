@@ -34,7 +34,11 @@ namespace MetroTheme
         // the strongest active state — playhead, selected item edge, active
         // tool. Everything below is derived from this one constant, so a
         // single-line change re-tints the whole theme.
-        static const juce::Colour kAccent (0xFF0EA7D6);
+        // Re-tinted to match the DYSEKT-SF chassis's own accent (~#00D7E8)
+        // instead of the older, slightly darker blue-cyan — keeps the
+        // arranger's borders in step with the SF panel it now visually
+        // matches (outlined boxes, squared corners, cyan hairlines).
+        static const juce::Colour kAccent (0xFF00D7E8);
         t.background       = juce::Colour (0xFF000000);   // absolute black chassis
         t.waveformBg       = juce::Colour (0xFF0A0A0C);   // near-void panel surface
         t.darkBar          = juce::Colour (0xFF121214);   // charcoal panel/surface-alt bar
