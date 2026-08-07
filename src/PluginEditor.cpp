@@ -2745,7 +2745,12 @@ void DysektEditor::refreshZoneBuilderPreview()
     // sliceManager2/sampleData2 are only populated by the async soundfont
     // decode, not by sfzPlayer2.loadFile() alone.
     processor.loadSoundFontAsync (previewFile, SoundFontLoadTarget::SfzPlayer2);
+
+    // Keep both zone displays in sync. The Zone Builder and the normal
+    // SFZ-PLAYER view own separate KeysPanel instances, so refreshing only the
+    // builder matrix leaves deleted/added/edited zones stale in the normal view.
     refreshZoneBuilderMatrix (previewFile);
+    sfzPlayerDropdown.reloadZones (previewFile);
 }
 
 // Right-click "Delete Zone" -> stage removal of one <region> block, via the
