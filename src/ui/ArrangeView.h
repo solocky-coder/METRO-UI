@@ -1658,6 +1658,11 @@ private:
 
     void paintRuler (juce::Graphics& g) const
     {
+        // Ruler content is horizontally scrolled; keep it out of the fixed
+        // ARRANGE header when loop markers move beyond the visible timeline.
+        g.saveState();
+        g.reduceClipRegion (rulerBounds);
+
         const auto& theme = getTheme();
 
         // Background
@@ -1731,14 +1736,25 @@ private:
             const float rx = tickToX (loopEnd);
             g.setFont (juce::Font (9.f, juce::Font::bold));
             g.setColour (getTheme().accent.brighter (0.2f));
-            g.drawText ("L", (int)lx + 2, rulerBounds.getY(),
-                        14, rulerBounds.getHeight(), juce::Justification::centredLeft);
-            g.drawText ("R", (int)rx - 16, rulerBounds.getY(),
-                        14, rulerBounds.getHeight(), juce::Justification::centredRight);
-            // Bracket lines
-            g.drawVerticalLine ((int)lx, (float)rulerBounds.getY(), (float)rulerBounds.getBottom());
-            g.drawVerticalLine ((int)rx, (float)rulerBounds.getY(), (float)rulerBounds.getBottom());
+
+            if (rulerBounds.contains ((int)lx, rulerBounds.getCentreY()))
+            {
+                g.drawText ("L", (int)lx + 2, rulerBounds.getY(),
+                            14, rulerBounds.getHeight(), juce::Justification::centredLeft);
+                g.drawVerticalLine ((int)lx, (float)rulerBounds.getY(),
+                                    (float)rulerBounds.getBottom());
+            }
+
+            if (rulerBounds.contains ((int)rx, rulerBounds.getCentreY()))
+            {
+                g.drawText ("R", (int)rx - 16, rulerBounds.getY(),
+                            14, rulerBounds.getHeight(), juce::Justification::centredRight);
+                g.drawVerticalLine ((int)rx, (float)rulerBounds.getY(),
+                                    (float)rulerBounds.getBottom());
+            }
         }
+
+        g.restoreState();
     }
 
     void paintTrackRows (juce::Graphics& g) const
@@ -1782,6 +1798,12 @@ private:
         if (loopStart < 0 || loopEnd <= loopStart) return;
         const float lx = tickToX (loopStart);
         const float rx = tickToX (loopEnd);
+
+        // The loop can extend beyond either side of the viewport. Clip all
+        // overlay painting so it cannot bleed into the fixed track strip.
+        g.saveState();
+        g.reduceClipRegion (clipGridBounds);
+
         // Tinted band across all track rows
         g.setColour (getTheme().accent.withAlpha (0.06f));
         g.fillRect (lx, (float)clipGridBounds.getY(),
@@ -1794,6 +1816,8 @@ private:
         g.drawVerticalLine ((int)rx,
                             (float)clipGridBounds.getY(),
                             (float)clipGridBounds.getBottom());
+
+        g.restoreState();
     }
 
     /** Draws the live rubber-band selection rectangle while the user is
