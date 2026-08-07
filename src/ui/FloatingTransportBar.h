@@ -121,11 +121,64 @@ private:
     Layout computeLayout() const;
 
 
+ /** An editable "003.02.120" (bar.beat.tick) label whose three components
+     *  can each be mouse-wheel-scrolled independently — hovering over the
+     *  bar digits and scrolling steps by a bar, over the beat digits steps
+     *  by a beat, over the tick digits steps by a tick — without disturbing
+     *  the other two. Text editing (click to type a value) still works
+     *  exactly as juce::Label already provides; this only adds the wheel
+     *  behaviour on top. Assumes a monospaced font and a fixed "P NNN.NN.NNN"
+     *  layout (P = the "L "/"R " prefix this panel always sets), which is
+     *  all this class's owner ever puts in it. */
+    class MusicalPositionLabel final : public juce::Label
+    {
+    public:
+        /** Fired on each wheel notch: which segment (0 = bar, 1 = beat,
+         *  2 = tick) the cursor was over, and a +1/-1 direction. The owner
+         *  decides the tick step for each segment and applies/clamps the
+         *  result — this class only reports where the wheel happened. */
+        std::function<void (int segment, int direction)> onSegmentScroll;
+
+        void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+        {
+            if (onSegmentScroll != nullptr && wheel.deltaY != 0.0f)
+                onSegmentScroll (segmentAtX (e.x), wheel.deltaY > 0.0f ? 1 : -1);
+            else
+                Label::mouseWheelMove (e, wheel);
+        }
+
+    private:
+        int segmentAtX (int x) const
+        {
+            const auto text = getText();
+            if (text.isEmpty()) return 1;
+            const auto f = getFont();
+            const float totalW = f.getStringWidthFloat (text);
+            const float startX = ((float) getWidth() - totalW) * 0.5f;
+            const float charW  = f.getStringWidthFloat ("0");
+            if (charW <= 0.0f) return 1;
+            const int idx = (int) (((float) x - startX) / charW);
+            // "P NNN.NN.NNN": idx 0-4 = prefix+space+bar, 5-8 = '.'+beat+'.', 9+ = tick.
+            if (idx <= 4) return 0;
+            if (idx <= 8) return 1;
+            return 2;
+        }
+    };
+
+    /** Tick step for one wheel notch on a given locator segment (0=bar,
+     *  1=beat, 2=tick). Bar/beat steps are exact musical units; the tick
+     *  step is a coarse-enough fraction of a beat to feel deliberate rather
+     *  than needing hundreds of notches to move anywhere. */
+    static int64_t segmentStepTicks (int segment) noexcept;
+
+
  void timerCallback() override;
  void updateTempoFromEditor();
  void setLeftLocatorToPlayhead();
  void setRightLocatorToPlayhead();
  void updateLocatorsFromEditors();
+ void adjustLeftLocator (int segment, int direction);
+ void adjustRightLocator (int segment, int direction);
  static juce::String formatMusicalPosition (double beats);
  static int64_t parseMusicalPosition (const juce::String& text);
 
@@ -162,8 +215,8 @@ private:
 
  // ── Top row: individually editable, centred L/R values ──────────────
     juce::Label positionLabel;
-    juce::Label leftLocatorLabel;
-    juce::Label rightLocatorLabel;
+    MusicalPositionLabel leftLocatorLabel;
+    MusicalPositionLabel rightLocatorLabel;
  int64_t leftLocatorTick  = 0;
  int64_t rightLocatorTick = 0;
 

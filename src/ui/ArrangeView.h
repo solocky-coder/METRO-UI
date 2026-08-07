@@ -331,6 +331,18 @@ public:
                 loopEnd   = engine.getLoopEndTick();
                 repaint(); return;
             }
+
+            // Grab an existing loop marker directly, so it can be dragged to
+            // a new position instead of only being replaceable by drawing a
+            // whole new region with Alt-drag.
+            if (loopStart >= 0 && loopEnd > loopStart)
+            {
+                if (isNearLoopMarker (e.x, loopStart))
+                { rulerDrag = RulerDrag::DragLoopStart; return; }
+                if (isNearLoopMarker (e.x, loopEnd))
+                { rulerDrag = RulerDrag::DragLoopEnd; return; }
+            }
+
             const int64_t tick = xToTick (e.x);
             if (e.mods.isAltDown())
             {
@@ -471,6 +483,21 @@ public:
             repaint(); return;
         }
 
+        if (rulerDrag == RulerDrag::DragLoopStart)
+        {
+            const int64_t tick = snapTick (xToTick (e.x));
+            const int64_t maxStart = juce::jmax<int64_t> (0, loopEnd - MidiClip::kPPQ);
+            loopStart = juce::jlimit<int64_t> (0, maxStart, tick);
+            repaint(); return;
+        }
+
+        if (rulerDrag == RulerDrag::DragLoopEnd)
+        {
+            const int64_t tick = snapTick (xToTick (e.x));
+            loopEnd = juce::jmax (loopStart + MidiClip::kPPQ, tick);
+            repaint(); return;
+        }
+
         if (dragMode == DragMode::None) return;
 
         if (dragMode == DragMode::RubberBand)
@@ -605,11 +632,15 @@ public:
             rubberBandBaseSelection.clear();
         }
 
-        // Commit a ruler-drawn loop region (Alt-drag) to the engine, so it
-        // actually takes effect as the play loop — and so the transport's
-        // L/R locator fields (which read straight from the engine) pick it
-        // up too — instead of only ever existing as a local paint value.
-        if (rulerDrag == RulerDrag::LoopSet && loopEnd > loopStart)
+        // Commit a ruler-drawn loop region (Alt-drag), or a dragged existing
+        // marker, to the engine — so it actually takes effect as the play
+        // loop and so the transport's L/R locator fields (which read
+        // straight from the engine) pick it up too, instead of only ever
+        // existing as a local paint value.
+        if ((rulerDrag == RulerDrag::LoopSet
+             || rulerDrag == RulerDrag::DragLoopStart
+             || rulerDrag == RulerDrag::DragLoopEnd)
+            && loopEnd > loopStart)
             engine.setLoopRange (loopStart, loopEnd);
 
         rulerDrag  = RulerDrag::None;
@@ -803,7 +834,7 @@ private:
 
     // Drag state
     enum class DragMode  { None, MoveClip, ResizeRight, RubberBand };
-    enum class RulerDrag { None, Scrub, LoopSet };
+    enum class RulerDrag { None, Scrub, LoopSet, DragLoopStart, DragLoopEnd };
     DragMode  dragMode       = DragMode::None;
     RulerDrag rulerDrag      = RulerDrag::None;
 
@@ -909,6 +940,16 @@ private:
     float tickToX (int64_t t) const noexcept
     {
         return (float)(t * pixelsPerTick - scrollX + clipGridBounds.getX());
+    }
+
+    /** Grab tolerance (screen pixels) for clicking directly on an existing
+     *  loop-marker line to drag it, both here and in updateCursor(). */
+    static constexpr int kLoopMarkerGrabPx = 5;
+
+    bool isNearLoopMarker (int x, int64_t markerTick) const noexcept
+    {
+        const int mx = (int) tickToX (markerTick);
+        return (x > mx ? x - mx : mx - x) <= kLoopMarkerGrabPx;
     }
 
     int trackFromY (int y) const noexcept
@@ -1236,6 +1277,13 @@ private:
         { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
         if (dragMode == DragMode::MoveClip)
         { setMouseCursor (juce::MouseCursor::DraggingHandCursor); return; }
+        if (rulerDrag == RulerDrag::DragLoopStart || rulerDrag == RulerDrag::DragLoopEnd)
+        { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
+
+        if (rulerBounds.contains (e.getPosition())
+            && loopStart >= 0 && loopEnd > loopStart
+            && (isNearLoopMarker (e.x, loopStart) || isNearLoopMarker (e.x, loopEnd)))
+        { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
 
         if (clipGridBounds.contains (e.getPosition()))
         {

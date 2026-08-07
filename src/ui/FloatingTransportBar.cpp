@@ -156,10 +156,13 @@ addAndMakeVisible (*b);
         field->setFont (DysektLookAndFeel::makeMonoFont (13.0f));
         field->setColour (juce::Label::backgroundColourId, Base::Background);
         field->setColour (juce::Label::textColourId, Text::Primary);
-        field->setTooltip ("Cycle locator — enter bars.beats.ticks");
+        field->setTooltip ("Cycle locator — click to type bars.beats.ticks, "
+                           "or scroll over a segment to nudge it");
         field->onTextChange = [this] { updateLocatorsFromEditors(); };
  addAndMakeVisible (*field);
     }
+    leftLocatorLabel.onSegmentScroll  = [this] (int segment, int direction) { adjustLeftLocator (segment, direction); };
+    rightLocatorLabel.onSegmentScroll = [this] (int segment, int direction) { adjustRightLocator (segment, direction); };
 
 
  // The locator values are written directly in the upper row, matching the
@@ -518,6 +521,35 @@ void FloatingTransportBar::setRightLocatorToPlayhead()
     rightLocatorTick = engine.getPlayheadTick();
  if (rightLocatorTick <= leftLocatorTick)
         rightLocatorTick = leftLocatorTick + MidiClip::kPPQ;
+    engine.setLoopRange (leftLocatorTick, rightLocatorTick);
+}
+
+
+int64_t FloatingTransportBar::segmentStepTicks (int segment) noexcept
+{
+    switch (segment)
+    {
+        case 0:  return MidiClip::kPPQ * 4;               // bar
+        case 1:  return MidiClip::kPPQ;                    // beat
+        default: return juce::jmax<int64_t> (1, MidiClip::kPPQ / 32); // tick (fine)
+    }
+}
+
+
+void FloatingTransportBar::adjustLeftLocator (int segment, int direction)
+{
+    const int64_t delta = segmentStepTicks (segment) * (int64_t) direction;
+    leftLocatorTick = juce::jmax<int64_t> (0, leftLocatorTick + delta);
+ if (rightLocatorTick <= leftLocatorTick)
+        rightLocatorTick = leftLocatorTick + MidiClip::kPPQ;
+    engine.setLoopRange (leftLocatorTick, rightLocatorTick);
+}
+
+
+void FloatingTransportBar::adjustRightLocator (int segment, int direction)
+{
+    const int64_t delta = segmentStepTicks (segment) * (int64_t) direction;
+    rightLocatorTick = juce::jmax<int64_t> (leftLocatorTick + MidiClip::kPPQ, rightLocatorTick + delta);
     engine.setLoopRange (leftLocatorTick, rightLocatorTick);
 }
 
