@@ -920,17 +920,23 @@ private:
         return { x, y, w, trackH - 1 };
     }
 
-    /** Grid-quantize resolution for clip create/move/resize/split, read live
-     *  from whichever transport bar is currently showing the GRID combo
-     *  (floating, if undocked; the docked TransportBar otherwise) — this was
-     *  previously hardcoded to a fixed quarter-note snap regardless of what
-     *  the combo showed, making the combo purely cosmetic. A 0 result (the
-     *  combo's "Free" option, docked only) means no snapping. */
+    /** Grid-quantize resolution currently selected in the GRID combo, read
+     *  live from whichever transport bar is currently showing it (floating,
+     *  if undocked; the docked TransportBar otherwise). Shared by snapTick()
+     *  (rounds a tick to this resolution) and paintGridLines() (draws
+     *  sub-beat lines at this resolution) so the visible grid always matches
+     *  what clip create/move/resize/split actually snaps to. 0 means no
+     *  snapping ("Free", docked only). */
+    int64_t currentSnapTicks() const noexcept
+    {
+        return (floatingTransport != nullptr && floatingTransport->isFloating())
+                   ? floatingTransport->getSnapTicks()
+                   : transport.getSnapTicks();
+    }
+
     int64_t snapTick (int64_t t) const noexcept
     {
-        const int64_t snap = (floatingTransport != nullptr && floatingTransport->isFloating())
-                                  ? floatingTransport->getSnapTicks()
-                                  : transport.getSnapTicks();
+        const int64_t snap = currentSnapTicks();
         if (snap <= 0) return t;
         return ((t + snap / 2) / snap) * snap;
     }
@@ -1709,6 +1715,7 @@ private:
         const int64_t barLen = ppq * 4;
         const int64_t total  = totalVisibleTicks();
         const bool showBeats = (ppq * pixelsPerTick) >= 4.0;
+        const auto& theme = getTheme();
 
         const int64_t firstBeat = (int64_t)(scrollX / (pixelsPerTick * ppq));
         const int64_t lastBeat  = firstBeat + (int64_t)(rowR.getWidth() / (pixelsPerTick * ppq)) + 2;
@@ -1719,9 +1726,27 @@ private:
             if (x < rowR.getX() || x > rowR.getRight()) continue;
             const bool isBar = (b % 4 == 0);
             if (!showBeats && !isBar) continue;
-            const auto& theme = getTheme();
             g.setColour (isBar ? theme.separator.withAlpha (0.82f) : theme.gridLine.withAlpha (0.48f));
             g.fillRect (x, rowR.getY(), 1, rowR.getHeight() - 1);
+        }
+
+        // Sub-beat grid lines at the live GRID/quantize resolution — mirrors
+        // PianoRollComponent's snap-grid pass so the arranger's grid visibly
+        // reacts to the same GRID combo that drives snapTick(), instead of
+        // always showing quarter-note/bar lines regardless of that setting.
+        const int64_t snap = currentSnapTicks();
+        if (snap > 0 && pixelsPerTick * (double) snap > 4.0)
+        {
+            g.setColour (theme.gridLine.withAlpha (0.24f));
+            const int64_t startSnap = (int64_t)(scrollX / (pixelsPerTick * (double) snap)) * snap;
+            for (int64_t t = startSnap; t <= total; t += snap)
+            {
+                if (t % ppq == 0) continue; // already drawn as a beat/bar line above
+                const int x = clipGridBounds.getX() + (int)(t * pixelsPerTick - scrollX);
+                if (x > rowR.getRight()) break;
+                if (x < rowR.getX()) continue;
+                g.fillRect (x, rowR.getY(), 1, rowR.getHeight() - 1);
+            }
         }
     }
 
