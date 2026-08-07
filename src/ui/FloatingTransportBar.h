@@ -153,9 +153,15 @@ private:
             const auto text = getText();
             if (text.isEmpty()) return 1;
             const auto f = getFont();
-            const float totalW = f.getStringWidthFloat (text);
+            const auto measure = [&f] (const juce::String& s) -> float
+            {
+                juce::GlyphArrangement ga;
+                ga.addLineOfText (f, s, 0.0f, 0.0f);
+                return ga.getBoundingBox (0, -1, true).getWidth();
+            };
+            const float totalW = measure (text);
             const float startX = ((float) getWidth() - totalW) * 0.5f;
-            const float charW  = f.getStringWidthFloat ("0");
+            const float charW  = measure ("0");
             if (charW <= 0.0f) return 1;
             const int idx = (int) (((float) x - startX) / charW);
             // "P NNN.NN.NNN": idx 0-4 = prefix+space+bar, 5-8 = '.'+beat+'.', 9+ = tick.
