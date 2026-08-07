@@ -388,8 +388,7 @@ public:
 
         if (e.mods.isRightButtonDown())
         {
-            if (validTrack)
-                showContextMenu (trackIdx, hitClip, e);
+            showContextMenu (trackIdx, hitClip, e);
             return;
         }
 
@@ -1384,8 +1383,10 @@ private:
     //==========================================================================
     void showContextMenu (int trackIdx, int clipIdx, const juce::MouseEvent& e)
     {
-        const auto info  = engine.getTrackInfo (trackIdx);
-        const bool onClip = (clipIdx >= 0);
+        const bool validTrack = juce::isPositiveAndBelow (trackIdx, engine.getNumTracks());
+        const SequencerTrackInfo info = validTrack ? engine.getTrackInfo (trackIdx)
+                                                    : SequencerTrackInfo{};
+        const bool onClip = validTrack && (clipIdx >= 0);
         juce::PopupMenu m;
 
         // Tool submenu — same entry as PianoRollComponent's clip/note-grid
@@ -1410,24 +1411,32 @@ private:
         addToolItem (33, "Split (K)",  Tool::Split);
         addToolItem (34, "Glue (G)",   Tool::Glue);
         m.addSubMenu ("Tool", toolMenu);
-        m.addSeparator();
 
-        if (onClip)
+        // Track/clip-specific items only make sense when the click landed
+        // on an actual track row — right-clicking empty space below the
+        // last track (or with no tracks at all) still opens the menu, just
+        // scoped down to the Tool submenu above.
+        if (validTrack)
         {
-            m.addItem (1, "Open in piano roll");
             m.addSeparator();
-            m.addItem (8, "Repeat clip");
-            m.addItem (4, "Duplicate to next track");
-            m.addSeparator();
-            m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
-            m.addItem (3, "Clear clip");
-            m.addItem (6, "Delete clip");
-            m.addSeparator();
-            m.addItem (5, "Set loop to clip length");
-        }
-        else
-        {
-            m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
+
+            if (onClip)
+            {
+                m.addItem (1, "Open in piano roll");
+                m.addSeparator();
+                m.addItem (8, "Repeat clip");
+                m.addItem (4, "Duplicate to next track");
+                m.addSeparator();
+                m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
+                m.addItem (3, "Clear clip");
+                m.addItem (6, "Delete clip");
+                m.addSeparator();
+                m.addItem (5, "Set loop to clip length");
+            }
+            else
+            {
+                m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
+            }
         }
 
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (juce::Rectangle<int> (e.getScreenX(), e.getScreenY(), 1, 1)),
