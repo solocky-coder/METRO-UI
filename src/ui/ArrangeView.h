@@ -320,7 +320,15 @@ public:
         {
             if (e.mods.isRightButtonDown())
             {
-                loopStart = -1; loopEnd = -1;
+                // Reset to the engine's implicit default (whole-arrangement)
+                // range rather than just clearing the local overlay — with
+                // timerCallback() now syncing loopStart/loopEnd from the
+                // engine every tick, a purely local reset would get
+                // immediately overwritten by the still-configured engine
+                // range on the very next repaint.
+                engine.setLoopRange (0, engine.getLengthTicks());
+                loopStart = engine.getLoopStartTick();
+                loopEnd   = engine.getLoopEndTick();
                 repaint(); return;
             }
             const int64_t tick = xToTick (e.x);
@@ -597,6 +605,13 @@ public:
             rubberBandBaseSelection.clear();
         }
 
+        // Commit a ruler-drawn loop region (Alt-drag) to the engine, so it
+        // actually takes effect as the play loop — and so the transport's
+        // L/R locator fields (which read straight from the engine) pick it
+        // up too — instead of only ever existing as a local paint value.
+        if (rulerDrag == RulerDrag::LoopSet && loopEnd > loopStart)
+            engine.setLoopRange (loopStart, loopEnd);
+
         rulerDrag  = RulerDrag::None;
         dragMode   = DragMode::None;
         dragTrack  = -1;
@@ -836,6 +851,19 @@ private:
         // as recording stops still gets its real duration instead of being
         // silently dropped.
         engine.drainRecordedEvents();
+
+        // Keep the ruler/grid loop markers in sync with the engine's actual
+        // loop range — e.g. locators set from the docked or floating
+        // transport's SET LEFT/SET RIGHT buttons or editable L/R fields,
+        // which previously never reached this view at all. Skipped while
+        // the user is actively dragging out a new region on the ruler
+        // (mouseUp below commits that drag to the engine instead), so the
+        // live drag preview isn't fought over every timer tick.
+        if (rulerDrag != RulerDrag::LoopSet)
+        {
+            loopStart = engine.getLoopStartTick();
+            loopEnd   = engine.getLoopEndTick();
+        }
 
         repaint();
     }
