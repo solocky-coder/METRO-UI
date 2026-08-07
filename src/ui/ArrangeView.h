@@ -309,6 +309,12 @@ public:
     void mouseMove (const juce::MouseEvent& e) override
     {
         updateCursor (e);
+        updateHoverHandle (e.getPosition());
+    }
+
+    void mouseExit (const juce::MouseEvent&) override
+    {
+        setHoverHandle (-1, -1);
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -838,6 +844,13 @@ private:
     DragMode  dragMode       = DragMode::None;
     RulerDrag rulerDrag      = RulerDrag::None;
 
+    // Resize-handle hover preview — set from mouseMove when the cursor is
+    // within kResizeZone of an unselected clip's right edge, so paintClip
+    // can fade the handle in at low opacity ahead of an actual click.
+    // -1/-1 when nothing is hovered.
+    int       hoverTrack     = -1;
+    int       hoverClip      = -1;
+
     // Rubber-band drag-select (empty-space drag with the Select tool)
     juce::Point<int>      rubberBandStart;
     juce::Rectangle<int>  rubberBandRect;
@@ -1194,6 +1207,12 @@ private:
         vScroll.setRangeLimits (0.0, (double)juce::jmax (viewH, totalH));
         vScroll.setCurrentRange ((double)scrollY, (double)(scrollY + viewH),
                                  juce::dontSendNotification);
+
+        // Scrolling/zooming can slide a clip out from under (or into) the
+        // cursor without the mouse itself moving, so re-run the hover hit
+        // test against wherever the mouse actually is whenever the visible
+        // range changes.
+        updateHoverHandle (getMouseXYRelative());
     }
 
     void scrollBarMoved (juce::ScrollBar* sb, double newRangeStart) override
@@ -1202,6 +1221,7 @@ private:
             scrollX = newRangeStart;
         else
             scrollY = (int) newRangeStart;
+        updateHoverHandle (getMouseXYRelative());
         repaint();
     }
 
@@ -1317,6 +1337,46 @@ private:
             }
         }
         setMouseCursor (juce::MouseCursor::NormalCursor);
+    }
+
+    /** Recomputes hoverTrack/hoverClip from the current mouse position and
+     *  repaints if they changed. Only unselected clips get a hover entry —
+     *  a selected clip's handle is already fully visible, so there's
+     *  nothing for the hover preview to add there. */
+    void updateHoverHandle (juce::Point<int> pos)
+    {
+        int newHoverTrack = -1, newHoverClip = -1;
+
+        if (currentTool == Tool::Select && clipGridBounds.contains (pos))
+        {
+            const int trackIdx = trackFromY (pos.y);
+            if (juce::isPositiveAndBelow (trackIdx, engine.getNumTracks()))
+            {
+                const int numClips = engine.getNumClips (trackIdx);
+                for (int ci = 0; ci < numClips; ++ci)
+                {
+                    const auto clipR = clipRectForClip (trackIdx, ci);
+                    if (clipR.contains (pos)
+                        && pos.x >= clipR.getRight() - kResizeZone
+                        && ! isClipSelected (trackIdx, ci))
+                    {
+                        newHoverTrack = trackIdx;
+                        newHoverClip  = ci;
+                        break;
+                    }
+                }
+            }
+        }
+
+        setHoverHandle (newHoverTrack, newHoverClip);
+    }
+
+    void setHoverHandle (int trackIdx, int clipIdx)
+    {
+        if (trackIdx == hoverTrack && clipIdx == hoverClip) return;
+        hoverTrack = trackIdx;
+        hoverClip  = clipIdx;
+        repaint();
     }
 
     //==========================================================================
@@ -1621,7 +1681,10 @@ private:
         const double pxPerBeat = ppq  * pixelsPerTick;
         const bool showBeats   = pxPerBeat >= 6.0;
 
-        // Beat ticks
+        // Beat ticks — same opacity+width scheme as paintGridLines (bars:
+        // 2px, theme.separator at 95% alpha; beats: 1px, theme.gridLine at
+        // 28% alpha) rather than the old height-based bar/beat distinction,
+        // so the ruler and the row grid read as one system.
         if (showBeats)
         {
             const int64_t firstBeat = (int64_t)(scrollX / (pixelsPerTick * ppq));
@@ -1631,10 +1694,9 @@ private:
                 const int x = gx + (int)((b * ppq) * pixelsPerTick - scrollX);
                 if (x < gx || x > gx + gw) continue;
                 const bool isBar = (b % 4 == 0);
-                g.setColour (isBar ? theme.separator : theme.gridLine);
-                g.fillRect (x, rulerBounds.getY(),
-                            1, isBar ? rulerBounds.getHeight()
-                                     : rulerBounds.getHeight() / 2);
+                g.setColour (isBar ? theme.separator.withAlpha (0.95f)
+                                    : theme.gridLine.withAlpha (0.28f));
+                g.fillRect (x, rulerBounds.getY(), isBar ? 2 : 1, rulerBounds.getHeight());
             }
         }
 
@@ -1796,38 +1858,24 @@ private:
         const int64_t firstBeat = (int64_t)(scrollX / (pixelsPerTick * ppq));
         const int64_t lastBeat  = firstBeat + (int64_t)(rowR.getWidth() / (pixelsPerTick * ppq)) + 2;
 
-        // Downbeats (bar lines) read as strong structural anchors — wider
-        // and near-opaque; beat lines stay quiet so they don't compete for
-        // attention. Mirrors the segmentation-proposal grid-hierarchy mockup.
         for (int64_t b = firstBeat; b <= lastBeat && b * ppq <= total; ++b)
         {
             const int x = clipGridBounds.getX() + (int)((b * ppq) * pixelsPerTick - scrollX);
             if (x < rowR.getX() || x > rowR.getRight()) continue;
             const bool isBar = (b % 4 == 0);
             if (!showBeats && !isBar) continue;
-
-            if (isBar)
-            {
-                g.setColour (theme.separator.withAlpha (0.95f));
-                g.fillRect (x, rowR.getY(), 2, rowR.getHeight() - 1);
-            }
-            else
-            {
-                g.setColour (theme.gridLine.withAlpha (0.28f));
-                g.fillRect (x, rowR.getY(), 1, rowR.getHeight() - 1);
-            }
+            g.setColour (isBar ? theme.separator.withAlpha (0.95f) : theme.gridLine.withAlpha (0.28f));
+            g.fillRect (x, rowR.getY(), isBar ? 2 : 1, rowR.getHeight() - 1);
         }
 
         // Sub-beat grid lines at the live GRID/quantize resolution — mirrors
         // PianoRollComponent's snap-grid pass so the arranger's grid visibly
         // reacts to the same GRID combo that drives snapTick(), instead of
         // always showing quarter-note/bar lines regardless of that setting.
-        // Kept the faintest of the three tiers — subdivisions are context,
-        // not structure.
         const int64_t snap = currentSnapTicks();
         if (snap > 0 && pixelsPerTick * (double) snap > 4.0)
         {
-            g.setColour (theme.gridLine.withAlpha (0.14f));
+            g.setColour (theme.gridLine.withAlpha (0.24f));
             const int64_t startSnap = (int64_t)(scrollX / (pixelsPerTick * (double) snap)) * snap;
             for (int64_t t = startSnap; t <= total; t += snap)
             {
@@ -1855,17 +1903,15 @@ private:
         g.setColour (base.withAlpha (muted ? 0.16f : 0.42f));
         g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f);
 
-        // Border — a crisp 2px outline marks the selected clip as the one
-        // that's editable; unselected clips get a thin, quiet boundary so
-        // the selection reads unambiguously at a glance.
+        // Border — brighter when selected
         if (isSel)
         {
             g.setColour (base.brighter (0.7f).withAlpha (0.95f));
-            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 2.0f);
+            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 1.5f);
         }
         else
         {
-            g.setColour (base.withAlpha (muted ? 0.2f : 0.42f));
+            g.setColour (base.withAlpha (muted ? 0.28f : 0.6f));
             g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 1.f);
         }
 
@@ -1913,16 +1959,21 @@ private:
                         juce::Justification::centredRight, false);
         }
 
-        // Resize handle — shown only on the selected clip, so unselected
-        // clips read as flat, uneditable blocks and don't clutter the view.
-        if (isSel)
+        // Resize handle — full opacity once selected; a low-opacity preview
+        // fades in on hover for unselected clips so the cursor and the
+        // visual affordance arrive together, instead of the cursor
+        // changing with nothing to back it up.
+        const bool isHoverHandle = (! isSel && i == hoverTrack && ci == hoverClip);
+        if (isSel || isHoverHandle)
         {
             const juce::Rectangle<float> handleR (
                 clipR.toFloat().reduced (1.f, 1.f)
                     .withLeft ((float)(clipR.getRight() - 8)));
-            g.setColour (base.withAlpha (0.4f));
+            const float fillA = isSel ? 0.4f  : 0.16f;
+            const float dotA  = isSel ? 0.45f : 0.20f;
+            g.setColour (base.withAlpha (fillA));
             g.fillRoundedRectangle(handleR, 0.0f);
-            g.setColour (base.brighter (0.5f).withAlpha (0.45f));
+            g.setColour (base.brighter (0.5f).withAlpha (dotA));
             const float cx = handleR.getCentreX();
             for (int dot = 0; dot < 3; ++dot)
             {
