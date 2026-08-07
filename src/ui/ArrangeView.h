@@ -1796,24 +1796,38 @@ private:
         const int64_t firstBeat = (int64_t)(scrollX / (pixelsPerTick * ppq));
         const int64_t lastBeat  = firstBeat + (int64_t)(rowR.getWidth() / (pixelsPerTick * ppq)) + 2;
 
+        // Downbeats (bar lines) read as strong structural anchors — wider
+        // and near-opaque; beat lines stay quiet so they don't compete for
+        // attention. Mirrors the segmentation-proposal grid-hierarchy mockup.
         for (int64_t b = firstBeat; b <= lastBeat && b * ppq <= total; ++b)
         {
             const int x = clipGridBounds.getX() + (int)((b * ppq) * pixelsPerTick - scrollX);
             if (x < rowR.getX() || x > rowR.getRight()) continue;
             const bool isBar = (b % 4 == 0);
             if (!showBeats && !isBar) continue;
-            g.setColour (isBar ? theme.separator.withAlpha (0.82f) : theme.gridLine.withAlpha (0.48f));
-            g.fillRect (x, rowR.getY(), 1, rowR.getHeight() - 1);
+
+            if (isBar)
+            {
+                g.setColour (theme.separator.withAlpha (0.95f));
+                g.fillRect (x, rowR.getY(), 2, rowR.getHeight() - 1);
+            }
+            else
+            {
+                g.setColour (theme.gridLine.withAlpha (0.28f));
+                g.fillRect (x, rowR.getY(), 1, rowR.getHeight() - 1);
+            }
         }
 
         // Sub-beat grid lines at the live GRID/quantize resolution — mirrors
         // PianoRollComponent's snap-grid pass so the arranger's grid visibly
         // reacts to the same GRID combo that drives snapTick(), instead of
         // always showing quarter-note/bar lines regardless of that setting.
+        // Kept the faintest of the three tiers — subdivisions are context,
+        // not structure.
         const int64_t snap = currentSnapTicks();
         if (snap > 0 && pixelsPerTick * (double) snap > 4.0)
         {
-            g.setColour (theme.gridLine.withAlpha (0.24f));
+            g.setColour (theme.gridLine.withAlpha (0.14f));
             const int64_t startSnap = (int64_t)(scrollX / (pixelsPerTick * (double) snap)) * snap;
             for (int64_t t = startSnap; t <= total; t += snap)
             {
@@ -1841,15 +1855,17 @@ private:
         g.setColour (base.withAlpha (muted ? 0.16f : 0.42f));
         g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f);
 
-        // Border — brighter when selected
+        // Border — a crisp 2px outline marks the selected clip as the one
+        // that's editable; unselected clips get a thin, quiet boundary so
+        // the selection reads unambiguously at a glance.
         if (isSel)
         {
             g.setColour (base.brighter (0.7f).withAlpha (0.95f));
-            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 1.5f);
+            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 2.0f);
         }
         else
         {
-            g.setColour (base.withAlpha (muted ? 0.28f : 0.6f));
+            g.setColour (base.withAlpha (muted ? 0.2f : 0.42f));
             g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 1.f);
         }
 
@@ -1897,7 +1913,9 @@ private:
                         juce::Justification::centredRight, false);
         }
 
-        // Resize handle
+        // Resize handle — shown only on the selected clip, so unselected
+        // clips read as flat, uneditable blocks and don't clutter the view.
+        if (isSel)
         {
             const juce::Rectangle<float> handleR (
                 clipR.toFloat().reduced (1.f, 1.f)
