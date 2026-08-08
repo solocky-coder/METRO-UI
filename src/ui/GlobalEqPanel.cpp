@@ -82,13 +82,8 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         }
     }
 
-    // ── Title ─────────────────────────────────────────────────────────────────
-    g.setColour (theme.foreground.withAlpha (0.55f));
-    g.setFont (DysektLookAndFeel::makeFont (10.f, true));
-    g.drawText ("GLOBAL EQ",
-                juce::Rectangle<float> (bounds.getX() + 8.f, bounds.getY() + 3.f,
-                                        80.f, 14.f),
-                juce::Justification::centredLeft, false);
+    // ── Header: title, subtitle, analyzer toggle ──────────────────────────────
+    drawHeader (g, headerArea());
 
     // ── Grid ─────────────────────────────────────────────────────────────────
 
@@ -103,8 +98,11 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         float y = gainToY ((float) db);
         if (db == 0)
         {
+            // Dashed zero line, matching the reference's centre baseline.
             g.setColour (theme.separator.withAlpha (0.70f));
-            g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
+            float dash[] = { 4.f, 3.f };
+            juce::Line<float> zeroLine (plot.getX(), y, plot.getRight(), y);
+            g.drawDashedLine (zeroLine, dash, 2, 1.0f);
         }
         else
         {
@@ -118,40 +116,40 @@ void GlobalEqPanel::paint (juce::Graphics& g)
     for (float hz : { 20.f, 30.f, 40.f, 60.f, 70.f, 80.f, 90.f,
                       150.f, 200.f, 300.f, 400.f, 600.f, 700.f, 800.f, 900.f,
                       1500.f, 2000.f, 3000.f, 4000.f, 6000.f, 7000.f, 8000.f, 9000.f,
-                      15000.f, 20000.f })
+                      15000.f })
         g.drawVerticalLine (juce::roundToInt (freqToX (hz)), plot.getY(), plot.getBottom());
 
     // Major vertical frequency lines — decade markers
     g.setColour (theme.gridLine.withAlpha (0.55f));
-    for (float hz : { 50.f, 100.f, 500.f, 1000.f, 5000.f, 10000.f })
+    for (float hz : { 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f })
         g.drawVerticalLine (juce::roundToInt (freqToX (hz)), plot.getY(), plot.getBottom());
 
-    // ── dB labels (right edge) ───────────────────────────────────────────────
-    g.setColour (theme.foreground.withAlpha (0.35f));
+    // ── dB labels (LEFT edge, matching the reference layout) ──────────────────
+    g.setColour (theme.foreground.withAlpha (0.40f));
     g.setFont (DysektLookAndFeel::makeFont (8.f));
-    for (int db : { -12, -6, 6, 12 })
+    for (int db : { -12, -6, 0, 6, 12 })
     {
         float y = gainToY ((float) db);
-        juce::String lbl = (db > 0 ? "+" : "") + juce::String (db);
+        juce::String lbl = (db > 0 ? "+" : "") + juce::String (db) + " dB";
         g.drawText (lbl,
-                    juce::Rectangle<float> (plot.getRight() + 3.f, y - 6.f, 22.f, 12.f),
-                    juce::Justification::centredLeft, false);
+                    juce::Rectangle<float> (plot.getX() - kDbLabelWidth, y - 6.f,
+                                            kDbLabelWidth - 4.f, 12.f),
+                    juce::Justification::centredRight, false);
     }
 
     // ── Frequency labels (bottom edge) ───────────────────────────────────────
-    g.setColour (theme.foreground.withAlpha (0.35f));
+    g.setColour (theme.foreground.withAlpha (0.40f));
     g.setFont (DysektLookAndFeel::makeFont (8.f));
-    for (auto [hz, lbl] : std::initializer_list<std::pair<float, const char*>>{
-            { 100.f, "100" }, { 200.f, "200" }, { 500.f, "500" }, { 1000.f, "1k" },
-            { 2000.f, "2k" }, { 5000.f, "5k" }, { 10000.f, "10k" } })
+    for (float hz : { 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f })
     {
         float x = freqToX (hz);
-        g.drawText (lbl,
-                    juce::Rectangle<float> (x - 14.f, plot.getBottom() + 2.f, 28.f, 10.f),
+        g.drawText (formatFreq (hz),
+                    juce::Rectangle<float> (x - 16.f, plot.getBottom() + 2.f, 32.f, 10.f),
                     juce::Justification::centred, false);
     }
 
     // ── Spectrum analyser (drawn BEFORE EQ curve so curve sits on top) ────────
+    if (analyzerEnabled)
     {
         auto specPath = buildSpectrum();
         if (! specPath.isEmpty())
@@ -196,7 +194,10 @@ void GlobalEqPanel::paint (juce::Graphics& g)
                           juce::PathStrokeType::rounded));
 
     // ── Node handles ─────────────────────────────────────────────────────────
-    const char* bandLabels[kNumBands] = { "L", "LM", "M", "HM", "H" };
+    // Numbered 1..kNumBands to match the reference's numbered-circle style.
+    juce::String bandLabels[kNumBands];
+    for (int i = 0; i < kNumBands; ++i)
+        bandLabels[i] = juce::String (i + 1);
 
     // Band colours: shelves slightly dimmer, peaks full accent
     const float bandAlpha[kNumBands] = { 0.75f, 0.90f, 1.00f, 0.90f, 0.75f };
@@ -207,7 +208,7 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         float x   = n.pos.x;
         float y   = n.pos.y;
         auto  col = theme.accent.withAlpha (bandAlpha[i]);
-        const bool active = (dragBand == i);
+        const bool active = (dragBand == i || hoverBand == i);
 
         if (theme.name == "metro")
         {
@@ -245,27 +246,47 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         // label doesn't read; use foreground instead.
         g.setColour (theme.name == "metro" ? theme.foreground.withAlpha (0.90f)
                                             : theme.background.withAlpha (0.90f));
-        g.setFont (DysektLookAndFeel::makeFont (i == BLowMid || i == BHighMid ? 6.f : 7.5f, true));
+        g.setFont (DysektLookAndFeel::makeFont (8.f, true));
         g.drawText (bandLabels[i],
                     juce::Rectangle<float> (x - kNodeRadius, y - kNodeRadius,
                                             kNodeRadius * 2.f, kNodeRadius * 2.f),
                     juce::Justification::centred, false);
     }
 
-    // ── Readout: show freq + gain for hovered / dragged node ─────────────────
-    int infoband = (dragBand != NoBand) ? dragBand : NoBand;
-    if (infoband != NoBand)
+    // ── Floating tooltip: freq + gain for the hovered / dragged node ─────────
+    // Matches the reference's small boxed readout that follows the node.
+    int infoBand = (dragBand != NoBand) ? dragBand : hoverBand;
+    if (infoBand != NoBand)
     {
-        auto& n = nodes[infoband];
-        juce::String tip = juce::String ((int) n.freqHz) + " Hz  "
-                         + (n.gainDb >= 0.f ? "+" : "")
-                         + juce::String (n.gainDb, 1) + " dB";
-        g.setColour (theme.foreground.withAlpha (0.55f));
+        auto& n = nodes[infoBand];
+
+        juce::String line1 = formatFreq (n.freqHz) + " HZ";
+        juce::String line2 = (n.gainDb >= 0.f ? "+" : "") + juce::String (n.gainDb, 1) + " dB";
+
+        const float tw = 76.f, th = 32.f;
+        float tx = juce::jlimit (plot.getX(), plot.getRight() - tw, n.pos.x - tw * 0.5f);
+        float ty = n.pos.y - th - 10.f;
+        if (ty < plot.getY())
+            ty = juce::jmin (n.pos.y + 10.f, plot.getBottom() - th);
+
+        juce::Rectangle<float> box (tx, ty, tw, th);
+
+        g.setColour (theme.darkBar.darker (0.35f).withAlpha (0.95f));
+        g.fillRoundedRectangle (box, 3.f);
+        g.setColour (theme.accent.withAlpha (0.55f));
+        g.drawRoundedRectangle (box, 3.f, 1.0f);
+
+        g.setColour (theme.foreground.withAlpha (0.90f));
+        g.setFont (DysektLookAndFeel::makeFont (9.f, true));
+        g.drawText (line1, box.withTrimmedBottom (th * 0.5f), juce::Justification::centred, false);
+
+        g.setColour (theme.accent);
         g.setFont (DysektLookAndFeel::makeFont (9.f));
-        g.drawText (tip,
-                    plot.withTrimmedBottom (2.f),
-                    juce::Justification::bottomRight, false);
+        g.drawText (line2, box.withTrimmedTop (th * 0.5f), juce::Justification::centred, false);
     }
+
+    // ── Band strip: per-band info cards along the bottom ──────────────────────
+    drawBandStrip (g, stripArea());
 }
 
 // ── Resized ───────────────────────────────────────────────────────────────────
@@ -279,6 +300,13 @@ void GlobalEqPanel::resized()
 
 void GlobalEqPanel::mouseDown (const juce::MouseEvent& e)
 {
+    if (analyzerToggleBounds().contains (e.position))
+    {
+        analyzerEnabled = ! analyzerEnabled;
+        repaint();
+        return;
+    }
+
     int hit = hitTest (e.position);
     if (hit == NoBand) return;
 
@@ -344,8 +372,22 @@ void GlobalEqPanel::mouseUp (const juce::MouseEvent&)
 void GlobalEqPanel::mouseMove (const juce::MouseEvent& e)
 {
     int hit = hitTest (e.position);
+    if (hit != hoverBand)
+    {
+        hoverBand = hit;
+        repaint();
+    }
     setMouseCursor (hit != NoBand ? juce::MouseCursor::PointingHandCursor
                                   : juce::MouseCursor::NormalCursor);
+}
+
+void GlobalEqPanel::mouseExit (const juce::MouseEvent&)
+{
+    if (hoverBand != NoBand)
+    {
+        hoverBand = NoBand;
+        repaint();
+    }
 }
 
 void GlobalEqPanel::mouseDoubleClick (const juce::MouseEvent& e)
@@ -431,9 +473,128 @@ juce::Rectangle<float> GlobalEqPanel::plotArea() const
 {
     return getLocalBounds().toFloat()
            .reduced (8.f)
-           .withTrimmedTop (18.f)
-           .withTrimmedBottom (14.f)
-           .withTrimmedRight (28.f);
+           .withTrimmedTop (kHeaderHeight)
+           .withTrimmedBottom (kStripHeight + kFreqLabelGap)
+           .withTrimmedLeft (kDbLabelWidth)
+           .withTrimmedRight (6.f);
+}
+
+juce::Rectangle<float> GlobalEqPanel::headerArea() const
+{
+    auto b = getLocalBounds().toFloat().reduced (8.f);
+    return b.removeFromTop (kHeaderHeight);
+}
+
+juce::Rectangle<float> GlobalEqPanel::stripArea() const
+{
+    auto b = getLocalBounds().toFloat().reduced (8.f);
+    return b.removeFromBottom (kStripHeight);
+}
+
+juce::Rectangle<float> GlobalEqPanel::analyzerToggleBounds() const
+{
+    auto h = headerArea();
+    return juce::Rectangle<float> (h.getRight() - 72.f, h.getY() + 1.f, 72.f, 14.f);
+}
+
+// ── Header: title, subtitle, analyzer toggle ──────────────────────────────────
+
+void GlobalEqPanel::drawHeader (juce::Graphics& g, juce::Rectangle<float> area) const
+{
+    auto& theme = getTheme();
+
+    // Title
+    g.setColour (theme.foreground.withAlpha (0.90f));
+    g.setFont (DysektLookAndFeel::makeFont (11.f, true));
+    g.drawText ("FREQUENCY RESPONSE",
+                juce::Rectangle<float> (area.getX(), area.getY(), area.getWidth() - 80.f, 14.f),
+                juce::Justification::centredLeft, false);
+
+    // Subtitle — "N-BAND PARAMETRIC • STEREO"
+    g.setColour (theme.foreground.withAlpha (0.38f));
+    g.setFont (DysektLookAndFeel::makeFont (8.f));
+    juce::String subtitle = juce::String (kNumBands) + "-BAND PARAMETRIC   \xE2\x80\xA2   STEREO";
+    g.drawText (subtitle,
+                juce::Rectangle<float> (area.getX(), area.getY() + 15.f, area.getWidth() - 80.f, 12.f),
+                juce::Justification::centredLeft, false);
+
+    // Analyzer toggle — local UI state, click to show/hide the spectrum overlay
+    auto toggleR = analyzerToggleBounds();
+    g.setColour (analyzerEnabled ? theme.accent : theme.foreground.withAlpha (0.35f));
+    g.setFont (DysektLookAndFeel::makeFont (8.f, true));
+    g.drawText ("ANALYZER", toggleR, juce::Justification::centredRight, false);
+}
+
+// ── Band strip: per-band info cards along the bottom ───────────────────────────
+
+void GlobalEqPanel::drawBandStrip (juce::Graphics& g, juce::Rectangle<float> area) const
+{
+    auto& theme = getTheme();
+
+    // Separator above the strip
+    g.setColour (theme.separator.withAlpha (0.35f));
+    g.drawHorizontalLine (juce::roundToInt (area.getY()), area.getX(), area.getRight());
+
+    const float colW = area.getWidth() / (float) kNumBands;
+
+    for (int i = 0; i < kNumBands; ++i)
+    {
+        auto& n = nodes[i];
+        juce::Rectangle<float> col (area.getX() + colW * (float) i, area.getY() + 1.f,
+                                    colW, area.getHeight() - 1.f);
+
+        if (i > 0)
+        {
+            g.setColour (theme.separator.withAlpha (0.20f));
+            g.drawVerticalLine (juce::roundToInt (col.getX()), area.getY() + 6.f, area.getBottom() - 6.f);
+        }
+
+        auto inner = col.reduced (8.f, 5.f);
+
+        // "BAND 0N" label
+        g.setColour (theme.foreground.withAlpha (0.40f));
+        g.setFont (DysektLookAndFeel::makeFont (7.5f, true));
+        g.drawText ("BAND 0" + juce::String (i + 1), inner.removeFromTop (11.f),
+                    juce::Justification::centredLeft, false);
+
+        // Colour chip, top-right — brighter when hovered/dragged
+        const bool active = (dragBand == i || hoverBand == i);
+        juce::Rectangle<float> chip (col.getRight() - 15.f, col.getY() + 7.f, 6.f, 6.f);
+        g.setColour (theme.accent.withAlpha (active ? 1.0f : 0.65f));
+        g.fillRect (chip);
+
+        // Frequency — big
+        g.setColour (theme.foreground.withAlpha (0.92f));
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+        g.drawText (formatFreq (n.freqHz) + " Hz", inner.removeFromTop (18.f),
+                    juce::Justification::centredLeft, false);
+
+        // Gain (and Q, for the draggable peak bands)
+        juce::String sub = (n.gainDb >= 0.f ? "+" : "") + juce::String (n.gainDb, 1) + " dB";
+        if (i != BLow && i != BHigh)
+            sub += "   Q " + juce::String (n.q, 1);
+
+        g.setColour (theme.foreground.withAlpha (0.45f));
+        g.setFont (DysektLookAndFeel::makeFont (9.f));
+        g.drawText (sub, inner.removeFromTop (12.f), juce::Justification::centredLeft, false);
+    }
+}
+
+// Formats a frequency the way the reference UI does: whole Hz below 1 kHz,
+// "1K" for exact kHz values, "3.2K" with one decimal otherwise.
+juce::String GlobalEqPanel::formatFreq (float hz)
+{
+    if (hz >= 1000.f)
+    {
+        float khz     = hz / 1000.f;
+        float rounded = std::round (khz * 10.f) / 10.f;
+        bool  isWhole = std::abs (rounded - std::round (rounded)) < 0.001f;
+
+        return (isWhole ? juce::String ((int) std::round (rounded))
+                         : juce::String (rounded, 1)) + "K";
+    }
+
+    return juce::String ((int) std::round (hz));
 }
 
 float GlobalEqPanel::gainToY (float dB) const
