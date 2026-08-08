@@ -1013,7 +1013,13 @@ void SliceWaveformLcd::drawNoData (juce::Graphics& g)
  return;
  }
 
- if (! data.hasSample || data.isDefault)
+ // totalFrames <= 0 covers the "all zones deleted" SFZ-PLAYER case: an
+ // empty result is posted through the normal sampleData2 pipeline (see
+ // SoundFontLoader::finishAndPost's empty-render branch) so sampleLoaded
+ // reads true (a real, if zero-length, buffer landed) even though there's
+ // really nothing to show — treat that the same as no sample at all
+ // rather than falling through to "-- SELECT A SLICE --" below.
+ if (! data.hasSample || data.isDefault || data.totalFrames <= 0)
  {
  // Show "EMPTY" prominently when no real sample is loaded
  g.setFont (DysektLookAndFeel::makeFont (18.0f, true));
@@ -1086,6 +1092,24 @@ void SliceWaveformLcd::paint (juce::Graphics& g)
  }
  buildDisplayData();
  drawBackground (g);
+
+ // SFZ-PLAYER rebuild in flight (zone add/delete/edit just staged) — the
+ // old sampleData2 buffer buildDisplayData() just read above is still
+ // technically valid, so data.hasSample/data.hasSlice can both be true
+ // here even though that layout is about to be replaced. Without this
+ // check the waveform below would keep faithfully drawing that stale
+ // buffer until the rebuild lands. Scoped to the dedicated
+ // sfzPlayer2LcdRebuildInFlight flag (not the shared mainLoadInFlight)
+ // so an unrelated Slicer-tab load doesn't blank this LCD while it's
+ // showing SFZ-PLAYER content — see the flag's declaration in
+ // PluginProcessor.h. drawNoData() below already knows how to show a
+ // "LOADING..." state for mainLoadInFlight, which is set true alongside
+ // this flag for the same rebuild, so no new visual state is needed here.
+ if (isSfzPlayer2Mode() && processor.sfzPlayer2LcdRebuildInFlight.load (std::memory_order_relaxed))
+ {
+  drawNoData (g);
+  return;
+ }
 
  // isDefault (Empty.wav) always shows EMPTY — even if an auto-slice exists
  if (! data.hasSample || ! data.hasSlice || data.isDefault)

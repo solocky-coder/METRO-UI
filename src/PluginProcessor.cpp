@@ -2665,6 +2665,17 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
     const uint32_t sfz2Mask = sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
     if (sfz2Mask == 0) return;   // SFZ-PLAYER not enabled — no channels owned
 
+    // A zone add/delete/edit is being rebuilt in the background right now
+    // (see sfzPlayer2RebuildInFlight's declaration in PluginProcessor.h).
+    // sliceManager2/sampleData2 still hold the PREVIOUS layout until that
+    // rebuild lands, so resolve every note-on as unmapped for the duration
+    // rather than let it trigger against a zone that may have just been
+    // deleted (or hit stale bounds/colours for one that was just edited).
+    // Checked once per block, not per-message, so a rebuild landing
+    // mid-block can't cause some notes in the same buffer to see a
+    // different value than others.
+    const bool rebuildInFlight = sfzPlayer2RebuildInFlight.load (std::memory_order_acquire);
+
     for (const auto metadata : midi)
     {
         const auto msg = metadata.getMessage();
@@ -2690,7 +2701,7 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
                 sfz2ActiveNotes[w].fetch_or ((uint64_t) 1 << b, std::memory_order_relaxed);
             }
 
-            const int sliceIdx = sliceManager2.midiNoteToSlice (note);
+            const int sliceIdx = rebuildInFlight ? -1 : sliceManager2.midiNoteToSlice (note);
             // DYSEKT-addzone-nomidi diagnostic: there was previously zero
             // runtime visibility into this path at all (the only MIDI debug
             // logging lived in SfzPlayer.cpp's process(), which is dead code
@@ -2701,7 +2712,8 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
             crashLogger.log ("processMidi2: NOTE-ON note=" + juce::String (note)
                 + " ch=" + juce::String (ch)
                 + "  sliceIdx=" + juce::String (sliceIdx)
-                + (sliceIdx < 0 ? "  -> NO SLICE MAPPED, note will not sound" : ""));
+                + (rebuildInFlight ? "  -> REBUILD IN FLIGHT, gated as unmapped"
+                                   : (sliceIdx < 0 ? "  -> NO SLICE MAPPED, note will not sound" : "")));
             if (sliceIdx >= 0)
             {
                 // Unconditional — matches WaveformView's mouse-click selection for
@@ -2994,6 +3006,8 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         if (decoded2 != nullptr)
         {
             mainLoadInFlight.store (false, std::memory_order_release);
+            sfzPlayer2RebuildInFlight.store    (false, std::memory_order_release);
+            sfzPlayer2LcdRebuildInFlight.store (false, std::memory_order_release);
             clearVoicesBeforeSampleSwap2();
             sampleData2.applyDecodedSample (decoded2);
 

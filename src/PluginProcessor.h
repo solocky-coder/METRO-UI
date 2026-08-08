@@ -1040,6 +1040,33 @@ public:
      *  stale/empty "EMPTY" view. */
     std::atomic<bool> mainLoadInFlight           { false };
 
+    /** Scoped exclusively to the SFZ-PLAYER preview rebuild pipeline
+     *  (SoundFontLoadTarget::SfzPlayer2) -- unlike mainLoadInFlight above,
+     *  which also goes true for an ordinary Slicer-tab load and would
+     *  therefore spuriously fire these consumers for a completely
+     *  unrelated load. Two independent consumers each need to know
+     *  precisely "is an SFZ-PLAYER rebuild in flight right now", for two
+     *  different reasons, so each gets its own dedicated flag:
+     *
+     *   - sfzPlayer2RebuildInFlight: checked at the very top of
+     *     processMidi2()'s note-on handling (audio thread) so a note
+     *     arriving mid-rebuild (e.g. right after a zone delete) resolves
+     *     as unmapped instead of triggering against the stale
+     *     sliceManager2/sampleData2 layout that's about to be replaced.
+     *   - sfzPlayer2LcdRebuildInFlight: checked by SliceWaveformLcd
+     *     (message thread) so the SFZ-PLAYER's waveform shows a loading
+     *     state instead of continuing to paint the stale (but still
+     *     technically valid) sampleData2 buffer while a rebuild is in
+     *     flight.
+     *
+     *  Both are set true in SoundFontLoader::load() for the SfzPlayer2
+     *  target (alongside mainLoadInFlight) and cleared in the same two
+     *  places mainLoadInFlight is cleared for that target: processBlock's
+     *  decoded2 branch, and postFailure() (including the empty-render
+     *  "all zones deleted" path -- see SoundFontLoader::finishAndPost). */
+    std::atomic<bool> sfzPlayer2RebuildInFlight    { false };
+    std::atomic<bool> sfzPlayer2LcdRebuildInFlight { false };
+
 
     // =========================================================================
     // APVTS parameter pointers (assigned in constructor, constant thereafter)

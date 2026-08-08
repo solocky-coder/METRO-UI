@@ -755,6 +755,58 @@ private:
 
         if (renders.empty() || shouldExit())
         {
+            // For the SFZ-PLAYER preview pipeline specifically: an all-silent
+            // probe here isn't necessarily a failure -- it's also what
+            // happens when the last remaining zone was just deleted, leaving
+            // zero regions to render. postFailure()'s no-op for this target
+            // (see its comment: "visual-only, no failure-state UI of its
+            // own") is correct for a genuine bad-file/bad-preset failure,
+            // where leaving sampleData2/sliceManager2 untouched is the right
+            // call -- but it's wrong here, because it leaves the PREVIOUS
+            // (now-deleted) buffer sitting in sampleData2 forever: still
+            // audible via processMidi2() until the next real load, and still
+            // painted by SliceWaveformLcd. Post an empty (zero-frame,
+            // zero-slice) result through the normal pipeline instead, so
+            // processBlock's decoded2 branch runs its usual
+            // clearVoicesBeforeSampleSwap2()/sliceManager2.clearAll() path
+            // against nothing, replacing the stale buffer rather than
+            // leaving it in place.
+            if (target == SoundFontLoadTarget::SfzPlayer2 && ! shouldExit())
+            {
+                if (token == processor.latestPreviewToken2.load (std::memory_order_acquire))
+                {
+                    auto emptyDecoded = std::make_unique<SampleData::DecodedSample>();
+                    emptyDecoded->buffer.setSize (2, 0, false, true, false);
+                    emptyDecoded->fileName = file.getFileNameWithoutExtension();
+                    SampleData::buildPeakMipmaps (*emptyDecoded);   // safe on 0 frames
+
+                    // No slices — the empty payload itself IS the signal
+                    // that this zone list is now empty.
+                    auto* emptyZones = new SfzPreviewZonePayload();
+                    auto* oldZones = processor.pendingPreviewZones2.exchange (
+                        emptyZones, std::memory_order_acq_rel);
+                    delete oldZones;
+
+                    SampleData::SnapshotPtr ready2 = std::move (emptyDecoded);
+                    processor.exchangeCompletedLoadData2 (std::move (ready2));
+                }
+                // else: a newer preview load superseded this one — say
+                // nothing and let that job's own result (empty or not) be
+                // what lands, exactly like the staleness guard a few lines
+                // below for the non-empty path.
+
+                // Whether or not the empty result above was posted (stale
+                // token means it wasn't), the in-flight flags this job set
+                // in load() must still come down here, or a stale-token job
+                // would leave MIDI gated / the LCD stuck on "LOADING..."
+                // forever with no later completedLoadData2 delivery to
+                // clear them via processBlock.
+                processor.mainLoadInFlight.store            (false, std::memory_order_release);
+                processor.sfzPlayer2RebuildInFlight.store   (false, std::memory_order_release);
+                processor.sfzPlayer2LcdRebuildInFlight.store(false, std::memory_order_release);
+                return jobHasFinished;
+            }
+
             postFailure();
             return jobHasFinished;
         }
@@ -1240,6 +1292,17 @@ private:
         if (target == SoundFontLoadTarget::Slicer || target == SoundFontLoadTarget::SfzPlayer2)
             processor.mainLoadInFlight.store (false, std::memory_order_release);
 
+        // sfzPlayer2RebuildInFlight/sfzPlayer2LcdRebuildInFlight are only
+        // ever set for the SfzPlayer2 target (see load() above), so only
+        // clear them here — otherwise this bail-out path would leave a
+        // note-on gated or the LCD stuck on "LOADING..." forever if a
+        // SFZ-PLAYER rebuild fails partway through.
+        if (target == SoundFontLoadTarget::SfzPlayer2)
+        {
+            processor.sfzPlayer2RebuildInFlight.store    (false, std::memory_order_release);
+            processor.sfzPlayer2LcdRebuildInFlight.store (false, std::memory_order_release);
+        }
+
         // SFZ-PLAYER preview is visual-only and has no failure-state UI of its
         // own (sfzPlayer2's live engine handles its own failure reporting
         // separately) — so for that target we simply no-op rather than add a
@@ -1310,6 +1373,12 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         // Mirrors the Slicer branch above — same flag, same consumer
         // (SliceWaveformLcd is shared by both the Slicer and SFZ-PLAYER tabs).
         processor.mainLoadInFlight.store (true, std::memory_order_release);
+
+        // Own dedicated flags for this target only -- see their declaration
+        // in PluginProcessor.h for why mainLoadInFlight above isn't reused
+        // for either of these two consumers.
+        processor.sfzPlayer2RebuildInFlight.store    (true, std::memory_order_release);
+        processor.sfzPlayer2LcdRebuildInFlight.store (true, std::memory_order_release);
     }
     else // SoundFontLoadTarget::SfPlayer
     {
