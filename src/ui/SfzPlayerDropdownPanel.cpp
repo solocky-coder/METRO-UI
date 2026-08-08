@@ -3,6 +3,7 @@
 // =============================================================================
 #include "SfzPlayerDropdownPanel.h"
 #include "DysektLookAndFeel.h"
+#include "UIHelpers.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
 #include "../audio/SfzZoneColours.h"
@@ -49,9 +50,11 @@ SfzPlayerDropdownPanel::SfzPlayerDropdownPanel (DysektProcessor& p)
     };
     addChildComponent (fileBrowser);
 
-    // [+ ZONE] always visible — openAddZoneChooser() creates a Custom.sfz if nothing is loaded
-    keysPanel.setAddZoneButtonVisible (true);
-    keysPanel.onAddZoneRequested = [this] { openAddZoneChooser(); };
+    // [+ ZONE] on this panel's keysPanel is intentionally left unwired — this
+    // whole panel is never made visible (see PluginEditor.cpp setVisible(false)
+    // call sites); the live Add Zone entry point is DysektEditor's own
+    // zoneBuilderKeysPanel, driven from PluginEditor.cpp.
+    keysPanel.setAddZoneButtonVisible (false);
 
     startTimerHz (30);
 }
@@ -242,25 +245,6 @@ void SfzPlayerDropdownPanel::closeBrowser()
 
 void SfzPlayerDropdownPanel::onFileChosen (const juce::File& f)
 {
-    if (fileBrowser.getMode() == SfzFileBrowser::Mode::kAddZone)
-    {
-        // Reset browser back to SFZ mode before showing the overlay
-        fileBrowser.setMode (SfzFileBrowser::Mode::kSfz);
-        closeBrowser();
-
-        if (! addZoneTargetSfz.existsAsFile())
-        {
-            // No SFZ loaded yet: ask the user to name a new file first,
-            // then continue to the key-range overlay with the chosen sample.
-            const juce::File chosenSample = f;  // capture before lambda
-            openSaveAsNewForZone (chosenSample);
-            return;
-        }
-
-        showAddZoneOverlay (addZoneTargetSfz, f, addZonePrevHiKey);
-        return;
-    }
-
     processor.sfzPlayer2.loadFile (f, processor.fileLoadPool);
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
     reloadZones (f);
@@ -808,8 +792,6 @@ void SfzPlayerDropdownPanel::mouseDown (const juce::MouseEvent& e)
                     menu.addSeparator();
                     for (int ch = 1; ch <= 16; ++ch)
                         menu.addItem (200 + ch, "Channel " + juce::String (ch), true, curCh == ch);
-                    menu.addSeparator();
-                    menu.addItem (300, "Save SFZ As\u2026");
 
                     auto* topLvl = getTopLevelComponent();
                     float ms = DysektLookAndFeel::getMenuScale();
@@ -829,10 +811,6 @@ void SfzPlayerDropdownPanel::mouseDown (const juce::MouseEvent& e)
                             {
                                 const int ch = result - 200;
                                 processor.sfzPlayer2.setMidiChannel (ch);
-                            }
-                            else if (result == 300)
-                            {
-                                openSaveAsOverlay();
                             }
                         });
                     return;
@@ -1509,19 +1487,13 @@ void SfzPlayerDropdownPanel::reloadZones (const juce::File& f)
         // means rebuild() runs with the wrong value and the component is too short
         // to display the button even though repaint() draws it.
         //
-        // [+ ZONE] is available whenever nothing is loaded OR an .sfz is loaded.
-        // It must stay HIDDEN when an .sf2 is loaded: this same panel/engine is
-        // shared with the SF2-PLAYER tab (see PluginEditor::onLoadRequest, uiMode==2,
-        // which routes .sf2 files here via sfzDropdown.onFileChosen()), and SF2 zones
-        // are read-only — adding a zone on top of a loaded SF2 makes no sense.
-        // openAddZoneChooser() handles the "nothing loaded yet" case by prompting
-        // Save-As after the sample is picked, creating a new .sfz target.
-        const bool isSf2 = (ext == ".sf2");
-        keysPanel.setAddZoneButtonVisible (! isSf2);
-        if (isSf2)
-            keysPanel.onAddZoneRequested = nullptr;
-        else
-            keysPanel.onAddZoneRequested = [this] { openAddZoneChooser(); };
+        // [+ ZONE] stays hidden/unwired here regardless of file type — this
+        // panel is never made visible (see PluginEditor.cpp), so its own Add
+        // Zone entry point was removed; the live one is DysektEditor's
+        // zoneBuilderKeysPanel. keysPanel.setKeyzones() below still needs the
+        // parsed data for whatever internal state tracking depends on it.
+        keysPanel.setAddZoneButtonVisible (false);
+        keysPanel.onAddZoneRequested = nullptr;
 
         keysPanel.onRowClicked      = nullptr;
         keysPanel.onRowRightClicked = nullptr;
@@ -1650,22 +1622,11 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
 
     if (regionLine < 0) return;  // region not found — bail
 
-    // Patch each editable opcode
-    // Matches the app-wide convention (C3 == MIDI 60, octave = note/12 - 2)
-    // used by SliceLcdDisplay.cpp, SliceControlBar.cpp, KeysPanel.cpp,
-    // SfzLcdDisplay.cpp, and parseSfzKey() above. Previously used note/12-1
-    // (SFZ-spec default, C-1=0), one octave off from everything else in the
-    // app -- see the note that used to be here. Any .sfz zones written by
-    // Add Zone / Save SFZ *before* this fix will have their lokey/hikey/
-    // pitch_keycenter note-name text off by one octave from what this build
-    // now reads them as; re-saving the zone (Add Zone -> Save SFZ again) or
-    // manually correcting the octave digit in those existing .sfz files
-    // resolves it.
-    auto noteStr = [] (int note) -> juce::String
-    {
-        static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-        return juce::String (names[note % 12]) + juce::String (note / 12 - 2);
-    };
+    // Patch each editable opcode. Uses UIHelpers::midiNoteToName() — the
+    // single shared implementation of the app-wide C3==MIDI60 convention —
+    // instead of its own copy; see that function's doc comment for the
+    // octave-drift bug this used to be a duplicate source of.
+    auto noteStr = [] (int note) -> juce::String { return UIHelpers::midiNoteToName (note); };
 
     setOpcode (lines, regionLine, "lokey",  noteStr (z.loKey));
     setOpcode (lines, regionLine, "hikey",  noteStr (z.hiKey));
@@ -1722,211 +1683,9 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
     processor.loadSoundFontAsync (f, SoundFontLoadTarget::SfzPlayer2);
 }
 
-// =============================================================================
-//  openAddZoneChooser  —  Issue 2: Add Zone support
-// =============================================================================
-
-void SfzPlayerDropdownPanel::openAddZoneChooser()
-{
-    // Resolve the target SFZ (may be empty if nothing is loaded yet).
-    juce::File targetSfz;
-    if (processor.sfzPlayer2.isLoaded())
-    {
-        const auto loaded = processor.sfzPlayer2.getLoadedFile();
-        if (loaded.getFileExtension().toLowerCase() == ".sfz")
-            targetSfz = loaded;
-    }
-
-    int prevHiKey = -1;
-    if (targetSfz.existsAsFile())
-    {
-        const auto existing = parseSfzZones (targetSfz);
-        for (const auto& z : existing)
-            prevHiKey = juce::jmax (prevHiKey, z.hiKey);
-    }
-
-    // Store for use in onFileChosen. targetSfz may be empty here; if so,
-    // onFileChosen will trigger "Save As" after the sample is picked.
-    addZoneTargetSfz = targetSfz;
-    addZonePrevHiKey = prevHiKey;
-
-    // Open the sample browser first — pick the sample, then name the SFZ.
-    fileBrowser.setMode (SfzFileBrowser::Mode::kAddZone);
-    const auto browserRoot = targetSfz.existsAsFile()
-                           ? targetSfz.getParentDirectory()
-                           : juce::File::getSpecialLocation (juce::File::userMusicDirectory);
-    fileBrowser.setRootDirectory (browserRoot);
-    openBrowser();
-}
-
-void SfzPlayerDropdownPanel::showAddZoneOverlay (const juce::File& sfzFile,
-                                            const juce::File& sampleFile,
-                                            int               prevHiKey)
-{
-    const int defaultLo = (prevHiKey < 0) ? 0 : juce::jmin (prevHiKey + 1, 127);
-
-    auto overlay = std::make_unique<AddZoneOverlay> (
-        sampleFile.getFileNameWithoutExtension(), defaultLo);
-
-    overlay->onResult = [this, sfzFile, sampleFile] (int lo, int hi, int root, bool confirmed)
-    {
-        // Defer hideOverlays() so it runs after fire() has returned and
-        // AddZoneOverlay is no longer on the call stack (use-after-free fix).
-        juce::MessageManager::callAsync ([this] { hideOverlays(); });
-
-        if (! confirmed)
-            return;
-
-        if (! appendZoneToSfz (sfzFile, sampleFile, lo, hi, root))
-        {
-            showOverlay (messageOverlay, std::make_unique<MessageOverlay> (
-                "Add Zone Failed",
-                "Could not write to:\n" + sfzFile.getFullPathName(),
-                MessageOverlay::Kind::Warning));
-            messageOverlay->onDismiss = [this] { juce::MessageManager::callAsync ([this] { hideOverlays(); }); };
-            return;
-        }
-
-        processor.sfzPlayer2.loadFile (sfzFile, processor.fileLoadPool);
-        processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
-        reloadZones (sfzFile);
-        keysPanel.autoScrollToZones();
-        repaint();
-    };
-
-    showOverlay (addZoneOverlay, std::move (overlay));
-}
-
-bool SfzPlayerDropdownPanel::appendZoneToSfz (const juce::File& sfzFile,
-                                          const juce::File& sampleFile,
-                                          int loKey, int hiKey, int rootKey)
-{
-    juce::String samplePath;
-    const auto sfzDir = sfzFile.getParentDirectory();
-    if (sampleFile.isAChildOf (sfzDir))
-        samplePath = sampleFile.getRelativePathFrom (sfzDir).replaceCharacter ('\\', '/');
-    else
-        samplePath = sampleFile.getFullPathName().replaceCharacter ('\\', '/');
-
-    const juce::String region =
-        "\n<region>\n"
-        "sample="          + samplePath              + "\n"
-        "lokey="           + juce::String (loKey)    + "\n"
-        "hikey="           + juce::String (hiKey)    + "\n"
-        "pitch_keycenter=" + juce::String (rootKey)  + "\n"
-        "volume=-7\n"
-        "pan=0\n"
-        "tune=0\n"
-        "ampeg_release=0.664\n";
-
-    juce::FileOutputStream stream (sfzFile);
-    if (stream.failedToOpen())
-        return false;
-
-    stream.setPosition (sfzFile.getSize());
-    stream.writeText (region, false, false, nullptr);
-    stream.flush();
-    return ! stream.getStatus().failed();
-}
-
-// Called after the user has already picked a sample but no SFZ is loaded yet.
-// Shows "Name your SFZ file", creates a blank file, then proceeds to AddZoneOverlay.
-void SfzPlayerDropdownPanel::openSaveAsNewForZone (const juce::File& sampleFile)
-{
-    const auto defaultPath = sampleFile.getParentDirectory()
-                                 .getChildFile ("Custom.sfz");
-    auto overlay = std::make_unique<SaveSfzOverlay> (defaultPath);
-
-    overlay->onResult = [this, sampleFile] (const juce::File& dest, bool confirmed)
-    {
-        juce::MessageManager::callAsync ([this] { hideOverlays(); });
-
-        if (! confirmed || dest == juce::File{})
-            return;
-
-        // Always create a fresh blank SFZ.
-        dest.replaceWithText ("// Custom SFZ — built with SF-Player\n\n");
-
-        addZoneTargetSfz = dest;
-
-        processor.sfzPlayer2.loadFile (dest, processor.fileLoadPool);
-        processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
-        reloadZones (dest);
-        repaint();
-
-        // Now show the key-range dialog with the already-chosen sample.
-        juce::MessageManager::callAsync ([this, sampleFile]
-        {
-            showAddZoneOverlay (addZoneTargetSfz, sampleFile, addZonePrevHiKey);
-        });
-    };
-
-    showOverlay (saveSfzOverlay, std::move (overlay));
-}
-
-void SfzPlayerDropdownPanel::openSaveAsOverlay()
-{
-    const auto currentFile = processor.sfzPlayer2.isLoaded()
-                           ? processor.sfzPlayer2.getLoadedFile()
-                           : juce::File::getSpecialLocation (juce::File::userMusicDirectory)
-                                 .getChildFile ("Custom.sfz");
-
-    auto overlay = std::make_unique<SaveSfzOverlay> (currentFile);
-
-    overlay->onResult = [this, currentFile] (const juce::File& dest, bool confirmed)
-    {
-        // Defer hideOverlays() so it runs after fire() has returned and
-        // SaveSfzOverlay is no longer on the call stack (use-after-free fix).
-        juce::MessageManager::callAsync ([this] { hideOverlays(); });
-
-        if (! confirmed || dest == juce::File{})
-            return;
-
-        if (currentFile.existsAsFile())
-        {
-            // Copy existing SFZ content to the new location.
-            const bool ok = currentFile.copyFileTo (dest);
-            if (! ok)
-            {
-                showOverlay (messageOverlay, std::make_unique<MessageOverlay> (
-                    "Save Failed",
-                    "Could not write:\n" + dest.getFullPathName(),
-                    MessageOverlay::Kind::Warning));
-                messageOverlay->onDismiss = [this] { juce::MessageManager::callAsync ([this] { hideOverlays(); }); };
-                return;
-            }
-        }
-        else
-        {
-            dest.replaceWithText ("// Custom SFZ — built with SF-Player\n\n");
-        }
-
-        processor.sfzPlayer2.loadFile (dest, processor.fileLoadPool);
-        reloadZones (dest);
-        repaint();
-    };
-
-    showOverlay (saveSfzOverlay, std::move (overlay));
-}
-
-void SfzPlayerDropdownPanel::hideOverlays()
-{
-    if (addZoneOverlay)
-    {
-        if (auto* p = addZoneOverlay->getParentComponent())
-            p->removeChildComponent (addZoneOverlay.get());
-        addZoneOverlay.reset();
-    }
-    if (saveSfzOverlay)
-    {
-        if (auto* p = saveSfzOverlay->getParentComponent())
-            p->removeChildComponent (saveSfzOverlay.get());
-        saveSfzOverlay.reset();
-    }
-    if (messageOverlay)
-    {
-        if (auto* p = messageOverlay->getParentComponent())
-            p->removeChildComponent (messageOverlay.get());
-        messageOverlay.reset();
-    }
-}
+// openAddZoneChooser / showAddZoneOverlay / appendZoneToSfz /
+// openSaveAsNewForZone / openSaveAsOverlay / hideOverlays / showOverlay<>
+// removed — this panel is never shown (see PluginEditor.cpp), so this whole
+// Add Zone / Save SFZ As flow was dead code, fully duplicated by
+// DysektEditor's zone-builder flow in PluginEditor.cpp. See the note in
+// SfzPlayerDropdownPanel.h.

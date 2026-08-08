@@ -1,5 +1,6 @@
 #include "PadGridView.h"
 #include "DysektLookAndFeel.h"
+#include "UIHelpers.h"
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -106,9 +107,9 @@ int PadGridView::padIndexAt (juce::Point<int> p) const noexcept
 
 juce::String PadGridView::midiNoteName (int note)
 {
-    static const char* kNames[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-    const int oct = (note / 12) - 2;
-    return juce::String (kNames[note % 12]) + juce::String (oct);
+    // Delegates to UIHelpers::midiNoteToName() — see that function's doc
+    // comment for why this used to be its own hand-copied implementation.
+    return UIHelpers::midiNoteToName (note);
 }
 
 void PadGridView::drawPad (juce::Graphics& g,

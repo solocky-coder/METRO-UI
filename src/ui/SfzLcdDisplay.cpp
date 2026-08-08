@@ -1,6 +1,7 @@
 #include "SfzLcdDisplay.h"
 #include "DysektLookAndFeel.h"
 #include "LcdColours.h"
+#include "UIHelpers.h"
 #include "../PluginProcessor.h"
 
 // Palette and chassis rendering now live in LcdColours.h, shared with
@@ -24,11 +25,10 @@ juce::String SfzLcdDisplay::formatPct (float v)
 
 juce::String SfzLcdDisplay::midiNoteName (int note)
 {
-    static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-    note = juce::jlimit (0, 127, note);
-    juce::String s (names[note % 12]);
-    s += juce::String (note / 12 - 2);
-    while (s.length() < 3) s += " ";
+    // Delegates to UIHelpers::midiNoteToName() — see that function's doc
+    // comment for why this used to be its own hand-copied implementation.
+    juce::String s = UIHelpers::midiNoteToName (juce::jlimit (0, 127, note));
+    while (s.length() < 3) s += " ";   // pad to 3 chars, same as before
     return s;
 }
 

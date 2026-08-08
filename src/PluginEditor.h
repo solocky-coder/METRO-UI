@@ -35,7 +35,6 @@
 #include "ui/PadGridView.h"
 #include "ui/KeysPanel.h"
 #include "ui/AddZoneOverlay.h"
-#include "ui/SaveSfzOverlay.h"
 #if DYSEKT_STANDALONE
 #include "ui/PianoRollPanel.h"
 #include "ui/ArrangeView.h"
@@ -155,7 +154,9 @@ private:
     int        zoneBuilderPrevHiKey = -1;
     std::unique_ptr<juce::FileChooser> zoneBuilderSampleChooser;
     std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;
-    std::unique_ptr<SaveSfzOverlay>    zoneSaveOverlay;
+    // zoneSaveOverlay (SaveSfzOverlay) removed — openZoneBuilderSaveAsNew()
+    // now uses zoneAddOverlay's own optional name field (showNameField=true)
+    // instead of a separate stacked dialog. See that function's doc comment.
 
     // ── Staged-but-unsaved zones ─────────────────────────────────────────────
     // Zones added via AddZoneOverlay are no longer written straight to
@@ -186,8 +187,7 @@ private:
     void openZoneBuilderSaveAsNew (const juce::File& sampleFile); // no SFZ loaded yet -> name one first
     static juce::String buildZoneRegionText (const juce::File& sfzFile, const juce::File& sampleFile,
                                               int loKey, int hiKey, int rootKey);
-    static bool appendZoneToSfz (const juce::File& sfzFile, const juce::File& sampleFile,
-                                  int loKey, int hiKey, int rootKey);
+    static bool appendZoneToSfz (const juce::File& sfzFile, const juce::String& regionText);
     void hideZoneBuilderOverlays();
     void refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary = true); // re-parse + push into zoneBuilderKeysPanel
     // Classifies an SFZ-PLAYER file's zones (see SfzLayoutClassifier.h) and,

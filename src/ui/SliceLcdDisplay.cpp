@@ -52,12 +52,10 @@ static void fillPhosphorFlag (juce::Graphics& g, juce::Rectangle<float> bounds,
 
 juce::String SliceLcdDisplay::midiNoteName (int note)
 {
-    static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-    note = juce::jlimit (0, 127, note);
-    juce::String s (names[note % 12]);
-    s += juce::String (note / 12 - 2);   // C3 = 60 → octave = 60/12-2 = 3
-    // Pad to 3 chars
-    while (s.length() < 3) s += " ";
+    // Delegates to UIHelpers::midiNoteToName() — see that function's doc
+    // comment for why this used to be its own hand-copied implementation.
+    juce::String s = UIHelpers::midiNoteToName (juce::jlimit (0, 127, note));
+    while (s.length() < 3) s += " ";   // pad to 3 chars, same as before
     return s;
 }
 

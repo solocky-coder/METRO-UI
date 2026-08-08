@@ -2561,17 +2561,14 @@ void DysektEditor::openZoneBuilderAddZone()
     // Zones staged-but-not-yet-saved won't appear in targetSfz's on-disk
     // content yet, but the new zone's default range still needs to start
     // above them, or a second staged Add Zone would silently overlap the
-    // first (or a staged edit/delete of an existing zone). Read from
-    // whichever file is currently authoritative rather than always targetSfz.
+    // first (or a staged edit/delete of an existing zone). zoneBuilderKeysPanel
+    // is already kept in sync with whichever file is currently authoritative
+    // (scratch-if-dirty else targetSfz) by refreshZoneBuilderMatrix() after
+    // every mutation — reuse that in-memory list instead of re-parsing from
+    // disk here. Same pattern deleteZoneBuilderZone() already uses below.
     int prevHiKey = -1;
-    const juce::File authoritative = (zoneBuilderDirty && zoneBuilderScratchFile.existsAsFile())
-                                    ? zoneBuilderScratchFile : targetSfz;
-    if (authoritative.existsAsFile())
-    {
-        const auto existing = SfzPlayerDropdownPanel::parseSfzZones (authoritative);
-        for (const auto& z : existing)
-            prevHiKey = juce::jmax (prevHiKey, z.hiKey);
-    }
+    for (const auto& z : zoneBuilderKeysPanel.getKeyzones())
+        prevHiKey = juce::jmax (prevHiKey, z.hiKey);
 
     zoneBuilderTargetSfz  = targetSfz;
     zoneBuilderPrevHiKey  = prevHiKey;
@@ -2637,13 +2634,18 @@ void DysektEditor::showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
         // exact path that's about to be written and flag it up front if the
         // source file doesn't even exist, so that silent case is diagnosable
         // from the log alone instead of requiring a manual file dump.
+        // buildZoneRegionText() computed once here and reused for the write
+        // below — it was previously called twice (once just to slice out the
+        // sample= line for this log message, once again inside
+        // appendZoneToSfz for the real write).
+        const juce::String regionText = buildZoneRegionText (zoneBuilderScratchFile, sampleFile, lo, hi, root);
         processor.crashLogger.log ("Zone-builder stage: sampleFile=\"" + sampleFile.getFullPathName()
             + "\" exists=" + (sampleFile.existsAsFile() ? "YES" : "NO")
-            + "  will write sample=\"" + buildZoneRegionText (zoneBuilderScratchFile, sampleFile, lo, hi, root)
+            + "  will write sample=\"" + regionText
                   .fromFirstOccurrenceOf ("sample=", false, false)
                   .upToFirstOccurrenceOf ("\n", false, false) + "\"");
 
-        appendZoneToSfz (zoneBuilderScratchFile, sampleFile, lo, hi, root);
+        appendZoneToSfz (zoneBuilderScratchFile, regionText);
 
         // refreshZoneBuilderPreview() drives both the matrix and the
         // sliceManager2/sampleData2 preview from the already-mutated scratch
@@ -2684,17 +2686,14 @@ juce::String DysektEditor::buildZoneRegionText (const juce::File& sfzFile, const
            "ampeg_release=0.664\n";
 }
 
-bool DysektEditor::appendZoneToSfz (const juce::File& sfzFile, const juce::File& sampleFile,
-                                     int loKey, int hiKey, int rootKey)
+bool DysektEditor::appendZoneToSfz (const juce::File& sfzFile, const juce::String& regionText)
 {
-    const juce::String region = buildZoneRegionText (sfzFile, sampleFile, loKey, hiKey, rootKey);
-
     juce::FileOutputStream stream (sfzFile);
     if (stream.failedToOpen())
         return false;
 
     stream.setPosition (sfzFile.getSize());
-    stream.writeText (region, false, false, nullptr);
+    stream.writeText (regionText, false, false, nullptr);
     stream.flush();
     return ! stream.getStatus().failed();
 }
@@ -2904,18 +2903,33 @@ void DysektEditor::discardZoneBuilderPendingZones()
 }
 
 // Called after the user has already picked a sample but no SFZ is loaded yet.
-// Shows "Name your SFZ file", creates a blank file, then proceeds to AddZoneOverlay.
+// Shows ONE AddZoneOverlay with an extra name field on top (instead of a
+// separate SaveSfzOverlay dialog followed by a second AddZoneOverlay) —
+// naming the new kit and setting the first zone's key range happen in a
+// single modal. Folder is fixed to the sample's own folder; the old two-step
+// flow's separate destination-folder picker is dropped in favor of that
+// default to keep this a true one-dialog step. Users who want ".sfz" in a
+// different folder can still relocate the file afterward.
 void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
 {
-    const auto defaultPath = sampleFile.getParentDirectory().getChildFile ("Custom.sfz");
-    zoneSaveOverlay = std::make_unique<SaveSfzOverlay> (defaultPath);
+    zoneAddOverlay = std::make_unique<AddZoneOverlay> (
+        sampleFile.getFileNameWithoutExtension(), /*defaultLo*/ 0,
+        /*showNameField*/ true, /*defaultName*/ "Custom");
 
-    zoneSaveOverlay->onResult = [this, sampleFile] (const juce::File& dest, bool confirmed)
+    auto* overlayPtr = zoneAddOverlay.get();
+    zoneAddOverlay->onResult = [this, sampleFile, overlayPtr] (int lo, int hi, int root, bool confirmed)
     {
+        // getEnteredName() must be read before the deferred reset below —
+        // overlayPtr is still alive here, on the call stack that triggered
+        // this callback (see the use-after-free note elsewhere in this file).
+        const juce::String enteredName = overlayPtr->getEnteredName();
+
         juce::MessageManager::callAsync ([this] { hideZoneBuilderOverlays(); });
 
-        if (! confirmed || dest == juce::File{})
+        if (! confirmed)
             return;
+
+        const auto dest = sampleFile.getParentDirectory().getChildFile (enteredName);
 
         // Always create a fresh blank SFZ. Plain ASCII only in this comment —
         // see the file-level note on why non-ASCII source literals are worth
@@ -2942,18 +2956,24 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
                                               juce::Colour (0xFF9060D0));
        #endif
         refreshZoneBuilderMatrix (dest);
-        repaint();
 
-        // Now show the key-range dialog with the already-chosen sample.
-        juce::MessageManager::callAsync ([this, sampleFile]
+        // Stage the first zone straight into the scratch file, same as the
+        // normal Add Zone path — see showZoneBuilderAddZoneOverlay's onResult.
+        ensureZoneBuilderScratchExists();
+        if (zoneBuilderScratchFile.existsAsFile())
         {
-            showZoneBuilderAddZoneOverlay (zoneBuilderTargetSfz, sampleFile, zoneBuilderPrevHiKey);
-        });
+            const juce::String regionText = buildZoneRegionText (zoneBuilderScratchFile, sampleFile, lo, hi, root);
+            appendZoneToSfz (zoneBuilderScratchFile, regionText);
+            refreshZoneBuilderPreview();
+            zoneBuilderKeysPanel.autoScrollToZones();
+        }
+
+        repaint();
     };
 
-    addAndMakeVisible (*zoneSaveOverlay);
-    zoneSaveOverlay->setBounds (getLocalBounds());
-    zoneSaveOverlay->toFront (true);
+    addAndMakeVisible (*zoneAddOverlay);
+    zoneAddOverlay->setBounds (getLocalBounds());
+    zoneAddOverlay->toFront (true);
 }
 
 void DysektEditor::hideZoneBuilderOverlays()
@@ -2962,10 +2982,5 @@ void DysektEditor::hideZoneBuilderOverlays()
     {
         removeChildComponent (zoneAddOverlay.get());
         zoneAddOverlay.reset();
-    }
-    if (zoneSaveOverlay)
-    {
-        removeChildComponent (zoneSaveOverlay.get());
-        zoneSaveOverlay.reset();
     }
 }

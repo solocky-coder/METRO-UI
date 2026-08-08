@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
 #include "DysektLookAndFeel.h"
+#include "UIHelpers.h"
 #include "VelocityLane.h"
 #include "ToolIcons.h"
 
@@ -1553,7 +1554,12 @@ private:
             {
                 g.setFont (DysektLookAndFeel::makeMonoFont (8.f));
                 g.setColour (juce::Colour (0xFF404040));
-                g.drawText ("C" + juce::String (note / 12 - 1),
+                // Was "C" + note/12-1 (C4==MIDI60) — every other note-name
+                // display in the app uses the C3==MIDI60 convention (see
+                // UIHelpers::midiNoteToName's doc comment); this row only
+                // ever hits note%12==0, so the shared helper's result always
+                // starts with "C" and this now matches everywhere else.
+                g.drawText (UIHelpers::midiNoteToName (note),
                             keysBounds.getX(), (int) y,
                             keysBounds.getWidth() - 4, noteRowH,
                             juce::Justification::centredRight, false);

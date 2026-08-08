@@ -21,11 +21,9 @@ static const juce::Colour kAdsrRelease { 0xFFFF6B00 }; // Molten Orange
 
 static juce::String scbMidiNoteName (int note)
 {
-    static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-    note = juce::jlimit (0, 127, note);
-    juce::String s (names[note % 12]);
-    s += juce::String (note / 12 - 2);   // C3 = 60 → octave = 60/12-2 = 3
-    return s;
+    // Delegates to UIHelpers::midiNoteToName() — see that function's doc
+    // comment for why this used to be its own hand-copied implementation.
+    return UIHelpers::midiNoteToName (juce::jlimit (0, 127, note));
 }
 static const juce::Colour kAdsrHold    { 0xFFFF00FF }; // Hot Magenta
 
@@ -1162,9 +1160,8 @@ void SliceControlBar::paint (juce::Graphics& g)
      // ROOT — chromatic reference MIDI note (only meaningful when chromaticChannel > 0)
      {
          const int liveRoot = processor.sliceManager.rootNote.load (std::memory_order_relaxed);
-         static const char* kNoteNames[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
          const int rn = juce::jlimit (0, 127, liveRoot);
-         juce::String rootStr = juce::String (kNoteNames[rn % 12]) + juce::String (rn / 12 - 2);
+         juce::String rootStr = UIHelpers::midiNoteToName (rn);
          drawKnobCell (g, x, row1y, "ROOT", rootStr,
                        toNorm (kFieldRootNote, (float) liveRoot),
                        false, 0, kFieldRootNote,

@@ -258,9 +258,9 @@ private:
 
     static juce::String noteName (int note)
     {
-        static const char* const names[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-        const int octave = note / 12 - 2;   // matches this codebase's convention: MIDI 60 = C3
-        return juce::String (names[note % 12]) + juce::String (octave);
+        // Delegates to UIHelpers::midiNoteToName() — see that function's doc
+        // comment for why this used to be its own hand-copied implementation.
+        return UIHelpers::midiNoteToName (note);
     }
 
     void rebuildKeyRects()

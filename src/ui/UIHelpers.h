@@ -9,6 +9,23 @@
 namespace UIHelpers
 {
 
+// ── MIDI note number -> note name ───────────────────────────────────────────
+// App-wide convention: C3 == MIDI note 60 (octave = note/12 - 2). This was
+// previously reimplemented independently in at least 9 places across the UI
+// (AddZoneOverlay, AddZonePanel, KeysPanel x2, PadGridView, Sf2Instrument-
+// Workspace, SfzLcdDisplay, SfzPlayerDropdownPanel, SliceControlBar x2,
+// SliceLcdDisplay) — each a hand-copied `note/12 - 2` + note-name-array pair,
+// kept in sync only by comments pointing at each other. That's exactly how
+// AddZoneOverlay ended up shipping with the octave off by one for a while:
+// one copy drifted to `note/12 - 1` and nothing caught it at compile time.
+// Single source of truth now; every call site should use this instead of
+// its own copy.
+inline juce::String midiNoteToName (int note)
+{
+    static const char* kNames[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    return juce::String (kNames[((note % 12) + 12) % 12]) + juce::String (note / 12 - 2);
+}
+
 // ── Shared SF2 track colour ─────────────────────────────────────────────────
 // A given preset (bank/preset pair) always maps to the same colour, and that
 // colour is what the Arranger uses for the track name + MIDI part once the

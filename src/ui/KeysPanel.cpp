@@ -1,5 +1,6 @@
 #include "KeysPanel.h"
 #include "DysektLookAndFeel.h"
+#include "UIHelpers.h"
 #include "../PluginProcessor.h"
 
 // =============================================================================
@@ -318,11 +319,8 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
             const int lastHi = rows.back().zone.hiKey;
             const int nextLo = juce::jmin (lastHi + 1, 127);
             const int nextHi = juce::jmin (lastHi + 12, 127);
-            auto noteName = [] (int n) -> juce::String {
-                static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-                return juce::String (names[n % 12]) + juce::String (n / 12 - 2);
-            };
-            const juce::String hint = noteName (nextLo) + " \u2013 " + noteName (nextHi);
+            const juce::String hint = UIHelpers::midiNoteToName (nextLo) + " \u2013 "
+                                     + UIHelpers::midiNoteToName (nextHi);
             g.setFont (DysektLookAndFeel::makeFont (9.0f));
             g.setColour (theme.foreground.withAlpha (0.30f));
             g.drawText (hint, bx + kBtnW + 6, btnRowY, 80, kRowH,
@@ -356,11 +354,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
     };
 
     // ── Note name helper ──────────────────────────────────────────────────────
-    auto noteName = [] (int note) -> juce::String
-    {
-        static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-        return juce::String (names[note % 12]) + juce::String (note / 12 - 2);
-    };
+    auto noteName = [] (int note) -> juce::String { return UIHelpers::midiNoteToName (note); };
 
     // ── Rows ──────────────────────────────────────────────────────────────────
     const juce::Font fMain  = DysektLookAndFeel::makeFont (13.0f);

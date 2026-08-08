@@ -9,6 +9,12 @@
 //  Default: single key (loKey == hiKey == prevHiKey + 1), root == loKey.
 //  The user can expand the range before confirming.
 //
+//  Optional name field: when constructed with showNameField=true, an extra
+//  "Name your SFZ" text field is shown above the key rows and getEnteredName()
+//  becomes valid after a confirmed result. Used for the "no SFZ loaded yet"
+//  case, so naming the new kit and setting the first zone's key range happen
+//  in one dialog instead of two stacked modals (SaveSfzOverlay then this).
+//
 //  onResult (loKey, hiKey, rootKey, confirmed)
 //      confirmed == false  →  user cancelled; do not write anything.
 // =============================================================================
@@ -22,16 +28,38 @@ public:
     /** lo, hi, root are MIDI note numbers (0-127).  confirmed=false = cancel. */
     std::function<void (int lo, int hi, int root, bool confirmed)> onResult;
 
-    /** @param sampleName  bare filename shown in the title bar
-     *  @param defaultLo   suggested loKey (= prevHiKey + 1, or 0 if first zone)
+    /** @param sampleName     bare filename shown in the title bar
+     *  @param defaultLo      suggested loKey (= prevHiKey + 1, or 0 if first zone)
+     *  @param showNameField  when true, adds a "Name your SFZ" field above the
+     *                        key rows; read the result via getEnteredName()
+     *  @param defaultName    seed text for the name field (ignored if
+     *                        showNameField is false)
      */
-    AddZoneOverlay (const juce::String& sampleName, int defaultLo)
+    AddZoneOverlay (const juce::String& sampleName, int defaultLo,
+                     bool showNameField = false, const juce::String& defaultName = {})
         : loKey  (juce::jlimit (0, 127, defaultLo)),
           hiKey  (juce::jlimit (0, 127, defaultLo)),   // single-key default
           rootKey(juce::jlimit (0, 127, defaultLo)),
-          title  ("ADD ZONE  —  " + sampleName.toUpperCase())
+          title  ("ADD ZONE  —  " + sampleName.toUpperCase()),
+          hasNameField (showNameField)
     {
         const auto& T = getTheme();
+
+        if (hasNameField)
+        {
+            nameEditor.setText (defaultName.isEmpty() ? "Custom" : defaultName, false);
+            nameEditor.setInputRestrictions (64, "abcdefghijklmnopqrstuvwxyz"
+                                                  "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                                  "0123456789 _-.");
+            nameEditor.setColour (juce::TextEditor::backgroundColourId,     T.darkBar);
+            nameEditor.setColour (juce::TextEditor::textColourId,           T.foreground);
+            nameEditor.setColour (juce::TextEditor::outlineColourId,        T.accent.withAlpha (0.5f));
+            nameEditor.setColour (juce::TextEditor::focusedOutlineColourId, T.accent);
+            nameEditor.setFont (DysektLookAndFeel::makeFont (13.0f));
+            nameEditor.onEscapeKey = [this] { fire (false); };
+            nameEditor.setMouseCursor (juce::MouseCursor::NormalCursor);
+            addAndMakeVisible (nameEditor);
+        }
 
         auto styleBtn = [&] (juce::TextButton& b, bool accent)
         {
@@ -86,6 +114,12 @@ public:
             b->setMouseCursor (juce::MouseCursor::NormalCursor);
     }
 
+    void visibilityChanged() override
+    {
+        if (isVisible() && hasNameField)
+            nameEditor.grabKeyboardFocus();
+    }
+
     void paint (juce::Graphics& g) override
     {
         const auto& T = getTheme();
@@ -106,6 +140,16 @@ public:
                     box.getX() + padX, box.getY() + 16,
                     box.getWidth() - padX * 2, 24,
                     juce::Justification::centredLeft, true);
+
+        if (hasNameField)
+        {
+            g.setFont (DysektLookAndFeel::makeFont (10.0f));
+            g.setColour (T.foreground.withAlpha (0.50f));
+            g.drawText ("Name your SFZ (no extension)",
+                        box.getX() + padX, box.getY() + 44,
+                        box.getWidth() - padX * 2, 14,
+                        juce::Justification::centredLeft, false);
+        }
 
 
         // Row labels + note readouts
@@ -159,6 +203,13 @@ public:
         const auto box  = dialogBox();
         const auto rows = clusterRows (box);
 
+        if (hasNameField)
+        {
+            const int padX = 18;
+            nameEditor.setBounds (box.getX() + padX, box.getY() + 60,
+                                   box.getWidth() - padX * 2, 28);
+        }
+
         juce::TextButton* dn[] = { &loDown, &hiDown, &rtDown };
         juce::TextButton* up[] = { &loUp,   &hiUp,   &rtUp   };
 
@@ -196,26 +247,36 @@ private:
 
     int loKey, hiKey, rootKey;
     juce::String title;
+    bool hasNameField;
+    juce::TextEditor nameEditor;
 
     juce::TextButton loDown, loUp;
     juce::TextButton hiDown, hiUp;
     juce::TextButton rtDown, rtUp;
     juce::TextButton confirmBtn, cancelBtn;
 
+public:
+    /** Valid after a confirmed onResult when constructed with
+     *  showNameField=true: trimmed name with ".sfz" appended (defaults to
+     *  "Custom.sfz" if left blank). Empty string if showNameField was false. */
+    juce::String getEnteredName() const
+    {
+        if (! hasNameField)
+            return {};
+        auto name = nameEditor.getText().trim();
+        if (name.isEmpty()) name = "Custom";
+        if (! name.endsWithIgnoreCase (".sfz"))
+            name += ".sfz";
+        return name;
+    }
+
+private:
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    // Matches the app-wide convention (C3 == MIDI 60, octave = note/12 - 2)
-    // used by SliceLcdDisplay.cpp, SliceControlBar.cpp, KeysPanel.cpp,
-    // SfzLcdDisplay.cpp, and SfzPlayerDropdownPanel.cpp's noteStr()/
-    // parseSfzKey(). Was note/12-1 (one octave off from the rest of the
-    // app) -- this is a pure display readout in this overlay, so the fix
-    // only changes the label shown while adjusting lo/hi/root key, not any
-    // stored MIDI note value.
-    static juce::String noteName (int n)
-    {
-        static const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
-        return juce::String (names[n % 12]) + juce::String (n / 12 - 2);
-    }
+    // Now delegates to UIHelpers::midiNoteToName() — see that function's doc
+    // comment for why: this used to be its own hand-copied `note/12 - 2`
+    // formula and drifted to `note/12 - 1` (one octave off) at one point.
+    static juce::String noteName (int n) { return UIHelpers::midiNoteToName (n); }
 
     /** Adjust a key value, clamping and keeping lo <= hi. */
     void adjust (int& val, int delta, bool isLo)
@@ -237,7 +298,7 @@ private:
     juce::Rectangle<int> dialogBox() const
     {
         const int w = juce::jmin (520, getWidth() - 40);
-        const int h = 300;
+        const int h = hasNameField ? 356 : 300;   // +56 for name label/editor row
         return juce::Rectangle<int> (
             (getWidth()  - w) / 2,
             (getHeight() - h) / 2,
@@ -263,7 +324,7 @@ private:
         constexpr int clusterW = kLabelW + gapLblArrow + kArrowW + gapArrowRdt
                                 + kReadoutW + gapRdtArrow + kArrowW + gapArrowSub + kSubW;
 
-        const int startY = box.getY() + 46;
+        const int startY = box.getY() + (hasNameField ? 102 : 46);
         const int rowX   = box.getCentreX() - clusterW / 2;
 
         std::array<ClusterRow, 3> r;

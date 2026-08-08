@@ -22,9 +22,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include "KeysPanel.h"
-#include "AddZoneOverlay.h"
-#include "SaveSfzOverlay.h"
-#include "MessageOverlay.h"
 #include "../audio/SfzPlayer.h"
 
 class DysektProcessor;
@@ -156,11 +153,6 @@ private:
     int cachedChLow  { 1 };   ///< polled from processor each timer tick
     int cachedChHigh { 16 };
 
-
-    // State held between openAddZoneChooser() and onFileChosen() in kAddZone mode
-    juce::File     addZoneTargetSfz;
-    int            addZonePrevHiKey { -1 };
-
     void openBrowser();
     void closeBrowser();
     void onFileChosen (const juce::File& f);
@@ -178,42 +170,17 @@ private:
     // ── Preset navigation ─────────────────────────────────────────────────────
     void selectPreset (int delta);
 
-    // ── Add Zone / Save SFZ As ────────────────────────────────────────────────
-    void openAddZoneChooser();
-    void showAddZoneOverlay (const juce::File& sfzFile,
-                              const juce::File& sampleFile,
-                              int               prevHiKey);
-    static bool appendZoneToSfz (const juce::File& sfzFile,
-                                  const juce::File& sampleFile,
-                                  int loKey, int hiKey, int rootKey);
-    void openSaveAsOverlay();
-    void openSaveAsNewForZone (const juce::File& sampleFile);
+    // NOTE: this panel used to own its own Add Zone / Save SFZ As flow
+    // (openAddZoneChooser / showAddZoneOverlay / appendZoneToSfz /
+    // openSaveAsOverlay / openSaveAsNewForZone), but SfzPlayerDropdownPanel
+    // is never made visible (see every setVisible() call site in
+    // PluginEditor.cpp) — that flow was 100% unreachable dead code, fully
+    // duplicated by DysektEditor's own zone-builder flow in PluginEditor.cpp,
+    // which is what the live [+ ZONE]/SAVE UI actually drives. Removed.
+    // parseSfzZones / writeSfzZoneChange / deleteSfzZone / reloadZones stay —
+    // PluginEditor calls those directly as data-layer utilities.
 
     void showMidiLearnMenu (int fieldId, juce::Point<int> screenPos);
-
-    template <typename OverlayType>
-    void showOverlay (std::unique_ptr<OverlayType>& overlayPtr,
-                      std::unique_ptr<OverlayType>  newOverlay)
-    {
-        hideOverlays();
-        overlayPtr = std::move (newOverlay);
-        if (auto* top = getTopLevelComponent())
-        {
-            top->addAndMakeVisible (*overlayPtr);
-            overlayPtr->setBounds (top->getLocalBounds());
-            // setAlwaysOnTop ensures the overlay receives mouse events above all
-            // sibling components in the host's HWND on Windows VST3.
-            overlayPtr->setAlwaysOnTop (true);
-            overlayPtr->toFront (true);
-            overlayPtr->grabKeyboardFocus();
-        }
-    }
-
-    void hideOverlays();
-
-    std::unique_ptr<AddZoneOverlay>    addZoneOverlay;
-    std::unique_ptr<SaveSfzOverlay>    saveSfzOverlay;
-    std::unique_ptr<MessageOverlay>    messageOverlay;
 
     // ── Mouse events ──────────────────────────────────────────────────────────
     void mouseDown        (const juce::MouseEvent&) override;
