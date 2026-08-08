@@ -474,7 +474,32 @@ private:
                 + "\") -> " + (ok ? "OK" : "FAILED")
                 + "  regions=" + juce::String (ok ? sfizz_get_num_regions (sfz) : -1));
 
-        if (! ok || shouldExit())
+        if (! ok)
+        {
+            sfizz_free (sfz);
+
+            // This is the exact gap the SFZ-PLAYER preview no-op left open:
+            // a genuine sfizz_load_file() parse failure on the mutated
+            // scratch file (e.g. a bad edit) used to hit postFailure()'s
+            // silent no-op for this target, leaving whatever was in
+            // sliceManager2/sampleData2 before this load -- including a
+            // zone the user just deleted -- sitting there indefinitely,
+            // still shown in the waveform LCD and still audible. Route
+            // through the same "post an empty result" path used for a
+            // legitimate all-silent probe instead, so a failed reload
+            // clears to an honest empty state rather than a stale, wrong
+            // one. Not applicable if this job was merely superseded by a
+            // newer one (shouldExit()) -- that case still no-ops and lets
+            // the newer job's own result be what lands.
+            if (target == SoundFontLoadTarget::SfzPlayer2 && ! shouldExit())
+                postEmptySfzPlayer2Result();
+            else
+                postFailure();
+
+            return jobHasFinished;
+        }
+
+        if (shouldExit())
         {
             sfizz_free (sfz);
             postFailure();
@@ -766,44 +791,14 @@ private:
             // (now-deleted) buffer sitting in sampleData2 forever: still
             // audible via processMidi2() until the next real load, and still
             // painted by SliceWaveformLcd. Post an empty (zero-frame,
-            // zero-slice) result through the normal pipeline instead, so
-            // processBlock's decoded2 branch runs its usual
-            // clearVoicesBeforeSampleSwap2()/sliceManager2.clearAll() path
-            // against nothing, replacing the stale buffer rather than
-            // leaving it in place.
+            // zero-slice) result through the normal pipeline instead (see
+            // postEmptySfzPlayer2Result()), so processBlock's decoded2
+            // branch runs its usual clearVoicesBeforeSampleSwap2()/
+            // sliceManager2.clearAll() path against nothing, replacing the
+            // stale buffer rather than leaving it in place.
             if (target == SoundFontLoadTarget::SfzPlayer2 && ! shouldExit())
             {
-                if (token == processor.latestPreviewToken2.load (std::memory_order_acquire))
-                {
-                    auto emptyDecoded = std::make_unique<SampleData::DecodedSample>();
-                    emptyDecoded->buffer.setSize (2, 0, false, true, false);
-                    emptyDecoded->fileName = file.getFileNameWithoutExtension();
-                    SampleData::buildPeakMipmaps (*emptyDecoded);   // safe on 0 frames
-
-                    // No slices — the empty payload itself IS the signal
-                    // that this zone list is now empty.
-                    auto* emptyZones = new SfzPreviewZonePayload();
-                    auto* oldZones = processor.pendingPreviewZones2.exchange (
-                        emptyZones, std::memory_order_acq_rel);
-                    delete oldZones;
-
-                    SampleData::SnapshotPtr ready2 = std::move (emptyDecoded);
-                    processor.exchangeCompletedLoadData2 (std::move (ready2));
-                }
-                // else: a newer preview load superseded this one — say
-                // nothing and let that job's own result (empty or not) be
-                // what lands, exactly like the staleness guard a few lines
-                // below for the non-empty path.
-
-                // Whether or not the empty result above was posted (stale
-                // token means it wasn't), the in-flight flags this job set
-                // in load() must still come down here, or a stale-token job
-                // would leave MIDI gated / the LCD stuck on "LOADING..."
-                // forever with no later completedLoadData2 delivery to
-                // clear them via processBlock.
-                processor.mainLoadInFlight.store            (false, std::memory_order_release);
-                processor.sfzPlayer2RebuildInFlight.store   (false, std::memory_order_release);
-                processor.sfzPlayer2LcdRebuildInFlight.store(false, std::memory_order_release);
+                postEmptySfzPlayer2Result();
                 return jobHasFinished;
             }
 
@@ -1274,6 +1269,56 @@ private:
     }
 #endif // DYSEKT_HAS_FLUIDSYNTH
 
+    // Posts an empty (zero-frame, zero-slice) SfzPlayer2 result through the
+    // normal completedLoadData2/pendingPreviewZones2 pipeline, so
+    // processBlock's decoded2 branch runs its usual
+    // clearVoicesBeforeSampleSwap2()/sliceManager2.clearAll() path against
+    // nothing -- replacing whatever stale buffer/slices were there rather
+    // than leaving them in place. Used both for a legitimate all-silent
+    // probe (e.g. the last remaining zone was just deleted -- see
+    // finishAndPost()) and for a genuine sfizz_load_file() parse failure on
+    // the mutated scratch/target file (see runJobSfizz()) -- in both cases
+    // leaving sliceManager2/sampleData2 completely untouched would leave a
+    // stale zone (including one the user just deleted) sitting in the
+    // waveform LCD and still audible via processMidi2() indefinitely, with
+    // nothing telling the user it didn't take.
+    //
+    // Must NOT be called for a shouldExit() (superseded-by-a-newer-job)
+    // bail-out -- that path should stay a genuine no-op via postFailure()
+    // and let the newer job's own result (empty or not) be what lands;
+    // callers are responsible for that check before calling this.
+    void postEmptySfzPlayer2Result()
+    {
+        if (token == processor.latestPreviewToken2.load (std::memory_order_acquire))
+        {
+            auto emptyDecoded = std::make_unique<SampleData::DecodedSample>();
+            emptyDecoded->buffer.setSize (2, 0, false, true, false);
+            emptyDecoded->fileName = file.getFileNameWithoutExtension();
+            SampleData::buildPeakMipmaps (*emptyDecoded);   // safe on 0 frames
+
+            // No slices — the empty payload itself IS the signal that this
+            // zone list is now empty.
+            auto* emptyZones = new SfzPreviewZonePayload();
+            auto* oldZones = processor.pendingPreviewZones2.exchange (
+                emptyZones, std::memory_order_acq_rel);
+            delete oldZones;
+
+            SampleData::SnapshotPtr ready2 = std::move (emptyDecoded);
+            processor.exchangeCompletedLoadData2 (std::move (ready2));
+        }
+        // else: a newer preview load superseded this one — say nothing and
+        // let that job's own result (empty or not) be what lands.
+
+        // Whether or not the empty result above was posted (stale token
+        // means it wasn't), the in-flight flags this job set in load() must
+        // still come down here, or a stale-token job would leave MIDI
+        // gated / the LCD stuck on "LOADING..." forever with no later
+        // completedLoadData2 delivery to clear them via processBlock.
+        processor.mainLoadInFlight.store             (false, std::memory_order_release);
+        processor.sfzPlayer2RebuildInFlight.store    (false, std::memory_order_release);
+        processor.sfzPlayer2LcdRebuildInFlight.store (false, std::memory_order_release);
+    }
+
     void postFailure()
     {
         // Any SfPlayer render (initial file-load OR a preset-scoped click
@@ -1305,8 +1350,16 @@ private:
 
         // SFZ-PLAYER preview is visual-only and has no failure-state UI of its
         // own (sfzPlayer2's live engine handles its own failure reporting
-        // separately) — so for that target we simply no-op rather than add a
-        // second failure-result atomic.
+        // separately), so for that target we no-op here rather than add a
+        // second failure-result atomic. This is now only reached for a
+        // genuinely no-op-worthy bail-out — a job superseded by a newer one
+        // (shouldExit()) — where leaving sliceManager2/sampleData2 untouched
+        // is correct because the newer job's own result is what should land.
+        // A real load/parse failure on this target no longer ends up here:
+        // it's routed through postEmptySfzPlayer2Result() instead (see
+        // runJobSfizz()'s `! ok` branch and finishAndPost()'s all-silent
+        // branch), so stale data left over from before this load — including
+        // a zone the user just deleted — doesn't linger indefinitely.
         if (target != SoundFontLoadTarget::Slicer)
             return;
 

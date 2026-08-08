@@ -2761,12 +2761,47 @@ void DysektEditor::deleteZoneBuilderZone (int rowIndex)
     if (rowIndex < 0 || rowIndex >= (int) zones.size())
         return;
 
+    const auto deletedZone = zones[(size_t) rowIndex];
+
     ensureZoneBuilderScratchExists();
     if (! zoneBuilderScratchFile.existsAsFile())
         return;
 
     SfzPlayerDropdownPanel::deleteSfzZone (zoneBuilderScratchFile, rowIndex);
 
+    // From here down: make the delete take effect immediately on the UI
+    // thread, rather than depending entirely on the refreshZoneBuilderPreview()
+    // round-trip below. That reload re-renders the kit on a background thread
+    // pool and is fire-and-forget with no rollback/error UI (see
+    // SoundFontLoader::LoadJob::postFailure()'s SFZ-PLAYER no-op comment) — if
+    // it's slow or silently fails to parse the mutated scratch file, the old
+    // sliceManager2 state (including the zone just "deleted") is otherwise
+    // left completely untouched: still pinned to its MIDI note, still in the
+    // matrix, with nothing telling the user it didn't take.
+
+    // Hard-kill (5ms forced release) any voice currently sounding anywhere in
+    // the deleted zone's key range, right away — don't wait for the async
+    // reload. releaseNoteForced() is note-indexed (not slice-indexed), so no
+    // sliceManager2 lookup is needed: just walk the zone's key span.
+    // Note: matching releaseNote()/releaseNoteForced()'s existing convention,
+    // one-shot voices are intentionally left alone here (they ignore forced
+    // release and simply play through to their natural end) — same behaviour
+    // as any other note-off in this engine, not something new introduced by
+    // this fix.
+    for (int note = deletedZone.loKey; note <= deletedZone.hiKey; ++note)
+        processor.voicePool2.releaseNoteForced (note);
+
+    // Optimistic UI update: drop this row from the panel's displayed zone
+    // list immediately, instead of waiting for the matrix to be repopulated
+    // by the (possibly slow/failed) reload below.
+    auto remainingZones = zones;
+    remainingZones.erase (remainingZones.begin() + rowIndex);
+    zoneBuilderKeysPanel.setKeyzones (remainingZones);
+
+    // Still kick off the full reload, to bring the engine (sliceManager2 /
+    // sampleData2) and the normal SFZ-PLAYER view fully back in sync. If this
+    // succeeds it will simply re-confirm the state already applied above; if
+    // it's slow, the zone is already gone from the UI and already silenced.
     refreshZoneBuilderPreview();
     repaint();
 }
