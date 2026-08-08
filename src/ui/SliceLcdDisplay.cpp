@@ -1,6 +1,7 @@
 #include "SliceLcdDisplay.h"
 #include "DysektLookAndFeel.h"
 #include "LcdColours.h"
+#include "UIHelpers.h"
 #include "../PluginProcessor.h"
 
 // Palette and chassis rendering now live in LcdColours.h, shared with
