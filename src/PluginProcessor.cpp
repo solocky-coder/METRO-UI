@@ -250,7 +250,29 @@ DysektProcessor::DysektProcessor()
 
 DysektProcessor::~DysektProcessor()
 {
-    fileLoadPool.removeAllJobs (true, 5000);
+    // removeAllJobs() can time out with a job still running (e.g. a
+    // SoundFontLoader FluidSynth preview job mid-render on a large SF2, or
+    // one that was already past its interruption checkpoints when asked to
+    // stop). Tearing down completedLoadData*/pendingPreviewZones* below
+    // while such a job is still alive and posting to those same atomics is
+    // a race, not just a logging concern -- so retry instead of proceeding
+    // unconditionally on a single 5s timeout. crashLogger is declared first
+    // in this class specifically so it's safe to log here regardless of how
+    // this loop ends.
+    bool jobsStopped = fileLoadPool.removeAllJobs (true, 5000);
+    int extraWaitsRemaining = 3;   // total worst case: 5s + 3*5s = 20s
+    while (! jobsStopped && extraWaitsRemaining-- > 0)
+    {
+        crashLogger.log ("~DysektProcessor(): fileLoadPool.removeAllJobs() timed out "
+                          "with a job still running -- retrying wait (" 
+                          + juce::String (extraWaitsRemaining) + " attempt(s) left).");
+        jobsStopped = fileLoadPool.removeAllJobs (true, 5000);
+    }
+    if (! jobsStopped)
+        crashLogger.log ("~DysektProcessor(): a background job did not stop after 20s; "
+                          "proceeding with teardown anyway -- a crash after this point "
+                          "most likely means a stuck job, not this destructor.");
+
     exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
     delete failed;
