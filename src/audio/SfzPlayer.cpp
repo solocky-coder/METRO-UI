@@ -1427,6 +1427,18 @@ void SfzPlayer::applyPendingLoad()
     // 1:1 mapping for 16 channels / 16 groups). Must be set here, before
     // new_fluid_synth() — this cannot be changed on a live synth instance.
     // See sf2-per-channel-audio-plan.md, Scope A.
+    //
+    // IMPORTANT: audio-groups alone only controls the MIDI-channel→group
+    // *mapping* — it does NOT change how many stereo buffer pairs
+    // fluid_synth_process() actually renders into. That's governed by the
+    // separate synth.audio-channels setting, which defaults to 1. Without
+    // setting it to match, fluid_synth_process(..., 32, seg) exceeds
+    // FluidSynth's valid range (0 <= nout/2 <= fluid_synth_count_audio_channels()),
+    // and every group beyond the default single audio channel renders
+    // silence — meters/UI still work (groupScratch is still summed and
+    // measured), but there's no actual audio. Both settings must be set
+    // together, before new_fluid_synth().
+    fluid_settings_setint (settings, "synth.audio-channels", 16);
     fluid_settings_setint (settings, "synth.audio-groups", 16);
 
     synth = new_fluid_synth (settings);
