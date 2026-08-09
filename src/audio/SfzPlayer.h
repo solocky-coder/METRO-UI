@@ -413,6 +413,20 @@ private:
     // ── Scratch buffer for FluidSynth interleaved → planar conversion ─────────
     std::vector<float> scratchL, scratchR;
 
+    // ── Per-channel (audio-group) scratch buffers for real per-channel
+    //    metering (see sf2-per-channel-audio-plan.md, Scope A). When
+    //    synth.audio-groups=16 is set at synth creation, FluidSynth assigns
+    //    MIDI channel ch to audio group ch (1:1, 16 channels / 16 groups),
+    //    and fluid_synth_process() writes each group's isolated audio into
+    //    its own buffer pair instead of summing everything into one stereo
+    //    pair. groupScratch[2*ch]/groupScratch[2*ch+1] hold channel ch's own
+    //    L/R for the current block. Populated by renderSegment() in
+    //    process(), summed into scratchL/scratchR immediately afterward (so
+    //    everything downstream — volume, reverb, output mix — is unchanged),
+    //    then scanned directly by measureChannelPeaks() for real per-channel
+    //    peak levels instead of the old voice-activity proxy.
+    std::vector<float> groupScratch[32];
+
     // ── Pitch shift render buffer (SFZ only) ──────────────────────────────────
     // sfizz renders into pitchL/R at an oversampled or undersampled block size,
     // then a linear interpolating resampler writes the pitch-shifted result into
