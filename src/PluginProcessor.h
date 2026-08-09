@@ -450,31 +450,6 @@ public:
     // =========================================================================
     // Public subsystem members (accessed directly by UI)
     // =========================================================================
-
-    // ── Crash logger ────────────────────────────────────────────────────────
-    // Must stay the FIRST declared member of this class. C++ constructs
-    // members in declaration order and destroys them in the REVERSE of that
-    // order — declaring crashLogger last (as this used to do) actually makes
-    // it the FIRST member destroyed, not the last. That was a live bug: with
-    // fileLoadPool (a juce::ThreadPool) declared well below this point,
-    // background jobs (e.g. SoundFontLoader's FluidSynth preview job) call
-    // processor.crashLogger.log(...) from a worker thread, and
-    // fileLoadPool.removeAllJobs(true, 5000) in ~DysektProcessor()'s body is
-    // not guaranteed to have stopped every job within its timeout (see
-    // SoundFontLoader::discoverActiveNotesFs(), which is static and has no
-    // shouldExit() checkpoints, so it cannot be interrupted mid-probe). If a
-    // job outlived that timeout, crashLogger (and its internal
-    // juce::FileLogger) had already been destroyed by the time the job's
-    // next log() call landed — a use-after-free. Declaring it first instead
-    // means it is destroyed LAST, after every other member (including
-    // fileLoadPool), so it stays valid for the entire object lifetime as
-    // CrashLogger.h's own usage docs require ("declare before other
-    // members"). This alone doesn't make the background job itself safe to
-    // keep running past teardown — see the fileLoadPool.removeAllJobs()
-    // return-value note in the .cpp — but it removes the specific crash
-    // observed in dysekt_crash.log/.dmp.
-    CrashLogger crashLogger;
-
     juce::AudioProcessorValueTreeState apvts;
     SliceManager     sliceManager;
     VoicePool        voicePool;
@@ -1148,6 +1123,11 @@ public:
     std::vector<float> masterPitchScratchR;
 
     friend class SoundFontLoader;
+
+    // ── Crash logger ────────────────────────────────────────────────────────
+    // Declared last so it is constructed first and destroyed last,
+    // ensuring the log captures the full object lifetime.
+    CrashLogger crashLogger;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DysektProcessor)
 };

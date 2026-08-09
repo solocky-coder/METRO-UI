@@ -324,27 +324,6 @@ public:
     std::atomic<float> channelPeakL[16] {};
     std::atomic<float> channelPeakR[16] {};
 
-    /**
-     * Direct read access to this block's isolated per-channel audio (see
-     * groupScratch's doc comment, and sf2-per-channel-audio-plan.md Scope B).
-     * @p ch is 0-based (0 = MIDI channel 1). Channels 0/1 are reserved for
-     * Slicer/SFZ-Player and read as silence for SF2 purposes.
-     *
-     * AUDIO-THREAD ONLY, same-thread-as-process() ONLY: groupScratch is a
-     * plain (non-atomic) buffer written by process() and is only valid to
-     * read from the same call site, synchronously, immediately after
-     * process() returns for that block — e.g. PluginProcessor::processBlock
-     * calling this right after sfzPlayer.process() on the audio thread. Do
-     * NOT read this from the UI/message thread (use channelPeakL/R above
-     * for that) or cache the returned pointers across blocks.
-     */
-    void getChannelBuffer (int ch, const float*& outL, const float*& outR) const noexcept
-    {
-        jassert (ch >= 0 && ch < 16);
-        outL = groupScratch[2 * ch].data();
-        outR = groupScratch[2 * ch + 1].data();
-    }
-
 private:
     // ── Pending load (UI → audio thread handoff) ──────────────────────────────
     struct PendingLoad
@@ -433,20 +412,6 @@ private:
 
     // ── Scratch buffer for FluidSynth interleaved → planar conversion ─────────
     std::vector<float> scratchL, scratchR;
-
-    // ── Per-channel (audio-group) scratch buffers for real per-channel
-    //    metering (see sf2-per-channel-audio-plan.md, Scope A). When
-    //    synth.audio-groups=16 is set at synth creation, FluidSynth assigns
-    //    MIDI channel ch to audio group ch (1:1, 16 channels / 16 groups),
-    //    and fluid_synth_process() writes each group's isolated audio into
-    //    its own buffer pair instead of summing everything into one stereo
-    //    pair. groupScratch[2*ch]/groupScratch[2*ch+1] hold channel ch's own
-    //    L/R for the current block. Populated by renderSegment() in
-    //    process(), summed into scratchL/scratchR immediately afterward (so
-    //    everything downstream — volume, reverb, output mix — is unchanged),
-    //    then scanned directly by measureChannelPeaks() for real per-channel
-    //    peak levels instead of the old voice-activity proxy.
-    std::vector<float> groupScratch[32];
 
     // ── Pitch shift render buffer (SFZ only) ──────────────────────────────────
     // sfizz renders into pitchL/R at an oversampled or undersampled block size,

@@ -17,7 +17,6 @@
 #endif
 #include <cmath>
 #include <algorithm>
-#include <functional>
 
 #if DYSEKT_HAS_SFIZZ
 
@@ -532,7 +531,7 @@ private:
         }
 
         // ── Step 1: discover active notes ─────────────────────────────────────
-        std::vector<int> activeNotes = discoverActiveNotes (sfz, sampleRate, [this] { return shouldExit(); });
+        std::vector<int> activeNotes = discoverActiveNotes (sfz, sampleRate);
         if (shouldExit()) { sfizz_free (sfz); postFailure(); return jobHasFinished; }
 
         if (target == SoundFontLoadTarget::SfPlayer)
@@ -685,7 +684,7 @@ private:
         }
 
         // ── Step 1: discover active notes ─────────────────────────────────────
-        std::vector<int> activeNotes = discoverActiveNotesFs (synth, [this] { return shouldExit(); });
+        std::vector<int> activeNotes = discoverActiveNotesFs (synth);
         if (shouldExit())
         {
             delete_fluid_synth    (synth);
@@ -1178,12 +1177,7 @@ private:
     // discoverActiveNotes() to 0 results, forcing the caller into the
     // expensive full-128-note/full-duration fallback sweep even when a
     // proper probe would have found the real key range directly.
-    // See discoverActiveNotesFs() for why shouldExitFn is threaded through
-    // (this is static, so it has no access to the owning LoadJob's
-    // shouldExit()) — same fix, same reasoning, kept consistent across both
-    // backends.
-    static std::vector<int> discoverActiveNotes (sfizz_synth_t* sfz, double sampleRate,
-                                                   const std::function<bool()>& shouldExitFn)
+    static std::vector<int> discoverActiveNotes (sfizz_synth_t* sfz, double sampleRate)
     {
         const int probeSize = std::max (SfzConst::kProbeSize,
                                         (int) std::lround (sampleRate * SfzConst::kProbeDurationSec));
@@ -1200,9 +1194,6 @@ private:
 
         for (int n = 0; n <= 127; ++n)
         {
-            if (shouldExitFn && shouldExitFn())
-                break;
-
             sfizz_send_note_on (sfz, 0, n, SfzConst::kVelocity);
 
             float peak = 0.f;
@@ -1251,14 +1242,7 @@ private:
     }
 
     // FluidSynth counterpart of discoverActiveNotes().
-    // shouldExitFn is polled once per note (not more often -- each probe is
-    // already a small, bounded chunk of work) so a job asked to stop via
-    // ThreadPoolJob::shouldExit() can actually return within a fraction of a
-    // second instead of running all 128 probes unconditionally. Being static,
-    // this function has no access to the owning LoadJob's shouldExit(), so
-    // the caller passes it in explicitly -- see runJobFluidSynth().
-    static std::vector<int> discoverActiveNotesFs (fluid_synth_t* synth,
-                                                     const std::function<bool()>& shouldExitFn)
+    static std::vector<int> discoverActiveNotesFs (fluid_synth_t* synth)
     {
         std::vector<int> found;
         std::vector<float> probeL (SfzConst::kProbeSize, 0.f);
@@ -1267,9 +1251,6 @@ private:
 
         for (int n = 0; n <= 127; ++n)
         {
-            if (shouldExitFn && shouldExitFn())
-                break;
-
             std::fill (probeL.begin(), probeL.end(), 0.f);
             std::fill (probeR.begin(), probeR.end(), 0.f);
 
