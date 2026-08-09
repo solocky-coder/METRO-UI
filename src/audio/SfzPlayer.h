@@ -324,6 +324,27 @@ public:
     std::atomic<float> channelPeakL[16] {};
     std::atomic<float> channelPeakR[16] {};
 
+    /**
+     * Direct read access to this block's isolated per-channel audio (see
+     * groupScratch's doc comment, and sf2-per-channel-audio-plan.md Scope B).
+     * @p ch is 0-based (0 = MIDI channel 1). Channels 0/1 are reserved for
+     * Slicer/SFZ-Player and read as silence for SF2 purposes.
+     *
+     * AUDIO-THREAD ONLY, same-thread-as-process() ONLY: groupScratch is a
+     * plain (non-atomic) buffer written by process() and is only valid to
+     * read from the same call site, synchronously, immediately after
+     * process() returns for that block — e.g. PluginProcessor::processBlock
+     * calling this right after sfzPlayer.process() on the audio thread. Do
+     * NOT read this from the UI/message thread (use channelPeakL/R above
+     * for that) or cache the returned pointers across blocks.
+     */
+    void getChannelBuffer (int ch, const float*& outL, const float*& outR) const noexcept
+    {
+        jassert (ch >= 0 && ch < 16);
+        outL = groupScratch[2 * ch].data();
+        outR = groupScratch[2 * ch + 1].data();
+    }
+
 private:
     // ── Pending load (UI → audio thread handoff) ──────────────────────────────
     struct PendingLoad

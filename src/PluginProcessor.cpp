@@ -207,7 +207,31 @@ DysektProcessor::DysektProcessor()
                           // field (which VoicePool::startVoice() already populates for
                           // voicePool2, just like the main Slicer). See processBlock()'s
                           // SFZ-PLAYER block for the routing logic.
-                          .withOutput ("SFZ Player", juce::AudioChannelSet::stereo(), false)),
+                          .withOutput ("SFZ Player", juce::AudioChannelSet::stereo(), false)
+                          // ── SF2 per-preset dedicated outputs (Scope B-External) ──
+                          // One stereo bus per SF2 MIDI channel 3-16 (channels 1/2 are
+                          // reserved for Slicer/SFZ-Player and never carry SF2 voices —
+                          // see SfzPlayer.cpp:451-453). Deliberately separate from the
+                          // Slicer's "Out 2".."Out 16" buses above rather than sharing
+                          // them, so SF2 per-preset routing and per-slice Slicer routing
+                          // can never collide over the same DAW output. When a bus here
+                          // isn't connected, that channel's audio stays folded into the
+                          // existing "SF2 Player" bus / main mix exactly as before — see
+                          // processBlock()'s SF2 per-channel routing block.
+                          .withOutput ("SF2 Ch 3",  juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 4",  juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 5",  juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 6",  juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 7",  juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 8",  juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 9",  juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 10", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 11", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 12", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 13", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 14", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 15", juce::AudioChannelSet::stereo(), false)
+                          .withOutput ("SF2 Ch 16", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "PARAMETERS", ParamLayout::createLayout())
 {
     masterVolParam = apvts.getRawParameterValue (ParamIds::masterVolume);
@@ -3832,7 +3856,9 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     }
 
     // Collect write pointers for all enabled output buses
-    static constexpr int kMaxBuses = 18;
+    // 32 = Main(0) + Out2..Out16(1-15) + SF2 Player(16) + SFZ Player(17)
+    //    + SF2 Ch3..SF2 Ch16(18-31, Scope B-External per-preset outputs).
+    static constexpr int kMaxBuses = 32;
     float* busL[kMaxBuses] = {};
     float* busR[kMaxBuses] = {};
     int numActiveBuses = 0;
@@ -4107,6 +4133,48 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // Pass the clean, pre-filtered buffer; sfzPlayer's internal channel filter
         // now acts as a redundant safety check rather than the primary split point.
         sfzPlayer.process (sfzMidiBuf, sfzL, sfzR, numSamples);
+
+        // ── SF2 per-preset output bus routing (Scope B-External) ───────────────
+        //
+        // sfzPlayer.process() above already summed all 16 channels' isolated
+        // audio (see SfzPlayer.h groupScratch) into sfzL/sfzR, same as before
+        // Scope B. For any channel whose dedicated "SF2 Ch N" bus is connected
+        // in the host, peel that channel's contribution back out of sfzL/sfzR
+        // here and write it to its own bus instead — so a routed preset isn't
+        // double-counted in the main mix / "SF2 Player" bus, and a preset with
+        // no dedicated bus connected keeps behaving exactly as it did before
+        // this change (folded into the summed output). This is read-modify
+        // access to SfzPlayer's per-block scratch buffers, so it must happen
+        // synchronously, same-thread, immediately after process() — see
+        // SfzPlayer::getChannelBuffer()'s doc comment.
+        //
+        // Channels 0/1 (MIDI ch 1/2) are reserved for Slicer/SFZ-Player and
+        // never carry SF2 voices, so routing starts at channel index 2
+        // (MIDI channel 3) — see SfzPlayer.cpp:451-453.
+        constexpr int kSf2ChannelBusBase = 18;   // bus 18 = SF2 Ch 3 (channel idx 2)
+        for (int ch = 2; ch < 16; ++ch)
+        {
+            const int bus = kSf2ChannelBusBase + (ch - 2);
+            // Require both L and R pointers before treating this channel as
+            // routed — a stereo bus should always yield both, but falling
+            // back to "not routed" (i.e. left in the summed output) on any
+            // unexpected null is the fail-safe direction: audio stays
+            // audible in the main mix rather than silently disappearing.
+            if (bus >= numActiveBuses || busL[bus] == nullptr || busR[bus] == nullptr)
+                continue;
+
+            const float* chL = nullptr;
+            const float* chR = nullptr;
+            sfzPlayer.getChannelBuffer (ch, chL, chR);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                sfzL[i] -= chL[i];
+                sfzR[i] -= chR[i];
+                busL[bus][i] += chL[i];
+                busR[bus][i] += chR[i];
+            }
+        }
 
         // Always sum into main bus (bus 0) — same as slice behaviour
         if (busL[0])
