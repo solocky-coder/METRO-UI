@@ -561,11 +561,14 @@ void Sf2ProgramGrid::showChannelMenu (int presetIdx, juce::Point<int> screenPos)
             if (kv.first != presetIdx && kv.second == ch)
                 usedByOther = true;
 
-        // Channels 1 and 2 are permanently reserved (1=Slicer, 2=SFZ-Player) and
-        // must never be selectable for SF2, regardless of blockedMask/range state.
+        // Channels 1 and 2 are permanently reserved (1=Slicer, 2=SFZ-Player), and
+        // channel 16 is permanently reserved for preset preview (see
+        // SfzPlayer::getPreviewMidiChannel() and
+        // docs/arranger-midi-channel-routing.md, "Option 1") — none of these
+        // are ever selectable for SF2, regardless of blockedMask/range state.
         // Channels owned by chromatic slices, or currently occupied by the
         // SFZ-Player (sfzPlayer2), are also never available to the SF2 player.
-        const bool hardReserved = (ch < 3);
+        const bool hardReserved = (ch < 3) || (ch == SfzPlayer::getPreviewMidiChannel());
         const bool reserved = hardReserved || ((blockedMask & (1u << ch)) != 0u);
         const bool inRange  = (ch >= rangeLow && ch <= rangeHigh) && ! reserved;
 

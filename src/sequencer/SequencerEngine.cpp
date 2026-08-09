@@ -223,6 +223,39 @@ struct SequencerEngine::Impl
             outMidi.addEvent (juce::MidiMessage::noteOff (an.channel, an.note), samplePos);
         activeNotes.clear();
     }
+
+    //==========================================================================
+    //  Highest 0-based MIDI channel an arranger track (SF2 preset or SFZ
+    //  instrument) may be assigned. SfzPlayer::getPreviewMidiChannel() (1-based
+    //  16 = 0-based 15) is a hardcoded scratch channel used whenever the user
+    //  auditions a preset from the SF2/SFZ browser (see
+    //  docs/arranger-midi-channel-routing.md, "Option 1"). It must never be
+    //  handed out to a real arranger track, so every channel-assignment path
+    //  clamps against this instead of a literal 15. Deriving it from
+    //  SfzPlayer::getPreviewMidiChannel() rather than a second hardcoded
+    //  constant means the reservation stays correct automatically if the
+    //  preview channel ever moves.
+    //==========================================================================
+    static constexpr int kMaxArrangerChannel0Based = SfzPlayer::getPreviewMidiChannel() - 2;
+
+    /** Bitmask (bit N = 0-based MIDI channel N) of every channel currently
+     *  claimed by a ChromaticSlice track. Shared by every SF2 channel-
+     *  assignment path so a channel can never be handed to both a chromatic
+     *  slice and an SF2 preset track at once (the "vice versa" clause of the
+     *  channel-routing spec). midiChannel on a ChromaticSlice track is
+     *  stored 0-based.
+     */
+    static uint32_t computeChromaOccupiedMask (const TrackList& tracks)
+    {
+        uint32_t mask = 0u;
+        for (auto& t : tracks)
+            if (t->type == TrackType::ChromaticSlice)
+            {
+                const int ch0 = t->midiChannel.load (std::memory_order_relaxed) & 0xF;
+                mask |= (1u << ch0);
+            }
+        return mask;
+    }
 };
 
 //==============================================================================
@@ -419,14 +452,22 @@ void SequencerEngine::addSfTrack (const Sf2PresetInfo& preset, juce::Colour colo
             && t->preset.bank   == preset.bank
             && t->preset.preset == preset.preset) return;
 
-    // Assign the next available FluidSynth channel (0-15) to this track.
+    // Assign the next available FluidSynth channel to this track.
     // 0-based channels 0 and 1 (MIDI channels 1 and 2) are reserved for the
     // Slicer and SFZ-Player respectively — SF2 tracks must start at 0-based 2.
+    // Channel 16 (0-based Impl::kMaxArrangerChannel0Based+1) is reserved for
+    // preset preview and must never be handed to an arranger track, and any
+    // channel already owned by a ChromaticSlice track must be skipped too
+    // (the "vice versa" clause — see rebuildSfTracks() for the full-rebuild
+    // version of this same logic).
+    const uint32_t chromaOccupied = Impl::computeChromaOccupiedMask (*current);
     int sfCh = 2;
     for (auto& t : *current)
         if (t->type == TrackType::SfPlayer)
             sfCh = juce::jmax (sfCh, t->midiChannel.load (std::memory_order_relaxed) + 1);
-    sfCh = juce::jlimit (2, 15, sfCh);
+    while (sfCh <= Impl::kMaxArrangerChannel0Based && (chromaOccupied & (1u << sfCh)))
+        ++sfCh;
+    sfCh = juce::jlimit (2, Impl::kMaxArrangerChannel0Based, sfCh);
 
     auto track = SequencerTrack::makeSfPlayer (preset, colour);
     track->midiChannel.store (sfCh, std::memory_order_relaxed);
@@ -464,28 +505,23 @@ void SequencerEngine::rebuildSfTracks (const std::vector<Sf2PresetInfo>& presets
     // Channels already claimed by ChromaticSlice tracks must never be handed
     // out to a new SF2 preset track — otherwise a chromatic slice's live and
     // recorded MIDI ends up sharing a channel with (and triggering) an SF2
-    // preset. midiChannel on a ChromaticSlice track is stored 0-based.
-    uint32_t chromaOccupied = 0u;
-    for (auto& t : *current)
-        if (t->type == TrackType::ChromaticSlice)
-        {
-            const int ch0 = t->midiChannel.load (std::memory_order_relaxed) & 0xF;
-            chromaOccupied |= (1u << ch0);
-        }
+    // preset.
+    const uint32_t chromaOccupied = Impl::computeChromaOccupiedMask (*current);
 
     // 0-based channels 0/1 (MIDI ch 1/2) are reserved for Slicer/SFZ-Player;
-    // sequential FluidSynth channels for SF2 tracks start at 0-based 2 and
-    // skip any channel already owned by a chromatic slice.
+    // sequential FluidSynth channels for SF2 tracks start at 0-based 2, skip
+    // any channel already owned by a chromatic slice, and never reach the
+    // preview-reserved channel (kMaxArrangerChannel0Based).
     std::vector<int> assignedChannels;
     assignedChannels.reserve (presets.size());
     int nextCh = 2;
     for (int i = 0; i < (int) presets.size(); ++i)
     {
-        while (nextCh <= 15 && (chromaOccupied & (1u << nextCh)))
+        while (nextCh <= Impl::kMaxArrangerChannel0Based && (chromaOccupied & (1u << nextCh)))
             ++nextCh;
-        const int ch = juce::jmin (nextCh, 15);
+        const int ch = juce::jmin (nextCh, Impl::kMaxArrangerChannel0Based);
         assignedChannels.push_back (ch);
-        if (nextCh <= 15)
+        if (nextCh <= Impl::kMaxArrangerChannel0Based)
             ++nextCh;
 
         const juce::Colour col = paletteSize > 0
@@ -509,8 +545,9 @@ void SequencerEngine::addOrUpdateSfTrackOnChannel (const Sf2PresetInfo& preset,
                                                     juce::Colour colour)
 {
     // 0-based channels 0/1 (MIDI ch 1/2) are reserved for Slicer/SFZ-Player;
-    // SF2 tracks may only occupy 0-based channels 2-15.
-    const int ch = juce::jlimit (2, 15, midiChannel0Based);
+    // channel 16 is reserved for preset preview — SF2 tracks may only occupy
+    // 0-based channels 2..kMaxArrangerChannel0Based.
+    const int ch = juce::jlimit (2, Impl::kMaxArrangerChannel0Based, midiChannel0Based);
     bool needsPlayerUpdate = false;
 
     auto current = impl->getTracks();
@@ -548,7 +585,14 @@ void SequencerEngine::addOrUpdateSfTrackOnChannel (const Sf2PresetInfo& preset,
 void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Based,
                                     juce::Colour colour)
 {
-    const int ch = juce::jlimit (0, 15, midiChannel0Based);
+    // Channel 16 is reserved for preset preview (see
+    // Impl::kMaxArrangerChannel0Based) — never assignable to an arranger
+    // track. The low end is intentionally left at 0 here; whether the
+    // SFZ-instrument track's "PART" dropdown should be allowed to move it
+    // off its default channel 2 at all is a separate, unresolved UI
+    // question (docs/arranger-midi-channel-routing.md §5), not part of the
+    // channel-16 reservation this clamp enforces.
+    const int ch = juce::jlimit (0, Impl::kMaxArrangerChannel0Based, midiChannel0Based);
     auto current = impl->getTracks();
 
     // Only one SFZ-instrument track ever exists. If it's already there,

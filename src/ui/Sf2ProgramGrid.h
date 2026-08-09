@@ -56,8 +56,12 @@ public:
      *  Channels outside [low, high] are greyed out in the right-click menu. */
     void setChannelRange (int low, int high)
     {
-        rangeLow  = juce::jlimit (3, 16, low);
-        rangeHigh = juce::jlimit (3, 16, high);
+        // Upper bound never exceeds the last channel below the reserved
+        // preview channel (see SfzPlayer::getPreviewMidiChannel() and
+        // docs/arranger-midi-channel-routing.md, "Option 1").
+        const int maxAssignable = SfzPlayer::getPreviewMidiChannel() - 1;
+        rangeLow  = juce::jlimit (3, maxAssignable, low);
+        rangeHigh = juce::jlimit (3, maxAssignable, high);
     }
 
     /** Called by SfzDropdownPanel whenever chromaticSliceChannelMask and/or
@@ -120,7 +124,7 @@ private:
     // Maps preset index → assigned MIDI channel (1-16). 0/absent = not assigned.
     std::unordered_map<int,int> presetChannels;
     int      rangeLow    { 1 };    ///< lowest channel in sfPlayerChannelMask  — set by SfzDropdownPanel
-    int      rangeHigh   { 16 };   ///< highest channel in sfPlayerChannelMask — set by SfzDropdownPanel
+    int      rangeHigh   { 15 };   ///< highest channel in sfPlayerChannelMask — set by SfzDropdownPanel; never 16, which is reserved for preset preview
     uint32_t blockedMask { 0u };   ///< chromaticSliceChannelMask | sfzPlayer2ChannelMask — channels reserved/occupied and unavailable for SF2 assignment
     int   hoveredCell    { -1 };
     int   previewIdx     { -1 };  ///< index of currently-previewing preset, or -1
