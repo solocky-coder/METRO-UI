@@ -8,12 +8,25 @@
 //  called from the audio thread (processBlock) or UI thread (load/param set).
 //
 //  Thread safety:
-//    loadFile()           — UI thread; PendingLoad posted via atomic
+//    loadFile()           — UI thread; queues a SynthBuildJob on the caller's
+//                           juce::ThreadPool, which builds the new FluidSynth/
+//                           sfizz engine (incl. disk I/O and, for SF2,
+//                           FLUIDSYNTH_LIFECYCLE_LOCK()) entirely off the
+//                           audio thread, then publishes it via a single
+//                           atomic pointer (pendingReadyEngine).
+//    unload()              — UI thread; still posted via the pendingLoad
+//                           atomic — cheap enough (no disk I/O, no synth
+//                           construction) to apply directly on the audio
+//                           thread.
 //    setVolume/Trans()    — UI thread; stored as std::atomic<float>
 //    setPresetByIndex()   — UI thread; sets atomics + programChangePending flag
 //    prepare()            — audio thread (prepareToPlay)
-//    process()            — audio thread (processBlock); applies pending loads
-//                           and program changes at the top of each block
+//    process()            — audio thread (processBlock); applies pending
+//                           unloads and any ready background-built engine at
+//                           the top of each block, plus program changes.
+//                           applyPendingLoad() never calls new_fluid_synth(),
+//                           fluid_synth_sfload(), or touches
+//                           FLUIDSYNTH_LIFECYCLE_LOCK() — see SynthBuildJob.
 //
 //  Preset list handoff (audio → UI):
 //    After a successful sfont load the audio thread allocates a new
@@ -25,6 +38,8 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
+#include <mutex>
+#include <cstdint>
 
 #include "Sf2ChannelMixer.h"
 
@@ -327,7 +342,10 @@ public:
     std::atomic<float> channelPeakR[16] {};
 
 private:
-    // ── Pending load (UI → audio thread handoff) ──────────────────────────────
+    // ── Unload request (UI → audio thread handoff) ────────────────────────────
+    // loadFile() no longer goes through this — see SynthBuildJob below. This
+    // is now only used to signal an unload(), which is cheap enough (no disk
+    // I/O, no FluidSynth construction) to apply directly on the audio thread.
     struct PendingLoad
     {
         juce::File file;
@@ -338,6 +356,90 @@ private:
     // Stores the path of the most recently queued file (set by loadFile() on
     // the UI thread; safe to read via getPendingFilePath() at any time).
     juce::String pendingFilePath;
+
+    // Bumped by loadFile() and unload() (UI thread) every time either is
+    // called. A background SynthBuildJob captures this value when submitted
+    // and stamps it on the ReadyEngine it publishes; applyPendingLoad() only
+    // installs a ReadyEngine whose generation still matches the latest value,
+    // so a stale in-flight build can never clobber a newer load/unload call
+    // that happened while it was still running in the background.
+    std::atomic<uint64_t> requestGeneration { 0 };
+
+    // ── Background-built engine handoff (audio thread never builds) ──────────
+    // new_fluid_settings/new_fluid_synth/fluid_synth_sfload (disk I/O) — and
+    // the equivalent sfizz_create_synth/sfizz_load_file calls — used to run
+    // inline in applyPendingLoad() on the audio thread, serialized against
+    // background preview jobs via FLUIDSYNTH_LIFECYCLE_LOCK(). That's a
+    // real-time-safety violation (locking + blocking disk I/O on the audio
+    // thread) and the root cause of the crash this fixes. Now all of that
+    // construction happens in SynthBuildJob, on a juce::ThreadPool worker;
+    // applyPendingLoad() only ever does a wait-free pointer swap of the
+    // finished result. See SynthBuildJob (SfzPlayer.cpp) for the build side.
+    struct ReadyEngine
+    {
+        bool       isSfz      { false };
+        bool       ok         { false };
+        juce::File file;
+        uint64_t   generation { 0 };
+
+#if DYSEKT_HAS_FLUIDSYNTH
+        fluid_settings_t* fsSettings { nullptr };
+        fluid_synth_t*    fsSynth    { nullptr };
+        int               fsSfontId  { -1 };
+#endif
+#if DYSEKT_HAS_SFIZZ
+        sfizz_synth_t*    sfizzSynth { nullptr };
+#endif
+    };
+    std::atomic<ReadyEngine*> pendingReadyEngine { nullptr };
+
+    /** Frees a ReadyEngine's native handles + itself immediately. Background-
+     *  thread only (takes FLUIDSYNTH_LIFECYCLE_LOCK() directly) — used when a
+     *  SynthBuildJob's result is superseded before ever being published, and
+     *  during final teardown in ~SfzPlayer() (by which point the thread pool
+     *  has already been fully drained — see DysektProcessor::~DysektProcessor). */
+    static void deleteReadyEngineImmediate (ReadyEngine* ready);
+
+    /** Frees a ReadyEngine that arrived stale (superseded generation) or is
+     *  otherwise discarded by applyPendingLoad(). Audio-thread safe: retires
+     *  any live FluidSynth pair via retireFluidSynth() instead of deleting it
+     *  inline, and frees the (cheap, lock-free) sfizz handle directly. */
+    void discardReadyEngine (ReadyEngine* ready) noexcept;
+
+    /** Tears down whatever engine is currently active (audio-thread state
+     *  only — synth/settings/sfizzSynth members), retiring the FluidSynth
+     *  pair rather than deleting it inline. Shared by applyPendingLoad()'s
+     *  unload path and its "about to install a new engine" path. */
+    void tearDownCurrentEngine();
+
+#if DYSEKT_HAS_FLUIDSYNTH
+    // Old synth/settings retired here by the audio thread instead of being
+    // deleted inline, so the audio thread never touches
+    // FLUIDSYNTH_LIFECYCLE_LOCK(). Drained + actually deleted (under that
+    // lock) by the next SynthBuildJob, off the audio thread, before it builds
+    // the new instance — see drainRetiredFluidSynths().
+    struct RetiredFluid { fluid_synth_t* synth; fluid_settings_t* settings; };
+    static constexpr int kRetireRingCapacity = 32;
+    RetiredFluid retireRing[kRetireRingCapacity] {};
+    int          retireCount { 0 };     // guarded by retireRingMutex
+
+    // Metadata-only lock: its critical section is just a couple of pointer
+    // writes — no FluidSynth API calls, no disk I/O, no allocation — so
+    // unlike FLUIDSYNTH_LIFECYCLE_LOCK it can never block the audio thread
+    // for a meaningful amount of time no matter what a background job is
+    // doing. This is what makes it safe for retireFluidSynth() to take from
+    // the audio thread.
+    std::mutex retireRingMutex;
+
+    void retireFluidSynth (fluid_synth_t* s, fluid_settings_t* st) noexcept;   ///< audio thread
+    void drainRetiredFluidSynths();                                           ///< background thread only
+#endif
+
+    // Background job that builds a fresh SF2/SFZ engine off the audio
+    // thread. Nested so it gets access to SfzPlayer's private members
+    // (ReadyEngine, pendingReadyEngine, currentSR/currentBlock, etc.)
+    // without needing a separate friend declaration. Defined in SfzPlayer.cpp.
+    class SynthBuildJob;
 
     // ── Pending preset list (audio → UI handoff) ──────────────────────────────
     mutable std::atomic<std::vector<Sf2PresetInfo>*> freshPresets { nullptr };
