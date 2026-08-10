@@ -8,12 +8,20 @@
 //  called from the audio thread (processBlock) or UI thread (load/param set).
 //
 //  Thread safety:
-//    loadFile()           — UI thread; PendingLoad posted via atomic
+//    loadFile()           — UI thread; hands the file to a background
+//                           juce::ThreadPool job (buildLoadInBackground) and
+//                           returns immediately. The actual engine
+//                           construction + file load (blocking disk I/O)
+//                           happens on that background thread, NOT here and
+//                           NOT on the audio thread — a fully-built engine is
+//                           posted via the readyLoad atomic when done.
 //    setVolume/Trans()    — UI thread; stored as std::atomic<float>
 //    setPresetByIndex()   — UI thread; sets atomics + programChangePending flag
 //    prepare()            — audio thread (prepareToPlay)
-//    process()            — audio thread (processBlock); applies pending loads
-//                           and program changes at the top of each block
+//    process()            — audio thread (processBlock); applyPendingLoad()
+//                           only swaps in an already-built engine from
+//                           readyLoad (no I/O) and applies program changes
+//                           at the top of each block
 //
 //  Preset list handoff (audio → UI):
 //    After a successful sfont load the audio thread allocates a new
@@ -25,6 +33,8 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
+#include <memory>
+#include <atomic>
 
 #include "Sf2ChannelMixer.h"
 
@@ -327,13 +337,70 @@ public:
     std::atomic<float> channelPeakR[16] {};
 
 private:
-    // ── Pending load (UI → audio thread handoff) ──────────────────────────────
-    struct PendingLoad
+    // ── Background-built load, ready to be adopted by the audio thread ────────
+    // loadFile()/unload() hand the file (or unload request) to a background
+    // juce::ThreadPool job instead of doing any work themselves. That job
+    // does all the blocking work — new_fluid_settings/new_fluid_synth/
+    // fluid_synth_sfload (disk I/O) for .sf2, or sfizz_create_synth/
+    // sfizz_load_file for .sfz — off the audio thread, then publishes a
+    // fully-formed ReadyLoad. applyPendingLoad() (audio thread, called from
+    // process()) only ever does a pointer swap plus freeing the *previous*
+    // (already-loaded, already-in-memory) instance — no I/O.
+    struct ReadyLoad
     {
         juce::File file;
-        bool       shouldUnload { false };
+        bool       isSfz      { false };
+        bool       loadFailed { false };   ///< true = load attempted and failed
+                                            ///< (or this is a plain unload) —
+                                            ///< either way, applyPendingLoad()
+                                            ///< tears down and stays unloaded
+#if DYSEKT_HAS_FLUIDSYNTH
+        fluid_settings_t* settings { nullptr };
+        fluid_synth_t*    synth    { nullptr };
+        int               sfontId  { -1 };
+#endif
+#if DYSEKT_HAS_SFIZZ
+        sfizz_synth_t*    sfizzSynth { nullptr };
+#endif
     };
-    std::atomic<PendingLoad*> pendingLoad { nullptr };
+
+    // Everything a background job touches lives here, in a block kept alive
+    // by shared_ptr rather than by SfzPlayer's own lifetime. The job lambda
+    // captures a copy of this shared_ptr — never a raw `this` — so if the
+    // SfzPlayer (and its editor/processor) is destroyed while a load is still
+    // in flight, the job finishes safely against a still-live LoadContext
+    // instead of touching a dangling object. applyPendingLoad() (which DOES
+    // run as a member of a live SfzPlayer, from process()) reads through the
+    // same shared_ptr.
+    struct LoadContext
+    {
+        // Bumped by loadFile()/unload() on the UI thread; a background job
+        // checks this before publishing so a superseded job (user picked
+        // another file before the first finished loading) discards its
+        // result instead of racing an older load in ahead of a newer one.
+        std::atomic<uint64_t>   nextToken   { 0 };
+        std::atomic<uint64_t>   latestToken { 0 };
+        std::atomic<ReadyLoad*> readyLoad   { nullptr };
+    };
+    std::shared_ptr<LoadContext> loadCtx { std::make_shared<LoadContext>() };
+
+    // Sample rate / block size, read by the background load job (to configure
+    // the new synth) from a thread other than the audio thread that writes
+    // them in prepare() — atomic so that cross-thread read is well-defined.
+    std::atomic<double> currentSR    { 44100.0 };
+    std::atomic<int>    currentBlock { 256 };
+
+    /** Runs on a background ThreadPool thread via a shared_ptr<LoadContext>
+     *  capture — never touches the owning SfzPlayer directly, so it's safe
+     *  even if that SfzPlayer is destroyed before the job finishes. Does the
+     *  actual (possibly slow) engine construction + file load, then
+     *  publishes the result into ctx->readyLoad — unless a newer load/unload
+     *  was requested meanwhile (ctx->latestToken moved on), in which case it
+     *  frees its own work and discards it instead. */
+    static void buildLoadInBackground (std::shared_ptr<LoadContext> ctx,
+                                        juce::File file, uint64_t myToken,
+                                        double sampleRate, int blockSize,
+                                        bool isUnload);
 
     // Stores the path of the most recently queued file (set by loadFile() on
     // the UI thread; safe to read via getPendingFilePath() at any time).
@@ -356,8 +423,6 @@ private:
 #endif
 
     bool isSfzFile { false };   ///< true when the loaded file is .sfz
-    double   currentSR    { 44100.0 };
-    int      currentBlock { 256 };
     juce::File activeFile;
 
     // ── Shared params (atomic, UI-writable) ───────────────────────────────────
