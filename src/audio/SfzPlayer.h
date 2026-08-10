@@ -358,6 +358,24 @@ private:
         fluid_settings_t* settings { nullptr };
         fluid_synth_t*    synth    { nullptr };
         int               sfontId  { -1 };
+
+        // Built in buildLoadInBackground() by walking the just-loaded sfont's
+        // preset list — moved here (instead of applyPendingLoad() calling
+        // postPresetList() on the audio thread) because that walk allocates
+        // a juce::String per preset and large multi-bank GM/GS/XG SoundFonts
+        // (e.g. Arachno) can have thousands of presets: enough heap
+        // allocation on the audio thread to stall a block well past any
+        // callback deadline. Owned by ReadyLoad until applyPendingLoad()
+        // takes ownership via freshPresets.exchange(); freed unread in the
+        // supersede-discard path and in ~SfzPlayer() like everything else
+        // here.
+        std::vector<Sf2PresetInfo>* presetList { nullptr };
+
+        // First preset's bank/program, likewise read off the sfont in the
+        // background instead of re-iterating fluid_sfont_iteration on the
+        // audio thread in applyPendingLoad().
+        int firstBank    { 0 };
+        int firstProgram { 0 };
 #endif
 #if DYSEKT_HAS_SFIZZ
         sfizz_synth_t*    sfizzSynth { nullptr };
@@ -624,8 +642,10 @@ private:
     void sendAdsrToSfizz();
 
     /** Build and post a fresh preset list after a successful sfont load.
-     *  Called from the audio thread — no locks needed on write side. */
-    void postPresetList();
+     *  NOTE: this work now happens in buildLoadInBackground() (background
+     *  thread) instead — see ReadyLoad::presetList. This declaration/impl
+     *  is intentionally removed; kept as a comment so anyone grepping for
+     *  the old call site finds the explanation instead of a dangling ref. */
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SfzPlayer)
 };
