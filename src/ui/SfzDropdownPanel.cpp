@@ -378,7 +378,7 @@ void SfzDropdownPanel::onFileChosen (const juce::File& f)
     if (f.getFileExtension().toLowerCase() != ".sf2")
         return;   // SF2-PLAYER only accepts .sf2 — silently ignore anything else
 
-    processor.sfzPlayer.loadFile (f, processor.fileLoadPool);
+    processor.sfzPlayer.loadFile (f, processor.sfzLoadPool);
 
     // New file — any previously-requested/rendered preset bank/program is
     // now meaningless (could coincidentally match a preset number in THIS

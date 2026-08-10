@@ -938,6 +938,23 @@ public:
     // Sample loading (public so UI thread can dispatch SFZ/SF2 loads)
     // =========================================================================
     juce::ThreadPool fileLoadPool { 1 };
+    // Dedicated pool for SfzPlayer's live playback-engine build
+    // (SfzPlayer::loadFile() -> SynthBuildJob). Deliberately kept SEPARATE
+    // from fileLoadPool: SoundFontLoader's zone-builder/preview scan
+    // (queued on fileLoadPool) can legitimately take minutes for a
+    // full-range patch (up to 128 notes x ~2.8s each, see SfzConst::
+    // kNoteDurationSec/kReleaseSec in SoundFontLoader.cpp), and
+    // FluidSynthGlobalLock.h's whole design already assumes the preview
+    // job and the live-engine build run concurrently on separate threads
+    // (it serializes only instance construction/destruction, not steady-
+    // state rendering). Sharing one single-worker fileLoadPool between the
+    // two silently defeated that: the live loadFile() job would queue
+    // behind an in-flight preview scan and not run until it finished,
+    // making the plugin appear frozen while an instrument the user is
+    // actually trying to play sits unqueued. See dysekt_crash.log /
+    // session.lock pattern (no crash-handler entry, just a stale sentinel)
+    // for the observed symptom of this.
+    juce::ThreadPool sfzLoadPool { 1 };
     bool             defaultSampleScheduled { false }; // true once default or saved sample is queued
     std::atomic<int>  nextLoadToken  { 0 };
     std::atomic<int>  latestLoadToken{ 0 };

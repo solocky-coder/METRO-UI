@@ -424,7 +424,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
          // SFZ-PLAYER: .sfz only, routed to sfzPlayer2 (ch2)
          if (ext == ".sfz")
          {
-             processor.sfzPlayer2.loadFile (f, processor.fileLoadPool);
+             processor.sfzPlayer2.loadFile (f, processor.sfzLoadPool);
              processor.loadSoundFontAsync (f, SoundFontLoadTarget::SfzPlayer2);   // waveform preview -> sampleData2
 
              offerDrumKitAutoRouting (f);
@@ -2738,7 +2738,7 @@ void DysektEditor::refreshZoneBuilderPreview()
     if (! previewFile.existsAsFile())
         return;
 
-    processor.sfzPlayer2.loadFile (previewFile, processor.fileLoadPool);
+    processor.sfzPlayer2.loadFile (previewFile, processor.sfzLoadPool);
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
     // See writeSfzZoneChange's comment for why this call is required:
     // sliceManager2/sampleData2 are only populated by the async soundfont
@@ -2865,7 +2865,7 @@ void DysektEditor::commitZoneBuilderPendingZones()
         zoneBuilderScratchFile.deleteFile();
     zoneBuilderScratchFile = juce::File();
 
-    processor.sfzPlayer2.loadFile (zoneBuilderTargetSfz, processor.fileLoadPool);
+    processor.sfzPlayer2.loadFile (zoneBuilderTargetSfz, processor.sfzLoadPool);
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed);
     processor.loadSoundFontAsync (zoneBuilderTargetSfz, SoundFontLoadTarget::SfzPlayer2);
    #if DYSEKT_STANDALONE
@@ -2890,7 +2890,7 @@ void DysektEditor::discardZoneBuilderPendingZones()
 
     if (zoneBuilderTargetSfz.existsAsFile())
     {
-        processor.sfzPlayer2.loadFile (zoneBuilderTargetSfz, processor.fileLoadPool);
+        processor.sfzPlayer2.loadFile (zoneBuilderTargetSfz, processor.sfzLoadPool);
         processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed);
         processor.loadSoundFontAsync (zoneBuilderTargetSfz, SoundFontLoadTarget::SfzPlayer2);
        #if DYSEKT_STANDALONE
@@ -2945,7 +2945,7 @@ void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
             zoneBuilderScratchFile.deleteFile();
         zoneBuilderScratchFile = juce::File();
 
-        processor.sfzPlayer2.loadFile (dest, processor.fileLoadPool);
+        processor.sfzPlayer2.loadFile (dest, processor.sfzLoadPool);
         processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
         // See showZoneBuilderAddZoneOverlay's onResult for why this call is
         // required: sliceManager2/sampleData2 are only populated by the async

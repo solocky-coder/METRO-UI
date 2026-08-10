@@ -251,6 +251,10 @@ DysektProcessor::DysektProcessor()
 DysektProcessor::~DysektProcessor()
 {
     fileLoadPool.removeAllJobs (true, 5000);
+    // sfzLoadPool jobs (SynthBuildJob) hold a reference back to sfzPlayer/
+    // sfzPlayer2, which are members of *this — must be drained before this
+    // object finishes destructing, same as fileLoadPool above.
+    sfzLoadPool.removeAllJobs (true, 5000);
     exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
     delete failed;
@@ -4723,7 +4727,7 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
             const juce::File sfzFile (sfzPath);
             if (sfzFile.existsAsFile())
             {
-                sfzPlayer.loadFile (sfzFile, fileLoadPool);
+                sfzPlayer.loadFile (sfzFile, sfzLoadPool);
                 loadSoundFontAsync (sfzFile, SoundFontLoadTarget::SfPlayer);   // waveform preview -> sampleData3
                 // Store the preset index so the audio thread can select it
                 // once the soundfont finishes loading and posts its preset list.
