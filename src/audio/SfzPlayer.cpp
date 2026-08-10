@@ -1427,7 +1427,21 @@ void SfzPlayer::applyPendingLoad()
         // FluidSynth's default channel->group mapping (channel % audio_groups),
         // which is a clean 1:1 with 16 channels / 16 groups. Must be set before
         // new_fluid_synth() — it cannot be changed on a live synth instance.
-        fluid_settings_setint (settings, "synth.audio-groups", 16);
+        //
+        // synth.audio-channels MUST also be set to 16 here, in lockstep with
+        // synth.audio-groups. audio-groups only decides which internal mixer
+        // bus a channel's voices are routed to; it's audio-channels that
+        // fluid_synth_process()'s `nout` is validated against — the documented
+        // contract is 0 <= nout/2 <= fluid_synth_count_audio_channels(). We
+        // call fluid_synth_process() below with nout=32 (16 groups × L/R). If
+        // audio-channels is left at its default of 1, nout/2 (16) exceeds
+        // fluid_synth_count_audio_channels() (1) and fluid_synth_process()
+        // returns FLUID_FAILED without rendering any audio at all — synth
+        // stays completely silent even though noteon/noteoff calls succeed.
+        // (FluidSynth's library does NOT auto-derive one setting from the
+        // other; only the standalone `fluidsynth` CLI tool does that.)
+        fluid_settings_setint (settings, "synth.audio-channels", 16);
+        fluid_settings_setint (settings, "synth.audio-groups",   16);
 
         synth = new_fluid_synth (settings);
         fluid_synth_set_sample_rate (synth, (float) currentSR);
