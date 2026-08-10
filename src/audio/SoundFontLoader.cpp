@@ -3,6 +3,7 @@
 // =============================================================================
 #include "SoundFontLoader.h"
 #include "../PluginProcessor.h"
+#include "FluidSynthGlobalLock.h"
 
 #if DYSEKT_HAS_SFIZZ
   // Include sfizz C API via path relative to the project root.
@@ -628,26 +629,35 @@ private:
     {
         using namespace SfzConst;
 
-        fluid_settings_t* settings = new_fluid_settings();
-        // Deliberately dry: this is an offline, per-note probe+render pass on
-        // a shared synth instance, not the live playback path. Reverb/chorus
-        // tails are NOT flushed by fluid_synth_all_sounds_off() between notes,
-        // so leaving them on lets note N's reverb tail bleed into note N+1's
-        // silence probe — discoverActiveNotesFs() then mistakes that lingering
-        // tail for a genuine note-on, causing far more notes than are really
-        // responsive to be probed/rendered in full (slow preset switches),
-        // and dilutes the concatenated buffer's peak with quiet tail content
-        // instead of clean attacks (waveform reads as flat/dull). sfizz's
-        // preview path (used for .sfz) is dry for the same reason — matched
-        // here rather than mirroring SfzPlayer's live reverb/chorus settings.
-        fluid_settings_setint (settings, "synth.reverb.active", 0);
-        fluid_settings_setint (settings, "synth.chorus.active", 0);
+        fluid_settings_t* settings = nullptr;
+        fluid_synth_t*    synth    = nullptr;
+        int sfontId = FLUID_FAILED;
 
-        fluid_synth_t* synth = new_fluid_synth (settings);
-        fluid_synth_set_sample_rate (synth, (float) sampleRate);
-        fluid_synth_set_gain        (synth, 2.0f);   // matches SfzPlayer's live gain
+        {
+            FLUIDSYNTH_LIFECYCLE_LOCK();
 
-        const int sfontId = fluid_synth_sfload (synth, file.getFullPathName().toRawUTF8(), 1);
+            settings = new_fluid_settings();
+            // Deliberately dry: this is an offline, per-note probe+render pass on
+            // a shared synth instance, not the live playback path. Reverb/chorus
+            // tails are NOT flushed by fluid_synth_all_sounds_off() between notes,
+            // so leaving them on lets note N's reverb tail bleed into note N+1's
+            // silence probe — discoverActiveNotesFs() then mistakes that lingering
+            // tail for a genuine note-on, causing far more notes than are really
+            // responsive to be probed/rendered in full (slow preset switches),
+            // and dilutes the concatenated buffer's peak with quiet tail content
+            // instead of clean attacks (waveform reads as flat/dull). sfizz's
+            // preview path (used for .sfz) is dry for the same reason — matched
+            // here rather than mirroring SfzPlayer's live reverb/chorus settings.
+            fluid_settings_setint (settings, "synth.reverb.active", 0);
+            fluid_settings_setint (settings, "synth.chorus.active", 0);
+
+            synth = new_fluid_synth (settings);
+            fluid_synth_set_sample_rate (synth, (float) sampleRate);
+            fluid_synth_set_gain        (synth, 2.0f);   // matches SfzPlayer's live gain
+
+            sfontId = fluid_synth_sfload (synth, file.getFullPathName().toRawUTF8(), 1);
+        }
+
         const bool ok = (sfontId != FLUID_FAILED);
 
         processor.crashLogger.log ("SF2 preview (FluidSynth): fluid_synth_sfload(\"" + file.getFullPathName()
@@ -656,8 +666,11 @@ private:
 
         if (! ok || shouldExit())
         {
-            delete_fluid_synth    (synth);
-            delete_fluid_settings (settings);
+            {
+                FLUIDSYNTH_LIFECYCLE_LOCK();
+                delete_fluid_synth    (synth);
+                delete_fluid_settings (settings);
+            }
             postFailure();
             return jobHasFinished;
         }
@@ -676,8 +689,11 @@ private:
 
             if (shouldExit())
             {
-                delete_fluid_synth    (synth);
-                delete_fluid_settings (settings);
+                {
+                    FLUIDSYNTH_LIFECYCLE_LOCK();
+                    delete_fluid_synth    (synth);
+                    delete_fluid_settings (settings);
+                }
                 postFailure();
                 return jobHasFinished;
             }
@@ -687,8 +703,11 @@ private:
         std::vector<int> activeNotes = discoverActiveNotesFs (synth);
         if (shouldExit())
         {
-            delete_fluid_synth    (synth);
-            delete_fluid_settings (settings);
+            {
+                FLUIDSYNTH_LIFECYCLE_LOCK();
+                delete_fluid_synth    (synth);
+                delete_fluid_settings (settings);
+            }
             postFailure();
             return jobHasFinished;
         }
@@ -750,8 +769,11 @@ private:
             renders.push_back (std::move (nr));
         }
 
-        delete_fluid_synth    (synth);
-        delete_fluid_settings (settings);
+        {
+            FLUIDSYNTH_LIFECYCLE_LOCK();
+            delete_fluid_synth    (synth);
+            delete_fluid_settings (settings);
+        }
 
         return finishAndPost (std::move (renders), (int) activeNotes.size());
     }

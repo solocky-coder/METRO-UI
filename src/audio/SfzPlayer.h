@@ -26,6 +26,8 @@
 #include <juce_dsp/juce_dsp.h>
 #include <vector>
 
+#include "Sf2ChannelMixer.h"
+
 #if DYSEKT_HAS_FLUIDSYNTH
   #include <fluidsynth.h>
 #endif
@@ -412,6 +414,23 @@ private:
 
     // ── Scratch buffer for FluidSynth interleaved → planar conversion ─────────
     std::vector<float> scratchL, scratchR;
+
+    // ── Per-channel FluidSynth audio-group buffers (real per-channel audio) ───
+    // 16 groups × L/R = 32 independently-growable buffers, one pair per SF2
+    // MIDI channel (default FluidSynth channel→group mapping is channel %
+    // audio_groups, and audio-groups==16 makes that a clean 1:1). Deliberately
+    // std::vector, NOT a fixed-size C array: numSamples is not guaranteed to
+    // stay <= the block size passed to prepare() (see the same growth check
+    // on scratchL/R in process()), so these must be able to grow the same way
+    // or a larger-than-expected block will write past a fixed buffer's end.
+    std::vector<float> groupBuffers[32];
+
+    // ── Scope B-Internal: per-channel mixing stage ────────────────────────────
+    // Owns summing groupBuffers into the master pair, with a seam for future
+    // per-channel insert processing. See Sf2ChannelMixer.h for what this is
+    // and (importantly) is not. Solo/mute is unaffected — still CC7 at the
+    // synthesis level, not touched by this stage.
+    Sf2ChannelMixer channelMixer;
 
     // ── Pitch shift render buffer (SFZ only) ──────────────────────────────────
     // sfizz renders into pitchL/R at an oversampled or undersampled block size,

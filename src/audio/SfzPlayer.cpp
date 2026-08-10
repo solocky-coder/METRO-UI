@@ -5,6 +5,7 @@
 // =============================================================================
 #include "SfzPlayer.h"
 #include <cmath>   // std::log2, std::log10 — ADSR unit conversion (see applyFluidAdsrFromUi)
+#include "FluidSynthGlobalLock.h"
 
 #if DYSEKT_HAS_SFIZZ
   // Include sfizz C API via path relative to the project root.
@@ -70,8 +71,12 @@ SfzPlayer::~SfzPlayer()
     delete freshPresets.exchange (nullptr, std::memory_order_acq_rel);
 
 #if DYSEKT_HAS_FLUIDSYNTH
-    if (synth    != nullptr) { delete_fluid_synth    (synth);    synth    = nullptr; }
-    if (settings != nullptr) { delete_fluid_settings (settings); settings = nullptr; }
+    if (synth != nullptr || settings != nullptr)
+    {
+        FLUIDSYNTH_LIFECYCLE_LOCK();
+        if (synth    != nullptr) { delete_fluid_synth    (synth);    synth    = nullptr; }
+        if (settings != nullptr) { delete_fluid_settings (settings); settings = nullptr; }
+    }
 #endif
 
 #if DYSEKT_HAS_SFIZZ
@@ -602,6 +607,9 @@ void SfzPlayer::prepare (double sampleRate, int maxBlockSize)
     scratchL.assign ((size_t) maxBlockSize, 0.0f);
     scratchR.assign ((size_t) maxBlockSize, 0.0f);
 
+    for (auto& buf : groupBuffers)
+        buf.assign ((size_t) maxBlockSize, 0.0f);
+
     // ── Prepare post-processing reverb ────────────────────────────────────────
     {
         juce::dsp::ProcessSpec spec;
@@ -684,6 +692,14 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         scratchL.assign ((size_t) numSamples, 0.0f);
         scratchR.assign ((size_t) numSamples, 0.0f);
     }
+
+    // Same growth guarantee for the 32 per-channel group buffers — numSamples
+    // can exceed the maxBlockSize given to prepare() (host buffer-size change
+    // without a fresh prepareToPlay, etc.), and fluid_synth_process() will
+    // write numSamples frames into whatever pointers it's given regardless.
+    for (auto& buf : groupBuffers)
+        if ((int) buf.size() < numSamples)
+            buf.assign ((size_t) numSamples, 0.0f);
 
 #if DYSEKT_HAS_SFIZZ
     if (isSfzFile && sfizzSynth != nullptr)
@@ -923,8 +939,11 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     // it. See SF2_PLAYER_PHASE2_SAMPLE_ACCURATE_TIMING.md for the full design.
     //
     // fluid_synth_process ACCUMULATES — must zero before the first call.
-    std::fill (scratchL.begin(), scratchL.begin() + numSamples, 0.0f);
-    std::fill (scratchR.begin(), scratchR.begin() + numSamples, 0.0f);
+    // Render now targets the 32 per-channel group buffers instead of
+    // scratchL/R directly (real per-channel audio, not a summed pair) — all
+    // 32 must be zeroed, not just 2.
+    for (auto& buf : groupBuffers)
+        std::fill (buf.begin(), buf.begin() + numSamples, 0.0f);
 
     int renderCursor  = 0;
     int lastProcessRc = 0;   // last segment's rc, kept only for the debug log below
@@ -935,8 +954,14 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         if (span <= 0)
             return;
 
-        float* seg[2] = { scratchL.data() + renderCursor, scratchR.data() + renderCursor };
-        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 2, seg);
+        // 16 groups × L/R, each pointer offset by renderCursor so this
+        // segment lands at the right position within every group buffer —
+        // matching the offset the old 2-buffer version applied to scratchL/R.
+        float* groupSeg[32];
+        for (int g = 0; g < 32; ++g)
+            groupSeg[g] = groupBuffers[g].data() + renderCursor;
+
+        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 32, groupSeg);
         renderCursor = uptoSample;
     };
 
@@ -1078,6 +1103,14 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     // the full block in one go — same as the old single-call path.
     renderSegment (numSamples);
 
+    // ── Scope B-Internal: per-channel mixing stage sums groups to master ─────
+    // Same net effect as Scope A's inline sum (plugin output is still one
+    // summed stereo pair — everything downstream of this point is unchanged),
+    // but now goes through Sf2ChannelMixer, which is where a future
+    // per-channel insert would plug in. No inserts are installed today, so
+    // this is bit-identical to a plain sum.
+    channelMixer.sumToMaster (groupBuffers, numSamples, scratchL.data(), scratchR.data());
+
     if (sf2DebugHadNoteOnThisBlock)
     {
         float peak = 0.0f;
@@ -1146,53 +1179,40 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
 // ─────────────────────────────────────────────────────────────────────────────
 //  measureChannelPeaks
 //
-//  FluidSynth mixes all channels into a single stereo buffer — there is no
-//  per-channel audio tap.  Instead we proxy peak level using voice activity:
-//
-//    peak_ch = max over active voices on ch (velocity/127 * CC7_vol)
-//
-//  This gives a signal-present indicator that tracks note activity and volume
-//  accurately enough for a mixer VU.  Pan is not modelled (L≈R).
-//  A fast exponential decay is applied so the needle falls when voices stop.
+//  Real per-channel peak metering. Each SF2 MIDI channel is rendered into its
+//  own FluidSynth audio-group (synth.audio-groups=16, default channel%groups
+//  mapping — a clean 1:1 with 16 channels), so groupBuffers[2*ch]/[2*ch+1]
+//  are that channel's actual, already-panned L/R audio for this block. This
+//  replaces the old voice-list-scanning proxy (peak_ch = max over active
+//  voices on ch of velocity/127 * CC7_vol, with pan unmodelled / L≈R) with a
+//  real max-abs-sample measurement, so pan (CC10) and reverb/chorus tails now
+//  show up correctly per channel instead of being invisible or assumed L≈R.
+//  A fast exponential decay is applied so the needle falls when voices stop —
+//  same decay contract as before, so MixerPanel's meter drawing is unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
-void SfzPlayer::measureChannelPeaks (int /*numSamples*/)
+void SfzPlayer::measureChannelPeaks (int numSamples)
 {
     if (synth == nullptr) return;
 
-    // Collect max voice amplitude per channel
-    float chPk[16] {};
-
-    // fluid_synth_get_voicelist fills an array of fluid_voice_t* pointers.
-    // We ask for up to 256 voices; unused slots are set to nullptr.
-    static constexpr int kMaxVoices = 256;
-    fluid_voice_t* voices[kMaxVoices];
-    fluid_synth_get_voicelist (synth, voices, kMaxVoices, -1 /*all channels*/);
-
-    for (int vi = 0; vi < kMaxVoices; ++vi)
-    {
-        fluid_voice_t* v = voices[vi];
-        if (v == nullptr) break;
-        if (! fluid_voice_is_playing (v)) continue;
-
-        const int ch = fluid_voice_get_channel (v);
-        if (ch < 0 || ch >= 16) continue;
-
-        // Actual amplitude: velocity × channel CC7 volume (both 0-127)
-        const float vel    = (float) fluid_voice_get_actual_velocity (v) / 127.f;
-        const float cc7vol = channelStrips[ch].volume.load (std::memory_order_relaxed);
-        chPk[ch] = std::max (chPk[ch], vel * cc7vol);
-    }
-
-    // Store with decay — same pattern as sfzPeakL/R in PluginProcessor
     static constexpr float kDecay = 0.85f;
+
     for (int ch = 0; ch < 16; ++ch)
     {
-        const float pk = chPk[ch];
+        const float* gl = groupBuffers[2 * ch].data();
+        const float* gr = groupBuffers[2 * ch + 1].data();
+
+        float pkL = 0.0f, pkR = 0.0f;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            pkL = std::max (pkL, std::abs (gl[i]));
+            pkR = std::max (pkR, std::abs (gr[i]));
+        }
+
         channelPeakL[ch].store (
-            std::max (channelPeakL[ch].load (std::memory_order_relaxed) * kDecay, pk),
+            std::max (channelPeakL[ch].load (std::memory_order_relaxed) * kDecay, pkL),
             std::memory_order_relaxed);
         channelPeakR[ch].store (
-            std::max (channelPeakR[ch].load (std::memory_order_relaxed) * kDecay, pk),
+            std::max (channelPeakR[ch].load (std::memory_order_relaxed) * kDecay, pkR),
             std::memory_order_relaxed);
     }
 }
@@ -1320,14 +1340,18 @@ void SfzPlayer::applyPendingLoad()
     isSfzFile  = false;
 
 #if DYSEKT_HAS_FLUIDSYNTH
-    if (synth != nullptr)
+    if (synth != nullptr || settings != nullptr)
     {
-        fluid_synth_all_notes_off (synth, 0);
-        delete_fluid_synth    (synth);    synth    = nullptr;
-    }
-    if (settings != nullptr)
-    {
-        delete_fluid_settings (settings); settings = nullptr;
+        FLUIDSYNTH_LIFECYCLE_LOCK();
+        if (synth != nullptr)
+        {
+            fluid_synth_all_notes_off (synth, 0);
+            delete_fluid_synth    (synth);    synth    = nullptr;
+        }
+        if (settings != nullptr)
+        {
+            delete_fluid_settings (settings); settings = nullptr;
+        }
     }
     sfontId = -1;
 #endif
@@ -1387,27 +1411,37 @@ void SfzPlayer::applyPendingLoad()
 
     // ── SF2 path (FluidSynth) ─────────────────────────────────────────────────
 #if DYSEKT_HAS_FLUIDSYNTH
-    settings = new_fluid_settings();
+    {
+        FLUIDSYNTH_LIFECYCLE_LOCK();
+
+        settings = new_fluid_settings();
 
 #if JUCE_DEBUG
-    fluid_settings_setint (settings, "synth.verbose", 0);
+        fluid_settings_setint (settings, "synth.verbose", 0);
 #endif
 
-    fluid_settings_setint (settings, "synth.reverb.active", 1);
-    fluid_settings_setint (settings, "synth.chorus.active", 1);
+        fluid_settings_setint (settings, "synth.reverb.active", 1);
+        fluid_settings_setint (settings, "synth.chorus.active", 1);
 
-    synth = new_fluid_synth (settings);
-    fluid_synth_set_sample_rate (synth, (float) currentSR);
-    fluid_synth_set_gain        (synth, 2.0f);
+        // Real per-channel audio: one stereo audio-group per MIDI channel, using
+        // FluidSynth's default channel->group mapping (channel % audio_groups),
+        // which is a clean 1:1 with 16 channels / 16 groups. Must be set before
+        // new_fluid_synth() — it cannot be changed on a live synth instance.
+        fluid_settings_setint (settings, "synth.audio-groups", 16);
 
-    sfontId = fluid_synth_sfload (synth,
-                  owner->file.getFullPathName().toRawUTF8(), 1);
+        synth = new_fluid_synth (settings);
+        fluid_synth_set_sample_rate (synth, (float) currentSR);
+        fluid_synth_set_gain        (synth, 2.0f);
 
-    if (sfontId == FLUID_FAILED)
-    {
-        delete_fluid_synth    (synth);    synth    = nullptr;
-        delete_fluid_settings (settings); settings = nullptr;
-        return;
+        sfontId = fluid_synth_sfload (synth,
+                      owner->file.getFullPathName().toRawUTF8(), 1);
+
+        if (sfontId == FLUID_FAILED)
+        {
+            delete_fluid_synth    (synth);    synth    = nullptr;
+            delete_fluid_settings (settings); settings = nullptr;
+            return;
+        }
     }
 
     activeFile = owner->file;
