@@ -33,6 +33,8 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <memory>
+#include <atomic>
 #include "SampleData.h"   // for INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
 #include "SfzZoneColours.h"
 
@@ -125,6 +127,21 @@ struct SfzSlicePayload
     std::vector<SfzSliceDescriptor> slices;
 };
 
+// Heap-allocated payload for a failed Slicer-target load, posted via
+// ProcessorHandle::completedLoadFailure (see below). Defined here at
+// top-level, rather than nested inside DysektProcessor as it originally
+// was, because ProcessorHandle needs it and is itself built before
+// DysektProcessor is a complete type. `kind` holds the underlying int
+// value of DysektProcessor::LoadKind (LoadKindReplace/Relink/Trim) --
+// comparisons against those enumerators still work via the usual
+// enum<->int implicit conversion.
+struct FailedLoadResult
+{
+    int        token { 0 };
+    int        kind  { 0 };
+    juce::File file;
+};
+
 // =============================================================================
 //  SfzPreviewZoneStore — read-only "preview zones" for the SFZ-PLAYER tab.
 //  ─────────────────────────────────────────────────────────────────────────
@@ -195,4 +212,148 @@ struct SfzPreviewZonePayload
     // processBlock to update DysektProcessor::sf2PreviewRenderedBank/Program.
     int presetBank    = -1;
     int presetProgram = -1;
+};
+
+// =============================================================================
+//  ProcessorHandle — shared, heap-allocated state that outlives DysektProcessor.
+//  ─────────────────────────────────────────────────────────────────────────
+//  Root cause this exists to fix: SoundFontLoader::LoadJob used to hold a raw
+//  `DysektProcessor&` and write through it from a background ThreadPoolJob.
+//  fluid_synth_sfload()/sfizz_load_file() are blocking, uncancellable disk-I/O
+//  calls -- runJob() has no way to check shouldExit() while inside one. If the
+//  plugin/editor is torn down while a load is still stuck in one of those
+//  calls, ~DysektProcessor()'s fileLoadPool.removeAllJobs(true, 5000) can time
+//  out after 5s while the job is still running; DysektProcessor and everything
+//  it owns is then destroyed while the job, unaware, resumes and writes
+//  through `processor` into freed memory. That's a delayed use-after-free --
+//  it doesn't necessarily crash on the write itself, it typically surfaces a
+//  beat later at an unrelated alloc/free, which matches the "stops dead after
+//  2 log lines, no crash-handler entry" pattern this was diagnosed from.
+//
+//  Fix, mirroring SfzPlayer::BuildState (see SfzPlayer.h, which had the
+//  identical bug in SynthBuildJob and was already fixed this way): everything
+//  LoadJob needs to post its results lives in this struct instead, owned via
+//  shared_ptr. DysektProcessor holds one reference (see soundFontProcessorHandle
+//  in PluginProcessor.h, whose fields are then aliased back onto same-named
+//  reference members so every existing "processor.mainLoadInFlight" style call
+//  site elsewhere in the codebase -- SliceWaveformLcd, FileBrowserPanel,
+//  WaveformView, Sf2WaveformLcd, PluginProcessor.cpp itself -- keeps compiling
+//  and working unchanged). Every LoadJob holds its own independent shared_ptr,
+//  captured by value at construction (never a pointer back to DysektProcessor).
+//  DysektProcessor can now be destroyed at any time: an orphaned job simply
+//  keeps this struct alive via its own reference until it finishes, then drops
+//  it, and the struct is freed then -- nothing it does after that point ever
+//  dereferences the (by-then-gone) DysektProcessor.
+//
+//  Scope note: LoadJob's runJobSfizz() also calls processor.sfzPlayer/
+//  sfzPlayer2.setLoopPoints() directly (Step 3b) -- those write into small
+//  atomics owned by the live SfzPlayer engine objects themselves, not by
+//  DysektProcessor, and those objects are NOT moved into this handle (they're
+//  full audio-engine instances referenced throughout MIDI routing/mixing, well
+//  outside this fix's blast radius). processorAlive below is a best-effort
+//  mitigation for just those call sites, not a full fix -- see its comment.
+// =============================================================================
+struct ProcessorHandle
+{
+    // ── Result atomics -- identical storage processBlock already polls ──────
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    std::atomic<SampleData::SnapshotPtr> completedLoadData;
+    std::atomic<SampleData::SnapshotPtr> completedLoadData2;
+    std::atomic<SampleData::SnapshotPtr> completedLoadData3;
+#else
+    SampleData::SnapshotPtr              completedLoadData;
+    SampleData::SnapshotPtr              completedLoadData2;
+    SampleData::SnapshotPtr              completedLoadData3;
+#endif
+
+    std::atomic<FailedLoadResult*>      completedLoadFailure { nullptr };
+    std::atomic<SfzSlicePayload*>       pendingSfzSlices      { nullptr };
+    std::atomic<SfzPreviewZonePayload*> pendingPreviewZones2  { nullptr };
+    std::atomic<SfzPreviewZonePayload*> pendingPreviewZones3  { nullptr };
+
+    // Staleness-check tokens LoadJob's finishAndPost() reads on the
+    // background thread. (nextLoadToken/latestLoadToken/nextPreviewToken2/3
+    // are only ever touched from SoundFontLoader::load() on the message
+    // thread, so they stay put as ordinary DysektProcessor members -- no
+    // background-thread access, no UAF risk, no need to move them here.)
+    std::atomic<int> latestLoadKind      { 0 };   // DysektProcessor::LoadKindReplace
+    std::atomic<int> latestPreviewToken2 { 0 };
+    std::atomic<int> latestPreviewToken3 { 0 };
+
+    std::atomic<bool> mainLoadInFlight            { false };
+    std::atomic<bool> sf2PreviewRenderInFlight     { false };
+    std::atomic<bool> sfzPlayer2RebuildInFlight    { false };
+    std::atomic<bool> sfzPlayer2LcdRebuildInFlight { false };
+
+    // Set false as the very first statement in ~DysektProcessor(), before
+    // fileLoadPool.removeAllJobs() starts waiting. LoadJob checks this
+    // immediately after each blocking, uncancellable call
+    // (fluid_synth_sfload/sfizz_load_file) returns, before touching
+    // sfzPlayer/sfzPlayer2 directly. This narrows what used to be a
+    // routinely-hittable ~5-second window down to the handful of
+    // instructions between the destructor's first line and its members
+    // actually being torn down -- a large practical improvement, but NOT a
+    // formal guarantee the way the atomics above are (those are now safe
+    // unconditionally, regardless of timing, because LoadJob writes into
+    // memory this handle itself keeps alive). A fully airtight fix for the
+    // setLoopPoints() call sites would need sfzPlayer/sfzPlayer2's loop-point
+    // storage moved into their own BuildState the same way this struct now
+    // holds everything else.
+    std::atomic<bool> processorAlive { true };
+
+    // ── Diagnostic logging, independent of CrashLogger's lifetime ──────────
+    // A second FileLogger instance appending to the same crash-log file
+    // DysektProcessor::crashLogger already writes to (see initLogger()
+    // below), so LoadJob's log() calls never depend on that member -- or
+    // DysektProcessor itself -- surviving. Two FileLogger instances on the
+    // same file can interleave a line at startup; harmless for diagnostics.
+    std::unique_ptr<juce::FileLogger> logger;
+    juce::CriticalSection             loggerLock;
+
+    void initLogger (const juce::File& logFile)
+    {
+        const juce::ScopedLock sl (loggerLock);
+        logger = std::make_unique<juce::FileLogger> (logFile, "SoundFontLoader job log", 0);
+    }
+
+    void log (const juce::String& message)
+    {
+        const juce::ScopedLock sl (loggerLock);
+        if (logger != nullptr)
+            logger->logMessage (message);
+    }
+
+    // ── Result-atomic exchange helpers ──────────────────────────────────────
+    // Same logic as DysektProcessor::exchangeCompletedLoadData()/2()/3()
+    // (which now just forward here), pulled onto ProcessorHandle itself so
+    // LoadJob can call these without needing a live DysektProcessor at all.
+    SampleData::SnapshotPtr exchangeCompletedLoadData (SampleData::SnapshotPtr newValue)
+    {
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+        return completedLoadData.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+        return std::atomic_exchange_explicit (&completedLoadData, std::move (newValue),
+                                              std::memory_order_acq_rel);
+#endif
+    }
+
+    SampleData::SnapshotPtr exchangeCompletedLoadData2 (SampleData::SnapshotPtr newValue)
+    {
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+        return completedLoadData2.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+        return std::atomic_exchange_explicit (&completedLoadData2, std::move (newValue),
+                                              std::memory_order_acq_rel);
+#endif
+    }
+
+    SampleData::SnapshotPtr exchangeCompletedLoadData3 (SampleData::SnapshotPtr newValue)
+    {
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+        return completedLoadData3.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+        return std::atomic_exchange_explicit (&completedLoadData3, std::move (newValue),
+                                              std::memory_order_acq_rel);
+#endif
+    }
 };

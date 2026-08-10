@@ -823,12 +823,11 @@ private:
     // =========================================================================
     // Private types
     // =========================================================================
-    struct FailedLoadResult
-    {
-        int        token { 0 };
-        LoadKind   kind  { LoadKindReplace };
-        juce::File file;
-    };
+    // Moved to a top-level struct in SoundFontLoader.h (see ProcessorHandle's
+    // comment) so LoadJob can post one without needing a complete
+    // DysektProcessor type. Aliased back here so every existing local
+    // `FailedLoadResult` usage in this file keeps compiling unchanged.
+    using FailedLoadResult = ::FailedLoadResult;
 
     // =========================================================================
     // Private helpers
@@ -956,9 +955,21 @@ public:
     // for the observed symptom of this.
     juce::ThreadPool sfzLoadPool { 1 };
     bool             defaultSampleScheduled { false }; // true once default or saved sample is queued
+    // Shared, heap-allocated state SoundFontLoader::LoadJob posts its results
+    // through instead of holding a raw DysektProcessor& -- see
+    // ProcessorHandle's full comment in SoundFontLoader.h for why (a
+    // background-thread use-after-free fixed to mirror SfzPlayer::BuildState).
+    // Every field below that LoadJob touches on its background thread is a
+    // reference alias into this handle rather than a direct member, so the
+    // handle -- not DysektProcessor -- owns the actual storage; everything
+    // else in the codebase that reads/writes these fields by name keeps
+    // working exactly as before. Declared before the aliases so it's
+    // constructed first.
+    std::shared_ptr<ProcessorHandle> soundFontProcessorHandle { std::make_shared<ProcessorHandle>() };
+
     std::atomic<int>  nextLoadToken  { 0 };
     std::atomic<int>  latestLoadToken{ 0 };
-    std::atomic<int>  latestLoadKind { (int) LoadKindReplace };
+    std::atomic<int>& latestLoadKind = soundFontProcessorHandle->latestLoadKind;
 
     /** Generation-token pair for the SFZ-PLAYER preview pipeline
      *  (completedLoadData2/pendingPreviewZones2), mirroring
@@ -977,7 +988,7 @@ public:
      *  result carries the token it was built for, and processBlock discards
      *  the result if a newer load has been requested since. */
     std::atomic<int>  nextPreviewToken2  { 0 };
-    std::atomic<int>  latestPreviewToken2{ 0 };
+    std::atomic<int>& latestPreviewToken2 = soundFontProcessorHandle->latestPreviewToken2;
 
     /** Same guard as nextPreviewToken2/latestPreviewToken2 above, for the
      *  SF2-PLAYER preview pipeline (completedLoadData3/pendingPreviewZones3).
@@ -986,19 +997,22 @@ public:
      *  risk applies -- e.g. clicking two preset rows in Sf2InstrumentWorkspace
      *  in quick succession. Bumped and checked identically. */
     std::atomic<int>  nextPreviewToken3  { 0 };
-    std::atomic<int>  latestPreviewToken3{ 0 };
+    std::atomic<int>& latestPreviewToken3 = soundFontProcessorHandle->latestPreviewToken3;
     // Holds the fully-prepared payload for the primary (Slicer) sample-load
     // pipeline. Built as a SnapshotPtr entirely on the loader worker thread
     // (see requestSampleLoad()'s onSuccess lambda) so that processBlock()
     // only ever performs a non-allocating pointer/refcount swap when it
     // consumes this -- see SampleData::applyDecodedSample().
+    // (Storage now lives in soundFontProcessorHandle -- see ProcessorHandle
+    // in SoundFontLoader.h -- so LoadJob's background-thread postings can't
+    // outlive it; this is a reference alias, not the storage itself.)
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    std::atomic<SampleData::SnapshotPtr> completedLoadData;
+    std::atomic<SampleData::SnapshotPtr>& completedLoadData = soundFontProcessorHandle->completedLoadData;
 #else
-    SampleData::SnapshotPtr              completedLoadData;
+    SampleData::SnapshotPtr&              completedLoadData = soundFontProcessorHandle->completedLoadData;
 #endif
-    std::atomic<FailedLoadResult*>          completedLoadFailure { nullptr };
-    std::atomic<SfzSlicePayload*>           pendingSfzSlices     { nullptr };
+    std::atomic<FailedLoadResult*>& completedLoadFailure = soundFontProcessorHandle->completedLoadFailure;
+    std::atomic<SfzSlicePayload*>&  pendingSfzSlices      = soundFontProcessorHandle->pendingSfzSlices;
 
     /** Second, independent load-result pipeline for the SFZ-PLAYER's preview
      *  buffer (sampleData2). Populated by loadSoundFontAsync(file,
@@ -1009,9 +1023,9 @@ public:
      *  non-allocating pointer/refcount swap -- never a unique_ptr->shared_ptr
      *  control-block allocation. */
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    std::atomic<SampleData::SnapshotPtr> completedLoadData2;
+    std::atomic<SampleData::SnapshotPtr>& completedLoadData2 = soundFontProcessorHandle->completedLoadData2;
 #else
-    SampleData::SnapshotPtr              completedLoadData2;
+    SampleData::SnapshotPtr&              completedLoadData2 = soundFontProcessorHandle->completedLoadData2;
 #endif
 
     /** Heap-allocated zone payload posted by SoundFontLoader for a
@@ -1020,7 +1034,7 @@ public:
      *  processBlock turns each descriptor into a REAL slice in
      *  sliceManager2 (see Slice::nextSliceIdx for the loop-region
      *  two-slice split), not a read-only display overlay. */
-    std::atomic<SfzPreviewZonePayload*> pendingPreviewZones2 { nullptr };
+    std::atomic<SfzPreviewZonePayload*>& pendingPreviewZones2 = soundFontProcessorHandle->pendingPreviewZones2;
 
     /** Third, independent load-result pipeline for the SF2-PLAYER's preview
      *  buffer (sampleData3). Populated by loadSoundFontAsync(file,
@@ -1029,11 +1043,11 @@ public:
      *  completedLoadData2/pendingPreviewZones2 exactly, including the
      *  worker-thread-built SnapshotPtr. */
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    std::atomic<SampleData::SnapshotPtr> completedLoadData3;
+    std::atomic<SampleData::SnapshotPtr>& completedLoadData3 = soundFontProcessorHandle->completedLoadData3;
 #else
-    SampleData::SnapshotPtr              completedLoadData3;
+    SampleData::SnapshotPtr&              completedLoadData3 = soundFontProcessorHandle->completedLoadData3;
 #endif
-    std::atomic<SfzPreviewZonePayload*>     pendingPreviewZones3 { nullptr };
+    std::atomic<SfzPreviewZonePayload*>& pendingPreviewZones3 = soundFontProcessorHandle->pendingPreviewZones3;
 
     /** SF2-PLAYER per-preset waveform preview state. sampleData3/previewZones3
      *  used to be locked to whichever preset the .sf2 file defaulted to at
@@ -1045,7 +1059,7 @@ public:
     std::atomic<int>  sf2PreviewRenderedProgram  { -1 };
     std::atomic<int>  sf2PreviewRequestedBank    { -1 };
     std::atomic<int>  sf2PreviewRequestedProgram { -1 };
-    std::atomic<bool> sf2PreviewRenderInFlight   { false };
+    std::atomic<bool>& sf2PreviewRenderInFlight = soundFontProcessorHandle->sf2PreviewRenderInFlight;
 
     /** Mirrors sf2PreviewRenderInFlight, but for the Slicer/SFZ-PLAYER kit
      *  load pipeline (completedLoadData / completedLoadData2). Set true in
@@ -1055,7 +1069,7 @@ public:
      *  load bails out early. Checked by SliceWaveformLcd::drawNoData() so a
      *  kit loading in the background shows a loading state instead of the
      *  stale/empty "EMPTY" view. */
-    std::atomic<bool> mainLoadInFlight           { false };
+    std::atomic<bool>& mainLoadInFlight = soundFontProcessorHandle->mainLoadInFlight;
 
     /** Scoped exclusively to the SFZ-PLAYER preview rebuild pipeline
      *  (SoundFontLoadTarget::SfzPlayer2) -- unlike mainLoadInFlight above,
@@ -1081,8 +1095,8 @@ public:
      *  places mainLoadInFlight is cleared for that target: processBlock's
      *  decoded2 branch, and postFailure() (including the empty-render
      *  "all zones deleted" path -- see SoundFontLoader::finishAndPost). */
-    std::atomic<bool> sfzPlayer2RebuildInFlight    { false };
-    std::atomic<bool> sfzPlayer2LcdRebuildInFlight { false };
+    std::atomic<bool>& sfzPlayer2RebuildInFlight    = soundFontProcessorHandle->sfzPlayer2RebuildInFlight;
+    std::atomic<bool>& sfzPlayer2LcdRebuildInFlight = soundFontProcessorHandle->sfzPlayer2LcdRebuildInFlight;
 
 
     // =========================================================================

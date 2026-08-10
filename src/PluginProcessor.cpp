@@ -210,6 +210,11 @@ DysektProcessor::DysektProcessor()
                           .withOutput ("SFZ Player", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "PARAMETERS", ParamLayout::createLayout())
 {
+    // Give LoadJob's ProcessorHandle its own diagnostic logger, appending to
+    // the same file crashLogger already writes to -- see ProcessorHandle's
+    // comment in SoundFontLoader.h.
+    soundFontProcessorHandle->initLogger (crashLogger.getLogFile());
+
     masterVolParam = apvts.getRawParameterValue (ParamIds::masterVolume);
     bpmParam       = apvts.getRawParameterValue (ParamIds::defaultBpm);
     pitchParam     = apvts.getRawParameterValue (ParamIds::defaultPitch);
@@ -250,6 +255,16 @@ DysektProcessor::DysektProcessor()
 
 DysektProcessor::~DysektProcessor()
 {
+    // Very first statement, deliberately before removeAllJobs() below even
+    // starts waiting -- see ProcessorHandle::processorAlive's comment in
+    // SoundFontLoader.h. Everything else LoadJob posts results through
+    // (completedLoadData*/pendingSfzSlices/etc.) is safe unconditionally,
+    // because that storage now lives in soundFontProcessorHandle itself and
+    // an orphaned job keeps it alive via its own shared_ptr; this flag only
+    // gates the small remaining set of calls (sfzPlayer/sfzPlayer2
+    // .setLoopPoints()) that still reach directly into DysektProcessor.
+    soundFontProcessorHandle->processorAlive.store (false, std::memory_order_release);
+
     fileLoadPool.removeAllJobs (true, 5000);
     // sfzLoadPool jobs (SynthBuildJob) no longer hold a reference back to
     // sfzPlayer/sfzPlayer2 — each job carries its own shared_ptr<BuildState>
@@ -352,32 +367,20 @@ void DysektProcessor::releaseResources() {}
 
 SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData (SampleData::SnapshotPtr newValue)
 {
-#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    return completedLoadData.exchange (std::move (newValue), std::memory_order_acq_rel);
-#else
-    return std::atomic_exchange_explicit (&completedLoadData, std::move (newValue),
-                                          std::memory_order_acq_rel);
-#endif
+    // Storage lives in soundFontProcessorHandle now (see ProcessorHandle in
+    // SoundFontLoader.h) -- forward there so this and LoadJob's own calls to
+    // ProcessorHandle::exchangeCompletedLoadData() share one implementation.
+    return soundFontProcessorHandle->exchangeCompletedLoadData (std::move (newValue));
 }
 
 SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData2 (SampleData::SnapshotPtr newValue)
 {
-#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    return completedLoadData2.exchange (std::move (newValue), std::memory_order_acq_rel);
-#else
-    return std::atomic_exchange_explicit (&completedLoadData2, std::move (newValue),
-                                          std::memory_order_acq_rel);
-#endif
+    return soundFontProcessorHandle->exchangeCompletedLoadData2 (std::move (newValue));
 }
 
 SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData3 (SampleData::SnapshotPtr newValue)
 {
-#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    return completedLoadData3.exchange (std::move (newValue), std::memory_order_acq_rel);
-#else
-    return std::atomic_exchange_explicit (&completedLoadData3, std::move (newValue),
-                                          std::memory_order_acq_rel);
-#endif
+    return soundFontProcessorHandle->exchangeCompletedLoadData3 (std::move (newValue));
 }
 
 void DysektProcessor::requestSampleLoad (const juce::File& file, LoadKind kind)
