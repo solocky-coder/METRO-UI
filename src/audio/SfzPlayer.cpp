@@ -64,34 +64,8 @@ SfzPlayer::SfzPlayer()
 
 SfzPlayer::~SfzPlayer()
 {
-    // Bump the token so any in-flight background job (which holds its own
-    // shared_ptr copy of loadCtx and so is safe to keep running after this
-    // destructor returns) discards its result instead of publishing into a
-    // LoadContext nothing will ever drain again. Then free whatever the
-    // background job already published, so we don't leak in the common case
-    // (no job in flight, or it finished before we got here).
-    loadCtx->latestToken.fetch_add (1, std::memory_order_acq_rel);
-
-    if (auto* rl = loadCtx->readyLoad.exchange (nullptr, std::memory_order_acq_rel))
-    {
-#if DYSEKT_HAS_FLUIDSYNTH
-        if (rl->synth != nullptr || rl->settings != nullptr)
-        {
-            FLUIDSYNTH_LIFECYCLE_LOCK();
-            if (rl->synth)    delete_fluid_synth    (rl->synth);
-            if (rl->settings) delete_fluid_settings (rl->settings);
-        }
-        delete rl->presetList;
-#endif
-#if DYSEKT_HAS_SFIZZ
-        if (rl->sfizzSynth != nullptr) sfizz_free (rl->sfizzSynth);
-#endif
-        delete rl;
-    }
-    // Note: in the rare case a job is still running at this exact moment, it
-    // will do its own check-and-discard against the (still-alive, shared_ptr
-    // -owned) loadCtx after this destructor returns — see
-    // buildLoadInBackground(). Nothing here ever touches `this` unsafely.
+    // Drain any pending load so we don't leak.
+    delete pendingLoad.exchange (nullptr, std::memory_order_acq_rel);
 
     // Drain any pending preset list.
     delete freshPresets.exchange (nullptr, std::memory_order_acq_rel);
@@ -116,182 +90,19 @@ SfzPlayer::~SfzPlayer()
 
 void SfzPlayer::loadFile (const juce::File& f, juce::ThreadPool& pool)
 {
-    pendingFilePath = f.getFullPathName();   // record immediately for UI queries
-    teardownPool.store (&pool, std::memory_order_release);   // see applyPendingLoad()
-
-    const uint64_t myToken = loadCtx->nextToken.fetch_add (1, std::memory_order_relaxed) + 1;
-    loadCtx->latestToken.store (myToken, std::memory_order_release);
-
-    const double sr    = currentSR   .load (std::memory_order_relaxed);
-    const int    block = currentBlock.load (std::memory_order_relaxed);
-
-    // Capture ctx by value (shared_ptr, keeps LoadContext alive independent
-    // of `this`) — nothing in this job ever touches the SfzPlayer object.
-    auto ctx = loadCtx;
-    pool.addJob ([ctx, f, myToken, sr, block]
-    {
-        buildLoadInBackground (ctx, f, myToken, sr, block, false);
-    });
+    juce::ignoreUnused (pool);
+    pendingFilePath  = f.getFullPathName();   // record immediately for UI queries
+    auto* pkg        = new PendingLoad();
+    pkg->file        = f;
+    pkg->shouldUnload = false;
+    delete pendingLoad.exchange (pkg, std::memory_order_acq_rel);
 }
 
 void SfzPlayer::unload()
 {
-    const uint64_t myToken = loadCtx->nextToken.fetch_add (1, std::memory_order_relaxed) + 1;
-    loadCtx->latestToken.store (myToken, std::memory_order_release);
-
-    // Unloading is cheap (no file I/O) — publish directly rather than
-    // bouncing through a ThreadPool job. An empty/loadFailed ReadyLoad is
-    // exactly the "unload" signal applyPendingLoad() already understands.
-    auto* rl = new ReadyLoad();
-    rl->loadFailed = true;
-    delete loadCtx->readyLoad.exchange (rl, std::memory_order_acq_rel);
-}
-
-// static
-void SfzPlayer::buildLoadInBackground (std::shared_ptr<LoadContext> ctx,
-                                        juce::File file, uint64_t myToken,
-                                        double sampleRate, int blockSize,
-                                        bool isUnload)
-{
-    auto rl = std::make_unique<ReadyLoad>();
-    rl->file = file;
-
-    if (! isUnload)
-    {
-        const auto ext = file.getFileExtension().toLowerCase();
-
-#if DYSEKT_HAS_SFIZZ
-        if (ext == ".sfz")
-        {
-            rl->isSfz = true;
-            auto* sfz = sfizz_create_synth();
-            sfizz_set_sample_rate       (sfz, (float) sampleRate);
-            sfizz_set_samples_per_block (sfz, blockSize);
-
-            if (! sfizz_load_file (sfz, file.getFullPathName().toRawUTF8()))
-            {
-                sfizz_free (sfz);
-                rl->loadFailed = true;
-            }
-            else
-            {
-                rl->sfizzSynth = sfz;
-            }
-        }
-        else
-#endif
-#if DYSEKT_HAS_FLUIDSYNTH
-        if (ext == ".sf2")
-        {
-            FLUIDSYNTH_LIFECYCLE_LOCK();   // still guards lifecycle calls
-                                            // process-wide (see
-                                            // FluidSynthGlobalLock.h) — this
-                                            // is now the ONLY place on any
-                                            // thread that can block for a
-                                            // meaningful time under this
-                                            // lock while actually loading a
-                                            // file, and it's a background
-                                            // thread, not the audio thread.
-            rl->settings = new_fluid_settings();
-#if JUCE_DEBUG
-            fluid_settings_setint (rl->settings, "synth.verbose", 0);
-#endif
-            fluid_settings_setint (rl->settings, "synth.reverb.active", 1);
-            fluid_settings_setint (rl->settings, "synth.chorus.active", 1);
-
-            // See the note at the live-load call site in the pre-refactor
-            // version of this file for why both settings are needed together.
-            fluid_settings_setint (rl->settings, "synth.audio-channels", 16);
-            fluid_settings_setint (rl->settings, "synth.audio-groups",   16);
-
-            rl->synth = new_fluid_synth (rl->settings);
-            fluid_synth_set_sample_rate (rl->synth, (float) sampleRate);
-            fluid_synth_set_gain        (rl->synth, 2.0f);
-
-            rl->sfontId = fluid_synth_sfload (rl->synth,
-                              file.getFullPathName().toRawUTF8(), 1);
-
-            if (rl->sfontId == FLUID_FAILED)
-            {
-                delete_fluid_synth    (rl->synth);    rl->synth    = nullptr;
-                delete_fluid_settings (rl->settings); rl->settings = nullptr;
-                rl->loadFailed = true;
-            }
-            else
-            {
-                // Build the preset list and seed the first bank/program here,
-                // on this background thread, while the sfont is already in
-                // memory and nothing else is touching this throwaway synth
-                // instance yet. Moved out of applyPendingLoad() (audio
-                // thread) — see the comment on ReadyLoad::presetList: walking
-                // every preset and heap-allocating a juce::String per name is
-                // fine here, but stalls the audio callback for large
-                // multi-bank GM/GS/XG SoundFonts (thousands of presets).
-                auto* list = new std::vector<Sf2PresetInfo>();
-
-                if (auto* sfont = fluid_synth_get_sfont_by_id (rl->synth, rl->sfontId))
-                {
-                    fluid_sfont_iteration_start (sfont);
-                    bool first = true;
-                    for (fluid_preset_t* p = fluid_sfont_iteration_next (sfont);
-                         p != nullptr;
-                         p = fluid_sfont_iteration_next (sfont))
-                    {
-                        Sf2PresetInfo info;
-                        info.bank   = fluid_preset_get_banknum (p);
-                        info.preset = fluid_preset_get_num     (p);
-                        info.name   = juce::String::fromUTF8   (fluid_preset_get_name (p));
-                        list->push_back (info);
-
-                        if (first)
-                        {
-                            rl->firstBank    = info.bank;
-                            rl->firstProgram = info.preset;
-                            first = false;
-                        }
-                    }
-                }
-
-                rl->presetList = list;
-            }
-        }
-        else
-#endif
-        {
-            rl->loadFailed = true;   // unrecognised extension, or backend
-                                      // not compiled in for this file type
-        }
-    }
-    else
-    {
-        rl->loadFailed = true;   // plain unload
-    }
-
-    // Supersede check: if a newer load/unload was requested (or the owning
-    // SfzPlayer was destroyed — its destructor bumps latestToken too) while
-    // we were working, our result is stale. Free it right here on this
-    // background thread instead of publishing it; nothing else can be
-    // touching these particular instances yet, so this is safe with no
-    // further synchronization beyond the lifecycle lock for the FluidSynth
-    // calls.
-    if (myToken != ctx->latestToken.load (std::memory_order_acquire))
-    {
-#if DYSEKT_HAS_FLUIDSYNTH
-        if (rl->synth != nullptr || rl->settings != nullptr)
-        {
-            FLUIDSYNTH_LIFECYCLE_LOCK();
-            if (rl->synth)    delete_fluid_synth    (rl->synth);
-            if (rl->settings) delete_fluid_settings (rl->settings);
-        }
-        delete rl->presetList;
-#endif
-#if DYSEKT_HAS_SFIZZ
-        if (rl->sfizzSynth != nullptr) sfizz_free (rl->sfizzSynth);
-#endif
-        return;
-    }
-
-    delete ctx->readyLoad.exchange (rl.release(), std::memory_order_acq_rel);
+    auto* pkg        = new PendingLoad();
+    pkg->shouldUnload = true;
+    delete pendingLoad.exchange (pkg, std::memory_order_acq_rel);
 }
 
 void SfzPlayer::setVolume      (float g) { volume.store (g, std::memory_order_relaxed); }
@@ -790,8 +601,8 @@ std::vector<Sf2PresetInfo> SfzPlayer::getPresetList() const
 
 void SfzPlayer::prepare (double sampleRate, int maxBlockSize)
 {
-    currentSR   .store (sampleRate,   std::memory_order_relaxed);
-    currentBlock.store (maxBlockSize, std::memory_order_relaxed);
+    currentSR    = sampleRate;
+    currentBlock = maxBlockSize;
 
     scratchL.assign ((size_t) maxBlockSize, 0.0f);
     scratchR.assign ((size_t) maxBlockSize, 0.0f);
@@ -1517,35 +1328,13 @@ void SfzPlayer::applyFluidFilterFromUi()
 
 void SfzPlayer::applyPendingLoad()
 {
-    auto* rl = loadCtx->readyLoad.exchange (nullptr, std::memory_order_acq_rel);
-    if (rl == nullptr)
+    auto* pkg = pendingLoad.exchange (nullptr, std::memory_order_acq_rel);
+    if (pkg == nullptr)
         return;
 
-    std::unique_ptr<ReadyLoad> incoming (rl);
-
-    sf2DebugLog ("applyPendingLoad(): adopting new ReadyLoad — isSfz="
-        + juce::String ((int) incoming->isSfz)
-        + " loadFailed=" + juce::String ((int) incoming->loadFailed)
-        + " file=\"" + incoming->file.getFullPathName() + "\"");
+    std::unique_ptr<PendingLoad> owner (pkg);
 
     // ── Tear down whatever is currently loaded ────────────────────────────────
-    // IMPORTANT: this used to free the previous FluidSynth/sfizz engine right
-    // here, synchronously, under FLUIDSYNTH_LIFECYCLE_LOCK() — on the AUDIO
-    // THREAD. That's the same lock buildLoadInBackground() holds for the
-    // *entire duration* of fluid_synth_sfload() (real disk I/O) while
-    // building the NEW engine on a background thread. So on any load after
-    // the first one in a session — e.g. a state-restore reload at startup
-    // followed by the user picking a different SF2 — the audio thread could
-    // block here for as long as that background sfload takes, reproducing
-    // the exact class of stall this async-load design was meant to
-    // eliminate (see the header comment for the file), just moved from "the
-    // load itself blocks" to "tearing down the old engine blocks waiting on
-    // a lock the loader is holding".
-    //
-    // Fix: never call the FluidSynth/sfizz lifecycle functions here. Just
-    // detach the old pointers and hand them to a background job (the same
-    // pool loadFile() was given) which frees them under the lock off-thread.
-    // Nothing below this point does I/O or can block.
     loaded.store (false, std::memory_order_release);
     activeFile = juce::File();
     isSfzFile  = false;
@@ -1553,43 +1342,15 @@ void SfzPlayer::applyPendingLoad()
 #if DYSEKT_HAS_FLUIDSYNTH
     if (synth != nullptr || settings != nullptr)
     {
-        fluid_synth_t*    oldSynth    = synth;
-        fluid_settings_t* oldSettings = settings;
-        synth    = nullptr;
-        settings = nullptr;
-
-        auto* pool = teardownPool.load (std::memory_order_acquire);
-        sf2DebugLog ("applyPendingLoad(): scheduling background teardown of "
-                     "previous FluidSynth engine (pool=" + juce::String::toHexString ((juce::pointer_sized_int) pool) + ")");
-
-        if (pool != nullptr)
+        FLUIDSYNTH_LIFECYCLE_LOCK();
+        if (synth != nullptr)
         {
-            pool->addJob ([oldSynth, oldSettings]
-            {
-                FLUIDSYNTH_LIFECYCLE_LOCK();
-                if (oldSynth != nullptr)
-                {
-                    fluid_synth_all_notes_off (oldSynth, 0);
-                    delete_fluid_synth (oldSynth);
-                }
-                if (oldSettings != nullptr)
-                    delete_fluid_settings (oldSettings);
-            });
+            fluid_synth_all_notes_off (synth, 0);
+            delete_fluid_synth    (synth);    synth    = nullptr;
         }
-        else
+        if (settings != nullptr)
         {
-            // Defensive fallback only — should be unreachable, since
-            // teardownPool is set by loadFile() before any engine can exist
-            // to tear down. Better a rare, small, lock-guarded stall here
-            // than a leak if it ever does happen.
-            FLUIDSYNTH_LIFECYCLE_LOCK();
-            if (oldSynth != nullptr)
-            {
-                fluid_synth_all_notes_off (oldSynth, 0);
-                delete_fluid_synth (oldSynth);
-            }
-            if (oldSettings != nullptr)
-                delete_fluid_settings (oldSettings);
+            delete_fluid_settings (settings); settings = nullptr;
         }
     }
     sfontId = -1;
@@ -1598,19 +1359,9 @@ void SfzPlayer::applyPendingLoad()
 #if DYSEKT_HAS_SFIZZ
     if (sfizzSynth != nullptr)
     {
-        // Silencing is cheap/real-time-safe and stays here so playback cuts
-        // out immediately; only the actual free is deferred.
         sfizz_all_sound_off (sfizzSynth);
-        sfizz_synth_t* oldSfizz = sfizzSynth;
+        sfizz_free (sfizzSynth);
         sfizzSynth = nullptr;
-
-        auto* pool = teardownPool.load (std::memory_order_acquire);
-        sf2DebugLog ("applyPendingLoad(): scheduling background teardown of previous sfizz engine");
-
-        if (pool != nullptr)
-            pool->addJob ([oldSfizz] { sfizz_free (oldSfizz); });
-        else
-            sfizz_free (oldSfizz);   // defensive fallback — see FluidSynth branch above
     }
 #endif
 
@@ -1621,30 +1372,37 @@ void SfzPlayer::applyPendingLoad()
     // Clear any stale per-channel preset assignments from a previous load.
     clearChannelPresets();
 
-    if (incoming->loadFailed)
-        return;   // plain unload, or the background job's load attempt failed
+    if (owner->shouldUnload)
+        return;
 
-    // ── Adopt the fully-built engine the background job already loaded ───────
+    const auto ext = owner->file.getFileExtension().toLowerCase();
 
     // ── SFZ path (sfizz) ─────────────────────────────────────────────────────
 #if DYSEKT_HAS_SFIZZ
-    if (incoming->isSfz)
+    if (ext == ".sfz")
     {
         isSfzFile  = true;
-        sfizzSynth = incoming->sfizzSynth;
+        sfizzSynth = sfizz_create_synth();
+        sfizz_set_sample_rate       (sfizzSynth, (float) currentSR);
+        sfizz_set_samples_per_block (sfizzSynth, currentBlock);
 
-        activeFile = incoming->file;
+        if (! sfizz_load_file (sfizzSynth, owner->file.getFullPathName().toRawUTF8()))
+        {
+            sfizz_free (sfizzSynth);
+            sfizzSynth = nullptr;
+            isSfzFile  = false;
+            return;
+        }
+
+        activeFile = owner->file;
         loaded.store (true, std::memory_order_release);
-
-        sf2DebugLog ("applyPendingLoad(): sfizz engine adopted successfully — file=\""
-                     + incoming->file.getFullPathName() + "\"");
 
         // Re-apply pan (sfizz responds to CC10)
         setPan (pan.load (std::memory_order_relaxed));
 
         // Post a single dummy preset entry so the UI shows "loaded"
         auto* list = new std::vector<Sf2PresetInfo>();
-        list->push_back ({ 0, 0, incoming->file.getFileNameWithoutExtension() });
+        list->push_back ({ 0, 0, owner->file.getFileNameWithoutExtension() });
         delete freshPresets.exchange (list, std::memory_order_acq_rel);
 
         return;
@@ -1653,18 +1411,41 @@ void SfzPlayer::applyPendingLoad()
 
     // ── SF2 path (FluidSynth) ─────────────────────────────────────────────────
 #if DYSEKT_HAS_FLUIDSYNTH
-    if (incoming->synth == nullptr)
-        return;   // shouldn't happen (loadFailed covers this) — defensive
+    {
+        FLUIDSYNTH_LIFECYCLE_LOCK();
 
-    settings = incoming->settings;
-    synth    = incoming->synth;
-    sfontId  = incoming->sfontId;
+        settings = new_fluid_settings();
 
-    activeFile = incoming->file;
+#if JUCE_DEBUG
+        fluid_settings_setint (settings, "synth.verbose", 0);
+#endif
+
+        fluid_settings_setint (settings, "synth.reverb.active", 1);
+        fluid_settings_setint (settings, "synth.chorus.active", 1);
+
+        // Real per-channel audio: one stereo audio-group per MIDI channel, using
+        // FluidSynth's default channel->group mapping (channel % audio_groups),
+        // which is a clean 1:1 with 16 channels / 16 groups. Must be set before
+        // new_fluid_synth() — it cannot be changed on a live synth instance.
+        fluid_settings_setint (settings, "synth.audio-groups", 16);
+
+        synth = new_fluid_synth (settings);
+        fluid_synth_set_sample_rate (synth, (float) currentSR);
+        fluid_synth_set_gain        (synth, 2.0f);
+
+        sfontId = fluid_synth_sfload (synth,
+                      owner->file.getFullPathName().toRawUTF8(), 1);
+
+        if (sfontId == FLUID_FAILED)
+        {
+            delete_fluid_synth    (synth);    synth    = nullptr;
+            delete_fluid_settings (settings); settings = nullptr;
+            return;
+        }
+    }
+
+    activeFile = owner->file;
     loaded.store (true, std::memory_order_release);
-
-    sf2DebugLog ("applyPendingLoad(): FluidSynth engine adopted successfully — file=\""
-                 + incoming->file.getFullPathName() + "\" sfontId=" + juce::String (sfontId));
 
     // Re-apply user params that FluidSynth loses when synth is recreated.
     setPan      (pan.load      (std::memory_order_relaxed));
@@ -1673,19 +1454,7 @@ void SfzPlayer::applyPendingLoad()
     setChorus   (chorus.load   (std::memory_order_relaxed));
 
     presetIndex.store (0, std::memory_order_relaxed);
-
-    // Adopt the preset list built in buildLoadInBackground() — cheap pointer
-    // handoff, no allocation or sfont iteration here (see the comment on
-    // ReadyLoad::presetList for why that work was moved off the audio
-    // thread). Fall back to an empty list defensively if it's somehow null.
-    sf2DebugLog ("applyPendingLoad(): posting background-built preset list ("
-        + juce::String (incoming->presetList != nullptr ? (int) incoming->presetList->size() : 0)
-        + " presets)");
-    delete freshPresets.exchange (incoming->presetList != nullptr
-                                       ? incoming->presetList
-                                       : new std::vector<Sf2PresetInfo>(),
-                                   std::memory_order_acq_rel);
-    incoming->presetList = nullptr;   // ownership transferred to freshPresets; don't double-free below
+    postPresetList();
 
     // ── SF2 loop points are extracted by SoundFontLoader via SHDR binary parse ──
     // (see SoundFontLoader.cpp: parseSf2LoopPoints)
@@ -1695,27 +1464,26 @@ void SfzPlayer::applyPendingLoad()
     sfzLoopStartSample.store (-1, std::memory_order_relaxed);
     sfzLoopEndSample  .store (-1, std::memory_order_relaxed);
 
-    // Seed bank/program for the initial program change (preset 0) — computed
-    // in buildLoadInBackground() alongside the preset list, not re-derived
-    // here via fluid_sfont_iteration on the audio thread.
-    pendingBank   .store (incoming->firstBank,    std::memory_order_relaxed);
-    pendingProgram.store (incoming->firstProgram, std::memory_order_relaxed);
+    // Seed bank/program for the initial program change (preset 0).
+    // We can't use cachedPresets here (audio thread), so read directly from FluidSynth.
+    {
+        fluid_sfont_t* sfont = fluid_synth_get_sfont_by_id (synth, sfontId);
+        if (sfont != nullptr)
+        {
+            fluid_sfont_iteration_start (sfont);
+            fluid_preset_t* first = fluid_sfont_iteration_next (sfont);
+            if (first != nullptr)
+            {
+                pendingBank   .store (fluid_preset_get_banknum (first), std::memory_order_relaxed);
+                pendingProgram.store (fluid_preset_get_num     (first), std::memory_order_relaxed);
+            }
+        }
+    }
 
     // Assign first preset (bank 0, preset 0) to channel 0 as default.
     // The sequencer will call setPresetOnChannel() to populate other channels.
     applyPendingChannelChanges();  // all slots are -1 at this point; no-op but clears dirty flag
-
-    // NOTE: deliberately NOT calling setPresetByIndex(0) here. That function
-    // reads cachedPresets, which is documented (and only safe) as UI-thread-
-    // owned — calling it from this audio-thread function would race the UI
-    // thread's own reads/writes to that vector, and on a reload it would
-    // silently overwrite the pendingBank/pendingProgram we just correctly
-    // seeded above (from incoming->firstBank/firstProgram) with stale data
-    // left over from whatever file was cached before. presetIndex/
-    // programChangePending are the only two things setPresetByIndex() does
-    // that we still need — set them directly instead.
-    // presetIndex was already reset to 0 above, right after adoption.
-    programChangePending.store (true, std::memory_order_release);   // triggers applyProgramChange() on next process() tick
+    setPresetByIndex (0);          // triggers applyProgramChange() on next process() tick
 
     // Apply the current UI ADSR values as FluidSynth's own per-voice envelope,
     // so loaded notes are shaped independently instead of via a shared post-mix
@@ -1735,7 +1503,7 @@ void SfzPlayer::applyPendingLoad()
     midiChannel.store (0, std::memory_order_relaxed);
 
 #else
-    juce::ignoreUnused (incoming);
+    juce::ignoreUnused (owner);
 #endif
 }
 
@@ -1790,10 +1558,34 @@ void SfzPlayer::applyProgramChange()
 #endif
 }
 
-// NOTE: postPresetList() was removed — building the preset list now happens
-// in buildLoadInBackground() (background thread), not here. See
-// ReadyLoad::presetList in SfzPlayer.h for why (audio-thread heap allocation
-// stall on large multi-bank SoundFonts).
+void SfzPlayer::postPresetList()
+{
+#if DYSEKT_HAS_FLUIDSYNTH
+    if (synth == nullptr || sfontId == FLUID_FAILED)
+        return;
+
+    fluid_sfont_t* sfont = fluid_synth_get_sfont_by_id (synth, sfontId);
+    if (sfont == nullptr)
+        return;
+
+    auto* list = new std::vector<Sf2PresetInfo>();
+
+    fluid_sfont_iteration_start (sfont);
+    for (fluid_preset_t* p = fluid_sfont_iteration_next (sfont);
+         p != nullptr;
+         p = fluid_sfont_iteration_next (sfont))
+    {
+        Sf2PresetInfo info;
+        info.bank   = fluid_preset_get_banknum (p);
+        info.preset = fluid_preset_get_num     (p);
+        info.name   = juce::String::fromUTF8   (fluid_preset_get_name (p));
+        list->push_back (info);
+    }
+
+    // Discard any previous unread list and post the fresh one.
+    delete freshPresets.exchange (list, std::memory_order_acq_rel);
+#endif
+}
 
 // ── Pitch shift helper ────────────────────────────────────────────────────────
 
