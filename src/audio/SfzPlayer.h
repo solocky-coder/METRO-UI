@@ -390,6 +390,16 @@ private:
     std::atomic<double> currentSR    { 44100.0 };
     std::atomic<int>    currentBlock { 256 };
 
+    // Remembered from the most recent loadFile() call so applyPendingLoad()
+    // (audio thread) can hand off teardown of the *previous* engine to a
+    // background job instead of freeing it inline (see the teardown lambda
+    // there for why). Non-owning: the pool (DysektProcessor::fileLoadPool)
+    // outlives this SfzPlayer, and jobs posted to it never touch `this`.
+    // Written from the UI thread in loadFile(), read from the audio thread
+    // in applyPendingLoad() — atomic so that cross-thread read is
+    // well-defined (same pattern as currentSR/currentBlock above).
+    std::atomic<juce::ThreadPool*> teardownPool { nullptr };
+
     /** Runs on a background ThreadPool thread via a shared_ptr<LoadContext>
      *  capture — never touches the owning SfzPlayer directly, so it's safe
      *  even if that SfzPlayer is destroyed before the job finishes. Does the

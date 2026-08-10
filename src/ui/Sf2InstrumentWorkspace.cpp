@@ -1166,10 +1166,16 @@ void Sf2InstrumentWorkspace::selectPresetForTrack (int presetBank, int presetPro
 
 void Sf2InstrumentWorkspace::onFileChosen (const juce::File& f)
 {
+    processor.crashLogger.log ("Sf2InstrumentWorkspace::onFileChosen() ENTRY — file=\""
+        + f.getFullPathName() + "\" ext=\"" + f.getFileExtension() + "\"");
+
     if (f.getFileExtension().toLowerCase() != ".sf2")
         return;   // SF2-PLAYER only accepts .sf2 — silently ignore anything else
 
+    processor.crashLogger.log ("Sf2InstrumentWorkspace::onFileChosen() — calling sfzPlayer.loadFile()");
     processor.sfzPlayer.loadFile (f, processor.fileLoadPool);
+    processor.crashLogger.log ("Sf2InstrumentWorkspace::onFileChosen() — sfzPlayer.loadFile() returned "
+        "(async — job just queued, not necessarily finished)");
 
     // Reset the UI-only display index — otherwise a previously-browsed index
     // from the old file's preset list could point at the wrong (or an

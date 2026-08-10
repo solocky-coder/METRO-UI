@@ -116,6 +116,7 @@ SfzPlayer::~SfzPlayer()
 void SfzPlayer::loadFile (const juce::File& f, juce::ThreadPool& pool)
 {
     pendingFilePath = f.getFullPathName();   // record immediately for UI queries
+    teardownPool.store (&pool, std::memory_order_release);   // see applyPendingLoad()
 
     const uint64_t myToken = loadCtx->nextToken.fetch_add (1, std::memory_order_relaxed) + 1;
     loadCtx->latestToken.store (myToken, std::memory_order_release);
@@ -1483,10 +1484,29 @@ void SfzPlayer::applyPendingLoad()
 
     std::unique_ptr<ReadyLoad> incoming (rl);
 
+    sf2DebugLog ("applyPendingLoad(): adopting new ReadyLoad — isSfz="
+        + juce::String ((int) incoming->isSfz)
+        + " loadFailed=" + juce::String ((int) incoming->loadFailed)
+        + " file=\"" + incoming->file.getFullPathName() + "\"");
+
     // ── Tear down whatever is currently loaded ────────────────────────────────
-    // This is now the only FluidSynth/sfizz work still happening on the audio
-    // thread, and it's strictly cheaper than a load: freeing an
-    // already-fully-loaded-in-memory instance, not reading a file from disk.
+    // IMPORTANT: this used to free the previous FluidSynth/sfizz engine right
+    // here, synchronously, under FLUIDSYNTH_LIFECYCLE_LOCK() — on the AUDIO
+    // THREAD. That's the same lock buildLoadInBackground() holds for the
+    // *entire duration* of fluid_synth_sfload() (real disk I/O) while
+    // building the NEW engine on a background thread. So on any load after
+    // the first one in a session — e.g. a state-restore reload at startup
+    // followed by the user picking a different SF2 — the audio thread could
+    // block here for as long as that background sfload takes, reproducing
+    // the exact class of stall this async-load design was meant to
+    // eliminate (see the header comment for the file), just moved from "the
+    // load itself blocks" to "tearing down the old engine blocks waiting on
+    // a lock the loader is holding".
+    //
+    // Fix: never call the FluidSynth/sfizz lifecycle functions here. Just
+    // detach the old pointers and hand them to a background job (the same
+    // pool loadFile() was given) which frees them under the lock off-thread.
+    // Nothing below this point does I/O or can block.
     loaded.store (false, std::memory_order_release);
     activeFile = juce::File();
     isSfzFile  = false;
@@ -1494,15 +1514,43 @@ void SfzPlayer::applyPendingLoad()
 #if DYSEKT_HAS_FLUIDSYNTH
     if (synth != nullptr || settings != nullptr)
     {
-        FLUIDSYNTH_LIFECYCLE_LOCK();
-        if (synth != nullptr)
+        fluid_synth_t*    oldSynth    = synth;
+        fluid_settings_t* oldSettings = settings;
+        synth    = nullptr;
+        settings = nullptr;
+
+        auto* pool = teardownPool.load (std::memory_order_acquire);
+        sf2DebugLog ("applyPendingLoad(): scheduling background teardown of "
+                     "previous FluidSynth engine (pool=" + juce::String::toHexString ((juce::pointer_sized_int) pool) + ")");
+
+        if (pool != nullptr)
         {
-            fluid_synth_all_notes_off (synth, 0);
-            delete_fluid_synth    (synth);    synth    = nullptr;
+            pool->addJob ([oldSynth, oldSettings]
+            {
+                FLUIDSYNTH_LIFECYCLE_LOCK();
+                if (oldSynth != nullptr)
+                {
+                    fluid_synth_all_notes_off (oldSynth, 0);
+                    delete_fluid_synth (oldSynth);
+                }
+                if (oldSettings != nullptr)
+                    delete_fluid_settings (oldSettings);
+            });
         }
-        if (settings != nullptr)
+        else
         {
-            delete_fluid_settings (settings); settings = nullptr;
+            // Defensive fallback only — should be unreachable, since
+            // teardownPool is set by loadFile() before any engine can exist
+            // to tear down. Better a rare, small, lock-guarded stall here
+            // than a leak if it ever does happen.
+            FLUIDSYNTH_LIFECYCLE_LOCK();
+            if (oldSynth != nullptr)
+            {
+                fluid_synth_all_notes_off (oldSynth, 0);
+                delete_fluid_synth (oldSynth);
+            }
+            if (oldSettings != nullptr)
+                delete_fluid_settings (oldSettings);
         }
     }
     sfontId = -1;
@@ -1511,9 +1559,19 @@ void SfzPlayer::applyPendingLoad()
 #if DYSEKT_HAS_SFIZZ
     if (sfizzSynth != nullptr)
     {
+        // Silencing is cheap/real-time-safe and stays here so playback cuts
+        // out immediately; only the actual free is deferred.
         sfizz_all_sound_off (sfizzSynth);
-        sfizz_free (sfizzSynth);
+        sfizz_synth_t* oldSfizz = sfizzSynth;
         sfizzSynth = nullptr;
+
+        auto* pool = teardownPool.load (std::memory_order_acquire);
+        sf2DebugLog ("applyPendingLoad(): scheduling background teardown of previous sfizz engine");
+
+        if (pool != nullptr)
+            pool->addJob ([oldSfizz] { sfizz_free (oldSfizz); });
+        else
+            sfizz_free (oldSfizz);   // defensive fallback — see FluidSynth branch above
     }
 #endif
 
@@ -1539,6 +1597,9 @@ void SfzPlayer::applyPendingLoad()
         activeFile = incoming->file;
         loaded.store (true, std::memory_order_release);
 
+        sf2DebugLog ("applyPendingLoad(): sfizz engine adopted successfully — file=\""
+                     + incoming->file.getFullPathName() + "\"");
+
         // Re-apply pan (sfizz responds to CC10)
         setPan (pan.load (std::memory_order_relaxed));
 
@@ -1562,6 +1623,9 @@ void SfzPlayer::applyPendingLoad()
 
     activeFile = incoming->file;
     loaded.store (true, std::memory_order_release);
+
+    sf2DebugLog ("applyPendingLoad(): FluidSynth engine adopted successfully — file=\""
+                 + incoming->file.getFullPathName() + "\" sfontId=" + juce::String (sfontId));
 
     // Re-apply user params that FluidSynth loses when synth is recreated.
     setPan      (pan.load      (std::memory_order_relaxed));
