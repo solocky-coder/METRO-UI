@@ -64,39 +64,28 @@ SfzPlayer::SfzPlayer()
 
 SfzPlayer::~SfzPlayer()
 {
-    // By this point the owning DysektProcessor has already fully drained its
-    // fileLoadPool (see DysektProcessor::~DysektProcessor, which does this as
-    // its very first statement, before any member teardown) — so no
-    // SynthBuildJob referencing this SfzPlayer can still be running. It's
-    // therefore safe to do direct, synchronous (non-real-time) cleanup here.
-
     // Drain any pending unload request so we don't leak.
     delete pendingLoad.exchange (nullptr, std::memory_order_acq_rel);
 
     // Drain any pending preset list.
     delete freshPresets.exchange (nullptr, std::memory_order_acq_rel);
 
-    // Drain any background-built engine that finished but was never applied.
-    if (auto* ready = pendingReadyEngine.exchange (nullptr, std::memory_order_acq_rel))
-        deleteReadyEngineImmediate (ready);
+    // buildState is a shared_ptr, also held (as its own independent copy) by
+    // any SynthBuildJob still running on sfzLoadPool — see its declaration in
+    // SfzPlayer.h. Dropping our copy here is always safe and never blocks:
+    // if no job is in flight, we hold the last reference and ~BuildState()
+    // runs immediately, freeing anything left in it. If a job IS still
+    // running (e.g. a slow fluid_synth_sfload() that outlasted
+    // sfzLoadPool.removeAllJobs()'s timeout), that job's own copy keeps
+    // BuildState alive until it finishes, and ~BuildState() runs then
+    // instead — on the background thread, safely, long after this SfzPlayer
+    // (and the DysektProcessor that owns it) is already gone. This is what
+    // replaces the old "the pool has definitely finished draining by now"
+    // assumption, which didn't hold when a load took longer than the pool's
+    // drain timeout — see BuildState's declaration for the full story.
+    buildState.reset();
 
 #if DYSEKT_HAS_FLUIDSYNTH
-    // Drain anything retireFluidSynth() queued that never got a chance to be
-    // picked up by a SynthBuildJob's drainRetiredFluidSynths().
-    {
-        std::lock_guard<std::mutex> lock (retireRingMutex);
-        if (retireCount > 0)
-        {
-            FLUIDSYNTH_LIFECYCLE_LOCK();
-            for (int i = 0; i < retireCount; ++i)
-            {
-                if (retireRing[i].synth    != nullptr) delete_fluid_synth    (retireRing[i].synth);
-                if (retireRing[i].settings != nullptr) delete_fluid_settings (retireRing[i].settings);
-            }
-            retireCount = 0;
-        }
-    }
-
     if (synth != nullptr || settings != nullptr)
     {
         FLUIDSYNTH_LIFECYCLE_LOCK();
@@ -107,6 +96,42 @@ SfzPlayer::~SfzPlayer()
 
 #if DYSEKT_HAS_SFIZZ
     if (sfizzSynth != nullptr) { sfizz_free (sfizzSynth); sfizzSynth = nullptr; }
+#endif
+}
+
+SfzPlayer::BuildState::~BuildState()
+{
+    // Drain any background-built engine that finished but was never
+    // installed into a live SfzPlayer (e.g. it arrived stale, or the owning
+    // SfzPlayer was destroyed while this result was still sitting here
+    // unconsumed). Runs wherever the last shared_ptr<BuildState> reference
+    // happens to be dropped — the message thread in the normal case
+    // (~SfzPlayer()), or a background ThreadPool worker in the orphaned-job
+    // case. Never the audio thread either way, so the lock below is safe.
+    if (auto* ready = pendingReadyEngine.exchange (nullptr, std::memory_order_acq_rel))
+        SfzPlayer::deleteReadyEngineImmediate (ready);
+
+#if DYSEKT_HAS_FLUIDSYNTH
+    // Drain anything retireFluidSynth() queued that never got a chance to be
+    // picked up by a SynthBuildJob's drainRetiredFluidSynths().
+    SfzPlayer::RetiredFluid local[BuildState::kRetireRingCapacity];
+    int n = 0;
+    {
+        std::lock_guard<std::mutex> lock (retireRingMutex);
+        n = retireCount;
+        for (int i = 0; i < n; ++i)
+            local[i] = retireRing[i];
+        retireCount = 0;
+    }
+    if (n > 0)
+    {
+        FLUIDSYNTH_LIFECYCLE_LOCK();
+        for (int i = 0; i < n; ++i)
+        {
+            if (local[i].synth    != nullptr) delete_fluid_synth    (local[i].synth);
+            if (local[i].settings != nullptr) delete_fluid_settings (local[i].settings);
+        }
+    }
 #endif
 }
 
@@ -135,13 +160,30 @@ SfzPlayer::~SfzPlayer()
 //  never touches FLUIDSYNTH_LIFECYCLE_LOCK() at all — see the header comment
 //  on SfzPlayer::retireFluidSynth() for how the *old* engine is torn down
 //  without the audio thread touching that lock either.
+//
+//  IMPORTANT: this job must never hold a raw reference/pointer back to the
+//  owning SfzPlayer. new_fluid_settings/new_fluid_synth/fluid_synth_sfload
+//  (and sfizz's equivalents) are blocking calls with no cancellation hook —
+//  runJob() can't check shouldExit() mid-sfload — so a slow load can still be
+//  running when the plugin is torn down; ~DysektProcessor()'s
+//  sfzLoadPool.removeAllJobs(true, 5000) only waits up to 5 seconds for that.
+//  Past that timeout it gives up while this job is still executing, and if
+//  it were holding a `SfzPlayer&`, publish() would go on to write into an
+//  object that's already been destroyed — a delayed use-after-free landing
+//  some time after the plugin appears to have shut down cleanly. Instead,
+//  this job captures its own shared_ptr<BuildState> (kept alive independently
+//  of SfzPlayer's lifetime) plus the sample rate/block size, by value, at
+//  submission time — nothing it does at any point requires SfzPlayer itself
+//  to still exist.
 // =============================================================================
 class SfzPlayer::SynthBuildJob final : public juce::ThreadPoolJob
 {
 public:
-    SynthBuildJob (SfzPlayer& p, juce::File f, uint64_t gen)
+    SynthBuildJob (std::shared_ptr<BuildState> s, juce::File f, uint64_t gen,
+                   double sampleRate, int blockSize)
         : juce::ThreadPoolJob ("SynthBuildJob"),
-          player (p), file (std::move (f)), generation (gen)
+          state (std::move (s)), file (std::move (f)), generation (gen),
+          currentSR (sampleRate), currentBlock (blockSize)
     {
     }
 
@@ -151,7 +193,7 @@ public:
         // (its old synth/settings pair) before building the next one — this
         // keeps that deletion off the audio thread entirely.
 #if DYSEKT_HAS_FLUIDSYNTH
-        player.drainRetiredFluidSynths();
+        SfzPlayer::drainRetiredFluidSynths (*state);
 #endif
 
         auto* ready = new SfzPlayer::ReadyEngine();
@@ -165,8 +207,8 @@ public:
         {
             ready->isSfz      = true;
             ready->sfizzSynth = sfizz_create_synth();
-            sfizz_set_sample_rate       (ready->sfizzSynth, (float) player.currentSR);
-            sfizz_set_samples_per_block (ready->sfizzSynth, player.currentBlock);
+            sfizz_set_sample_rate       (ready->sfizzSynth, (float) currentSR);
+            sfizz_set_samples_per_block (ready->sfizzSynth, currentBlock);
 
             ready->ok = sfizz_load_file (ready->sfizzSynth, file.getFullPathName().toRawUTF8());
             if (! ready->ok)
@@ -214,7 +256,7 @@ public:
             fluid_settings_setint (ready->fsSettings, "synth.audio-groups",   16);
 
             ready->fsSynth = new_fluid_synth (ready->fsSettings);
-            fluid_synth_set_sample_rate (ready->fsSynth, (float) player.currentSR);
+            fluid_synth_set_sample_rate (ready->fsSynth, (float) currentSR);
             fluid_synth_set_gain        (ready->fsSynth, 2.0f);
 
             ready->fsSfontId = fluid_synth_sfload (ready->fsSynth,
@@ -243,14 +285,21 @@ private:
         // stamp), so if an out-of-order finish leaves an older result sitting
         // here uninstalled, just free it immediately — we're on a background
         // thread, so an immediate (non-retired) delete is fine.
-        auto* stale = player.pendingReadyEngine.exchange (ready, std::memory_order_acq_rel);
+        //
+        // `state` is this job's own shared_ptr<BuildState> reference — valid
+        // and safe to write into no matter what has happened to the SfzPlayer
+        // that originally submitted this job (it may already be destroyed;
+        // BuildState doesn't care, see its declaration in SfzPlayer.h).
+        auto* stale = state->pendingReadyEngine.exchange (ready, std::memory_order_acq_rel);
         if (stale != nullptr)
             SfzPlayer::deleteReadyEngineImmediate (stale);
     }
 
-    SfzPlayer& player;
+    std::shared_ptr<BuildState> state;
     juce::File file;
     uint64_t   generation;
+    double     currentSR;
+    int        currentBlock;
 };
 
 // =============================================================================
@@ -262,10 +311,16 @@ void SfzPlayer::loadFile (const juce::File& f, juce::ThreadPool& pool)
     pendingFilePath = f.getFullPathName();   // record immediately for UI queries
 
     // Building the engine (disk I/O, FluidSynth/sfizz construction) now
-    // happens entirely off the audio thread — see SynthBuildJob below.
-    // applyPendingLoad() picks up the finished result via pendingReadyEngine.
+    // happens entirely off the audio thread — see SynthBuildJob above. The
+    // job gets its own shared_ptr<BuildState> copy (not a pointer back to
+    // `this`) plus the sample rate/block size captured by value right here,
+    // while SfzPlayer is definitely still alive — see SynthBuildJob's class
+    // comment for why it must never read from `this` after this point.
+    // applyPendingLoad() picks up the finished result via
+    // buildState->pendingReadyEngine.
     const uint64_t gen = requestGeneration.fetch_add (1, std::memory_order_relaxed) + 1;
-    pool.addJob (new SynthBuildJob (*this, f, gen), true /* deleteJobWhenFinished */);
+    pool.addJob (new SynthBuildJob (buildState, f, gen, currentSR, currentBlock),
+                 true /* deleteJobWhenFinished */);
 }
 
 void SfzPlayer::unload()
@@ -1500,15 +1555,15 @@ void SfzPlayer::applyFluidFilterFromUi()
 
 
 #if DYSEKT_HAS_FLUIDSYNTH
-void SfzPlayer::retireFluidSynth (fluid_synth_t* s, fluid_settings_t* st) noexcept
+void SfzPlayer::retireFluidSynth (BuildState& state, fluid_synth_t* s, fluid_settings_t* st) noexcept
 {
     if (s == nullptr && st == nullptr)
         return;
 
-    std::lock_guard<std::mutex> lock (retireRingMutex);
-    if (retireCount < kRetireRingCapacity)
+    std::lock_guard<std::mutex> lock (state.retireRingMutex);
+    if (state.retireCount < BuildState::kRetireRingCapacity)
     {
-        retireRing[retireCount++] = { s, st };
+        state.retireRing[state.retireCount++] = { s, st };
     }
     else
     {
@@ -1521,16 +1576,16 @@ void SfzPlayer::retireFluidSynth (fluid_synth_t* s, fluid_settings_t* st) noexce
     }
 }
 
-void SfzPlayer::drainRetiredFluidSynths()
+void SfzPlayer::drainRetiredFluidSynths (BuildState& state)
 {
-    RetiredFluid local[kRetireRingCapacity];
+    RetiredFluid local[BuildState::kRetireRingCapacity];
     int n = 0;
     {
-        std::lock_guard<std::mutex> lock (retireRingMutex);
-        n = retireCount;
+        std::lock_guard<std::mutex> lock (state.retireRingMutex);
+        n = state.retireCount;
         for (int i = 0; i < n; ++i)
-            local[i] = retireRing[i];
-        retireCount = 0;
+            local[i] = state.retireRing[i];
+        state.retireCount = 0;
     }
 
     if (n == 0)
@@ -1572,7 +1627,7 @@ void SfzPlayer::discardReadyEngine (ReadyEngine* ready) noexcept
         return;
 
 #if DYSEKT_HAS_FLUIDSYNTH
-    retireFluidSynth (ready->fsSynth, ready->fsSettings);
+    retireFluidSynth (*buildState, ready->fsSynth, ready->fsSettings);
 #endif
 #if DYSEKT_HAS_SFIZZ
     if (ready->sfizzSynth != nullptr)
@@ -1591,7 +1646,7 @@ void SfzPlayer::tearDownCurrentEngine()
 #if DYSEKT_HAS_FLUIDSYNTH
     if (synth != nullptr)
         fluid_synth_all_notes_off (synth, 0);
-    retireFluidSynth (synth, settings);   // freed off the audio thread later
+    retireFluidSynth (*buildState, synth, settings);   // freed off the audio thread later
     synth = nullptr; settings = nullptr; sfontId = -1;
 #endif
 
@@ -1624,7 +1679,7 @@ void SfzPlayer::applyPendingLoad()
     }
 
     // ── A background-built engine finished — swap it in (wait-free) ─────────
-    auto* ready = pendingReadyEngine.exchange (nullptr, std::memory_order_acq_rel);
+    auto* ready = buildState->pendingReadyEngine.exchange (nullptr, std::memory_order_acq_rel);
     if (ready == nullptr)
         return;
 

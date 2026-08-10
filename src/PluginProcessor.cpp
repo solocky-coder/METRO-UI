@@ -251,9 +251,18 @@ DysektProcessor::DysektProcessor()
 DysektProcessor::~DysektProcessor()
 {
     fileLoadPool.removeAllJobs (true, 5000);
-    // sfzLoadPool jobs (SynthBuildJob) hold a reference back to sfzPlayer/
-    // sfzPlayer2, which are members of *this — must be drained before this
-    // object finishes destructing, same as fileLoadPool above.
+    // sfzLoadPool jobs (SynthBuildJob) no longer hold a reference back to
+    // sfzPlayer/sfzPlayer2 — each job carries its own shared_ptr<BuildState>
+    // (see SfzPlayer.h), so it can safely keep running and finish after this
+    // object (and sfzPlayer/sfzPlayer2 with it) has already been destroyed;
+    // an orphaned job just publishes into its own kept-alive BuildState
+    // instead of touching freed memory. This call is therefore no longer a
+    // correctness requirement — it's a best-effort courtesy so the common
+    // case (a load that's already finished, or finishes quickly) tears down
+    // synchronously and doesn't leave a background thread lingering
+    // needlessly. A load that's still genuinely in flight (e.g. a large
+    // soundfont on a slow path) is fine to simply time out here and finish
+    // on its own later.
     sfzLoadPool.removeAllJobs (true, 5000);
     exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
