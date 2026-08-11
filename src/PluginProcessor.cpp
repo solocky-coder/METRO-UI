@@ -6,6 +6,7 @@
 #include <BinaryData.h>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <vector>
 
 namespace
@@ -265,7 +266,45 @@ DysektProcessor::~DysektProcessor()
     // .setLoopPoints()) that still reach directly into DysektProcessor.
     soundFontProcessorHandle->processorAlive.store (false, std::memory_order_release);
 
-    fileLoadPool.removeAllJobs (true, 5000);
+    // Give any in-flight fileLoadPool job (SoundFontLoader::LoadJob or a
+    // SampleDecodeJob/SampleTrimJob) a short, bounded window to finish on
+    // its own -- this is now purely a best-effort courtesy for the common
+    // case (already finished, or a fast job), NOT a correctness
+    // requirement: ProcessorHandle makes it fully safe for an orphaned
+    // LoadJob to keep running and post its result after this object is
+    // gone (see ProcessorHandle's comment in SoundFontLoader.h).
+    //
+    // Crucially, this wait must stay SHORT. The old version waited up to
+    // 5000ms here -- easily long enough, on the thread that's destroying
+    // this processor (typically the host's message thread), to trip a
+    // host's or the OS's "this plugin/app has stopped responding" watchdog
+    // and get force-killed. A force-kill bypasses CrashLogger's signal
+    // handlers entirely (SIGKILL/TerminateProcess can't be caught) AND
+    // every destructor below -- which is exactly the "no crash-handler
+    // entry, session.lock never removed" signature in dysekt_crash.log /
+    // session.lock. That pattern isn't a segfault; it's this wait itself.
+    //
+    // If the job is still running past this short grace window (a large
+    // soundfont's multi-minute preview render), release fileLoadPool onto
+    // the heap and hand its actual teardown to a detached thread instead of
+    // letting its own destructor block here waiting for the job. The job
+    // only holds its own shared_ptr<ProcessorHandle> (never a reference
+    // back to this DysektProcessor), so it's fully safe for it to keep
+    // running -- and for the pool itself to be destroyed -- independently
+    // of this object's lifetime, however long that takes.
+    if (! fileLoadPool->removeAllJobs (true, 50))
+    {
+        auto* orphanedPool = fileLoadPool.release();
+        std::thread ([orphanedPool]
+        {
+            orphanedPool->removeAllJobs (true, -1);   // wait as long as it takes
+            delete orphanedPool;
+        }).detach();
+    }
+    // else: fileLoadPool still owns the (now empty/idle) pool -- its own
+    // destructor at the end of this object's member teardown is cheap and
+    // synchronous, same as before.
+
     // sfzLoadPool jobs (SynthBuildJob) no longer hold a reference back to
     // sfzPlayer/sfzPlayer2 — each job carries its own shared_ptr<BuildState>
     // (see SfzPlayer.h), so it can safely keep running and finish after this
@@ -278,7 +317,18 @@ DysektProcessor::~DysektProcessor()
     // needlessly. A load that's still genuinely in flight (e.g. a large
     // soundfont on a slow path) is fine to simply time out here and finish
     // on its own later.
-    sfzLoadPool.removeAllJobs (true, 5000);
+    //
+    // Shrunk from 5000ms to 50ms for the same reason fileLoadPool's wait was
+    // shrunk above -- see that comment. sfzLoadPool is still a plain
+    // juce::ThreadPool value member (not yet converted to the
+    // release-and-detach pattern used for fileLoadPool), so its own
+    // implicit destructor at the end of this function can still block this
+    // thread if a SynthBuildJob is genuinely still running past this point.
+    // In practice that job is a synth *build*, not a multi-minute render,
+    // so the window is expected to be much smaller than fileLoadPool's --
+    // but if that's ever observed to run long (e.g. a very large multi-
+    // sample kit), sfzLoadPool needs the identical heap+detach treatment.
+    sfzLoadPool.removeAllJobs (true, 50);
     exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
     delete failed;
@@ -440,7 +490,7 @@ void DysektProcessor::requestSampleLoad (const juce::File& file, LoadKind kind)
         delete old;
     };
 
-    fileLoadPool.addJob (new SampleDecodeJob (file, sr, token, kind, onSuccess, onFailure), true);
+    fileLoadPool->addJob (new SampleDecodeJob (file, sr, token, kind, onSuccess, onFailure), true);
 }
 
 void DysektProcessor::loadFileAsync (const juce::File& file)
@@ -509,7 +559,7 @@ void DysektProcessor::applyTrimToCurrentSample (int trimStart, int trimEnd)
         (void) finishedToken;
     };
 
-    fileLoadPool.addJob (new SampleTrimJob (snap, trimStart, trimEnd, token, LoadKindTrim,
+    fileLoadPool->addJob (new SampleTrimJob (snap, trimStart, trimEnd, token, LoadKindTrim,
                                             onSuccess, onFailure),
                          true);
 }

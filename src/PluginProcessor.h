@@ -111,6 +111,25 @@ private:
 class DysektProcessor : public juce::AudioProcessor
 {
 public:
+    // ── Crash logger ────────────────────────────────────────────────────────
+    // Declared FIRST so it is constructed first and destroyed last (C++
+    // constructs members in declaration order and destroys them in REVERSE
+    // declaration order) -- ensuring the log brackets the full object
+    // lifetime, including logging "session ended cleanly" and removing the
+    // session.lock sentinel only after every other member (fileLoadPool,
+    // sfzLoadPool, soundFontProcessorHandle, etc.) has finished tearing
+    // down. This member used to be declared LAST in the class, which meant
+    // it was actually constructed last and destroyed FIRST -- the opposite
+    // of its own documented intent, and of what CrashLogger.h's usage
+    // comment assumes ("declare before other members"). With it declared
+    // last, ~CrashLogger() ran before fileLoadPool's own teardown even
+    // started, so a hang/force-kill during that teardown (see the fix in
+    // ~DysektProcessor() below) would never even get a chance to leave a
+    // "session ended cleanly" line missing as a clue -- it just looked like
+    // an ordinary in-progress session. Moving it here restores that
+    // diagnostic value going forward.
+    CrashLogger crashLogger;
+
     // =========================================================================
     // Inner types
     // =========================================================================
@@ -936,7 +955,22 @@ public:
     // =========================================================================
     // Sample loading (public so UI thread can dispatch SFZ/SF2 loads)
     // =========================================================================
-    juce::ThreadPool fileLoadPool { 1 };
+    // Heap-owned (not a plain value member) so ~DysektProcessor() can hand
+    // its teardown off to a detached background thread instead of blocking
+    // on it -- see the fix in ~DysektProcessor() and the comment on
+    // ProcessorHandle in SoundFontLoader.h. A plain `juce::ThreadPool
+    // fileLoadPool { 1 };` member's own implicit destructor internally does
+    // an unbounded-ish removeAllJobs()+thread-join wait for any job still
+    // running on it (this is standard, documented juce::ThreadPool
+    // behaviour, not a bug in JUCE) -- fine for a short job, but a
+    // SoundFontLoader::LoadJob preview render of a large soundfont can
+    // legitimately run for minutes. Blocking on that is exactly what leaves
+    // session.lock behind and no crash-handler entry: it isn't a segfault,
+    // it's the host or OS deciding the plugin has hung (because the thread
+    // tearing down DysektProcessor -- typically the host's message thread --
+    // is stuck waiting) and force-killing the process, which bypasses both
+    // CrashLogger's signal handlers and every remaining destructor.
+    std::unique_ptr<juce::ThreadPool> fileLoadPool { std::make_unique<juce::ThreadPool> (1) };
     // Dedicated pool for SfzPlayer's live playback-engine build
     // (SfzPlayer::loadFile() -> SynthBuildJob). Deliberately kept SEPARATE
     // from fileLoadPool: SoundFontLoader's zone-builder/preview scan
@@ -1154,11 +1188,6 @@ public:
     std::vector<float> masterPitchScratchR;
 
     friend class SoundFontLoader;
-
-    // ── Crash logger ────────────────────────────────────────────────────────
-    // Declared last so it is constructed first and destroyed last,
-    // ensuring the log captures the full object lifetime.
-    CrashLogger crashLogger;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DysektProcessor)
 };

@@ -1515,7 +1515,7 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         processor.sf2PreviewRenderInFlight.store (true, std::memory_order_release);
     }
 
-    processor.fileLoadPool.addJob (
+    processor.fileLoadPool->addJob (
         new LoadJob (file, sr, token, processor, processor.soundFontProcessorHandle,
                      target, presetBank, presetProgram), true);
 }
