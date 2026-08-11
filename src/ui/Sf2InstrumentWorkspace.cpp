@@ -587,11 +587,10 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
 
     const int w = bounds.getWidth();
     const int colPresetsW = juce::roundToInt ((float) w * kColPresetsFrac);
-    const int colVoiceW   = juce::roundToInt ((float) w * kColVoiceFrac);
+    const int topSectionW = juce::roundToInt ((float) w * kColVoiceFrac);   // cap for Sections A/B only
 
     col1Zone = bounds.removeFromLeft (colPresetsW);
-    col2Zone = bounds.removeFromLeft (colVoiceW);
-    col3Zone = bounds;   // remainder
+    col2Zone = bounds;   // remainder — merged voice + channel-mixer panel
 
     // ── Column 1 — search / list / bank footer / browse ────────────────────
     {
@@ -609,19 +608,29 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         browseButton.setBounds (browseButtonZone);
     }
 
-    // ── Column 2 top — active preset header + 3 knobs (+ fine stepper) ─────
+    // ── Column 2 — merged voice + channel-mixer panel ───────────────────────
+    // Sections A/B/C stack top-to-bottom in one continuous scan, no vertical
+    // divider between them — see header comment for the rationale/scope of
+    // each section.
+    auto c = col2Zone.reduced (kPad);
+
+    // ── Section A — active preset header + 3 knobs (+ fine stepper) ────────
+    // Width capped to topSectionW and left-aligned, so the knob row keeps
+    // its original pixel layout instead of stretching across the full
+    // merged width.
     {
-        auto c = col2Zone.reduced (kPad);
         auto top = c.removeFromTop (200 - kPad);
-        activePresetHeaderZone = top.removeFromTop (54);
-        top.removeFromTop (kPad);
+        auto topSection = top.removeFromLeft (juce::jmin (topSectionW, top.getWidth()));
+
+        activePresetHeaderZone = topSection.removeFromTop (54);
+        topSection.removeFromTop (kPad);
 
         // Knob cell is label(16) + circle + value(20), not just the circle —
         // drawKnob() carves those three sub-rects out of whatever bounds it's
         // given, so the cell passed in has to be tall enough to hold all three
         // without cramming the circle.
         constexpr int kKnobCellH = 96;
-        auto knobRow = top.removeFromTop (kKnobCellH);
+        auto knobRow = topSection.removeFromTop (kKnobCellH);
         const int knobGap = (knobRow.getWidth() - 3 * kKnobW) / 4;
         knobRow.removeFromLeft (knobGap);
         levelZone = knobRow.removeFromLeft (kKnobW);
@@ -634,37 +643,42 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         // Transpose; see header comment for why this exists at all.
         fineZone = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobCellH + 6,
                                           transZone.getWidth(), 16);
-
-        auto bottom = c;   // remainder of col2, below the knob row
-        bottom.setY (col2Zone.getY() + 200);
-        bottom.setHeight (col2Zone.getHeight() - 200);
-        bottom = bottom.reduced (kPad, kPad);
-
-        filterCutoffZone = bottom.removeFromTop (34);
-        bottom.removeFromTop (kPad);
-        filterResonanceZone = bottom.removeFromTop (34);
-        bottom.removeFromTop (kPad);
-        reverbSendZone = bottom.removeFromTop (34);
-        bottom.removeFromTop (kPad);
-        reverbDampZone = bottom.removeFromTop (34);
     }
+    c.removeFromTop (kPad);
 
-    // ── Column 3 — channel mixer, note activity, keyboard (always visible) ──
+    // ── Section B — SF2 filter + global reverb sliders ──────────────────────
+    // Same width cap as Section A so the two read as one coherent block.
     {
-        auto c = col3Zone.reduced (kPad);
+        auto filterSection = c.removeFromTop (4 * 34 + 3 * kPad);
+        filterSection = filterSection.removeFromLeft (juce::jmin (topSectionW, filterSection.getWidth()));
 
-        keyboardZone = c.removeFromBottom (110);
-        c.removeFromBottom (kPad);
-        compactKeyboard->setBounds (keyboardZone);
-
-        // Note activity meter docked immediately above the keyboard.
-        c.removeFromBottom (18);
-        noteMeterZone = c.removeFromBottom (24);
-        noteActivityLabelZone = c.removeFromBottom (14);
-        c.removeFromBottom (kPad);
-
-        channelFxPanel.setBounds (c);
+        filterCutoffZone = filterSection.removeFromTop (34);
+        filterSection.removeFromTop (kPad);
+        filterResonanceZone = filterSection.removeFromTop (34);
+        filterSection.removeFromTop (kPad);
+        reverbSendZone = filterSection.removeFromTop (34);
+        filterSection.removeFromTop (kPad);
+        reverbDampZone = filterSection.removeFromTop (34);
     }
+    c.removeFromTop (kPad * 2);
+
+    // ── Section C — channel mixer, note activity, keyboard ──────────────────
+    // Full merged-column width (no cap) — this is where the extra room
+    // freed up by dropping the old column 3 divider actually goes.
+    keyboardZone = c.removeFromBottom (110);
+    c.removeFromBottom (kPad);
+    compactKeyboard->setBounds (keyboardZone);
+
+    // Note activity meter docked immediately above the keyboard.
+    c.removeFromBottom (18);
+    noteMeterZone = c.removeFromBottom (24);
+    noteActivityLabelZone = c.removeFromBottom (14);
+    c.removeFromBottom (kPad);
+
+    mixerLabelZone = c.removeFromTop (18);
+    c.removeFromTop (kPad / 2);
+
+    channelFxPanel.setBounds (c);
 }
 
 void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
@@ -674,10 +688,14 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
     topBarZone = bounds.removeFromTop (kTopBarH);
     loadedPillZone = topBarZone.removeFromRight (170).reduced (4);
 
+    // Narrow-width stacking: presets get the top third; the merged voice +
+    // mixer panel (Sections A/B/C, same as layoutWide but full-width
+    // throughout — no topSectionW cap since there's only one width here)
+    // gets the remaining two-thirds, stacked internally exactly as in the
+    // wide layout.
     const int h = bounds.getHeight();
     col1Zone = bounds.removeFromTop (h / 3);
-    col2Zone = bounds.removeFromTop (h / 3);
-    col3Zone = bounds;
+    col2Zone = bounds;
 
     {
         auto c = col1Zone.reduced (kPad);
@@ -694,8 +712,10 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         browseButton.setBounds (browseButtonZone);
     }
 
+    auto c = col2Zone.reduced (kPad);
+
+    // ── Section A — active preset header + 3 knobs (+ fine stepper) ────────
     {
-        auto c = col2Zone.reduced (kPad);
         activePresetHeaderZone = c.removeFromTop (40);
         c.removeFromTop (kPad);
         constexpr int kKnobCellH = 96;
@@ -710,7 +730,10 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         fineZone  = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobCellH + 6,
                                            transZone.getWidth(), 16);
         c.removeFromTop (26);
+    }
 
+    // ── Section B — SF2 filter + global reverb sliders ──────────────────────
+    {
         filterCutoffZone = c.removeFromTop (32);
         c.removeFromTop (kPad);
         filterResonanceZone = c.removeFromTop (32);
@@ -719,21 +742,22 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         c.removeFromTop (kPad);
         reverbDampZone = c.removeFromTop (32);
     }
+    c.removeFromTop (kPad * 2);
 
-    {
-        auto c = col3Zone.reduced (kPad);
+    // ── Section C — channel mixer, note activity, keyboard ──────────────────
+    keyboardZone = c.removeFromBottom (100);
+    c.removeFromBottom (kPad);
+    compactKeyboard->setBounds (keyboardZone);
 
-        keyboardZone = c.removeFromBottom (100);
-        c.removeFromBottom (kPad);
-        compactKeyboard->setBounds (keyboardZone);
+    c.removeFromBottom (18);
+    noteMeterZone = c.removeFromBottom (20);
+    noteActivityLabelZone = c.removeFromBottom (14);
+    c.removeFromBottom (kPad);
 
-        c.removeFromBottom (18);
-        noteMeterZone = c.removeFromBottom (20);
-        noteActivityLabelZone = c.removeFromBottom (14);
-        c.removeFromBottom (kPad);
+    mixerLabelZone = c.removeFromTop (18);
+    c.removeFromTop (kPad / 2);
 
-        channelFxPanel.setBounds (c);
-    }
+    channelFxPanel.setBounds (c);
 }
 
 // =============================================================================
@@ -768,25 +792,22 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
                     loadedPillZone.withTrimmedLeft (24), juce::Justification::centredLeft);
     }
 
-    // ── Column separators ──────────────────────────────────────────────────
+    // ── Column separator ─────────────────────────────────────────────────────
+    // Only between column 1 (presets) and column 2 (merged voice + mixer
+    // panel) now — no divider inside column 2 itself; that seam was the
+    // whole point of the merge.
     g.setColour (theme.separator);
     if (getWidth() >= kNarrowThreshold)
-    {
         g.drawVerticalLine (col1Zone.getRight(), (float) topBarZone.getBottom(), (float) getHeight());
-        g.drawVerticalLine (col2Zone.getRight(), (float) topBarZone.getBottom(), (float) getHeight());
-    }
     else
-    {
         g.drawHorizontalLine (col1Zone.getBottom(), 0.f, (float) getWidth());
-        g.drawHorizontalLine (col2Zone.getBottom(), 0.f, (float) getWidth());
-    }
 
     // ── Column 1 footer ─────────────────────────────────────────────────────
     g.setFont (DysektLookAndFeel::makeFont (16.f, true));
     g.setColour (theme.foreground.withAlpha (0.6f));
     g.drawText ("BANK 000  |  GENERAL MIDI", bankFooterZone, juce::Justification::centredLeft);
 
-    // ── Column 2 — active preset header ────────────────────────────────────
+    // ── Section A — active preset header ────────────────────────────────────────────────────────────────────────
     {
         const int idx = effectiveDisplayPresetIndex();
         juce::String name = "No preset selected";
@@ -847,7 +868,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         g.drawFittedText (meta, metaRow, juce::Justification::centredRight, 1, 0.7f);
     }
 
-    // ── Column 2 — 3 knobs + fine-tune stepper ─────────────────────────────
+    // ── Section A — 3 knobs + fine-tune stepper ──────────────────────────────────────────────────────────
     drawKnob (g, levelZone, volToNorm (processor.sfzPlayer.getVolume()), "LEVEL",
               juce::String (juce::roundToInt (processor.sfzPlayer.getVolume() * 50.f)) + "%");
     drawKnob (g, transZone, transToNorm (processor.sfzPlayer.getTranspose()), "TRANSPOSE",
@@ -860,7 +881,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     g.drawText ("FINE " + juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c",
                 fineZone, juce::Justification::centred);
 
-    // ── Column 2 — SF2 filter controls (permanent, no tabs) ────────────────
+    // ── Section B — SF2 filter + reverb controls (permanent, no tabs) ───────────────────────
     {
         const float cutoffHz = processor.sfzPlayer.getSf2FilterCutoff();
         const juce::String cutoffStr = cutoffHz >= 1000.f
@@ -876,7 +897,16 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
                     juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
     }
 
-    // ── Column 3 — note activity meter (always visible, above keyboard) ────
+    // ── Section C — channel mixer label ─────────────────────────────────────
+    // Marks where the merged panel switches scope from "the selected
+    // preset's global controls" (Sections A/B above) to "every assigned
+    // channel's mixer strip" (Sf2ChannelFxPanel, painted separately as a
+    // child component immediately below this label).
+    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+    g.setColour (theme.foreground.withAlpha (0.55f));
+    g.drawText ("CHANNEL MIXER", mixerLabelZone, juce::Justification::centredLeft);
+
+    // ── Section C — note activity meter (always visible, above keyboard) ───
     g.setFont (DysektLookAndFeel::makeFont (13.f, true));
     g.setColour (theme.foreground.withAlpha (0.55f));
     g.drawText ("NOTE ACTIVITY", noteActivityLabelZone, juce::Justification::centredLeft);

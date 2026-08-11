@@ -1,14 +1,20 @@
 #pragma once
 // =============================================================================
-//  Sf2InstrumentWorkspace.h  —  3-column SF2 instrument workspace
+//  Sf2InstrumentWorkspace.h  —  2-column SF2 instrument workspace
 // =============================================================================
-//  Full rewrite, drafted literally against sf2-metro-reference-keyboard.svg
-//  (the approved mockup), NOT against the previous "reflow the old panel into
-//  three columns" build. Layout, per the mockup's 1370x414 reference panel:
+//  Originally drafted as 3 side-by-side columns against
+//  sf2-metro-reference-keyboard.svg. Columns 2 and 3 have since been merged
+//  into a single panel (no vertical divider between them) so the whole
+//  "current preset + everywhere it's mixed" state reads as one continuous
+//  top-to-bottom scan instead of two separately-scoped columns. The merge is
+//  purely a layout change — every control keeps the exact same backing call
+//  (SfzPlayer setters, Sf2ChannelFxPanel) it always had; see the section
+//  breakdown below for what moved where.
 //
-//    [ Col 1 ~25.5% ] [ Col 2 ~34.8% ] [ Col 3 ~34.1% ]
-//     Preset browser    Active preset      Channel mixer
-//                        + Amp envelope
+//    [ Col 1 ~25.5% ] [        Col 2 — remainder ~74.5%        ]
+//     Preset browser    Active preset + filter/reverb (global, ~34.8%-wide,
+//                        left-aligned)  →  CHANNEL MIXER  →  note activity
+//                        →  keyboard  (all full-width, no seam between them)
 //
 //  Docked top bar (36px): workspace caption and a SOUNDFONT LOADED status
 //  pill (green dot when a file is
@@ -29,11 +35,15 @@
 //    existing data, so getProgramGrid() keeps returning real state even
 //    though the grid itself is no longer painted.
 //
-//  Column 2 top — Active preset + 3 knobs (LEVEL / TRANSPOSE / PAN):
+//  Column 2, Section A — Active preset + 3 knobs (LEVEL / TRANSPOSE / PAN):
 //    Wired straight to SfzPlayer::setVolume/setTranspose/setPan (no
 //    pushCommand/MIDI-learn indirection for the value itself; right-click
 //    still opens the MIDI-learn menu on the global SliceParamField IDs,
-//    exactly as SfzDropdownPanel did).
+//    exactly as SfzDropdownPanel did). This section's width is still capped
+//    to the old ~34.8%-of-workspace figure (kColVoiceFrac) and left-aligned
+//    within the merged column — letting it stretch across the full ~74.5%
+//    merged width would just space the 3 knobs out with dead air between
+//    them, not make anything more overseeable.
 //
 //    ⚠ DEVIATION FROM THE LITERAL MOCKUP: the SVG's knob row has only 3
 //    knobs and drops FineTune entirely — it is not present anywhere in the
@@ -44,11 +54,13 @@
 //    reading order are preserved. Flagging this here rather than baking it
 //    in silently — worth confirming against the design before shipping.
 //
-//  Column 2 bottom — SF2 filter controls (permanent, no tabs):
+//  Column 2, Section B — SF2 filter + reverb controls (permanent, no tabs):
 //    Live CUTOFF (Hz/kHz) and RESONANCE (%) sliders backed by
 //    SfzPlayer::getSf2FilterCutoff/Resonance and setSf2FilterCutoff/Resonance,
 //    which drive FluidSynth's GEN_FILTERFC/GEN_FILTERQ generators (see
-//    SfzPlayer::applyFluidFilterFromUi()). SF2/FluidSynth only.
+//    SfzPlayer::applyFluidFilterFromUi()), plus the global REVERB SEND/DAMP
+//    sliders. SF2/FluidSynth only. Same width cap as Section A, so the two
+//    read as one coherent "current preset" block with nothing in between.
 //    ⚠ DEVIATION FROM THE LITERAL MOCKUP: the mockup shows a permanent AMP
 //    ENVELOPE display here instead. That was dropped rather than tabbed
 //    against Filter (an earlier iteration of this panel tried the tab
@@ -59,10 +71,21 @@
 //    the only thing that wasn't already live elsewhere, so it now owns this
 //    space outright with no tab/mode switch needed.
 //
-//  Column 3 — Channel mixer:
+//  Column 2, Section C — Channel mixer (full merged-column width):
 //    • Per-channel volume, pan, reverb-send, and mute controls supplied by
 //      Sf2ChannelFxPanel. It remains visible for both single- and
-//      multi-channel assignments.
+//      multi-channel assignments. Scope is deliberately different from
+//      Sections A/B above: those are the *currently selected* preset's
+//      global controls, this is *every assigned channel's* mixer strip —
+//      the merge doesn't blur that distinction, it just removes the hard
+//      column seam between "the preset you're looking at" and "everything
+//      it's mixed alongside". Sitting directly under Section B with only a
+//      "CHANNEL MIXER" label between them (mixerLabelZone) makes that
+//      relationship legible without a divider line.
+//    • Getting the full ~74.5% merged width instead of the old column 3's
+//      ~34.1% is a real, non-cosmetic side effect of the merge: more
+//      channels fit before Sf2ChannelFxPanel's kMinColW floor forces
+//      horizontal scrolling.
 //    • Decaying NOTE ACTIVITY meter (bars), driven by processor.sfzActiveNotes,
 //      docked immediately above the compact keyboard.
 //    • Compact keyboard, C3-C5 only, drawn by our own CompactKeyboard nested
@@ -71,11 +94,13 @@
 //      zones loaded" placeholder, etc.) — it has no API to restrict its
 //      visible range, so embedding it here at ~110px meant the zone-matrix
 //      placeholder ate most of the height and the real keys got squeezed
-//      into a sliver, plus 75 white keys crammed into column 3's width read
-//      as "too narrow". A small dedicated component avoids all of that.
+//      into a sliver. A small dedicated component avoids all of that.
 //
-//  Below ~760 px wide, columns stack top-to-bottom instead of side-by-side
-//  (kNarrowThreshold), same responsive behaviour as before.
+//  Below ~760 px wide, Column 1 stacks above Column 2 instead of beside it
+//  (kNarrowThreshold); within Column 2 the three sections still stack
+//  top-to-bottom exactly as in the wide layout, just without the width cap
+//  on Sections A/B since there's only one width available. Same responsive
+//  behaviour as before the merge.
 //
 //  Public API mirrors SfzDropdownPanel so the PluginEditor swap stays
 //  mechanical: onFileChosen(), panelDidShow(), onFileLoaded,
@@ -155,9 +180,14 @@ private:
     class CompactKeyboard;
 
     // ── Layout — proportions taken from the 1370x414 reference panel ─────────
-    static constexpr float kColPresetsFrac = 350.0f / 1370.0f;   // ~0.2555
+    static constexpr float kColPresetsFrac = 350.0f / 1370.0f;   // ~0.2555 — column 1 width
+    // Column 2 (merged voice + mixer panel) gets the remainder (~0.7445).
+    // kColVoiceFrac is now a width CAP applied inside column 2 for Sections
+    // A/B (active preset knobs + filter/reverb) only — Section C (channel
+    // mixer) and everything below it use column 2's full width. Kept the
+    // same numeric proportion as the old column 2 so that top block's pixel
+    // layout is unchanged by the merge.
     static constexpr float kColVoiceFrac   = 477.0f / 1370.0f;   // ~0.3482
-    // Column 3 (channel mixer) gets the remainder (~0.396).
     static constexpr int   kNarrowThreshold = 760;   // px — below this, stack columns
     static constexpr int   kTopBarH         = 36;
     static constexpr int   kKnobW  = 64;
@@ -220,9 +250,11 @@ private:
     juce::Rectangle<int> filterCutoffZone, filterResonanceZone;
     juce::Rectangle<int> reverbSendZone, reverbDampZone;
 
-    // ── Column 3 — always-visible channel mixer, activity meter, keyboard ───
-    juce::Rectangle<int> col3Zone;
-
+    // ── Column 2, Section C — always-visible channel mixer, activity meter, ─
+    //    keyboard. No separate zone member for the section itself — it's
+    //    just "whatever's left of col2Zone" after Sections A/B and the
+    //    bottom-docked meter/keyboard are carved out in layoutWide/Narrow().
+    juce::Rectangle<int> mixerLabelZone;
     juce::Rectangle<int> noteActivityLabelZone, noteMeterZone;
     juce::Rectangle<int> keyboardZone;
 
