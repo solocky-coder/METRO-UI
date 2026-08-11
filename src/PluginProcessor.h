@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_dsp/juce_dsp.h>
 #include <atomic>
+#include <memory>
 #include <array>
 #include <deque>
 #include <vector>
@@ -939,6 +940,16 @@ public:
     // =========================================================================
     juce::ThreadPool fileLoadPool { 1 };
     bool             defaultSampleScheduled { false }; // true once default or saved sample is queued
+
+    /** Shared lifetime flag for background LoadJob(s). A LoadJob holds a copy
+     *  of this shared_ptr (not a raw processor reference) and checks it before
+     *  every processor-touching block in its tail. The destructor flips this
+     *  to false BEFORE calling fileLoadPool.removeAllJobs(), so even if the
+     *  pool's wait times out and the destructor proceeds anyway, the still-
+     *  running job sees the flag is false and bails out instead of touching
+     *  freed memory. Because it's a shared_ptr, the flag object itself
+     *  outlives the DysektProcessor, so checking it is always memory-safe. */
+    std::shared_ptr<std::atomic<bool>> aliveFlag { std::make_shared<std::atomic<bool>> (true) };
     std::atomic<int>  nextLoadToken  { 0 };
     std::atomic<int>  latestLoadToken{ 0 };
     std::atomic<int>  latestLoadKind { (int) LoadKindReplace };

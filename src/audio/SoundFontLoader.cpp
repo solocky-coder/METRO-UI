@@ -418,6 +418,7 @@ public:
           sampleRate (sr),
           token (tok),
           processor (proc),
+          aliveFlag (proc.aliveFlag),   // shared_ptr copy: outlives `processor` if it's torn down mid-job
           target (tgt),
           presetBank (presetBankIn),
           presetProgram (presetProgramIn)
@@ -800,7 +801,7 @@ private:
                 + juce::String (numProbed) + " probed)"
                 + (renders.empty() ? " -> ALL SILENT, render aborted" : ""));
 
-        if (renders.empty() || shouldExit())
+        if (renders.empty() || shouldExit() || ! processorAlive())
         {
             // For the SFZ-PLAYER preview pipeline specifically: an all-silent
             // probe here isn't necessarily a failure -- it's also what
@@ -886,6 +887,17 @@ private:
 
 
         // ── Step 3b: extract loop points (SFZ + SF2) and post to sfzPlayer ──────
+        // Re-check here: everything above (concatenation, mipmap building)
+        // works on locally-owned buffers and doesn't touch `processor`, but
+        // this block and everything after it does. The single shouldExit()
+        // check at the top of this function is not enough to cover the rest
+        // of a long tail like this one.
+        if (! processorAlive())
+        {
+            delete payload;
+            return jobHasFinished;
+        }
+
         {
             const auto ext = file.getFileExtension().toLowerCase();
 
@@ -1036,6 +1048,16 @@ private:
         }
 
         // ── Step 4: post results ──────────────────────────────────────────────
+        // Last checkpoint before the actual atomic hand-off into `processor`
+        // (exchangeCompletedLoadData*/pendingPreviewZones*). This is the
+        // exact class of access that raced with ~DysektProcessor() before
+        // the aliveFlag fix.
+        if (! processorAlive())
+        {
+            delete payload;
+            return jobHasFinished;
+        }
+
         if (target == SoundFontLoadTarget::Slicer)
         {
             // Post slice layout (processBlock picks this up right after applyDecodedSample)
@@ -1311,6 +1333,12 @@ private:
     // callers are responsible for that check before calling this.
     void postEmptySfzPlayer2Result()
     {
+        // Guard against the processor having been torn down between
+        // whichever early-return call site invoked us and this line
+        // actually running (see aliveFlag in PluginProcessor.h/.cpp).
+        if (! processorAlive())
+            return;
+
         if (token == processor.latestPreviewToken2.load (std::memory_order_acquire))
         {
             auto emptyDecoded = std::make_unique<SampleData::DecodedSample>();
@@ -1343,6 +1371,12 @@ private:
 
     void postFailure()
     {
+        // Guard against the processor having been torn down between
+        // whichever early-return call site invoked us and this line
+        // actually running (see aliveFlag in PluginProcessor.h/.cpp).
+        if (! processorAlive())
+            return;
+
         // Any SfPlayer render (initial file-load OR a preset-scoped click
         // re-render) can bail out here — bad file, silent preset, or
         // shouldExit() mid-probe — every early "return jobHasFinished"
@@ -1394,10 +1428,21 @@ private:
         delete old;
     }
 
+    // Safe to call from the background thread at any point, even after
+    // `processor` has been destroyed: aliveFlag is a shared_ptr, so the
+    // pointed-to bool outlives the DysektProcessor. Returns false once the
+    // destructor has flagged teardown, which must happen BEFORE any further
+    // touch of `processor`.
+    bool processorAlive() const
+    {
+        return aliveFlag != nullptr && aliveFlag->load (std::memory_order_acquire);
+    }
+
     juce::File          file;
     double              sampleRate;
     int                 token;
     DysektProcessor&    processor;
+    std::shared_ptr<std::atomic<bool>> aliveFlag;
     SoundFontLoadTarget target;
     int                 presetBank;
     int                 presetProgram;
