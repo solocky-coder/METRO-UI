@@ -619,7 +619,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
     // its original pixel layout instead of stretching across the full
     // merged width.
     {
-        auto top = c.removeFromTop (200 - kPad);
+        auto top = c.removeFromTop (180 - kPad);
         auto topSection = top.removeFromLeft (juce::jmin (topSectionW, top.getWidth()));
 
         activePresetHeaderZone = topSection.removeFromTop (54);
@@ -628,8 +628,11 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         // Knob cell is label(16) + circle + value(20), not just the circle —
         // drawKnob() carves those three sub-rects out of whatever bounds it's
         // given, so the cell passed in has to be tall enough to hold all three
-        // without cramming the circle.
-        constexpr int kKnobCellH = 96;
+        // without cramming the circle. Trimmed from 96 to 84 — still plenty
+        // of room for the circle, and the 12px it frees up goes toward
+        // Section C below (see the elastic keyboard/mixer split there),
+        // which needed the room far more than this knob row's slack did.
+        constexpr int kKnobCellH = 84;
         auto knobRow = topSection.removeFromTop (kKnobCellH);
         const int knobGap = (knobRow.getWidth() - 3 * kKnobW) / 4;
         knobRow.removeFromLeft (knobGap);
@@ -648,37 +651,70 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
 
     // ── Section B — SF2 filter + global reverb sliders ──────────────────────
     // Same width cap as Section A so the two read as one coherent block.
+    // Row height trimmed from 34 to 30 and inter-row gap from kPad to 6 —
+    // drawSlider() only needs a 16px label row + a 12px track, so 34px
+    // always had a few spare px per row; freed up for Section C below.
     {
-        auto filterSection = c.removeFromTop (4 * 34 + 3 * kPad);
+        auto filterSection = c.removeFromTop (4 * 30 + 3 * 6);
         filterSection = filterSection.removeFromLeft (juce::jmin (topSectionW, filterSection.getWidth()));
 
-        filterCutoffZone = filterSection.removeFromTop (34);
-        filterSection.removeFromTop (kPad);
-        filterResonanceZone = filterSection.removeFromTop (34);
-        filterSection.removeFromTop (kPad);
-        reverbSendZone = filterSection.removeFromTop (34);
-        filterSection.removeFromTop (kPad);
-        reverbDampZone = filterSection.removeFromTop (34);
+        filterCutoffZone = filterSection.removeFromTop (30);
+        filterSection.removeFromTop (6);
+        filterResonanceZone = filterSection.removeFromTop (30);
+        filterSection.removeFromTop (6);
+        reverbSendZone = filterSection.removeFromTop (30);
+        filterSection.removeFromTop (6);
+        reverbDampZone = filterSection.removeFromTop (30);
     }
-    c.removeFromTop (kPad * 2);
+    c.removeFromTop (kPad);
 
     // ── Section C — channel mixer, note activity, keyboard ──────────────────
     // Full merged-column width (no cap) — this is where the extra room
     // freed up by dropping the old column 3 divider actually goes.
-    keyboardZone = c.removeFromBottom (110);
-    c.removeFromBottom (kPad);
-    compactKeyboard->setBounds (keyboardZone);
+    //
+    // BUGFIX: this used to hand the keyboard/meter their full fixed pixel
+    // budget unconditionally and give Sf2ChannelFxPanel whatever was left —
+    // which, once Sections A/B/paddings had taken their share out of a
+    // realistic window height, routinely rounded down to ~0px. The mixer
+    // (the actual point of the column 2/3 merge) would silently vanish
+    // while the keyboard underneath it rendered at full size. Now the split
+    // is elastic: the keyboard gets its comfortable/ideal height only if
+    // there's room left over for the mixer's own minimum after it; under
+    // real pressure the keyboard shrinks toward a floor first, so the
+    // mixer — which also degrades gracefully via its own dynamic knob
+    // sizing (see Sf2ChannelFxPanel::knobH()) — keeps getting a fair,
+    // visible share instead of being crushed to nothing.
+    {
+        constexpr int kKeyboardIdealH = 110;
+        constexpr int kKeyboardFloorH = 56;
+        constexpr int kMixerMinH      = 138;   // matches Sf2ChannelFxPanel's own floor:
+                                                // kLabelHMin(14) + kPadding(4) + 3*kKnobHMin(40)
 
-    // Note activity meter docked immediately above the keyboard.
-    c.removeFromBottom (18);
-    noteMeterZone = c.removeFromBottom (24);
-    noteActivityLabelZone = c.removeFromBottom (14);
-    c.removeFromBottom (kPad);
+        // Fixed chrome around the keyboard/mixer split: pad below keyboard,
+        // gap above the note meter, the meter itself, its label, pad, the
+        // "CHANNEL MIXER" label, and the pad under it.
+        const int chromeH = kPad + 8 + 20 + 14 + 6 + 18 + 4;
+        const int splittableH = juce::jmax (0, c.getHeight() - chromeH);
 
-    mixerLabelZone = c.removeFromTop (18);
-    c.removeFromTop (kPad / 2);
+        const int keyboardH = (splittableH >= kKeyboardIdealH + kMixerMinH)
+                                   ? kKeyboardIdealH
+                                   : juce::jmax (kKeyboardFloorH, splittableH - kMixerMinH);
 
-    channelFxPanel.setBounds (c);
+        keyboardZone = c.removeFromBottom (keyboardH);
+        c.removeFromBottom (kPad);
+        compactKeyboard->setBounds (keyboardZone);
+
+        // Note activity meter docked immediately above the keyboard.
+        c.removeFromBottom (8);
+        noteMeterZone = c.removeFromBottom (20);
+        noteActivityLabelZone = c.removeFromBottom (14);
+        c.removeFromBottom (6);
+
+        mixerLabelZone = c.removeFromTop (18);
+        c.removeFromTop (kPad / 2);
+
+        channelFxPanel.setBounds (c);
+    }
 }
 
 void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
@@ -734,30 +770,45 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
 
     // ── Section B — SF2 filter + global reverb sliders ──────────────────────
     {
-        filterCutoffZone = c.removeFromTop (32);
-        c.removeFromTop (kPad);
-        filterResonanceZone = c.removeFromTop (32);
-        c.removeFromTop (kPad);
-        reverbSendZone = c.removeFromTop (32);
-        c.removeFromTop (kPad);
-        reverbDampZone = c.removeFromTop (32);
+        filterCutoffZone = c.removeFromTop (30);
+        c.removeFromTop (6);
+        filterResonanceZone = c.removeFromTop (30);
+        c.removeFromTop (6);
+        reverbSendZone = c.removeFromTop (30);
+        c.removeFromTop (6);
+        reverbDampZone = c.removeFromTop (30);
     }
-    c.removeFromTop (kPad * 2);
+    c.removeFromTop (kPad);
 
     // ── Section C — channel mixer, note activity, keyboard ──────────────────
-    keyboardZone = c.removeFromBottom (100);
-    c.removeFromBottom (kPad);
-    compactKeyboard->setBounds (keyboardZone);
+    // Same elastic keyboard/mixer split as layoutWide — see the comment
+    // there for why this can't just be two fixed pixel budgets stacked up.
+    {
+        constexpr int kKeyboardIdealH = 100;
+        constexpr int kKeyboardFloorH = 52;
+        constexpr int kMixerMinH      = 138;
 
-    c.removeFromBottom (18);
-    noteMeterZone = c.removeFromBottom (20);
-    noteActivityLabelZone = c.removeFromBottom (14);
-    c.removeFromBottom (kPad);
+        const int chromeH = kPad + 8 + 20 + 14 + 6 + 18 + 4;
+        const int splittableH = juce::jmax (0, c.getHeight() - chromeH);
 
-    mixerLabelZone = c.removeFromTop (18);
-    c.removeFromTop (kPad / 2);
+        const int keyboardH = (splittableH >= kKeyboardIdealH + kMixerMinH)
+                                   ? kKeyboardIdealH
+                                   : juce::jmax (kKeyboardFloorH, splittableH - kMixerMinH);
 
-    channelFxPanel.setBounds (c);
+        keyboardZone = c.removeFromBottom (keyboardH);
+        c.removeFromBottom (kPad);
+        compactKeyboard->setBounds (keyboardZone);
+
+        c.removeFromBottom (8);
+        noteMeterZone = c.removeFromBottom (20);
+        noteActivityLabelZone = c.removeFromBottom (14);
+        c.removeFromBottom (6);
+
+        mixerLabelZone = c.removeFromTop (18);
+        c.removeFromTop (kPad / 2);
+
+        channelFxPanel.setBounds (c);
+    }
 }
 
 // =============================================================================

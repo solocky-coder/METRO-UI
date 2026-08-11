@@ -182,7 +182,7 @@ public:
         {
             if (! (activeMask & (1u << ch))) continue;
             const auto col = colRectFor (ch);
-            const auto labelRect = col.withHeight (kLabelH);
+            const auto labelRect = col.withHeight (labelH());
             if (labelRect.contains (e.position))
             {
                 const auto strip = processor.sfzPlayer.getChannelStrip (ch);
@@ -224,14 +224,46 @@ private:
     // ── Knob IDs — mirrors the real SfzPlayer::ChannelStrip fields ────────────
     enum class Knob { None, Volume, Pan, ReverbSend };
 
-    static constexpr float kKnobH    = 72.f;   // px tall per knob row — was 44, too small to
-                                                // fit a label + circle + value stack without
-                                                // overlap (see paintKnob() fix below)
-    static constexpr float kLabelH   = 20.f;   // preset name label
-    static constexpr float kPadding  =  4.f;
-    static constexpr float kMinColW  = 96.f;   // floor width so knobs/labels stay legible —
-                                                // panel scrolls horizontally past this instead
-                                                // of shrinking columns further
+    // kKnobH/kLabelH used to be hard pixel constants (72 / 20 — three knob
+    // rows + the preset label add up to 236px of *required* content). That
+    // was fine as long as whoever laid this panel out always handed it
+    // ≥236px of height — but nothing enforced that, and Sf2InstrumentWorkspace
+    // ended up doing exactly the opposite: after its own fixed-height
+    // sections (knobs, filter/reverb, note meter, keyboard) ate the
+    // available column height, this panel could be handed a rect only a
+    // few px tall. Since paintChannel()/knobRect() drew at the fixed 72/20
+    // sizes regardless, most (or all) of the three knob rows landed outside
+    // the panel's actual bounds and were clipped away — a fully-populated
+    // mixer with real assigned channels, rendering as nothing visible.
+    // kKnobH/kLabelH are now *derived from the panel's own current height*
+    // instead, clamped between a legible floor and the original comfortable
+    // ceiling, so the strip always fits in whatever height it's actually
+    // given — shrinking gracefully under pressure rather than clipping.
+    static constexpr float kKnobHMax   = 72.f;
+    static constexpr float kKnobHMin   = 40.f;   // still shows a full arc + label + value
+    static constexpr float kLabelHMax  = 20.f;
+    static constexpr float kLabelHMin  = 14.f;
+    static constexpr float kPadding    =  4.f;
+    static constexpr float kMinColW    = 96.f;   // floor width so knobs/labels stay legible —
+                                                  // panel scrolls horizontally past this instead
+                                                  // of shrinking columns further
+
+    /** Preset-label row height for the current panel height. */
+    float labelH() const noexcept
+    {
+        return juce::jlimit (kLabelHMin, kLabelHMax, (float) getHeight() * 0.14f);
+    }
+
+    /** Per-knob row height for the current panel height — whatever's left
+     *  after the label row and inter-row padding, split three ways, clamped
+     *  to a legible floor. This is what lets three knob rows actually fit
+     *  (and stay visible) inside however much height the workspace hands
+     *  this panel, instead of assuming a fixed 236px is always available. */
+    float knobH() const noexcept
+    {
+        const float remaining = (float) getHeight() - labelH() - kPadding;
+        return juce::jlimit (kKnobHMin, kKnobHMax, remaining / 3.f);
+    }
 
     struct DragState { int ch { -1 }; Knob knob { Knob::None }; };
 
@@ -334,8 +366,8 @@ private:
 
     juce::Rectangle<float> knobRect (const juce::Rectangle<float>& col, Knob k) const
     {
-        const float y0 = kLabelH + kPadding;
-        const float kH = kKnobH;
+        const float y0 = labelH() + kPadding;
+        const float kH = knobH();
         const float x  = col.getX() + kPadding;
         const float w  = col.getWidth() - kPadding * 2.f;
 
@@ -394,7 +426,7 @@ private:
         // Workspace MIDI INPUT readout.
         g.setColour (strip.muted ? accent.withAlpha (0.35f) : accent);
         g.setFont (DysektLookAndFeel::makeFont(13.f, true));
-        const auto labelRect = col.withHeight (kLabelH).reduced (kPadding, 1.f);
+        const auto labelRect = col.withHeight (labelH()).reduced (kPadding, 1.f);
         juce::String label = "CH " + juce::String (ch + 1) + "  "
                             + (channelLabels[ch].isEmpty() ? juce::String ("(empty)") : channelLabels[ch]);
         if (strip.muted) label += " (muted)";
@@ -425,8 +457,12 @@ private:
         // the label+circle+value stack OR the circle alone, not both. See
         // Sf2InstrumentWorkspace::drawKnob for the same fix applied there.)
         auto kr = knobRect (col, k);
-        auto topLabel = kr.removeFromTop (14.f);
-        auto botLabel = kr.removeFromBottom (16.f);
+        // Text row heights scale down alongside the knob cell itself so the
+        // circle always keeps a usable share of kr — at kKnobHMin (34px) a
+        // fixed 14/16 label pair would leave only ~4px for the circle.
+        const float textRowH = juce::jmax (9.f, kr.getHeight() * 0.19f);
+        auto topLabel = kr.removeFromTop (textRowH);
+        auto botLabel = kr.removeFromBottom (textRowH + 2.f);
         const auto& circleZone = kr;   // whatever's left in the middle
 
         const float cx     = circleZone.getCentreX();
