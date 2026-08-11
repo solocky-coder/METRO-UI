@@ -108,28 +108,9 @@ private:
 };
 
 //==============================================================================
-class DysektProcessor : public juce::AudioProcessor, private juce::Timer
+class DysektProcessor : public juce::AudioProcessor
 {
 public:
-    // ── Crash logger ────────────────────────────────────────────────────────
-    // Declared FIRST so it is constructed first and destroyed last (C++
-    // constructs members in declaration order and destroys them in REVERSE
-    // declaration order) -- ensuring the log brackets the full object
-    // lifetime, including logging "session ended cleanly" and removing the
-    // session.lock sentinel only after every other member (fileLoadPool,
-    // sfzLoadPool, soundFontProcessorHandle, etc.) has finished tearing
-    // down. This member used to be declared LAST in the class, which meant
-    // it was actually constructed last and destroyed FIRST -- the opposite
-    // of its own documented intent, and of what CrashLogger.h's usage
-    // comment assumes ("declare before other members"). With it declared
-    // last, ~CrashLogger() ran before fileLoadPool's own teardown even
-    // started, so a hang/force-kill during that teardown (see the fix in
-    // ~DysektProcessor() below) would never even get a chance to leave a
-    // "session ended cleanly" line missing as a clue -- it just looked like
-    // an ordinary in-progress session. Moving it here restores that
-    // diagnostic value going forward.
-    CrashLogger crashLogger;
-
     // =========================================================================
     // Inner types
     // =========================================================================
@@ -842,11 +823,12 @@ private:
     // =========================================================================
     // Private types
     // =========================================================================
-    // Moved to a top-level struct in SoundFontLoader.h (see ProcessorHandle's
-    // comment) so LoadJob can post one without needing a complete
-    // DysektProcessor type. Aliased back here so every existing local
-    // `FailedLoadResult` usage in this file keeps compiling unchanged.
-    using FailedLoadResult = ::FailedLoadResult;
+    struct FailedLoadResult
+    {
+        int        token { 0 };
+        LoadKind   kind  { LoadKindReplace };
+        juce::File file;
+    };
 
     // =========================================================================
     // Private helpers
@@ -955,55 +937,11 @@ public:
     // =========================================================================
     // Sample loading (public so UI thread can dispatch SFZ/SF2 loads)
     // =========================================================================
-    // Heap-owned (not a plain value member) so ~DysektProcessor() can hand
-    // its teardown off to a detached background thread instead of blocking
-    // on it -- see the fix in ~DysektProcessor() and the comment on
-    // ProcessorHandle in SoundFontLoader.h. A plain `juce::ThreadPool
-    // fileLoadPool { 1 };` member's own implicit destructor internally does
-    // an unbounded-ish removeAllJobs()+thread-join wait for any job still
-    // running on it (this is standard, documented juce::ThreadPool
-    // behaviour, not a bug in JUCE) -- fine for a short job, but a
-    // SoundFontLoader::LoadJob preview render of a large soundfont can
-    // legitimately run for minutes. Blocking on that is exactly what leaves
-    // session.lock behind and no crash-handler entry: it isn't a segfault,
-    // it's the host or OS deciding the plugin has hung (because the thread
-    // tearing down DysektProcessor -- typically the host's message thread --
-    // is stuck waiting) and force-killing the process, which bypasses both
-    // CrashLogger's signal handlers and every remaining destructor.
-    std::unique_ptr<juce::ThreadPool> fileLoadPool { std::make_unique<juce::ThreadPool> (1) };
-    // Dedicated pool for SfzPlayer's live playback-engine build
-    // (SfzPlayer::loadFile() -> SynthBuildJob). Deliberately kept SEPARATE
-    // from fileLoadPool: SoundFontLoader's zone-builder/preview scan
-    // (queued on fileLoadPool) can legitimately take minutes for a
-    // full-range patch (up to 128 notes x ~2.8s each, see SfzConst::
-    // kNoteDurationSec/kReleaseSec in SoundFontLoader.cpp), and
-    // FluidSynthGlobalLock.h's whole design already assumes the preview
-    // job and the live-engine build run concurrently on separate threads
-    // (it serializes only instance construction/destruction, not steady-
-    // state rendering). Sharing one single-worker fileLoadPool between the
-    // two silently defeated that: the live loadFile() job would queue
-    // behind an in-flight preview scan and not run until it finished,
-    // making the plugin appear frozen while an instrument the user is
-    // actually trying to play sits unqueued. See dysekt_crash.log /
-    // session.lock pattern (no crash-handler entry, just a stale sentinel)
-    // for the observed symptom of this.
-    juce::ThreadPool sfzLoadPool { 1 };
+    juce::ThreadPool fileLoadPool { 1 };
     bool             defaultSampleScheduled { false }; // true once default or saved sample is queued
-    // Shared, heap-allocated state SoundFontLoader::LoadJob posts its results
-    // through instead of holding a raw DysektProcessor& -- see
-    // ProcessorHandle's full comment in SoundFontLoader.h for why (a
-    // background-thread use-after-free fixed to mirror SfzPlayer::BuildState).
-    // Every field below that LoadJob touches on its background thread is a
-    // reference alias into this handle rather than a direct member, so the
-    // handle -- not DysektProcessor -- owns the actual storage; everything
-    // else in the codebase that reads/writes these fields by name keeps
-    // working exactly as before. Declared before the aliases so it's
-    // constructed first.
-    std::shared_ptr<ProcessorHandle> soundFontProcessorHandle { std::make_shared<ProcessorHandle>() };
-
     std::atomic<int>  nextLoadToken  { 0 };
     std::atomic<int>  latestLoadToken{ 0 };
-    std::atomic<int>& latestLoadKind = soundFontProcessorHandle->latestLoadKind;
+    std::atomic<int>  latestLoadKind { (int) LoadKindReplace };
 
     /** Generation-token pair for the SFZ-PLAYER preview pipeline
      *  (completedLoadData2/pendingPreviewZones2), mirroring
@@ -1022,7 +960,7 @@ public:
      *  result carries the token it was built for, and processBlock discards
      *  the result if a newer load has been requested since. */
     std::atomic<int>  nextPreviewToken2  { 0 };
-    std::atomic<int>& latestPreviewToken2 = soundFontProcessorHandle->latestPreviewToken2;
+    std::atomic<int>  latestPreviewToken2{ 0 };
 
     /** Same guard as nextPreviewToken2/latestPreviewToken2 above, for the
      *  SF2-PLAYER preview pipeline (completedLoadData3/pendingPreviewZones3).
@@ -1031,22 +969,19 @@ public:
      *  risk applies -- e.g. clicking two preset rows in Sf2InstrumentWorkspace
      *  in quick succession. Bumped and checked identically. */
     std::atomic<int>  nextPreviewToken3  { 0 };
-    std::atomic<int>& latestPreviewToken3 = soundFontProcessorHandle->latestPreviewToken3;
+    std::atomic<int>  latestPreviewToken3{ 0 };
     // Holds the fully-prepared payload for the primary (Slicer) sample-load
     // pipeline. Built as a SnapshotPtr entirely on the loader worker thread
     // (see requestSampleLoad()'s onSuccess lambda) so that processBlock()
     // only ever performs a non-allocating pointer/refcount swap when it
     // consumes this -- see SampleData::applyDecodedSample().
-    // (Storage now lives in soundFontProcessorHandle -- see ProcessorHandle
-    // in SoundFontLoader.h -- so LoadJob's background-thread postings can't
-    // outlive it; this is a reference alias, not the storage itself.)
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    std::atomic<SampleData::SnapshotPtr>& completedLoadData = soundFontProcessorHandle->completedLoadData;
+    std::atomic<SampleData::SnapshotPtr> completedLoadData;
 #else
-    SampleData::SnapshotPtr&              completedLoadData = soundFontProcessorHandle->completedLoadData;
+    SampleData::SnapshotPtr              completedLoadData;
 #endif
-    std::atomic<FailedLoadResult*>& completedLoadFailure = soundFontProcessorHandle->completedLoadFailure;
-    std::atomic<SfzSlicePayload*>&  pendingSfzSlices      = soundFontProcessorHandle->pendingSfzSlices;
+    std::atomic<FailedLoadResult*>          completedLoadFailure { nullptr };
+    std::atomic<SfzSlicePayload*>           pendingSfzSlices     { nullptr };
 
     /** Second, independent load-result pipeline for the SFZ-PLAYER's preview
      *  buffer (sampleData2). Populated by loadSoundFontAsync(file,
@@ -1057,9 +992,9 @@ public:
      *  non-allocating pointer/refcount swap -- never a unique_ptr->shared_ptr
      *  control-block allocation. */
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    std::atomic<SampleData::SnapshotPtr>& completedLoadData2 = soundFontProcessorHandle->completedLoadData2;
+    std::atomic<SampleData::SnapshotPtr> completedLoadData2;
 #else
-    SampleData::SnapshotPtr&              completedLoadData2 = soundFontProcessorHandle->completedLoadData2;
+    SampleData::SnapshotPtr              completedLoadData2;
 #endif
 
     /** Heap-allocated zone payload posted by SoundFontLoader for a
@@ -1068,7 +1003,7 @@ public:
      *  processBlock turns each descriptor into a REAL slice in
      *  sliceManager2 (see Slice::nextSliceIdx for the loop-region
      *  two-slice split), not a read-only display overlay. */
-    std::atomic<SfzPreviewZonePayload*>& pendingPreviewZones2 = soundFontProcessorHandle->pendingPreviewZones2;
+    std::atomic<SfzPreviewZonePayload*> pendingPreviewZones2 { nullptr };
 
     /** Third, independent load-result pipeline for the SF2-PLAYER's preview
      *  buffer (sampleData3). Populated by loadSoundFontAsync(file,
@@ -1077,11 +1012,11 @@ public:
      *  completedLoadData2/pendingPreviewZones2 exactly, including the
      *  worker-thread-built SnapshotPtr. */
 #if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
-    std::atomic<SampleData::SnapshotPtr>& completedLoadData3 = soundFontProcessorHandle->completedLoadData3;
+    std::atomic<SampleData::SnapshotPtr> completedLoadData3;
 #else
-    SampleData::SnapshotPtr&              completedLoadData3 = soundFontProcessorHandle->completedLoadData3;
+    SampleData::SnapshotPtr              completedLoadData3;
 #endif
-    std::atomic<SfzPreviewZonePayload*>& pendingPreviewZones3 = soundFontProcessorHandle->pendingPreviewZones3;
+    std::atomic<SfzPreviewZonePayload*>     pendingPreviewZones3 { nullptr };
 
     /** SF2-PLAYER per-preset waveform preview state. sampleData3/previewZones3
      *  used to be locked to whichever preset the .sf2 file defaulted to at
@@ -1093,7 +1028,7 @@ public:
     std::atomic<int>  sf2PreviewRenderedProgram  { -1 };
     std::atomic<int>  sf2PreviewRequestedBank    { -1 };
     std::atomic<int>  sf2PreviewRequestedProgram { -1 };
-    std::atomic<bool>& sf2PreviewRenderInFlight = soundFontProcessorHandle->sf2PreviewRenderInFlight;
+    std::atomic<bool> sf2PreviewRenderInFlight   { false };
 
     /** Mirrors sf2PreviewRenderInFlight, but for the Slicer/SFZ-PLAYER kit
      *  load pipeline (completedLoadData / completedLoadData2). Set true in
@@ -1103,7 +1038,7 @@ public:
      *  load bails out early. Checked by SliceWaveformLcd::drawNoData() so a
      *  kit loading in the background shows a loading state instead of the
      *  stale/empty "EMPTY" view. */
-    std::atomic<bool>& mainLoadInFlight = soundFontProcessorHandle->mainLoadInFlight;
+    std::atomic<bool> mainLoadInFlight           { false };
 
     /** Scoped exclusively to the SFZ-PLAYER preview rebuild pipeline
      *  (SoundFontLoadTarget::SfzPlayer2) -- unlike mainLoadInFlight above,
@@ -1129,8 +1064,8 @@ public:
      *  places mainLoadInFlight is cleared for that target: processBlock's
      *  decoded2 branch, and postFailure() (including the empty-render
      *  "all zones deleted" path -- see SoundFontLoader::finishAndPost). */
-    std::atomic<bool>& sfzPlayer2RebuildInFlight    = soundFontProcessorHandle->sfzPlayer2RebuildInFlight;
-    std::atomic<bool>& sfzPlayer2LcdRebuildInFlight = soundFontProcessorHandle->sfzPlayer2LcdRebuildInFlight;
+    std::atomic<bool> sfzPlayer2RebuildInFlight    { false };
+    std::atomic<bool> sfzPlayer2LcdRebuildInFlight { false };
 
 
     // =========================================================================
@@ -1189,24 +1124,10 @@ public:
 
     friend class SoundFontLoader;
 
-    // ── processBlock() ENTRY diagnostic (audio-thread-safe handoff) ────────
-    // The diagnostic itself must never call crashLogger.log() directly from
-    // processBlock() -- that's synchronous, locking, allocating file I/O,
-    // the exact real-time-safety violation the comment right above this
-    // call in processBlock() already warns about for the *old* per-MIDI-
-    // event version of this diagnostic. Firing only once (guarded by
-    // loggedProcessBlockEntryOnce) does not make it safe: a single blocking
-    // file write on the audio thread's very first callback is still enough
-    // to stall that callback long enough for a host's real-time watchdog to
-    // decide the plugin has hung and force-kill the process -- which is
-    // exactly the "no crash-handler entry, session.lock never removed"
-    // signature seen when this fired. Instead, processBlock() only ever
-    // does a wait-free atomic store here; timerCallback() (message thread)
-    // polls it and does the actual logging.
-    std::atomic<bool> processBlockEntryPending { false };
-    std::atomic<int>  processBlockEntryNumSamples { 0 };
-    std::atomic<int>  processBlockEntryNumMidiEvents { 0 };
-    void timerCallback() override;
+    // ── Crash logger ────────────────────────────────────────────────────────
+    // Declared last so it is constructed first and destroyed last,
+    // ensuring the log captures the full object lifetime.
+    CrashLogger crashLogger;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DysektProcessor)
 };

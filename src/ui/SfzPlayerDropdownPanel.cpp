@@ -245,7 +245,7 @@ void SfzPlayerDropdownPanel::closeBrowser()
 
 void SfzPlayerDropdownPanel::onFileChosen (const juce::File& f)
 {
-    processor.sfzPlayer2.loadFile (f, processor.sfzLoadPool);
+    processor.sfzPlayer2.loadFile (f, processor.fileLoadPool);
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
     reloadZones (f);
     closeBrowser();
@@ -992,7 +992,7 @@ void SfzPlayerDropdownPanel::filesDropped (const juce::StringArray& files, int, 
         if (ext == ".sfz")   // SFZ-Player only
         {
             juce::File file (f);
-            processor.sfzPlayer2.loadFile (file, processor.sfzLoadPool);
+            processor.sfzPlayer2.loadFile (file, processor.fileLoadPool);
             processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
             reloadZones (file);
             closeBrowser();
@@ -1036,7 +1036,7 @@ void SfzPlayerDropdownPanel::initEmptySfz()
     if (! sfz.existsAsFile())
         sfz.replaceWithText ("// Custom SFZ — built with SF-Player\n\n");
 
-    processor.sfzPlayer2.loadFile (sfz, processor.sfzLoadPool);   // sfizz handles empty file gracefully (silence)
+    processor.sfzPlayer2.loadFile (sfz, processor.fileLoadPool);   // sfizz handles empty file gracefully (silence)
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
     reloadZones (sfz);                    // sets [+ ZONE] button visible + wires callback
 }
@@ -1660,7 +1660,7 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
     f.replaceWithText (newContent);
 
     // Hot-reload the SFZ player so changes take effect immediately
-    processor.sfzPlayer2.loadFile (f, processor.sfzLoadPool);
+    processor.sfzPlayer2.loadFile (f, processor.fileLoadPool);
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
 
     // Tell processBlock the rebuild this triggers is a Zone Builder edit,

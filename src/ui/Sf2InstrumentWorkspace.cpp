@@ -1169,7 +1169,7 @@ void Sf2InstrumentWorkspace::onFileChosen (const juce::File& f)
     if (f.getFileExtension().toLowerCase() != ".sf2")
         return;   // SF2-PLAYER only accepts .sf2 — silently ignore anything else
 
-    processor.sfzPlayer.loadFile (f, processor.sfzLoadPool);
+    processor.sfzPlayer.loadFile (f, processor.fileLoadPool);
 
     // Reset the UI-only display index — otherwise a previously-browsed index
     // from the old file's preset list could point at the wrong (or an

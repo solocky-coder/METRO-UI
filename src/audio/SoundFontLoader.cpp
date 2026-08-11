@@ -411,43 +411,17 @@ static std::pair<int,int> parseSf2LoopPoints (const juce::File& sf2File)
 class SoundFontLoader::LoadJob final : public juce::ThreadPoolJob
 {
 public:
-    // `proc` is captured only as a raw pointer, and ONLY used for the small
-    // remaining set of calls that genuinely need the live DysektProcessor
-    // (sfzPlayer/sfzPlayer2.setLoopPoints(), gated by handle->processorAlive
-    // -- see ProcessorHandle's comment in SoundFontLoader.h). Every result
-    // this job posts goes through `handle` instead, which the job keeps
-    // alive via its own shared_ptr regardless of whether `proc` still exists.
-    LoadJob (juce::File f, double sr, int tok, DysektProcessor& proc,
-             std::shared_ptr<ProcessorHandle> procHandle, SoundFontLoadTarget tgt,
+    LoadJob (juce::File f, double sr, int tok, DysektProcessor& proc, SoundFontLoadTarget tgt,
              int presetBankIn = -1, int presetProgramIn = -1)
         : juce::ThreadPoolJob ("SfzLoadJob"),
           file (std::move (f)),
           sampleRate (sr),
           token (tok),
-          processorPtr (&proc),
-          handle (std::move (procHandle)),
+          processor (proc),
           target (tgt),
           presetBank (presetBankIn),
           presetProgram (presetProgramIn)
     {}
-
-    // ── Gated access to the two live SfzPlayer engines ──────────────────────
-    // See the constructor comment and ProcessorHandle::processorAlive's
-    // comment in SoundFontLoader.h: this is a best-effort mitigation (narrows
-    // the crash window, doesn't formally eliminate it), unlike every other
-    // result this job posts, which is now unconditionally safe because it
-    // goes through `handle`-owned storage instead.
-    void setSfzLoopPointsIfProcessorAlive (int loopStart, int loopEnd) const
-    {
-        if (handle->processorAlive.load (std::memory_order_acquire))
-            processorPtr->sfzPlayer.setLoopPoints (loopStart, loopEnd);
-    }
-
-    void setSfz2LoopPointsIfProcessorAlive (int loopStart, int loopEnd) const
-    {
-        if (handle->processorAlive.load (std::memory_order_acquire))
-            processorPtr->sfzPlayer2.setLoopPoints (loopStart, loopEnd);
-    }
 
     // ── Main entry point ──────────────────────────────────────────────────────
     JobStatus runJob() override
@@ -487,7 +461,7 @@ private:
         const bool ok = sfizz_load_file (sfz, file.getFullPathName().toRawUTF8());
 
         if (target == SoundFontLoadTarget::SfPlayer)
-            handle->log ("SF2 preview: sfizz_load_file(\"" + file.getFullPathName()
+            processor.crashLogger.log ("SF2 preview: sfizz_load_file(\"" + file.getFullPathName()
                 + "\") -> " + (ok ? "OK" : "FAILED")
                 + "  [preset override " + juce::String (presetBank) + "/" + juce::String (presetProgram) + "]"
                 + "  regions=" + juce::String (ok ? sfizz_get_num_regions (sfz) : -1));
@@ -497,7 +471,7 @@ private:
             // completely silently — matrix (parseSfzZones, a lenient text scan)
             // could show zones that sfizz's real parser rejects outright, with
             // zero indication why the LCD/waveform/slice-count stayed empty.
-            handle->log ("SFZ-PLAYER zone preview: sfizz_load_file(\"" + file.getFullPathName()
+            processor.crashLogger.log ("SFZ-PLAYER zone preview: sfizz_load_file(\"" + file.getFullPathName()
                 + "\") -> " + (ok ? "OK" : "FAILED")
                 + "  regions=" + juce::String (ok ? sfizz_get_num_regions (sfz) : -1));
 
@@ -562,14 +536,14 @@ private:
         if (shouldExit()) { sfizz_free (sfz); postFailure(); return jobHasFinished; }
 
         if (target == SoundFontLoadTarget::SfPlayer)
-            handle->log ("SF2 preview: discoverActiveNotes found "
+            processor.crashLogger.log ("SF2 preview: discoverActiveNotes found "
                 + juce::String ((int) activeNotes.size()) + " responsive note(s)"
                 + (activeNotes.empty() ? " -> falling back to piano range 21-108" : ""));
         else if (target == SoundFontLoadTarget::SfzPlayer2)
         {
             juce::String notesStr;
             for (int n : activeNotes) notesStr << n << " ";
-            handle->log ("SFZ-PLAYER zone preview: discoverActiveNotes found "
+            processor.crashLogger.log ("SFZ-PLAYER zone preview: discoverActiveNotes found "
                 + juce::String ((int) activeNotes.size()) + " responsive note(s)"
                 + (activeNotes.empty() ? " -> falling back to full 0-127 sweep" : ": " + notesStr));
         }
@@ -686,7 +660,7 @@ private:
 
         const bool ok = (sfontId != FLUID_FAILED);
 
-        handle->log ("SF2 preview (FluidSynth): fluid_synth_sfload(\"" + file.getFullPathName()
+        processor.crashLogger.log ("SF2 preview (FluidSynth): fluid_synth_sfload(\"" + file.getFullPathName()
             + "\") -> " + (ok ? "OK" : "FAILED")
             + "  [preset override " + juce::String (presetBank) + "/" + juce::String (presetProgram) + "]");
 
@@ -738,7 +712,7 @@ private:
             return jobHasFinished;
         }
 
-        handle->log ("SF2 preview (FluidSynth): discoverActiveNotesFs found "
+        processor.crashLogger.log ("SF2 preview (FluidSynth): discoverActiveNotesFs found "
             + juce::String ((int) activeNotes.size()) + " responsive note(s)"
             + (activeNotes.empty() ? " -> falling back to piano range 21-108" : ""));
 
@@ -811,7 +785,7 @@ private:
     JobStatus finishAndPost (std::vector<NoteRender> renders, int numProbed)
     {
         if (target == SoundFontLoadTarget::SfPlayer)
-            handle->log ("SF2 preview: " + juce::String ((int) renders.size())
+            processor.crashLogger.log ("SF2 preview: " + juce::String ((int) renders.size())
                 + " note(s) produced audio above silence threshold (of "
                 + juce::String (numProbed) + " probed)"
                 + (renders.empty() ? " -> ALL SILENT, render aborted" : ""));
@@ -821,7 +795,7 @@ private:
             // produced audible output, or a stale/mismatched sample) causes
             // postFailure() to no-op and the zone-builder preview to stay
             // silently empty with no other indication anywhere.
-            handle->log ("SFZ-PLAYER zone preview: " + juce::String ((int) renders.size())
+            processor.crashLogger.log ("SFZ-PLAYER zone preview: " + juce::String ((int) renders.size())
                 + " note(s) produced audio above silence threshold (of "
                 + juce::String (numProbed) + " probed)"
                 + (renders.empty() ? " -> ALL SILENT, render aborted" : ""));
@@ -933,19 +907,19 @@ private:
                     {
                         payload->slices[0].loopStart = bufStart;
                         payload->slices[0].loopEnd   = bufEnd;
-                        setSfzLoopPointsIfProcessorAlive (bufStart, bufEnd);
-                        setSfz2LoopPointsIfProcessorAlive (bufStart, bufEnd);
+                        processor.sfzPlayer.setLoopPoints (bufStart, bufEnd);
+                        processor.sfzPlayer2.setLoopPoints (bufStart, bufEnd);
                     }
                     else
                     {
-                        setSfzLoopPointsIfProcessorAlive (-1, -1);
-                        setSfz2LoopPointsIfProcessorAlive (-1, -1);
+                        processor.sfzPlayer.setLoopPoints (-1, -1);
+                        processor.sfzPlayer2.setLoopPoints (-1, -1);
                     }
                 }
                 else
                 {
-                    setSfzLoopPointsIfProcessorAlive (-1, -1);
-                    setSfz2LoopPointsIfProcessorAlive (-1, -1);
+                    processor.sfzPlayer.setLoopPoints (-1, -1);
+                    processor.sfzPlayer2.setLoopPoints (-1, -1);
                 }
             }
             else if (ext == ".sf2")
@@ -972,25 +946,25 @@ private:
 
                         payload->slices[0].loopStart = bufStart;
                         payload->slices[0].loopEnd   = bufEnd;
-                        setSfzLoopPointsIfProcessorAlive (bufStart, bufEnd);
-                        setSfz2LoopPointsIfProcessorAlive (bufStart, bufEnd);
+                        processor.sfzPlayer.setLoopPoints (bufStart, bufEnd);
+                        processor.sfzPlayer2.setLoopPoints (bufStart, bufEnd);
                     }
                     else
                     {
-                        setSfzLoopPointsIfProcessorAlive (-1, -1);
-                        setSfz2LoopPointsIfProcessorAlive (-1, -1);
+                        processor.sfzPlayer.setLoopPoints (-1, -1);
+                        processor.sfzPlayer2.setLoopPoints (-1, -1);
                     }
                 }
                 else
                 {
-                    setSfzLoopPointsIfProcessorAlive (-1, -1);
-                    setSfz2LoopPointsIfProcessorAlive (-1, -1);
+                    processor.sfzPlayer.setLoopPoints (-1, -1);
+                    processor.sfzPlayer2.setLoopPoints (-1, -1);
                 }
             }
             else
             {
-                setSfzLoopPointsIfProcessorAlive (-1, -1);
-                setSfz2LoopPointsIfProcessorAlive (-1, -1);
+                processor.sfzPlayer.setLoopPoints (-1, -1);
+                processor.sfzPlayer2.setLoopPoints (-1, -1);
             }
         }
 
@@ -1065,7 +1039,7 @@ private:
         if (target == SoundFontLoadTarget::Slicer)
         {
             // Post slice layout (processBlock picks this up right after applyDecodedSample)
-            auto* oldPayload = handle->pendingSfzSlices.exchange (payload,
+            auto* oldPayload = processor.pendingSfzSlices.exchange (payload,
                                                                      std::memory_order_acq_rel);
             delete oldPayload;
 
@@ -1073,9 +1047,9 @@ private:
             // Build the SnapshotPtr here, on the worker thread, so processBlock's
             // consumption is a plain pointer swap (see SampleData::applyDecodedSample).
             SampleData::SnapshotPtr ready = std::move (decoded);
-            handle->exchangeCompletedLoadData (std::move (ready));
+            processor.exchangeCompletedLoadData (std::move (ready));
 
-            handle->latestLoadKind.store ((int) DysektProcessor::LoadKindReplace,
+            processor.latestLoadKind.store ((int) DysektProcessor::LoadKindReplace,
                                             std::memory_order_release);
         }
         else if (target == SoundFontLoadTarget::SfzPlayer2)
@@ -1094,10 +1068,10 @@ private:
             // latest request will supersede it. Mirrors the Slicer's
             // token/latestLoadToken guard, via nextPreviewToken2/
             // latestPreviewToken2 instead (see PluginProcessor.h).
-            if (token != handle->latestPreviewToken2.load (std::memory_order_acquire))
+            if (token != processor.latestPreviewToken2.load (std::memory_order_acquire))
             {
                 delete payload;
-                handle->mainLoadInFlight.store (false, std::memory_order_release);
+                processor.mainLoadInFlight.store (false, std::memory_order_release);
                 return jobHasFinished;
             }
 
@@ -1112,7 +1086,7 @@ private:
             zonePayload->slices = std::move (payload->slices);
             delete payload;
 
-            auto* oldZones = handle->pendingPreviewZones2.exchange (zonePayload,
+            auto* oldZones = processor.pendingPreviewZones2.exchange (zonePayload,
                                                                        std::memory_order_acq_rel);
             delete oldZones;
 
@@ -1120,7 +1094,7 @@ private:
             // consumption via exchangeCompletedLoadData2() is a plain
             // pointer/refcount swap -- see SampleData::applyDecodedSample().
             SampleData::SnapshotPtr ready2 = std::move (decoded);
-            handle->exchangeCompletedLoadData2 (std::move (ready2));
+            processor.exchangeCompletedLoadData2 (std::move (ready2));
         }
         else // SoundFontLoadTarget::SfPlayer
         {
@@ -1131,10 +1105,10 @@ private:
             // landing while the initial file-load render is still in flight.
             // Discard rather than post if a newer SF2-PLAYER preview load has
             // been requested since this job started.
-            if (token != handle->latestPreviewToken3.load (std::memory_order_acquire))
+            if (token != processor.latestPreviewToken3.load (std::memory_order_acquire))
             {
                 delete payload;
-                handle->sf2PreviewRenderInFlight.store (false, std::memory_order_release);
+                processor.sf2PreviewRenderInFlight.store (false, std::memory_order_release);
                 return jobHasFinished;
             }
 
@@ -1147,18 +1121,18 @@ private:
             zonePayload->presetProgram = presetProgram;
             delete payload;
 
-            handle->log ("SF2 preview: posting " + juce::String (decoded->buffer.getNumSamples())
+            processor.crashLogger.log ("SF2 preview: posting " + juce::String (decoded->buffer.getNumSamples())
                 + " frames, " + juce::String ((int) zonePayload->slices.size()) + " zone(s) to sampleData3/previewZones3"
                 + "  [preset " + juce::String (presetBank) + "/" + juce::String (presetProgram) + "]");
 
-            auto* oldZones = handle->pendingPreviewZones3.exchange (zonePayload,
+            auto* oldZones = processor.pendingPreviewZones3.exchange (zonePayload,
                                                                        std::memory_order_acq_rel);
             delete oldZones;
 
             // Built here, on the loader worker thread -- mirrors the
             // completedLoadData2 fix above.
             SampleData::SnapshotPtr ready3 = std::move (decoded);
-            handle->exchangeCompletedLoadData3 (std::move (ready3));
+            processor.exchangeCompletedLoadData3 (std::move (ready3));
         }
         return jobHasFinished;
     }
@@ -1337,7 +1311,7 @@ private:
     // callers are responsible for that check before calling this.
     void postEmptySfzPlayer2Result()
     {
-        if (token == handle->latestPreviewToken2.load (std::memory_order_acquire))
+        if (token == processor.latestPreviewToken2.load (std::memory_order_acquire))
         {
             auto emptyDecoded = std::make_unique<SampleData::DecodedSample>();
             emptyDecoded->buffer.setSize (2, 0, false, true, false);
@@ -1347,12 +1321,12 @@ private:
             // No slices — the empty payload itself IS the signal that this
             // zone list is now empty.
             auto* emptyZones = new SfzPreviewZonePayload();
-            auto* oldZones = handle->pendingPreviewZones2.exchange (
+            auto* oldZones = processor.pendingPreviewZones2.exchange (
                 emptyZones, std::memory_order_acq_rel);
             delete oldZones;
 
             SampleData::SnapshotPtr ready2 = std::move (emptyDecoded);
-            handle->exchangeCompletedLoadData2 (std::move (ready2));
+            processor.exchangeCompletedLoadData2 (std::move (ready2));
         }
         // else: a newer preview load superseded this one — say nothing and
         // let that job's own result (empty or not) be what lands.
@@ -1362,9 +1336,9 @@ private:
         // still come down here, or a stale-token job would leave MIDI
         // gated / the LCD stuck on "LOADING..." forever with no later
         // completedLoadData2 delivery to clear them via processBlock.
-        handle->mainLoadInFlight.store             (false, std::memory_order_release);
-        handle->sfzPlayer2RebuildInFlight.store    (false, std::memory_order_release);
-        handle->sfzPlayer2LcdRebuildInFlight.store (false, std::memory_order_release);
+        processor.mainLoadInFlight.store             (false, std::memory_order_release);
+        processor.sfzPlayer2RebuildInFlight.store    (false, std::memory_order_release);
+        processor.sfzPlayer2LcdRebuildInFlight.store (false, std::memory_order_release);
     }
 
     void postFailure()
@@ -1377,13 +1351,13 @@ private:
         // Sf2WaveformLcd would show "rendering..." forever with no result
         // ever arriving to clear it.
         if (target == SoundFontLoadTarget::SfPlayer)
-            handle->sf2PreviewRenderInFlight.store (false, std::memory_order_release);
+            processor.sf2PreviewRenderInFlight.store (false, std::memory_order_release);
 
         // Slicer/SfzPlayer2 mirror the same "clear in-flight on any bail-out
         // path" requirement — otherwise SliceWaveformLcd would show its
         // loading state forever if a kit load fails partway through.
         if (target == SoundFontLoadTarget::Slicer || target == SoundFontLoadTarget::SfzPlayer2)
-            handle->mainLoadInFlight.store (false, std::memory_order_release);
+            processor.mainLoadInFlight.store (false, std::memory_order_release);
 
         // sfzPlayer2RebuildInFlight/sfzPlayer2LcdRebuildInFlight are only
         // ever set for the SfzPlayer2 target (see load() above), so only
@@ -1392,8 +1366,8 @@ private:
         // SFZ-PLAYER rebuild fails partway through.
         if (target == SoundFontLoadTarget::SfzPlayer2)
         {
-            handle->sfzPlayer2RebuildInFlight.store    (false, std::memory_order_release);
-            handle->sfzPlayer2LcdRebuildInFlight.store (false, std::memory_order_release);
+            processor.sfzPlayer2RebuildInFlight.store    (false, std::memory_order_release);
+            processor.sfzPlayer2LcdRebuildInFlight.store (false, std::memory_order_release);
         }
 
         // SFZ-PLAYER preview is visual-only and has no failure-state UI of its
@@ -1415,7 +1389,7 @@ private:
         payload->token = token;
         payload->kind  = DysektProcessor::LoadKindReplace;
         payload->file  = file;
-        auto* old = handle->completedLoadFailure.exchange (payload,
+        auto* old = processor.completedLoadFailure.exchange (payload,
                                                              std::memory_order_acq_rel);
         delete old;
     }
@@ -1423,17 +1397,7 @@ private:
     juce::File          file;
     double              sampleRate;
     int                 token;
-
-    // Non-owning; may dangle after DysektProcessor's destructor starts --
-    // only ever touched immediately after checking handle->processorAlive.
-    // See the constructor comment above and ProcessorHandle in SoundFontLoader.h.
-    DysektProcessor*    processorPtr;
-
-    // Owning reference to the shared state this job posts its actual results
-    // through. Keeps that state (and its own diagnostic logger) alive even if
-    // DysektProcessor is destroyed while this job is still running.
-    std::shared_ptr<ProcessorHandle> handle;
-
+    DysektProcessor&    processor;
     SoundFontLoadTarget target;
     int                 presetBank;
     int                 presetProgram;
@@ -1515,9 +1479,8 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         processor.sf2PreviewRenderInFlight.store (true, std::memory_order_release);
     }
 
-    processor.fileLoadPool->addJob (
-        new LoadJob (file, sr, token, processor, processor.soundFontProcessorHandle,
-                     target, presetBank, presetProgram), true);
+    processor.fileLoadPool.addJob (
+        new LoadJob (file, sr, token, processor, target, presetBank, presetProgram), true);
 }
 
 #else  // DYSEKT_HAS_SFIZZ not defined

@@ -6,7 +6,6 @@
 #include <BinaryData.h>
 #include <functional>
 #include <memory>
-#include <thread>
 #include <vector>
 
 namespace
@@ -211,11 +210,6 @@ DysektProcessor::DysektProcessor()
                           .withOutput ("SFZ Player", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, nullptr, "PARAMETERS", ParamLayout::createLayout())
 {
-    // Give LoadJob's ProcessorHandle its own diagnostic logger, appending to
-    // the same file crashLogger already writes to -- see ProcessorHandle's
-    // comment in SoundFontLoader.h.
-    soundFontProcessorHandle->initLogger (crashLogger.getLogFile());
-
     masterVolParam = apvts.getRawParameterValue (ParamIds::masterVolume);
     bpmParam       = apvts.getRawParameterValue (ParamIds::defaultBpm);
     pitchParam     = apvts.getRawParameterValue (ParamIds::defaultPitch);
@@ -252,111 +246,11 @@ DysektProcessor::DysektProcessor()
     // call, setMidiChannel(3), was dead code: it only affects the sfizz/.sfz
     // branch of SfzPlayer::process(), which sfzPlayer never takes.)
     sfzPlayer2.setMidiChannel (2);   // SFZ-PLAYER  → ch 2 (default; user-adjustable, see sfzPlayer2ChannelMask)
-
-    // Polls processBlockEntryPending (set by processBlock(), the audio
-    // thread) and does the actual, blocking crashLogger.log() call here on
-    // the message thread instead -- see that member's comment. 50ms is
-    // fast enough that the log line still shows up essentially immediately
-    // after the first audio callback; stopTimer() is called once it's
-    // fired (see timerCallback()) so this doesn't run for the plugin's
-    // entire lifetime.
-    startTimer (50);
-}
-
-void DysektProcessor::timerCallback()
-{
-    // Message thread: safe to do the actual blocking crashLogger.log() call
-    // here. See processBlockEntryPending's comment in PluginProcessor.h.
-    if (processBlockEntryPending.exchange (false, std::memory_order_acq_rel))
-    {
-        crashLogger.log ("processBlock() ENTRY — first call reached. numSamples="
-            + juce::String (processBlockEntryNumSamples.load (std::memory_order_relaxed))
-            + " midi.getNumEvents()="
-            + juce::String (processBlockEntryNumMidiEvents.load (std::memory_order_relaxed)));
-        stopTimer();
-    }
 }
 
 DysektProcessor::~DysektProcessor()
 {
-    // Stopped first, and unconditionally, so a callback that's already
-    // queued on the message thread can't fire mid-teardown and touch
-    // members (crashLogger included) that are about to be destroyed.
-    stopTimer();
-
-    // Very first statement, deliberately before removeAllJobs() below even
-    // starts waiting -- see ProcessorHandle::processorAlive's comment in
-    // SoundFontLoader.h. Everything else LoadJob posts results through
-    // (completedLoadData*/pendingSfzSlices/etc.) is safe unconditionally,
-    // because that storage now lives in soundFontProcessorHandle itself and
-    // an orphaned job keeps it alive via its own shared_ptr; this flag only
-    // gates the small remaining set of calls (sfzPlayer/sfzPlayer2
-    // .setLoopPoints()) that still reach directly into DysektProcessor.
-    soundFontProcessorHandle->processorAlive.store (false, std::memory_order_release);
-
-    // Give any in-flight fileLoadPool job (SoundFontLoader::LoadJob or a
-    // SampleDecodeJob/SampleTrimJob) a short, bounded window to finish on
-    // its own -- this is now purely a best-effort courtesy for the common
-    // case (already finished, or a fast job), NOT a correctness
-    // requirement: ProcessorHandle makes it fully safe for an orphaned
-    // LoadJob to keep running and post its result after this object is
-    // gone (see ProcessorHandle's comment in SoundFontLoader.h).
-    //
-    // Crucially, this wait must stay SHORT. The old version waited up to
-    // 5000ms here -- easily long enough, on the thread that's destroying
-    // this processor (typically the host's message thread), to trip a
-    // host's or the OS's "this plugin/app has stopped responding" watchdog
-    // and get force-killed. A force-kill bypasses CrashLogger's signal
-    // handlers entirely (SIGKILL/TerminateProcess can't be caught) AND
-    // every destructor below -- which is exactly the "no crash-handler
-    // entry, session.lock never removed" signature in dysekt_crash.log /
-    // session.lock. That pattern isn't a segfault; it's this wait itself.
-    //
-    // If the job is still running past this short grace window (a large
-    // soundfont's multi-minute preview render), release fileLoadPool onto
-    // the heap and hand its actual teardown to a detached thread instead of
-    // letting its own destructor block here waiting for the job. The job
-    // only holds its own shared_ptr<ProcessorHandle> (never a reference
-    // back to this DysektProcessor), so it's fully safe for it to keep
-    // running -- and for the pool itself to be destroyed -- independently
-    // of this object's lifetime, however long that takes.
-    if (! fileLoadPool->removeAllJobs (true, 50))
-    {
-        auto* orphanedPool = fileLoadPool.release();
-        std::thread ([orphanedPool]
-        {
-            orphanedPool->removeAllJobs (true, -1);   // wait as long as it takes
-            delete orphanedPool;
-        }).detach();
-    }
-    // else: fileLoadPool still owns the (now empty/idle) pool -- its own
-    // destructor at the end of this object's member teardown is cheap and
-    // synchronous, same as before.
-
-    // sfzLoadPool jobs (SynthBuildJob) no longer hold a reference back to
-    // sfzPlayer/sfzPlayer2 — each job carries its own shared_ptr<BuildState>
-    // (see SfzPlayer.h), so it can safely keep running and finish after this
-    // object (and sfzPlayer/sfzPlayer2 with it) has already been destroyed;
-    // an orphaned job just publishes into its own kept-alive BuildState
-    // instead of touching freed memory. This call is therefore no longer a
-    // correctness requirement — it's a best-effort courtesy so the common
-    // case (a load that's already finished, or finishes quickly) tears down
-    // synchronously and doesn't leave a background thread lingering
-    // needlessly. A load that's still genuinely in flight (e.g. a large
-    // soundfont on a slow path) is fine to simply time out here and finish
-    // on its own later.
-    //
-    // Shrunk from 5000ms to 50ms for the same reason fileLoadPool's wait was
-    // shrunk above -- see that comment. sfzLoadPool is still a plain
-    // juce::ThreadPool value member (not yet converted to the
-    // release-and-detach pattern used for fileLoadPool), so its own
-    // implicit destructor at the end of this function can still block this
-    // thread if a SynthBuildJob is genuinely still running past this point.
-    // In practice that job is a synth *build*, not a multi-minute render,
-    // so the window is expected to be much smaller than fileLoadPool's --
-    // but if that's ever observed to run long (e.g. a very large multi-
-    // sample kit), sfzLoadPool needs the identical heap+detach treatment.
-    sfzLoadPool.removeAllJobs (true, 50);
+    fileLoadPool.removeAllJobs (true, 5000);
     exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
     delete failed;
@@ -445,20 +339,32 @@ void DysektProcessor::releaseResources() {}
 
 SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData (SampleData::SnapshotPtr newValue)
 {
-    // Storage lives in soundFontProcessorHandle now (see ProcessorHandle in
-    // SoundFontLoader.h) -- forward there so this and LoadJob's own calls to
-    // ProcessorHandle::exchangeCompletedLoadData() share one implementation.
-    return soundFontProcessorHandle->exchangeCompletedLoadData (std::move (newValue));
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    return completedLoadData.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+    return std::atomic_exchange_explicit (&completedLoadData, std::move (newValue),
+                                          std::memory_order_acq_rel);
+#endif
 }
 
 SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData2 (SampleData::SnapshotPtr newValue)
 {
-    return soundFontProcessorHandle->exchangeCompletedLoadData2 (std::move (newValue));
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    return completedLoadData2.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+    return std::atomic_exchange_explicit (&completedLoadData2, std::move (newValue),
+                                          std::memory_order_acq_rel);
+#endif
 }
 
 SampleData::SnapshotPtr DysektProcessor::exchangeCompletedLoadData3 (SampleData::SnapshotPtr newValue)
 {
-    return soundFontProcessorHandle->exchangeCompletedLoadData3 (std::move (newValue));
+#if INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
+    return completedLoadData3.exchange (std::move (newValue), std::memory_order_acq_rel);
+#else
+    return std::atomic_exchange_explicit (&completedLoadData3, std::move (newValue),
+                                          std::memory_order_acq_rel);
+#endif
 }
 
 void DysektProcessor::requestSampleLoad (const juce::File& file, LoadKind kind)
@@ -518,7 +424,7 @@ void DysektProcessor::requestSampleLoad (const juce::File& file, LoadKind kind)
         delete old;
     };
 
-    fileLoadPool->addJob (new SampleDecodeJob (file, sr, token, kind, onSuccess, onFailure), true);
+    fileLoadPool.addJob (new SampleDecodeJob (file, sr, token, kind, onSuccess, onFailure), true);
 }
 
 void DysektProcessor::loadFileAsync (const juce::File& file)
@@ -587,7 +493,7 @@ void DysektProcessor::applyTrimToCurrentSample (int trimStart, int trimEnd)
         (void) finishedToken;
     };
 
-    fileLoadPool->addJob (new SampleTrimJob (snap, trimStart, trimEnd, token, LoadKindTrim,
+    fileLoadPool.addJob (new SampleTrimJob (snap, trimStart, trimEnd, token, LoadKindTrim,
                                             onSuccess, onFailure),
                          true);
 }
@@ -2885,26 +2791,20 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                             juce::MidiBuffer& midi)
 {
     // TEMP diagnostic — fires exactly once, completely unconditionally, the
-    // very first time processBlock() is called at all. If nothing ever
+    // very first time processBlock() is called at all. If this line never
     // appears in dysekt_crash.log, processBlock() itself is not being
     // invoked for this plugin instance (bypass/mute at the host level,
     // wrong instance, or the host never started the audio engine) — nothing
     // inside processBlock, including the SF2/SFZ player, can matter until
     // that's resolved.
-    //
-    // Wait-free: only atomic stores happen here, on the audio thread. The
-    // actual crashLogger.log() call — synchronous, locking, allocating file
-    // I/O — happens in timerCallback() on the message thread instead. See
-    // processBlockEntryPending's comment in PluginProcessor.h for why doing
-    // that logging directly here, even just this once, is not safe.
     {
         static bool loggedProcessBlockEntryOnce = false;
         if (! loggedProcessBlockEntryOnce)
         {
             loggedProcessBlockEntryOnce = true;
-            processBlockEntryNumSamples.store (buffer.getNumSamples(), std::memory_order_relaxed);
-            processBlockEntryNumMidiEvents.store (midi.getNumEvents(), std::memory_order_relaxed);
-            processBlockEntryPending.store (true, std::memory_order_release);
+            crashLogger.log ("processBlock() ENTRY — first call reached. numSamples="
+                + juce::String (buffer.getNumSamples())
+                + " midi.getNumEvents()=" + juce::String (midi.getNumEvents()));
         }
     }
 
@@ -4823,7 +4723,7 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
             const juce::File sfzFile (sfzPath);
             if (sfzFile.existsAsFile())
             {
-                sfzPlayer.loadFile (sfzFile, sfzLoadPool);
+                sfzPlayer.loadFile (sfzFile, fileLoadPool);
                 loadSoundFontAsync (sfzFile, SoundFontLoadTarget::SfPlayer);   // waveform preview -> sampleData3
                 // Store the preset index so the audio thread can select it
                 // once the soundfont finishes loading and posts its preset list.
