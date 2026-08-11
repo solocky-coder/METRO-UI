@@ -954,14 +954,16 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         if (span <= 0)
             return;
 
-        // 16 groups × L/R, each pointer offset by renderCursor so this
-        // segment lands at the right position within every group buffer —
-        // matching the offset the old 2-buffer version applied to scratchL/R.
-        float* groupSeg[32];
-        for (int g = 0; g < 32; ++g)
-            groupSeg[g] = groupBuffers[g].data() + renderCursor;
+        // REVERTED to a plain stereo pair (see the load-crash note above) —
+        // nout=2 matches FluidSynth's default synth.audio-channels=1, the
+        // same call shape the preview path already uses safely. All voices
+        // across every channel mix down into this one pair; only
+        // groupBuffers[0]/[1] are written, [2..31] are left at the zero-fill
+        // from just above, so sumToMaster() below is unaffected.
+        float* pair[2] = { groupBuffers[0].data() + renderCursor,
+                            groupBuffers[1].data() + renderCursor };
 
-        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 32, groupSeg);
+        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 2, pair);
         renderCursor = uptoSample;
     };
 
@@ -1423,23 +1425,31 @@ void SfzPlayer::applyPendingLoad()
         fluid_settings_setint (settings, "synth.reverb.active", 1);
         fluid_settings_setint (settings, "synth.chorus.active", 1);
 
-        // Real per-channel audio: one stereo audio-group per MIDI channel, using
-        // FluidSynth's default channel->group mapping (channel % audio_groups),
-        // which is a clean 1:1 with 16 channels / 16 groups. Must be set before
-        // new_fluid_synth() — it cannot be changed on a live synth instance.
-        //
-        // synth.audio-channels MUST match: fluid_synth_process()'s `nout`
-        // argument is validated against 2 * fluid_synth_count_audio_channels(),
-        // NOT against audio-groups. audio-groups alone only controls how MIDI
-        // channels are spatialized into those audio-channel buffers. Leaving
-        // audio-channels at its default of 1 makes the synth expect nout==2,
-        // so every fluid_synth_process(..., 32, groupSeg) call below (32 =
-        // 16 channels x L/R) is rejected wholesale — FLUID_FAILED, zero
-        // samples rendered, on every single block, regardless of note/preset/
-        // channel. That was the entire "SF2 player receives MIDI but produces
-        // no sound" bug: noteon succeeded, process() silently failed.
-        fluid_settings_setint (settings, "synth.audio-groups",   16);
-        fluid_settings_setint (settings, "synth.audio-channels", 16);
+        // ── REVERTED (see crash dump analysis, Aug 11) ───────────────────────
+        // Raising synth.audio-channels to 16 (to match the 32-wide groupSeg
+        // render below) did fix the silence — fluid_synth_process() stopped
+        // returning FLUID_FAILED — but introduced an immediate load-time
+        // crash: 0xC0000005 write access violation at address 0x8 (a
+        // near-null pointer write). FluidSynthGlobalLock.h already documents
+        // an unresolved race between this synth's construction and
+        // SoundFontLoader's throwaway preview synth's construction on a
+        // separate thread, warning it can cause "silent heap corruption that
+        // only crashes later, at an unrelated allocation/free" — exactly the
+        // crash-on-clean-shutdown pattern every debug log showed even before
+        // this change. Increasing audio-channels/audio-groups substantially
+        // increases FluidSynth's internal per-instance allocations, which
+        // plausibly shifted that same pre-existing corruption from "crashes
+        // after shutdown" to "crashes on load" rather than introducing a new
+        // bug of its own. Rather than keep chasing a moving heap-corruption
+        // target, fall back to the plain 2-buffer render below (nout=2) —
+        // the exact call pattern SoundFontLoader's preview path already uses
+        // without crashing — routed into groupBuffers[0]/[1] so
+        // Sf2ChannelMixer::sumToMaster() (which sums all 32 buffers; the
+        // other 30 stay zeroed) still produces correct master output
+        // untouched. Real per-channel metering (Scope B-Internal) is
+        // temporarily lost as a result — channelPeakL/R will read 0 for
+        // every channel except index 0 — and needs a separate, non-nout-
+        // expansion approach later if it's wanted back.
 
         synth = new_fluid_synth (settings);
         fluid_synth_set_sample_rate (synth, (float) currentSR);
