@@ -1427,7 +1427,19 @@ void SfzPlayer::applyPendingLoad()
         // FluidSynth's default channel->group mapping (channel % audio_groups),
         // which is a clean 1:1 with 16 channels / 16 groups. Must be set before
         // new_fluid_synth() — it cannot be changed on a live synth instance.
-        fluid_settings_setint (settings, "synth.audio-groups", 16);
+        //
+        // synth.audio-channels MUST match: fluid_synth_process()'s `nout`
+        // argument is validated against 2 * fluid_synth_count_audio_channels(),
+        // NOT against audio-groups. audio-groups alone only controls how MIDI
+        // channels are spatialized into those audio-channel buffers. Leaving
+        // audio-channels at its default of 1 makes the synth expect nout==2,
+        // so every fluid_synth_process(..., 32, groupSeg) call below (32 =
+        // 16 channels x L/R) is rejected wholesale — FLUID_FAILED, zero
+        // samples rendered, on every single block, regardless of note/preset/
+        // channel. That was the entire "SF2 player receives MIDI but produces
+        // no sound" bug: noteon succeeded, process() silently failed.
+        fluid_settings_setint (settings, "synth.audio-groups",   16);
+        fluid_settings_setint (settings, "synth.audio-channels", 16);
 
         synth = new_fluid_synth (settings);
         fluid_synth_set_sample_rate (synth, (float) currentSR);
