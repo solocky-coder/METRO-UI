@@ -250,24 +250,7 @@ DysektProcessor::DysektProcessor()
 
 DysektProcessor::~DysektProcessor()
 {
-    // Tell any in-flight LoadJob we're going away BEFORE waiting on the pool.
-    // removeAllJobs() below only waits up to 5s for a graceful exit; if a job
-    // is still mid-flight after that (e.g. rendering a huge multi-instrument
-    // SF2 preview), the wait times out and we proceed to tear down anyway.
-    // Because aliveFlag is a shared_ptr, the flag object survives our
-    // destruction even if the job doesn't finish in time, so the job can
-    // safely check it before touching `this` again.
-    aliveFlag->store (false, std::memory_order_release);
-
-    if (! fileLoadPool.removeAllJobs (true, 5000))
-    {
-        // The pool didn't finish in time. aliveFlag protects us from a
-        // use-after-free, but this should still be visible in testing.
-        DBG ("DysektProcessor::~DysektProcessor(): fileLoadPool.removeAllJobs timed out "
-             "with a job still running; relying on aliveFlag to prevent use-after-free.");
-        jassertfalse;
-    }
-
+    fileLoadPool.removeAllJobs (true, 5000);
     exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
     delete failed;
