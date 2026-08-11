@@ -13,36 +13,18 @@
   #include "../../sfizz/src/sfizz.h"
 #endif
 
-// ── TEMPORARY diagnostic logging for the "SF2-PLAYER produces no audio"
-// investigation. Self-contained (SfzPlayer has no back-reference to
-// DysektProcessor, so it can't use processor.crashLogger) — writes to its
-// own file in the same log folder as dysekt_crash.log. Only called on
-// note-on (rare), never per-block, so it won't glitch playback. Remove once
-// the root cause is confirmed and fixed.
-static void sf2DebugLog (const juce::String& msg)
-{
-    static juce::CriticalSection sf2DebugLogLock;
-    juce::ScopedLock sl (sf2DebugLogLock);
-
-    static std::unique_ptr<juce::FileLogger> sf2Logger;
-    if (sf2Logger == nullptr)
-    {
-      #if JUCE_WINDOWS
-        auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                       .getChildFile ("DunSoft/DYSEKT-SF");
-      #elif JUCE_MAC
-        auto dir = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                       .getChildFile ("Library/Logs/DunSoft/DYSEKT-SF");
-      #else
-        auto dir = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                       .getChildFile (".config/DunSoft/DYSEKT-SF");
-      #endif
-        dir.createDirectory();
-        sf2Logger = std::make_unique<juce::FileLogger> (
-            dir.getChildFile ("sf2_player_debug.log"), "SF2-PLAYER audio debug log");
-    }
-    sf2Logger->logMessage (msg);
-}
+// NOTE: the "SF2-PLAYER produces no audio" TEMP diagnostic logger that used
+// to live here (sf2DebugLog) has been removed. It performed a synchronous,
+// mutex-guarded disk write on every MIDI block and every individual MIDI
+// message from inside SfzPlayer::process() — i.e. on the real-time audio
+// thread. That's a real-time-safety violation: any time the OS stalled that
+// write (disk contention, AV scanning, a slow/networked profile path, lock
+// contention with another thread), the audio callback missed its deadline,
+// which most hosts respond to by dropping/muting the block. That is almost
+// certainly what produced the "receives MIDI but no sound" symptom this
+// logging was originally added to investigate. If audio-thread diagnostics
+// are needed again, queue messages into a lock-free FIFO here and flush them
+// from a timer/message-thread callback instead of writing to disk inline.
 
 // =============================================================================
 //  Constructor / destructor
@@ -877,41 +859,10 @@ void SfzPlayer::prepare (double sampleRate, int maxBlockSize)
 void SfzPlayer::process (const juce::MidiBuffer& midiIn,
                           float* outL, float* outR, int numSamples)
 {
-    // TEMP diagnostic — unconditional, no gating whatsoever. If this line
-    // never appears in sf2_player_debug.log, process() itself is not being
-    // invoked by the binary being tested (stale build / plugin caching /
-    // wrong instance), full stop — nothing past this point matters yet.
-    {
-        static bool loggedEntryOnce = false;
-        if (! loggedEntryOnce)
-        {
-            loggedEntryOnce = true;
-            sf2DebugLog ("process() ENTRY — first call reached. numSamples=" + juce::String (numSamples)
-                + " midiIn.getNumEvents()=" + juce::String (midiIn.getNumEvents()));
-        }
-    }
-
-    // TEMP diagnostic — NOT gated to "once": the block above only ever
-    // catches the very first process() call of the session (typically
-    // silent, before any note is played), so it can't show us what happens
-    // on an actual note-on. This logs every block that actually carries
-    // MIDI, for as long as the session runs.
-    if (! midiIn.isEmpty())
-        sf2DebugLog ("process(): non-empty block — " + juce::String (midiIn.getNumEvents())
-            + " event(s), loaded=" + juce::String ((int) loaded.load (std::memory_order_relaxed))
-            + " isSfzFile=" + juce::String ((int) isSfzFile)
-            + " sfizzSynth=" + juce::String (sfizzSynth != nullptr ? "non-null" : "NULL")
-            + " midiChannel(filterCh)=" + juce::String (midiChannel.load (std::memory_order_relaxed)));
-
     applyPendingLoad();
 
     if (! loaded.load (std::memory_order_relaxed))
-    {
-        if (! midiIn.isEmpty())
-            sf2DebugLog ("process(): loaded==false — bailing out at the very top with "
-                + juce::String (midiIn.getNumEvents()) + " MIDI event(s) discarded this block.");
         return;
-    }
 
     const int filterCh = midiChannel.load (std::memory_order_relaxed);
     const int trans    = transpose.load   (std::memory_order_relaxed);
@@ -944,13 +895,6 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         {
             const auto msg = meta.getMessage();
             const int  ch  = msg.getChannel();   // 1-16
-
-            if (msg.isNoteOn() || msg.isNoteOff())
-                sf2DebugLog (juce::String ("  [sfizz] msg: ch=") + juce::String (ch)
-                    + " filterCh=" + juce::String (filterCh)
-                    + " note=" + juce::String (msg.getNoteNumber())
-                    + (msg.isNoteOn() ? " NOTE-ON" : " NOTE-OFF")
-                    + ((filterCh != 0 && ch != filterCh) ? "  -> DROPPED (channel mismatch)" : "  -> forwarded to sfizz"));
 
             if (filterCh != 0 && ch != filterCh)
                 continue;
@@ -1110,17 +1054,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
 
 #if DYSEKT_HAS_FLUIDSYNTH
     if (synth == nullptr)
-    {
-        static bool loggedNullSynthOnce = false;
-        if (! loggedNullSynthOnce)
-        {
-            loggedNullSynthOnce = true;
-            sf2DebugLog ("process(): synth == nullptr — bailing out before any FluidSynth "
-                         "call. isSfzFile=" + juce::String ((int) isSfzFile)
-                         + " loaded=" + juce::String ((int) loaded.load (std::memory_order_relaxed)));
-        }
         return;
-    }
 
     // Apply any pending preset assignments — multi-timbral first, then single-preset legacy.
     applyDirtyStrips();
@@ -1151,17 +1085,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     //
     // NOTE: the previous "ch-1 fan-out" behaviour (remapping ch-1 messages to
     // every channel in liveInputChannelMask) has been removed — it directly
-    // contradicted the channel-1 reservation. liveMask is retained only for
-    // debug logging below.
-
-    const uint16_t liveMask = liveInputChannelMask.load (std::memory_order_relaxed);
-    bool sf2DebugHadNoteOnThisBlock = false;   // TEMP diagnostic — see note below
-
-    if (! midiIn.isEmpty())
-        sf2DebugLog ("process(): FluidSynth branch reached with " + juce::String (midiIn.getNumEvents())
-            + " MIDI event(s) this block. loaded=" + juce::String ((int) loaded.load (std::memory_order_relaxed))
-            + " sfontId=" + juce::String (sfontId)
-            + " liveMask=0x" + juce::String::toHexString ((int) liveMask));
+    // contradicted the channel-1 reservation.
 
     // ── Segmented rendering (Phase 2: sample-accurate MIDI timing) ───────────
     // fluid_synth_process() has no notion of "apply this event at sample N
@@ -1176,8 +1100,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     for (auto& buf : groupBuffers)
         std::fill (buf.begin(), buf.begin() + numSamples, 0.0f);
 
-    int renderCursor  = 0;
-    int lastProcessRc = 0;   // last segment's rc, kept only for the debug log below
+    int renderCursor = 0;
 
     auto renderSegment = [&] (int uptoSample)
     {
@@ -1192,7 +1115,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         for (int g = 0; g < 32; ++g)
             groupSeg[g] = groupBuffers[g].data() + renderCursor;
 
-        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 32, groupSeg);
+        fluid_synth_process (synth, span, 0, nullptr, 32, groupSeg);
         renderCursor = uptoSample;
     };
 
@@ -1213,22 +1136,8 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         // us an event timestamped at or past numSamples.
         renderSegment (juce::jlimit (0, numSamples, meta.samplePosition));
 
-        // TEMP diagnostic: log every message unconditionally, before any
-        // channel/velocity filtering, so we can catch cases where isNoteOn()
-        // or the targetMask computation silently drops something.
-        {
-            const uint16_t previewTargetMask = (uint16_t) (1u << (midiCh - 1));
-            sf2DebugLog ("  msg: ch=" + juce::String (midiCh)
-                + " desc=\"" + msg.getDescription() + "\""
-                + " isNoteOn(false)=" + juce::String ((int) msg.isNoteOn (false))
-                + " isNoteOn(true)=" + juce::String ((int) msg.isNoteOn (true))
-                + " vel=" + juce::String (msg.getVelocity())
-                + " targetMask=0x" + juce::String::toHexString ((int) previewTargetMask));
-        }
-
         if (msg.isNoteOn())
         {
-            sf2DebugHadNoteOnThisBlock = true;
             previewPositionSample.store (0, std::memory_order_relaxed);
             lastTriggeredNote.store (juce::jlimit (0, 127, msg.getNoteNumber() + trans),
                                      std::memory_order_relaxed);
@@ -1263,15 +1172,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
             if (msg.isNoteOn())
             {
                 const int note = juce::jlimit (0, 127, msg.getNoteNumber() + trans);
-                const int rc = fluid_synth_noteon (synth, fch, note, msg.getVelocity());
-                sf2DebugLog ("noteOn: incomingCh=" + juce::String (midiCh)
-                    + " fch=" + juce::String (fch)
-                    + " note=" + juce::String (note)
-                    + " vel=" + juce::String (msg.getVelocity())
-                    + " targetMask=0x" + juce::String::toHexString ((int) targetMask)
-                    + " liveMask=0x" + juce::String::toHexString ((int) liveMask)
-                    + " fluid_synth_noteon rc=" + juce::String (rc)
-                    + " (0=FLUID_OK, -1=FLUID_FAILED)");
+                fluid_synth_noteon (synth, fch, note, msg.getVelocity());
             }
             else if (msg.isNoteOff())
             {
@@ -1341,17 +1242,6 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     // per-channel insert would plug in. No inserts are installed today, so
     // this is bit-identical to a plain sum.
     channelMixer.sumToMaster (groupBuffers, numSamples, scratchL.data(), scratchR.data());
-
-    if (sf2DebugHadNoteOnThisBlock)
-    {
-        float peak = 0.0f;
-        for (int i = 0; i < numSamples; ++i)
-            peak = std::max (peak, std::abs (scratchL[(size_t) i]));
-        sf2DebugLog ("post-render (note-on this block): fluid_synth_process rc=" + juce::String (lastProcessRc)
-            + " outputPeakL=" + juce::String (peak, 6)
-            + " sfontId=" + juce::String (sfontId)
-            + " gain=" + juce::String (fluid_synth_get_gain (synth), 3));
-    }
 
     // Measure per-channel peaks from active voices before volume scaling
     measureChannelPeaks (numSamples);
