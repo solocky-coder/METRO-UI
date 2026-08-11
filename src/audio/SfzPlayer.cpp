@@ -954,16 +954,19 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         if (span <= 0)
             return;
 
-        // REVERTED to a plain stereo pair (see the load-crash note above) —
-        // nout=2 matches FluidSynth's default synth.audio-channels=1, the
-        // same call shape the preview path already uses safely. All voices
-        // across every channel mix down into this one pair; only
-        // groupBuffers[0]/[1] are written, [2..31] are left at the zero-fill
-        // from just above, so sumToMaster() below is unaffected.
-        float* pair[2] = { groupBuffers[0].data() + renderCursor,
-                            groupBuffers[1].data() + renderCursor };
+        // Real per-channel audio: 16 groups x L/R, each pointer offset by
+        // renderCursor so this segment lands at the right position within
+        // every group buffer.
+        float* groupSeg[32];
+        for (int g = 0; g < 32; ++g)
+            groupSeg[g] = groupBuffers[g].data() + renderCursor;
 
-        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 2, pair);
+        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 32, groupSeg);
+#if JUCE_DEBUG
+        static bool loggedFirstProcess = false;
+        if (! loggedFirstProcess) { loggedFirstProcess = true;
+            sf2DebugLog ("renderSegment: first fluid_synth_process(nout=32) call returned rc=" + juce::String (lastProcessRc)); }
+#endif
         renderCursor = uptoSample;
     };
 
@@ -1425,38 +1428,41 @@ void SfzPlayer::applyPendingLoad()
         fluid_settings_setint (settings, "synth.reverb.active", 1);
         fluid_settings_setint (settings, "synth.chorus.active", 1);
 
-        // ── REVERTED (see crash dump analysis, Aug 11) ───────────────────────
-        // Raising synth.audio-channels to 16 (to match the 32-wide groupSeg
-        // render below) did fix the silence — fluid_synth_process() stopped
-        // returning FLUID_FAILED — but introduced an immediate load-time
-        // crash: 0xC0000005 write access violation at address 0x8 (a
-        // near-null pointer write). FluidSynthGlobalLock.h already documents
-        // an unresolved race between this synth's construction and
-        // SoundFontLoader's throwaway preview synth's construction on a
-        // separate thread, warning it can cause "silent heap corruption that
-        // only crashes later, at an unrelated allocation/free" — exactly the
-        // crash-on-clean-shutdown pattern every debug log showed even before
-        // this change. Increasing audio-channels/audio-groups substantially
-        // increases FluidSynth's internal per-instance allocations, which
-        // plausibly shifted that same pre-existing corruption from "crashes
-        // after shutdown" to "crashes on load" rather than introducing a new
-        // bug of its own. Rather than keep chasing a moving heap-corruption
-        // target, fall back to the plain 2-buffer render below (nout=2) —
-        // the exact call pattern SoundFontLoader's preview path already uses
-        // without crashing — routed into groupBuffers[0]/[1] so
-        // Sf2ChannelMixer::sumToMaster() (which sums all 32 buffers; the
-        // other 30 stay zeroed) still produces correct master output
-        // untouched. Real per-channel metering (Scope B-Internal) is
-        // temporarily lost as a result — channelPeakL/R will read 0 for
-        // every channel except index 0 — and needs a separate, non-nout-
-        // expansion approach later if it's wanted back.
+        // Real per-channel audio: one stereo audio-group per MIDI channel,
+        // using FluidSynth's default channel->group mapping (channel %
+        // audio_groups), a clean 1:1 with 16 channels / 16 groups. Must be
+        // set before new_fluid_synth() — cannot be changed on a live
+        // instance. synth.audio-channels must match audio-groups because
+        // fluid_synth_process()'s `nout` argument (32 = 16 channels x L/R,
+        // below) is validated against 2 * fluid_synth_count_audio_channels(),
+        // not against audio-groups alone.
+        //
+        // NOTE: a prior attempt at exactly this setting combination was
+        // followed by an immediate load-time crash (0xC0000005, write to
+        // address 0x8) with zero debug-log output preceding it — meaning we
+        // couldn't tell whether it died in new_fluid_settings, new_fluid_synth,
+        // or fluid_synth_sfload. FluidSynth's own issue tracker confirms
+        // audio-channels=16 / audio-groups=16 together is a standard,
+        // widely-used configuration (FluidSynth/fluidsynth#225, #323, #665),
+        // so this is far more likely the pre-existing global-state race
+        // documented in FluidSynthGlobalLock.h landing differently than a
+        // real incompatibility with these settings. The checkpoints below
+        // bracket each lifecycle call so a recurrence pinpoints exactly
+        // which one — check sf2_player_debug.log immediately if this
+        // reintroduces a crash.
+        sf2DebugLog ("applyPendingLoad: about to set audio-groups/audio-channels=16");
+        fluid_settings_setint (settings, "synth.audio-groups",   16);
+        fluid_settings_setint (settings, "synth.audio-channels", 16);
+        sf2DebugLog ("applyPendingLoad: settings configured OK, calling new_fluid_synth");
 
         synth = new_fluid_synth (settings);
+        sf2DebugLog ("applyPendingLoad: new_fluid_synth returned " + juce::String ((juce::pointer_sized_int) synth) + ", calling sfload");
         fluid_synth_set_sample_rate (synth, (float) currentSR);
         fluid_synth_set_gain        (synth, 2.0f);
 
         sfontId = fluid_synth_sfload (synth,
                       owner->file.getFullPathName().toRawUTF8(), 1);
+        sf2DebugLog ("applyPendingLoad: fluid_synth_sfload returned sfontId=" + juce::String (sfontId));
 
         if (sfontId == FLUID_FAILED)
         {
