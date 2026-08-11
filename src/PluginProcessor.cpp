@@ -252,10 +252,38 @@ DysektProcessor::DysektProcessor()
     // call, setMidiChannel(3), was dead code: it only affects the sfizz/.sfz
     // branch of SfzPlayer::process(), which sfzPlayer never takes.)
     sfzPlayer2.setMidiChannel (2);   // SFZ-PLAYER  → ch 2 (default; user-adjustable, see sfzPlayer2ChannelMask)
+
+    // Polls processBlockEntryPending (set by processBlock(), the audio
+    // thread) and does the actual, blocking crashLogger.log() call here on
+    // the message thread instead -- see that member's comment. 50ms is
+    // fast enough that the log line still shows up essentially immediately
+    // after the first audio callback; stopTimer() is called once it's
+    // fired (see timerCallback()) so this doesn't run for the plugin's
+    // entire lifetime.
+    startTimer (50);
+}
+
+void DysektProcessor::timerCallback()
+{
+    // Message thread: safe to do the actual blocking crashLogger.log() call
+    // here. See processBlockEntryPending's comment in PluginProcessor.h.
+    if (processBlockEntryPending.exchange (false, std::memory_order_acq_rel))
+    {
+        crashLogger.log ("processBlock() ENTRY — first call reached. numSamples="
+            + juce::String (processBlockEntryNumSamples.load (std::memory_order_relaxed))
+            + " midi.getNumEvents()="
+            + juce::String (processBlockEntryNumMidiEvents.load (std::memory_order_relaxed)));
+        stopTimer();
+    }
 }
 
 DysektProcessor::~DysektProcessor()
 {
+    // Stopped first, and unconditionally, so a callback that's already
+    // queued on the message thread can't fire mid-teardown and touch
+    // members (crashLogger included) that are about to be destroyed.
+    stopTimer();
+
     // Very first statement, deliberately before removeAllJobs() below even
     // starts waiting -- see ProcessorHandle::processorAlive's comment in
     // SoundFontLoader.h. Everything else LoadJob posts results through
@@ -2857,20 +2885,26 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                                             juce::MidiBuffer& midi)
 {
     // TEMP diagnostic — fires exactly once, completely unconditionally, the
-    // very first time processBlock() is called at all. If this line never
+    // very first time processBlock() is called at all. If nothing ever
     // appears in dysekt_crash.log, processBlock() itself is not being
     // invoked for this plugin instance (bypass/mute at the host level,
     // wrong instance, or the host never started the audio engine) — nothing
     // inside processBlock, including the SF2/SFZ player, can matter until
     // that's resolved.
+    //
+    // Wait-free: only atomic stores happen here, on the audio thread. The
+    // actual crashLogger.log() call — synchronous, locking, allocating file
+    // I/O — happens in timerCallback() on the message thread instead. See
+    // processBlockEntryPending's comment in PluginProcessor.h for why doing
+    // that logging directly here, even just this once, is not safe.
     {
         static bool loggedProcessBlockEntryOnce = false;
         if (! loggedProcessBlockEntryOnce)
         {
             loggedProcessBlockEntryOnce = true;
-            crashLogger.log ("processBlock() ENTRY — first call reached. numSamples="
-                + juce::String (buffer.getNumSamples())
-                + " midi.getNumEvents()=" + juce::String (midi.getNumEvents()));
+            processBlockEntryNumSamples.store (buffer.getNumSamples(), std::memory_order_relaxed);
+            processBlockEntryNumMidiEvents.store (midi.getNumEvents(), std::memory_order_relaxed);
+            processBlockEntryPending.store (true, std::memory_order_release);
         }
     }
 

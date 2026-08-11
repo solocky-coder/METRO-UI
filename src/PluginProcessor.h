@@ -108,7 +108,7 @@ private:
 };
 
 //==============================================================================
-class DysektProcessor : public juce::AudioProcessor
+class DysektProcessor : public juce::AudioProcessor, private juce::Timer
 {
 public:
     // ── Crash logger ────────────────────────────────────────────────────────
@@ -1188,6 +1188,25 @@ public:
     std::vector<float> masterPitchScratchR;
 
     friend class SoundFontLoader;
+
+    // ── processBlock() ENTRY diagnostic (audio-thread-safe handoff) ────────
+    // The diagnostic itself must never call crashLogger.log() directly from
+    // processBlock() -- that's synchronous, locking, allocating file I/O,
+    // the exact real-time-safety violation the comment right above this
+    // call in processBlock() already warns about for the *old* per-MIDI-
+    // event version of this diagnostic. Firing only once (guarded by
+    // loggedProcessBlockEntryOnce) does not make it safe: a single blocking
+    // file write on the audio thread's very first callback is still enough
+    // to stall that callback long enough for a host's real-time watchdog to
+    // decide the plugin has hung and force-kill the process -- which is
+    // exactly the "no crash-handler entry, session.lock never removed"
+    // signature seen when this fired. Instead, processBlock() only ever
+    // does a wait-free atomic store here; timerCallback() (message thread)
+    // polls it and does the actual logging.
+    std::atomic<bool> processBlockEntryPending { false };
+    std::atomic<int>  processBlockEntryNumSamples { 0 };
+    std::atomic<int>  processBlockEntryNumMidiEvents { 0 };
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DysektProcessor)
 };
