@@ -12,9 +12,9 @@ MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
     : AudioProcessorEditor (processorToEdit), processor (processorToEdit), transportBar (processor.sequencer)
 {
     setLookAndFeel (&lookAndFeel);
-    arrangementView = std::make_unique<MetroArrangementView> (processor.sequencer);
-    arrangementView->setSelectionChangedCallback ([this] (const MetroSelection& selection)
-                                                  { onArrangementSelectionChanged (selection); });
+    arrangeWorkspace = std::make_unique<MetroArrangeWorkspace> (processor.sequencer);
+    arrangeWorkspace->setSelectionChangedCallback ([this] (const MetroSelection& selection)
+                                                   { onArrangementSelectionChanged (selection); });
     padsView = std::make_unique<PadGridView> (processor);
     browserView = std::make_unique<FileBrowserPanel> (processor);
     mixerView = std::make_unique<MixerPanel> (processor);
@@ -22,7 +22,7 @@ MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
     transportBar.onFloatRequested = [this] { showFloatingTransport(); };
 
     for (auto* component : { static_cast<juce::Component*> (&transportBar), static_cast<juce::Component*> (&sidebar),
-                             static_cast<juce::Component*> (arrangementView.get()), static_cast<juce::Component*> (&inspector),
+                             static_cast<juce::Component*> (arrangeWorkspace.get()), static_cast<juce::Component*> (&inspector),
                              static_cast<juce::Component*> (padsView.get()), static_cast<juce::Component*> (browserView.get()),
                              static_cast<juce::Component*> (mixerView.get()) })
         addAndMakeVisible (*component);
@@ -41,7 +41,7 @@ void MetroStandaloneEditor::resized()
     transportBar.setBounds (area.removeFromTop (MetroMetrics::transportHeight));
     inspector.setBounds (area.removeFromBottom (MetroMetrics::inspectorHeight));
     sidebar.setBounds (area.removeFromLeft (MetroMetrics::sidebarWidth));
-    arrangementView->setBounds (area); padsView->setBounds (area);
+    arrangeWorkspace->setBounds (area); padsView->setBounds (area);
     browserView->setBounds (area); mixerView->setBounds (area);
 }
 
@@ -49,7 +49,7 @@ void MetroStandaloneEditor::showContent (MetroContent content)
 {
     activeContent = content;
     sidebar.setSelectedContent (content);
-    arrangementView->setVisible (content == MetroContent::arrange);
+    arrangeWorkspace->setVisible (content == MetroContent::arrange);
     padsView->setVisible (content == MetroContent::pads);
     browserView->setVisible (content == MetroContent::browser);
     mixerView->setVisible (content == MetroContent::mixer);
@@ -58,7 +58,7 @@ void MetroStandaloneEditor::showContent (MetroContent content)
     // (see onArrangementSelectionChanged); every other tab still uses the
     // generic placeholder message until they grow their own selection models.
     if (content == MetroContent::arrange)
-        onArrangementSelectionChanged (arrangementView->getSelection());
+        onArrangementSelectionChanged (arrangeWorkspace->getSelection());
     else
         inspector.setContextMessage (inspectorMessageFor (content));
 

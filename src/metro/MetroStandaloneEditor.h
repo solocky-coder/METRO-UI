@@ -2,7 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "../PluginProcessor.h"
-#include "MetroArrangementView.h"
+#include "MetroArrangeWorkspace.h"
 #include "MetroContent.h"
 #include "MetroLookAndFeel.h"
 #include "MetroInspector.h"
@@ -49,7 +49,7 @@ private:
     MetroTransportBar transportBar;
     std::unique_ptr<FloatingTransportBar> floatingTransport;
     MetroSidebar sidebar;
-    std::unique_ptr<MetroArrangementView> arrangementView;
+    std::unique_ptr<MetroArrangeWorkspace> arrangeWorkspace;
     MetroInspector inspector;
     std::unique_ptr<::PadGridView> padsView;
     std::unique_ptr<::FileBrowserPanel> browserView;
