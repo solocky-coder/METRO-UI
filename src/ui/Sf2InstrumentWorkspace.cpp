@@ -672,21 +672,32 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
     // Full merged-column width (no cap) — this is where the extra room
     // freed up by dropping the old column 3 divider actually goes.
     //
-    // BUGFIX: this used to hand the keyboard/meter their full fixed pixel
+    // BUGFIX #1: this used to hand the keyboard/meter their full fixed pixel
     // budget unconditionally and give Sf2ChannelFxPanel whatever was left —
     // which, once Sections A/B/paddings had taken their share out of a
     // realistic window height, routinely rounded down to ~0px. The mixer
     // (the actual point of the column 2/3 merge) would silently vanish
-    // while the keyboard underneath it rendered at full size. Now the split
-    // is elastic: the keyboard gets its comfortable/ideal height only if
-    // there's room left over for the mixer's own minimum after it; under
-    // real pressure the keyboard shrinks toward a floor first, so the
-    // mixer — which also degrades gracefully via its own dynamic knob
-    // sizing (see Sf2ChannelFxPanel::knobH()) — keeps getting a fair,
-    // visible share instead of being crushed to nothing.
+    // while the keyboard underneath it rendered at full size.
+    //
+    // BUGFIX #2: the first fix over-corrected — giving the mixer "whatever
+    // was left" also meant that on a tall window it could be handed far
+    // more height than three knob rows ever need. Sf2ChannelFxPanel's knobs
+    // cap out at kKnobHMax (see Sf2ChannelFxPanel::knobH()), so the extra
+    // height just sat there as dead space between the last knob row and
+    // "NOTE ACTIVITY". Now the mixer is capped to its own ideal content
+    // height (kMixerIdealH) once there's enough room for both it and a
+    // comfortable keyboard — any further surplus goes to the keyboard
+    // instead, which actually benefits from being taller, rather than
+    // being stranded as an empty gap. Below that comfort threshold we fall
+    // back to the original elastic behaviour: shrink the keyboard toward
+    // its floor first, then let the mixer itself shrink (via its own
+    // dynamic knob sizing) rather than either one collapsing to nothing.
     {
         constexpr int kKeyboardIdealH = 110;
         constexpr int kKeyboardFloorH = 56;
+        constexpr int kMixerIdealH    = 240;   // label(20) + pad(4) + 3*kKnobHMax(72) —
+                                                // matches Sf2ChannelFxPanel's own ceiling, so
+                                                // knobs are already at max size beyond this
         constexpr int kMixerMinH      = 138;   // matches Sf2ChannelFxPanel's own floor:
                                                 // kLabelHMin(14) + kPadding(4) + 3*kKnobHMin(40)
 
@@ -696,9 +707,28 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         const int chromeH = kPad + 8 + 20 + 14 + 6 + 18 + 4;
         const int splittableH = juce::jmax (0, c.getHeight() - chromeH);
 
-        const int keyboardH = (splittableH >= kKeyboardIdealH + kMixerMinH)
-                                   ? kKeyboardIdealH
-                                   : juce::jmax (kKeyboardFloorH, splittableH - kMixerMinH);
+        int keyboardH, mixerH;
+        if (splittableH >= kMixerIdealH + kKeyboardIdealH)
+        {
+            // Plenty of room: cap the mixer at its ideal size instead of
+            // stretching it, and hand every extra px to the keyboard.
+            mixerH    = kMixerIdealH;
+            keyboardH = splittableH - mixerH;
+        }
+        else if (splittableH >= kMixerMinH + kKeyboardFloorH)
+        {
+            // Tight but workable: keyboard gives way first, toward its floor.
+            keyboardH = juce::jmax (kKeyboardFloorH, splittableH - kMixerIdealH);
+            mixerH    = splittableH - keyboardH;
+        }
+        else
+        {
+            // Genuinely starved: keyboard sits at its floor, mixer gets
+            // whatever's left (its own dynamic knob sizing keeps it usable
+            // even below kMixerMinH).
+            keyboardH = juce::jmin (kKeyboardFloorH, splittableH);
+            mixerH    = juce::jmax (0, splittableH - keyboardH);
+        }
 
         keyboardZone = c.removeFromBottom (keyboardH);
         c.removeFromBottom (kPad);
@@ -713,7 +743,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         mixerLabelZone = c.removeFromTop (18);
         c.removeFromTop (kPad / 2);
 
-        channelFxPanel.setBounds (c);
+        channelFxPanel.setBounds (c.removeFromTop (mixerH));
     }
 }
 
@@ -781,19 +811,33 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
     c.removeFromTop (kPad);
 
     // ── Section C — channel mixer, note activity, keyboard ──────────────────
-    // Same elastic keyboard/mixer split as layoutWide — see the comment
-    // there for why this can't just be two fixed pixel budgets stacked up.
+    // Same capped-mixer / surplus-to-keyboard split as layoutWide — see the
+    // comment there for why the mixer can't just take "whatever's left".
     {
         constexpr int kKeyboardIdealH = 100;
         constexpr int kKeyboardFloorH = 52;
+        constexpr int kMixerIdealH    = 240;
         constexpr int kMixerMinH      = 138;
 
         const int chromeH = kPad + 8 + 20 + 14 + 6 + 18 + 4;
         const int splittableH = juce::jmax (0, c.getHeight() - chromeH);
 
-        const int keyboardH = (splittableH >= kKeyboardIdealH + kMixerMinH)
-                                   ? kKeyboardIdealH
-                                   : juce::jmax (kKeyboardFloorH, splittableH - kMixerMinH);
+        int keyboardH, mixerH;
+        if (splittableH >= kMixerIdealH + kKeyboardIdealH)
+        {
+            mixerH    = kMixerIdealH;
+            keyboardH = splittableH - mixerH;
+        }
+        else if (splittableH >= kMixerMinH + kKeyboardFloorH)
+        {
+            keyboardH = juce::jmax (kKeyboardFloorH, splittableH - kMixerIdealH);
+            mixerH    = splittableH - keyboardH;
+        }
+        else
+        {
+            keyboardH = juce::jmin (kKeyboardFloorH, splittableH);
+            mixerH    = juce::jmax (0, splittableH - keyboardH);
+        }
 
         keyboardZone = c.removeFromBottom (keyboardH);
         c.removeFromBottom (kPad);
@@ -807,7 +851,7 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         mixerLabelZone = c.removeFromTop (18);
         c.removeFromTop (kPad / 2);
 
-        channelFxPanel.setBounds (c);
+        channelFxPanel.setBounds (c.removeFromTop (mixerH));
     }
 }
 
