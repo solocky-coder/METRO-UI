@@ -69,7 +69,7 @@ void MetroArrangementView::paint (juce::Graphics& graphics)
     // The arrangement is deliberately a quiet, high-contrast editing surface:
     // charcoal grid, fine subdivision lines, and no coloured panels competing
     // with clips.  The ruler is the sole place time is labelled.
-    const auto bounds = getLocalBounds();
+    auto bounds = getLocalBounds();
     const int rulerH = MetroMetrics::timelineHeight;
     const int beatWidth = beatWidthPx();
     const int scrollOffset = static_cast<int> (scrollPixels);

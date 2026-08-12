@@ -525,7 +525,7 @@ void MetroStepSequencer::drawRowHeaders (juce::Graphics& g)
 
     for (int r = 0; r < (int) rows.size(); ++r)
     {
-        const auto cell = cellBounds (r, 0).withX (header.getX()).withWidth (header.getWidth());
+        auto cell = cellBounds (r, 0).withX (header.getX()).withWidth (header.getWidth());
         if (! cell.intersects (header))
             continue;
 
