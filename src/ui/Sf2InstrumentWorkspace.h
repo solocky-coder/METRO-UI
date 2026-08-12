@@ -35,53 +35,55 @@
 //    existing data, so getProgramGrid() keeps returning real state even
 //    though the grid itself is no longer painted.
 //
-//  Column 2, Section A — Active preset + 3 knobs (LEVEL / TRANSPOSE / PAN):
-//    Wired straight to SfzPlayer::setVolume/setTranspose/setPan (no
-//    pushCommand/MIDI-learn indirection for the value itself; right-click
-//    still opens the MIDI-learn menu on the global SliceParamField IDs,
-//    exactly as SfzDropdownPanel did). This section's width is still capped
-//    to the old ~34.8%-of-workspace figure (kColVoiceFrac) and left-aligned
-//    within the merged column — letting it stretch across the full ~74.5%
-//    merged width would just space the 3 knobs out with dead air between
-//    them, not make anything more overseeable.
+//  Column 2, Section A — Active preset + 8 knobs, one row (LEVEL / TRANSPOSE /
+//  PAN / FINE-TUNE / CUTOFF / RESONANCE / REVERB SEND / REVERB DAMP):
+//    All eight global "current preset" controls now share a single knob row
+//    instead of being split across a 3-knob row (+ a secondary fine-tune
+//    stepper) and a separate block of horizontal sliders below. Per request,
+//    every one of them reads as a knob and lives on the same row. LEVEL/
+//    TRANSPOSE/PAN/FINE-TUNE are wired straight to SfzPlayer::setVolume/
+//    setTranspose/setPan/setFineTune (no pushCommand/MIDI-learn indirection
+//    for the value itself; right-click still opens the MIDI-learn menu on
+//    the global SliceParamField IDs, exactly as SfzDropdownPanel did).
+//    CUTOFF/RESONANCE are backed by SfzPlayer::getSf2FilterCutoff/Resonance
+//    and setSf2FilterCutoff/Resonance, which drive FluidSynth's
+//    GEN_FILTERFC/GEN_FILTERQ generators (see
+//    SfzPlayer::applyFluidFilterFromUi()); REVERB SEND/DAMP are the global
+//    reverb mix/damp. Filter and reverb are SF2/FluidSynth only.
 //
-//    ⚠ DEVIATION FROM THE LITERAL MOCKUP: the SVG's knob row has only 3
-//    knobs and drops FineTune entirely — it is not present anywhere in the
-//    mockup. Silently deleting fine-tune access would be a functionality
-//    regression the SVG doesn't call out, so it is kept as a small secondary
-//    stepper docked under the Transpose knob (fineZone), visually
-//    subordinate to the 3 primary knobs so the mockup's proportions and
-//    reading order are preserved. Flagging this here rather than baking it
-//    in silently — worth confirming against the design before shipping.
+//    Because 8 knobs need more room than the 3-knob row ever did, this row
+//    is no longer capped to the old ~34.8%-of-workspace figure
+//    (kColVoiceFrac) — it spans the full merged-column width instead (see
+//    layoutKnobRow()), which also shrinks each knob's width slightly on
+//    narrower windows so all 8 keep fitting on one row rather than
+//    overflowing. Only the "ACTIVE PRESET" name/meta header directly above
+//    the row keeps the narrower left-aligned cap, since it's text and
+//    doesn't benefit from stretching wide.
 //
-//  Column 2, Section B — SF2 filter + reverb controls (permanent, no tabs):
-//    Live CUTOFF (Hz/kHz) and RESONANCE (%) sliders backed by
-//    SfzPlayer::getSf2FilterCutoff/Resonance and setSf2FilterCutoff/Resonance,
-//    which drive FluidSynth's GEN_FILTERFC/GEN_FILTERQ generators (see
-//    SfzPlayer::applyFluidFilterFromUi()), plus the global REVERB SEND/DAMP
-//    sliders. SF2/FluidSynth only. Same width cap as Section A, so the two
-//    read as one coherent "current preset" block with nothing in between.
-//    ⚠ DEVIATION FROM THE LITERAL MOCKUP: the mockup shows a permanent AMP
-//    ENVELOPE display here instead. That was dropped rather than tabbed
-//    against Filter (an earlier iteration of this panel tried the tab
-//    approach) because the same A/D/S/R state this graph showed is already
-//    live in two other places on screen at once — the top-bar LCD text
-//    readout AND the draggable envelope overlay on the waveform view
-//    (Sf2WaveformLcd) — so a third, read-only copy added nothing. Filter is
-//    the only thing that wasn't already live elsewhere, so it now owns this
-//    space outright with no tab/mode switch needed.
+//    ⚠ DEVIATION FROM THE LITERAL MOCKUP: the mockup's knob row has only 3
+//    knobs and drops FineTune, and shows a permanent AMP ENVELOPE display
+//    where CUTOFF/RESONANCE/REVERB now sit. FineTune was already kept as a
+//    small stepper before this change (silently dropping it would have been
+//    a functionality regression the SVG doesn't call out); the envelope
+//    display was dropped rather than tabbed against Filter (an earlier
+//    iteration tried the tab approach) because the same A/D/S/R state it
+//    showed is already live in two other places on screen at once — the
+//    top-bar LCD text readout AND the draggable envelope overlay on the
+//    waveform view (Sf2WaveformLcd) — so a third, read-only copy added
+//    nothing. Flagging both deviations here rather than baking them in
+//    silently.
 //
 //  Column 2, Section C — Channel mixer (full merged-column width):
 //    • Per-channel volume, pan, reverb-send, and mute controls supplied by
 //      Sf2ChannelFxPanel. It remains visible for both single- and
 //      multi-channel assignments. Scope is deliberately different from
-//      Sections A/B above: those are the *currently selected* preset's
-//      global controls, this is *every assigned channel's* mixer strip —
-//      the merge doesn't blur that distinction, it just removes the hard
-//      column seam between "the preset you're looking at" and "everything
-//      it's mixed alongside". Sitting directly under Section B with only a
-//      "CHANNEL MIXER" label between them (mixerLabelZone) makes that
-//      relationship legible without a divider line.
+//      Section A above: that's the *currently selected* preset's global
+//      controls (the 8-knob row), this is *every assigned channel's* mixer
+//      strip — the merge doesn't blur that distinction, it just removes the
+//      hard column seam between "the preset you're looking at" and
+//      "everything it's mixed alongside". Sitting directly under the knob
+//      row with only a "CHANNEL MIXER" label between them (mixerLabelZone)
+//      makes that relationship legible without a divider line.
 //    • Getting the full ~74.5% merged width instead of the old column 3's
 //      ~34.1% is a real, non-cosmetic side effect of the merge: more
 //      channels fit before Sf2ChannelFxPanel's kMinColW floor forces
@@ -197,6 +199,14 @@ private:
     void layoutWide   (juce::Rectangle<int> bounds);
     void layoutNarrow (juce::Rectangle<int> bounds);
 
+    /** Lays out all 8 global knob zones (level/trans/pan/fine/cutoff/
+     *  resonance/reverb-send/reverb-damp) evenly across rowBounds, left to
+     *  right, in that order. Shrinks each knob's width (never below a small
+     *  floor) rather than kKnobW so all 8 keep fitting on one row even when
+     *  rowBounds is narrower than 8 full-size knobs would need. Shared by
+     *  layoutWide()/layoutNarrow() so the two can't drift apart. */
+    void layoutKnobRow (juce::Rectangle<int> rowBounds);
+
     // ── Top bar ────────────────────────────────────────────────────────────
     juce::Rectangle<int> topBarZone, loadedPillZone;
 
@@ -231,22 +241,18 @@ private:
     struct AssignedPreset { Sf2PresetInfo preset; int ch { 0 }; };
     std::vector<AssignedPreset> sf2Presets;
 
-    // ── Column 2 top — active preset + 3 knobs ─────────────────────────────
+    // ── Column 2 top — active preset + 8 knobs, one row ────────────────────
+    //  LEVEL / TRANSPOSE / PAN / FINE-TUNE / CUTOFF / RESONANCE / REVERB
+    //  SEND / REVERB DAMP all live in a single knob row now (previously a
+    //  3-knob row + a secondary fine-tune stepper, with filter/reverb drawn
+    //  as sliders in a separate block below). Filter/reverb were previously
+    //  a switchable ENVELOPE/FILTER pair; dropped the ENVELOPE side
+    //  entirely — SfzPlayer's A/D/S/R is already shown live in two other
+    //  places on screen at once (the top-bar LCD text readout and the
+    //  draggable envelope overlay on the waveform view, Sf2WaveformLcd), so
+    //  a third read-only copy added nothing. See layoutKnobRow().
     juce::Rectangle<int> col2Zone, activePresetHeaderZone;
-    juce::Rectangle<int> levelZone, transZone, panZone;
-    // Secondary fine-tune stepper — deliberate deviation from the literal
-    // mockup (see header comment above); visually subordinate to the 3
-    // primary knobs.
-    juce::Rectangle<int> fineZone;
-
-    // ── Column 2 bottom — filter + reverb controls (permanent, no tabs) ─────────
-    //  Previously a switchable ENVELOPE/FILTER pair. Dropped the ENVELOPE
-    //  side entirely: SfzPlayer's A/D/S/R is already shown live in two other
-    //  places on screen at once — the top-bar LCD text readout AND the
-    //  draggable envelope overlay on the waveform view (Sf2WaveformLcd) — so
-    //  a third, read-only copy of the same four numbers here added nothing.
-    //  Filter is the only thing that isn't already live elsewhere, so it now
-    //  owns this space outright.
+    juce::Rectangle<int> levelZone, transZone, panZone, fineZone;
     juce::Rectangle<int> filterCutoffZone, filterResonanceZone;
     juce::Rectangle<int> reverbSendZone, reverbDampZone;
 

@@ -580,6 +580,44 @@ void Sf2InstrumentWorkspace::resized()
         layoutWide (bounds);
 }
 
+void Sf2InstrumentWorkspace::layoutKnobRow (juce::Rectangle<int> rowBounds)
+{
+    constexpr int kNumKnobs = 8;
+    constexpr int kMinKnobW = 32;   // never shrink knobs below this — drawKnob()
+                                    // still reads fine at this size, just tighter
+    constexpr int kMinGap   = 2;
+
+    const int rowW = rowBounds.getWidth();
+
+    // Prefer kKnobW (matches the old 3-knob row's size); shrink — never
+    // grow — so all 8 knobs keep fitting on one row instead of overflowing
+    // off the right edge on narrower windows.
+    int knobW = kKnobW;
+    if (rowW < kNumKnobs * knobW + (kNumKnobs + 1) * kMinGap)
+        knobW = juce::jmax (kMinKnobW, (rowW - (kNumKnobs + 1) * kMinGap) / kNumKnobs);
+
+    const int knobGap = juce::jmax (kMinGap, (rowW - kNumKnobs * knobW) / (kNumKnobs + 1));
+
+    juce::Rectangle<int> zones[kNumKnobs];
+    auto cursor = rowBounds;
+    for (int i = 0; i < kNumKnobs; ++i)
+    {
+        cursor.removeFromLeft (knobGap);
+        zones[i] = cursor.removeFromLeft (knobW);
+    }
+
+    // Order matches the requested left-to-right reading order: LEVEL,
+    // TRANSPOSE, PAN, FINE-TUNE, CUTOFF, RESONANCE, REVERB SEND, REVERB DAMP.
+    levelZone           = zones[0];
+    transZone           = zones[1];
+    panZone             = zones[2];
+    fineZone            = zones[3];
+    filterCutoffZone    = zones[4];
+    filterResonanceZone = zones[5];
+    reverbSendZone      = zones[6];
+    reverbDampZone      = zones[7];
+}
+
 void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
 {
     topBarZone = bounds.removeFromTop (kTopBarH);
@@ -614,16 +652,22 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
     // each section.
     auto c = col2Zone.reduced (kPad);
 
-    // ── Section A — active preset header + 3 knobs (+ fine stepper) ────────
-    // Width capped to topSectionW and left-aligned, so the knob row keeps
-    // its original pixel layout instead of stretching across the full
-    // merged width.
+    // ── Section A — active preset header + 8 knobs, one row ─────────────────
+    // Header stays capped to topSectionW and left-aligned (it's text, no
+    // benefit to stretching wide). The knob row below it now holds all 8
+    // global controls — LEVEL/TRANSPOSE/PAN/FINE-TUNE/CUTOFF/RESONANCE/
+    // REVERB SEND/REVERB DAMP — so it spans the full merged-column width
+    // instead of the old topSectionW cap (8 knobs need more room than the
+    // 3 the cap was originally sized for); layoutKnobRow() shrinks each
+    // knob as needed to keep all 8 on one row on narrower windows.
     {
         auto top = c.removeFromTop (180 - kPad);
-        auto topSection = top.removeFromLeft (juce::jmin (topSectionW, top.getWidth()));
 
-        activePresetHeaderZone = topSection.removeFromTop (54);
-        topSection.removeFromTop (kPad);
+        {
+            auto headerZone = top.removeFromTop (54);
+            activePresetHeaderZone = headerZone.removeFromLeft (juce::jmin (topSectionW, headerZone.getWidth()));
+        }
+        top.removeFromTop (kPad);
 
         // Knob cell is label(16) + circle + value(20), not just the circle —
         // drawKnob() carves those three sub-rects out of whatever bounds it's
@@ -633,38 +677,8 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         // Section C below (see the elastic keyboard/mixer split there),
         // which needed the room far more than this knob row's slack did.
         constexpr int kKnobCellH = 84;
-        auto knobRow = topSection.removeFromTop (kKnobCellH);
-        const int knobGap = (knobRow.getWidth() - 3 * kKnobW) / 4;
-        knobRow.removeFromLeft (knobGap);
-        levelZone = knobRow.removeFromLeft (kKnobW);
-        knobRow.removeFromLeft (knobGap);
-        transZone = knobRow.removeFromLeft (kKnobW);
-        knobRow.removeFromLeft (knobGap);
-        panZone   = knobRow.removeFromLeft (kKnobW);
-
-        // Fine-tune stepper — deliberately small/secondary, docked under
-        // Transpose; see header comment for why this exists at all.
-        fineZone = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobCellH + 6,
-                                          transZone.getWidth(), 16);
-    }
-    c.removeFromTop (kPad);
-
-    // ── Section B — SF2 filter + global reverb sliders ──────────────────────
-    // Same width cap as Section A so the two read as one coherent block.
-    // Row height trimmed from 34 to 30 and inter-row gap from kPad to 6 —
-    // drawSlider() only needs a 16px label row + a 12px track, so 34px
-    // always had a few spare px per row; freed up for Section C below.
-    {
-        auto filterSection = c.removeFromTop (4 * 30 + 3 * 6);
-        filterSection = filterSection.removeFromLeft (juce::jmin (topSectionW, filterSection.getWidth()));
-
-        filterCutoffZone = filterSection.removeFromTop (30);
-        filterSection.removeFromTop (6);
-        filterResonanceZone = filterSection.removeFromTop (30);
-        filterSection.removeFromTop (6);
-        reverbSendZone = filterSection.removeFromTop (30);
-        filterSection.removeFromTop (6);
-        reverbDampZone = filterSection.removeFromTop (30);
+        auto knobRow = top.removeFromTop (kKnobCellH);
+        layoutKnobRow (knobRow);
     }
     c.removeFromTop (kPad);
 
@@ -787,33 +801,16 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
 
     auto c = col2Zone.reduced (kPad);
 
-    // ── Section A — active preset header + 3 knobs (+ fine stepper) ────────
+    // ── Section A — active preset header + 8 knobs, one row ─────────────────
+    // Same merge as layoutWide(): all 8 global controls share one knob row
+    // spanning the full (already full-width, single-column) row here.
     {
         activePresetHeaderZone = c.removeFromTop (40);
         c.removeFromTop (kPad);
         constexpr int kKnobCellH = 96;
         auto knobRow = c.removeFromTop (kKnobCellH);
-        const int knobGap = (knobRow.getWidth() - 3 * kKnobW) / 4;
-        knobRow.removeFromLeft (knobGap);
-        levelZone = knobRow.removeFromLeft (kKnobW);
-        knobRow.removeFromLeft (knobGap);
-        transZone = knobRow.removeFromLeft (kKnobW);
-        knobRow.removeFromLeft (knobGap);
-        panZone   = knobRow.removeFromLeft (kKnobW);
-        fineZone  = juce::Rectangle<int> (transZone.getX(), knobRow.getY() + kKnobCellH + 6,
-                                           transZone.getWidth(), 16);
+        layoutKnobRow (knobRow);
         c.removeFromTop (26);
-    }
-
-    // ── Section B — SF2 filter + global reverb sliders ──────────────────────
-    {
-        filterCutoffZone = c.removeFromTop (30);
-        c.removeFromTop (6);
-        filterResonanceZone = c.removeFromTop (30);
-        c.removeFromTop (6);
-        reverbSendZone = c.removeFromTop (30);
-        c.removeFromTop (6);
-        reverbDampZone = c.removeFromTop (30);
     }
     c.removeFromTop (kPad);
 
@@ -974,33 +971,30 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         g.drawFittedText (meta, metaRow, juce::Justification::centredRight, 1, 0.7f);
     }
 
-    // ── Section A — 3 knobs + fine-tune stepper ──────────────────────────────────────────────────────────
+    // ── Section A — 8 knobs, one row: LEVEL / TRANSPOSE / PAN / FINE-TUNE / ──
+    //    CUTOFF / RESONANCE / REVERB SEND / REVERB DAMP
     drawKnob (g, levelZone, volToNorm (processor.sfzPlayer.getVolume()), "LEVEL",
               juce::String (juce::roundToInt (processor.sfzPlayer.getVolume() * 50.f)) + "%");
     drawKnob (g, transZone, transToNorm (processor.sfzPlayer.getTranspose()), "TRANSPOSE",
               juce::String (processor.sfzPlayer.getTranspose()));
     drawKnob (g, panZone, panToNorm (processor.sfzPlayer.getPan()), "PAN",
               juce::String (juce::roundToInt (processor.sfzPlayer.getPan() * 100.f)));
+    drawKnob (g, fineZone, fineToNorm (processor.sfzPlayer.getFineTune()), "FINE TUNE",
+              juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c");
 
-    g.setFont (DysektLookAndFeel::makeFont (12.f));
-    g.setColour (theme.foreground.withAlpha (0.5f));
-    g.drawText ("FINE " + juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c",
-                fineZone, juce::Justification::centred);
-
-    // ── Section B — SF2 filter + reverb controls (permanent, no tabs) ───────────────────────
     {
         const float cutoffHz = processor.sfzPlayer.getSf2FilterCutoff();
         const juce::String cutoffStr = cutoffHz >= 1000.f
             ? juce::String (cutoffHz / 1000.f, 2) + " kHz"
             : juce::String (juce::roundToInt (cutoffHz)) + " Hz";
 
-        drawSlider (g, filterCutoffZone, cutoffToNorm (cutoffHz), "CUTOFF", cutoffStr);
-        drawSlider (g, filterResonanceZone, resonanceToNorm (processor.sfzPlayer.getSf2FilterResonance()),
-                    "RESONANCE", juce::String (juce::roundToInt (processor.sfzPlayer.getSf2FilterResonance())) + "%");
-        drawSlider (g, reverbSendZone, processor.sfzPlayer.getReverbMix() / 100.f, "REVERB SEND",
-                    juce::String (juce::roundToInt (processor.sfzPlayer.getReverbMix())) + "%");
-        drawSlider (g, reverbDampZone, processor.sfzPlayer.getReverbDamp() / 100.f, "REVERB DAMP",
-                    juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
+        drawKnob (g, filterCutoffZone, cutoffToNorm (cutoffHz), "CUTOFF", cutoffStr);
+        drawKnob (g, filterResonanceZone, resonanceToNorm (processor.sfzPlayer.getSf2FilterResonance()),
+                  "RESONANCE", juce::String (juce::roundToInt (processor.sfzPlayer.getSf2FilterResonance())) + "%");
+        drawKnob (g, reverbSendZone, processor.sfzPlayer.getReverbMix() / 100.f, "REVERB SEND",
+                  juce::String (juce::roundToInt (processor.sfzPlayer.getReverbMix())) + "%");
+        drawKnob (g, reverbDampZone, processor.sfzPlayer.getReverbDamp() / 100.f, "REVERB DAMP",
+                  juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
     }
 
     // ── Section C — channel mixer label ─────────────────────────────────────
