@@ -436,11 +436,36 @@ void SequencerEngine::addSfTrack (const Sf2PresetInfo& preset, juce::Colour colo
     // Assign the next available FluidSynth channel (0-15) to this track.
     // 0-based channels 0 and 1 (MIDI channels 1 and 2) are reserved for the
     // Slicer and SFZ-Player respectively — SF2 tracks must start at 0-based 2.
-    int sfCh = 2;
+    //
+    // NOTE: this used to be "max channel currently in use, plus one, clamped
+    // to 15" — but jlimit()'s clamp silently pulled the candidate back down
+    // to 15 once the running max exceeded it, colliding with whichever track
+    // was already sitting on channel 15 instead of finding a free slot. Do
+    // an actual free-slot search instead so channels are never reused while
+    // still occupied.
+    bool channelInUse[16] = {};
     for (auto& t : *current)
         if (t->type == TrackType::SfPlayer)
-            sfCh = juce::jmax (sfCh, t->midiChannel.load (std::memory_order_relaxed) + 1);
-    sfCh = juce::jlimit (2, 15, sfCh);
+            channelInUse[t->midiChannel.load (std::memory_order_relaxed) & 0xF] = true;
+
+    int sfCh = -1;
+    for (int c = 2; c <= 15; ++c)
+    {
+        if (! channelInUse[c])
+        {
+            sfCh = c;
+            break;
+        }
+    }
+
+    if (sfCh < 0)
+    {
+        // All 14 usable channels (2-15) are occupied — nothing free to give
+        // this track. Bail out rather than silently colliding with an
+        // existing track on channel 15.
+        jassertfalse;
+        return;
+    }
 
     auto track = SequencerTrack::makeSfPlayer (preset, colour);
     track->midiChannel.store (sfCh, std::memory_order_relaxed);
