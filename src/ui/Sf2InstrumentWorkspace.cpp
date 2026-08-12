@@ -652,22 +652,17 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
     // each section.
     auto c = col2Zone.reduced (kPad);
 
-    // ── Section A — active preset header + 8 knobs, one row ─────────────────
-    // Header stays capped to topSectionW and left-aligned (it's text, no
-    // benefit to stretching wide). The knob row below it now holds all 8
-    // global controls — LEVEL/TRANSPOSE/PAN/FINE-TUNE/CUTOFF/RESONANCE/
-    // REVERB SEND/REVERB DAMP — so it spans the full merged-column width
-    // instead of the old topSectionW cap (8 knobs need more room than the
-    // 3 the cap was originally sized for); layoutKnobRow() shrinks each
-    // knob as needed to keep all 8 on one row on narrower windows.
+    // ── Section A — 8-knob row + active preset header, with a divider ───────
+    // Order flipped so the knob row reads first, active-preset header below
+    // it, with a thin rule between them (knobHeaderDividerZone, drawn in
+    // paint()). Knob row spans the full merged-column width instead of the
+    // old topSectionW cap (8 knobs need more room than the 3 the cap was
+    // originally sized for); layoutKnobRow() shrinks each knob as needed to
+    // keep all 8 on one row on narrower windows. Header stays capped to
+    // topSectionW and left-aligned (it's text, no benefit to stretching
+    // wide).
     {
         auto top = c.removeFromTop (180 - kPad);
-
-        {
-            auto headerZone = top.removeFromTop (54);
-            activePresetHeaderZone = headerZone.removeFromLeft (juce::jmin (topSectionW, headerZone.getWidth()));
-        }
-        top.removeFromTop (kPad);
 
         // Knob cell is label(16) + circle + value(20), not just the circle —
         // drawKnob() carves those three sub-rects out of whatever bounds it's
@@ -679,6 +674,13 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         constexpr int kKnobCellH = 84;
         auto knobRow = top.removeFromTop (kKnobCellH);
         layoutKnobRow (knobRow);
+
+        top.removeFromTop (6);
+        knobHeaderDividerZone = top.removeFromTop (1);
+        top.removeFromTop (6);
+
+        auto headerZone = top.removeFromTop (54);
+        activePresetHeaderZone = headerZone.removeFromLeft (juce::jmin (topSectionW, headerZone.getWidth()));
     }
     c.removeFromTop (kPad);
 
@@ -801,16 +803,19 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
 
     auto c = col2Zone.reduced (kPad);
 
-    // ── Section A — active preset header + 8 knobs, one row ─────────────────
-    // Same merge as layoutWide(): all 8 global controls share one knob row
-    // spanning the full (already full-width, single-column) row here.
+    // ── Section A — 8-knob row + active preset header, with a divider ───────
+    // Same flip as layoutWide(): knob row first, divider, header below.
     {
-        activePresetHeaderZone = c.removeFromTop (40);
-        c.removeFromTop (kPad);
         constexpr int kKnobCellH = 96;
         auto knobRow = c.removeFromTop (kKnobCellH);
         layoutKnobRow (knobRow);
-        c.removeFromTop (26);
+
+        c.removeFromTop (6);
+        knobHeaderDividerZone = c.removeFromTop (1);
+        c.removeFromTop (6);
+
+        activePresetHeaderZone = c.removeFromTop (40);
+        c.removeFromTop (kPad);
     }
     c.removeFromTop (kPad);
 
@@ -910,6 +915,39 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     g.setColour (theme.foreground.withAlpha (0.6f));
     g.drawText ("BANK 000  |  GENERAL MIDI", bankFooterZone, juce::Justification::centredLeft);
 
+    // ── Section A — 8 knobs, one row: LEVEL / TRANSPOSE / PAN / FINE-TUNE / ──
+    //    CUTOFF / RESONANCE / REVERB SEND / REVERB DAMP
+    drawKnob (g, levelZone, volToNorm (processor.sfzPlayer.getVolume()), "LEVEL",
+              juce::String (juce::roundToInt (processor.sfzPlayer.getVolume() * 50.f)) + "%");
+    drawKnob (g, transZone, transToNorm (processor.sfzPlayer.getTranspose()), "TRANSPOSE",
+              juce::String (processor.sfzPlayer.getTranspose()));
+    drawKnob (g, panZone, panToNorm (processor.sfzPlayer.getPan()), "PAN",
+              juce::String (juce::roundToInt (processor.sfzPlayer.getPan() * 100.f)));
+    drawKnob (g, fineZone, fineToNorm (processor.sfzPlayer.getFineTune()), "FINE TUNE",
+              juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c");
+
+    {
+        const float cutoffHz = processor.sfzPlayer.getSf2FilterCutoff();
+        const juce::String cutoffStr = cutoffHz >= 1000.f
+            ? juce::String (cutoffHz / 1000.f, 2) + " kHz"
+            : juce::String (juce::roundToInt (cutoffHz)) + " Hz";
+
+        drawKnob (g, filterCutoffZone, cutoffToNorm (cutoffHz), "CUTOFF", cutoffStr);
+        drawKnob (g, filterResonanceZone, resonanceToNorm (processor.sfzPlayer.getSf2FilterResonance()),
+                  "RESONANCE", juce::String (juce::roundToInt (processor.sfzPlayer.getSf2FilterResonance())) + "%");
+        drawKnob (g, reverbSendZone, processor.sfzPlayer.getReverbMix() / 100.f, "REVERB SEND",
+                  juce::String (juce::roundToInt (processor.sfzPlayer.getReverbMix())) + "%");
+        drawKnob (g, reverbDampZone, processor.sfzPlayer.getReverbDamp() / 100.f, "REVERB DAMP",
+                  juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
+    }
+
+    // ── Divider between the knob row above and the active-preset header ────
+    // below it.
+    g.setColour (theme.separator);
+    g.drawHorizontalLine (knobHeaderDividerZone.getCentreY(),
+                           (float) knobHeaderDividerZone.getX(),
+                           (float) knobHeaderDividerZone.getRight());
+
     // ── Section A — active preset header ────────────────────────────────────────────────────────────────────────
     {
         const int idx = effectiveDisplayPresetIndex();
@@ -969,32 +1007,6 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         g.setFont (DysektLookAndFeel::makeFont (14.f));
         g.setColour (hasCh ? nameColour.withAlpha (0.85f) : theme.foreground.withAlpha (0.6f));
         g.drawFittedText (meta, metaRow, juce::Justification::centredRight, 1, 0.7f);
-    }
-
-    // ── Section A — 8 knobs, one row: LEVEL / TRANSPOSE / PAN / FINE-TUNE / ──
-    //    CUTOFF / RESONANCE / REVERB SEND / REVERB DAMP
-    drawKnob (g, levelZone, volToNorm (processor.sfzPlayer.getVolume()), "LEVEL",
-              juce::String (juce::roundToInt (processor.sfzPlayer.getVolume() * 50.f)) + "%");
-    drawKnob (g, transZone, transToNorm (processor.sfzPlayer.getTranspose()), "TRANSPOSE",
-              juce::String (processor.sfzPlayer.getTranspose()));
-    drawKnob (g, panZone, panToNorm (processor.sfzPlayer.getPan()), "PAN",
-              juce::String (juce::roundToInt (processor.sfzPlayer.getPan() * 100.f)));
-    drawKnob (g, fineZone, fineToNorm (processor.sfzPlayer.getFineTune()), "FINE TUNE",
-              juce::String (juce::roundToInt (processor.sfzPlayer.getFineTune())) + "c");
-
-    {
-        const float cutoffHz = processor.sfzPlayer.getSf2FilterCutoff();
-        const juce::String cutoffStr = cutoffHz >= 1000.f
-            ? juce::String (cutoffHz / 1000.f, 2) + " kHz"
-            : juce::String (juce::roundToInt (cutoffHz)) + " Hz";
-
-        drawKnob (g, filterCutoffZone, cutoffToNorm (cutoffHz), "CUTOFF", cutoffStr);
-        drawKnob (g, filterResonanceZone, resonanceToNorm (processor.sfzPlayer.getSf2FilterResonance()),
-                  "RESONANCE", juce::String (juce::roundToInt (processor.sfzPlayer.getSf2FilterResonance())) + "%");
-        drawKnob (g, reverbSendZone, processor.sfzPlayer.getReverbMix() / 100.f, "REVERB SEND",
-                  juce::String (juce::roundToInt (processor.sfzPlayer.getReverbMix())) + "%");
-        drawKnob (g, reverbDampZone, processor.sfzPlayer.getReverbDamp() / 100.f, "REVERB DAMP",
-                  juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
     }
 
     // ── Section C — channel mixer label ─────────────────────────────────────

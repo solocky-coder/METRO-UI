@@ -56,9 +56,15 @@
 //    (kColVoiceFrac) — it spans the full merged-column width instead (see
 //    layoutKnobRow()), which also shrinks each knob's width slightly on
 //    narrower windows so all 8 keep fitting on one row rather than
-//    overflowing. Only the "ACTIVE PRESET" name/meta header directly above
+//    overflowing. Only the "ACTIVE PRESET" name/meta header directly below
 //    the row keeps the narrower left-aligned cap, since it's text and
 //    doesn't benefit from stretching wide.
+//
+//    Order: the knob row sits on top, then a thin rule
+//    (knobHeaderDividerZone), then the "ACTIVE PRESET" name/meta header —
+//    the header used to sit above the knobs, flipped per request so the
+//    knob row reads first with a visible border separating it from the
+//    preset readout below.
 //
 //    ⚠ DEVIATION FROM THE LITERAL MOCKUP: the mockup's knob row has only 3
 //    knobs and drops FineTune, and shows a permanent AMP ENVELOPE display
@@ -255,6 +261,9 @@ private:
     juce::Rectangle<int> levelZone, transZone, panZone, fineZone;
     juce::Rectangle<int> filterCutoffZone, filterResonanceZone;
     juce::Rectangle<int> reverbSendZone, reverbDampZone;
+    // Thin divider drawn between the knob row (now on top) and the
+    // active-preset header (now below it) — see paint().
+    juce::Rectangle<int> knobHeaderDividerZone;
 
     // ── Column 2, Section C — always-visible channel mixer, activity meter, ─
     //    keyboard. No separate zone member for the section itself — it's
