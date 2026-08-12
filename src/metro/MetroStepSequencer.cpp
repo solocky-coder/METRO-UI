@@ -362,18 +362,32 @@ juce::Rectangle<int> MetroStepSequencer::velocityLaneBounds() const
              juce::jmax (0, getWidth() - rowHeaderWidth()), kVelocityLaneHeight };
 }
 
+int MetroStepSequencer::gridOffsetX() const
+{
+    const int contentW = gridContentWidth();
+    const int visibleW = gridBounds().getWidth();
+    return contentW < visibleW ? (visibleW - contentW) / 2 : 0;
+}
+
+int MetroStepSequencer::gridOffsetY() const
+{
+    const int contentH = gridContentHeight();
+    const int visibleH = gridBounds().getHeight();
+    return contentH < visibleH ? (visibleH - contentH) / 2 : 0;
+}
+
 juce::Rectangle<int> MetroStepSequencer::cellBounds (int rowIndex, int stepIndex) const
 {
     const auto grid = gridBounds();
     const int cw = stepCellWidth();
-    int x = grid.getX() - stepScrollPx;
+    int x = grid.getX() + gridOffsetX() - stepScrollPx;
     for (int s = 0; s < stepIndex; ++s)
     {
         x += cw + kStepGap;
         if (s % 4 == 3)
             x += kGroupGapExtra;
     }
-    const int y = grid.getY() + rowIndex * kRowHeight - rowScrollPx;
+    const int y = grid.getY() + gridOffsetY() + rowIndex * kRowHeight - rowScrollPx;
     return { x, y, cw, kRowHeight - 2 };
 }
 
@@ -382,7 +396,7 @@ int MetroStepSequencer::rowAtY (int y) const
     const auto grid = gridBounds();
     if (y < grid.getY() || y >= grid.getBottom())
         return -1;
-    const int idx = (y - grid.getY() + rowScrollPx) / kRowHeight;
+    const int idx = (y - grid.getY() - gridOffsetY() + rowScrollPx) / kRowHeight;
     return (idx >= 0 && idx < (int) rows.size()) ? idx : -1;
 }
 
@@ -392,7 +406,7 @@ int MetroStepSequencer::stepAtX (int x) const
     if (x < grid.getX() || x >= grid.getRight())
         return -1;
     const int cw = stepCellWidth();
-    int cx = grid.getX() - stepScrollPx;
+    int cx = grid.getX() + gridOffsetX() - stepScrollPx;
     for (int s = 0; s < numSteps; ++s)
     {
         if (x >= cx && x < cx + cw)

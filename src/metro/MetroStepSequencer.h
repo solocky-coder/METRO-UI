@@ -119,6 +119,16 @@ private:
     int rowAtY  (int y) const;
     int stepAtX (int x) const;
 
+    /** When the grid/row content is smaller than the visible area (e.g. a
+     *  short clip's note range, or few steps, in a wide docked/floating
+     *  panel), centre it instead of pinning it to the top-left and leaving
+     *  a dead, undecorated block of flat background filling the rest of
+     *  the panel. Both are 0 once content needs to scroll (content >=
+     *  visible), which is exactly when clampScroll() already pins
+     *  stepScrollPx/rowScrollPx to 0 too, so this never fights scrolling. */
+    int gridOffsetX() const;
+    int gridOffsetY() const;
+
     //==========================================================================
     //  Editing
     //==========================================================================
