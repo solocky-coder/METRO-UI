@@ -116,7 +116,36 @@ jobs:
       - name: Install FluidSynth via vcpkg (static)
         shell: pwsh
         run: |
-          vcpkg install fluidsynth:x64-windows-static-md
+          # vcpkg bootstraps its own pinned copies of tools (ninja, cmake,
+          # etc.) via a single unretried curl fetch from GitHub Releases.
+          # Transient network failures there (503s, dropped connections)
+          # kill the whole job even though a second attempt usually
+          # succeeds outright. Retry the whole `vcpkg install` a few times
+          # with backoff rather than trying to special-case every tool it
+          # might need to fetch.
+          $maxAttempts = 5
+          $attempt = 0
+          $succeeded = $false
+          while (-not $succeeded -and $attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Host "vcpkg install attempt $attempt of $maxAttempts..."
+            vcpkg install fluidsynth:x64-windows-static-md
+            if ($LASTEXITCODE -eq 0) {
+              $succeeded = $true
+            } else {
+              Write-Host "vcpkg install failed (exit $LASTEXITCODE)."
+              if ($attempt -lt $maxAttempts) {
+                $delaySeconds = 10 * $attempt
+                Write-Host "Retrying in $delaySeconds seconds..."
+                Start-Sleep -Seconds $delaySeconds
+              }
+            }
+          }
+          if (-not $succeeded) {
+            Write-Error "vcpkg install failed after $maxAttempts attempts."
+            exit 1
+          }
+
           $vcpkgBin = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\bin"
           if (Test-Path $vcpkgBin) {
             echo "$vcpkgBin" >> $env:GITHUB_PATH
