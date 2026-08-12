@@ -377,11 +377,59 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
             && presetBank >= 0 && presetProgram >= 0)
             sfzDropdown.selectPresetForTrack (presetBank, presetProgram);
     };
+
+    // Arranger mute -> SF2 mixer mute. Only meaningful for genuine SF2
+    // preset tracks; other track types have no matching channel strip.
+    arrangeView.onTrackMutedForSync = [this] (int trackIndex, bool muted)
+    {
+        const auto info = processor.sequencer.getTrackInfo (trackIndex);
+        if (info.type == TrackType::SfPlayer && ! info.isSfzInstrument
+            && info.midiChannel >= 0 && info.midiChannel < 16)
+        {
+            processor.sfzPlayer.setChannelMuted (info.midiChannel, muted);
+            mixerPanel.repaint();
+        }
+    };
 #endif
 
     // Selecting a Mixer row switches the main UI to that track's player,
     // mirroring the Arranger behaviour above.
     mixerPanel.onTrackSelected = [this] (int mode) { setUiMode (mode); };
+
+#if DYSEKT_STANDALONE
+    // Clicking an SF2 channel strip also focuses the matching arranger
+    // track, and toggling its mute badge mirrors onto that track's own
+    // mute (M button) — the two mute states would otherwise silently
+    // diverge since they're stored independently (SfzPlayer::ChannelStrip
+    // vs. SequencerTrack::enabled).
+    mixerPanel.onSf2ChannelSelected = [this] (int channel0Based)
+    {
+        arrangeView.selectTrackForSfChannel (channel0Based);
+    };
+    mixerPanel.onSf2ChannelMuted = [this] (int channel0Based, bool muted)
+    {
+        const int trackIdx = processor.sequencer.findSfTrackForChannel (channel0Based);
+        if (trackIdx >= 0)
+            processor.sequencer.setTrackEnabled (trackIdx, ! muted);
+        arrangeView.repaint();
+    };
+
+    // Same idea for the SF2 INSTRUMENT PANEL's own CHANNEL MIXER
+    // (Sf2InstrumentWorkspace's channelFxPanel) — clicking a channel row
+    // there focuses the matching arranger track, and its mute badge stays
+    // in sync with that track's own mute (M button).
+    sfzDropdown.onChannelSelectedForArranger = [this] (int channel0Based)
+    {
+        arrangeView.selectTrackForSfChannel (channel0Based);
+    };
+    sfzDropdown.onChannelMutedForArranger = [this] (int channel0Based, bool muted)
+    {
+        const int trackIdx = processor.sequencer.findSfTrackForChannel (channel0Based);
+        if (trackIdx >= 0)
+            processor.sequencer.setTrackEnabled (trackIdx, ! muted);
+        arrangeView.repaint();
+    };
+#endif
  shortcutsPanel.onDismiss = [this] { toggleShortcutsPanel(); };
  shortcutsPanel.onThemeRequest = [this]
  {

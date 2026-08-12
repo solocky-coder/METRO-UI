@@ -1528,6 +1528,11 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
         else if (c.isSf2 || c.isSf2Ch)             onTrackSelected (2);
     }
 
+    // Selecting an SF2 channel strip also focuses that channel's arranger
+    // track (any click within the row, not just the mute badge below).
+    if (c.isSf2Ch && onSf2ChannelSelected)
+        onSf2ChannelSelected (c.sf2Channel);
+
     // Clicking a zone's sub-row selects that zone on sliceManager2, exactly
     // like clicking a Slicer row selects it on sliceManager (see the
     // targetEngine2 branch of CmdSelectSlice).
@@ -1559,7 +1564,9 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
     if (c.isSf2Ch && c.col == ColFcut)
     {
         const auto strip = processor.sfzPlayer.getChannelStrip (c.sf2Channel);
-        processor.sfzPlayer.setChannelMuted (c.sf2Channel, !strip.muted);
+        const bool newMuted = ! strip.muted;
+        processor.sfzPlayer.setChannelMuted (c.sf2Channel, newMuted);
+        if (onSf2ChannelMuted) onSf2ChannelMuted (c.sf2Channel, newMuted);
         repaint(); return;
     }
 

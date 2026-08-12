@@ -180,6 +180,21 @@ public:
      *  paint route is no longer used in column 1. */
     const Sf2ProgramGrid& getProgramGrid() const noexcept { return programGrid; }
 
+    /** Fired when the user clicks a row in the CHANNEL MIXER section below
+     *  (channelFxPanel.onChannelSelected) — forwarded here, in addition to
+     *  this panel's own local handling (updating the ACTIVE PRESET header),
+     *  so PluginEditor can also select the matching Arranger track. channel
+     *  is the 0-based FluidSynth channel clicked. See
+     *  ArrangeView::selectTrackForSfChannel(). */
+    std::function<void (int channel0Based)> onChannelSelectedForArranger;
+
+    /** Fired whenever a CHANNEL MIXER row's mute box is toggled here.
+     *  channel is 0-based; muted is the channel's new mute state. Lets
+     *  PluginEditor mirror the change onto the matching Arranger track's
+     *  own mute (M button) so the two don't silently diverge — see
+     *  SequencerEngine::findSfTrackForChannel(). */
+    std::function<void (int channel0Based, bool muted)> onChannelMutedForArranger;
+
 private:
     // Nested classes (not free classes in an anonymous namespace) so they
     // get automatic access to our private members per C++11 nested-class

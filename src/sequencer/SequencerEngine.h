@@ -97,6 +97,15 @@ public:
 
     void setTrackEnabled (int i, bool enabled);
 
+    /** Returns the index of the SfPlayer track (a genuine SF2 preset track —
+     *  isSfzInstrument == false) whose midiChannel (0-based) matches, or -1
+     *  if none exists. Used to keep the SF2 internal mixer's per-channel
+     *  strips in sync with the Arranger's track selection/mute — the two
+     *  otherwise track independent state (SfzPlayer::ChannelStrip vs.
+     *  SequencerTrack), so this lookup is how callers bridge channel ->
+     *  track. */
+    int findSfTrackForChannel (int midiChannel0Based) const;
+
     /** Solo follows standard mixer convention: while any track is soloed,
      *  only soloed tracks are audible, regardless of their own enabled/mute
      *  state. Clearing solo on all tracks restores normal enabled-based

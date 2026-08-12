@@ -120,6 +120,13 @@ public:
      *  clicking the preset in the list on the left already does. */
     std::function<void (int channel)> onChannelSelected;
 
+    /** Fired whenever a channel's mute box is clicked here. channel is
+     *  0-15; muted is the channel's new mute state. Lets the owner mirror
+     *  this mute onto whatever else tracks it — e.g. the Arranger track
+     *  assigned to this channel — without this panel needing to know
+     *  anything about the Arranger. */
+    std::function<void (int channel, bool muted)> onChannelMuted;
+
     /** Number of currently-active channels — lets the layout that owns this
      *  panel (Sf2InstrumentWorkspace) size its allotted height to match the
      *  actual row count (rowHeight() * this) instead of guessing. */
@@ -225,7 +232,9 @@ public:
             if (muteZone (row).contains (fpt))
             {
                 const auto strip = processor.sfzPlayer.getChannelStrip (ch);
-                processor.sfzPlayer.setChannelMuted (ch, ! strip.muted);
+                const bool newMuted = ! strip.muted;
+                processor.sfzPlayer.setChannelMuted (ch, newMuted);
+                if (onChannelMuted) onChannelMuted (ch, newMuted);
                 repaint();
                 return;
             }

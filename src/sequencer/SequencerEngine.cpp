@@ -358,6 +358,20 @@ void SequencerEngine::setTrackEnabled (int i, bool enabled)
         (*snap)[(size_t) i]->enabled.store (enabled, std::memory_order_relaxed);
 }
 
+int SequencerEngine::findSfTrackForChannel (int midiChannel0Based) const
+{
+    if (midiChannel0Based < 0 || midiChannel0Based > 15) return -1;
+    auto snap = impl->getTracks();
+    for (size_t i = 0; i < snap->size(); ++i)
+    {
+        const auto& t = *(*snap)[i];
+        if (t.type == TrackType::SfPlayer && ! t.isSfzInstrument
+            && t.midiChannel.load (std::memory_order_relaxed) == midiChannel0Based)
+            return (int) i;
+    }
+    return -1;
+}
+
 void SequencerEngine::setTrackSolo (int i, bool solo)
 {
     auto snap = impl->getTracks();

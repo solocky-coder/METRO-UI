@@ -65,6 +65,18 @@ public:
      *  to the overall output. */
     std::function<void(int uiMode)> onTrackSelected;
 
+    /** Fired on any click within an SF2 per-channel sub-row, in addition to
+     *  onTrackSelected(2) above — lets the owner also select the matching
+     *  arranger track (see ArrangeView::selectTrackForSfChannel). Channel is
+     *  the FluidSynth channel index, 0-based. */
+    std::function<void(int channel0Based)> onSf2ChannelSelected;
+
+    /** Fired whenever a channel's mute badge is toggled from this panel, so
+     *  the owner can mirror the state onto the matching arranger track's
+     *  mute (see SequencerEngine::findSfTrackForChannel). Channel is
+     *  0-based; muted is the new mute state. */
+    std::function<void(int channel0Based, bool muted)> onSf2ChannelMuted;
+
     void paint   (juce::Graphics&) override;
     void resized () override;
 

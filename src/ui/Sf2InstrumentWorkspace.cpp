@@ -426,6 +426,15 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     channelFxPanel.onChannelSelected = [this] (int channel)
     {
         handleChannelSelectedInMixer (channel);
+        if (onChannelSelectedForArranger) onChannelSelectedForArranger (channel);
+    };
+
+    // Mute is applied directly to the FluidSynth channel strip by
+    // channelFxPanel itself; just forward the change so PluginEditor can
+    // mirror it onto the matching Arranger track's mute.
+    channelFxPanel.onChannelMuted = [this] (int channel, bool muted)
+    {
+        if (onChannelMutedForArranger) onChannelMutedForArranger (channel, muted);
     };
 
     startTimerHz (30);

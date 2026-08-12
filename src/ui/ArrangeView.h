@@ -106,6 +106,27 @@ public:
     std::function<void(TrackType type, bool hasSelection, bool isSfzInstrument,
                         int midiChannel1Based, int presetBank, int presetProgram)> onTrackTypeSelected;
 
+    /** Fired whenever a track's mute (enabled) state changes via the
+     *  track-header strip's M button, so the owner can mirror it onto
+     *  whatever else tracks mute state for that track — e.g. the SF2
+     *  internal mixer's per-channel mute badge. muted == true means the
+     *  track was just disabled (i.e. the new enabled state is false). */
+    std::function<void(int trackIndex, bool muted)> onTrackMutedForSync;
+
+    /** Selects the arranger track whose SfPlayer MIDI channel (0-based)
+     *  matches, and scrolls/highlights it exactly as a direct click on the
+     *  track header would. No-op if no such track exists. Called by the SF2
+     *  internal mixer so clicking a channel strip there focuses the
+     *  matching arranger track. */
+    void selectTrackForSfChannel (int midiChannel0Based)
+    {
+        const int idx = engine.findSfTrackForChannel (midiChannel0Based);
+        if (idx < 0) return;
+        selectTrack (idx);
+        trackStrip.setSelectedTrack (idx);
+        repaint();
+    }
+
     /** Re-fires onTrackTypeSelected for the currently selected track.
      *  Call this when opening the sequencer panel so the editor can
      *  apply the correct MIDI route mode for whatever track is already selected. */
@@ -222,7 +243,15 @@ public:
             selectTrack (idx);
             repaint();
         };
-        trackStrip.onTrackMuted = [this] (int, bool) { repaint(); };
+        trackStrip.onTrackMuted = [this] (int idx, bool newEnabled)
+        {
+            // TrackHeaderStrip::onTrackMuted's bool is the track's *new*
+            // enabled state, not "is now muted" — invert it here so
+            // onTrackMutedForSync's contract (muted == true means the
+            // track was just disabled) is unambiguous for listeners.
+            if (onTrackMutedForSync) onTrackMutedForSync (idx, ! newEnabled);
+            repaint();
+        };
 
         setWantsKeyboardFocus (true);
         startTimerHz (30);
