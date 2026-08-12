@@ -233,6 +233,13 @@ private:
     void handlePresetRightClicked (int presetIdx, juce::Point<int> screenPos);
     void handleChannelAssigned    (int presetIdx, int ch);
 
+    /** Wired to channelFxPanel.onChannelSelected — mirrors clicking a
+     *  preset in the list on the left (updates the active-preset header
+     *  and the mixer's own selection highlight) but without re-triggering
+     *  a preview load, since the channel is already routed and playing.
+     *  channel is 0-15 (FluidSynth channel index). */
+    void handleChannelSelectedInMixer (int channel);
+
     /** SfzPlayer tracks two separate indices: getCurrentPresetIndex() (the
      *  actual engine-loaded preset) and getDisplayPresetIndex() (UI-only,
      *  set via setDisplayPresetIndex() whenever the user clicks a row here,

@@ -420,6 +420,14 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     addAndMakeVisible (*compactKeyboard);
     addAndMakeVisible (channelFxPanel);   // always visible — Column 3 has no tab switch
 
+    // Clicking a mixer row selects that channel (mirrors clicking a track
+    // in the Arranger) rather than muting it — mute has its own dedicated
+    // box on the row. See handleChannelSelectedInMixer().
+    channelFxPanel.onChannelSelected = [this] (int channel)
+    {
+        handleChannelSelectedInMixer (channel);
+    };
+
     startTimerHz (30);
 }
 
@@ -461,6 +469,26 @@ void Sf2InstrumentWorkspace::handlePresetLeftClicked (int idx)
     channelFxPanel.setSelectedChannel (-1);
     processor.sfzPlayer.previewPreset (info.bank, info.preset);
     repaint();
+}
+
+void Sf2InstrumentWorkspace::handleChannelSelectedInMixer (int channel)
+{
+    // Reverse of the chMap lookup handlePresetLeftClicked() does above:
+    // find which preset (if any) is assigned to this channel, so a mixer
+    // row click can show that preset as the active preset, the same way
+    // clicking the preset in the list already does. Purely a selection —
+    // the channel is already routed and sounding, so no preview/load call
+    // here (matches the "already routed — just select" branch above).
+    const auto& chMap = programGrid.getPresetChannels();
+    for (const auto& [idx, ch] : chMap)
+    {
+        if (ch - 1 == channel)
+        {
+            processor.sfzPlayer.setDisplayPresetIndex (idx);
+            repaint();
+            return;
+        }
+    }
 }
 
 void Sf2InstrumentWorkspace::handlePresetRightClicked (int idx, juce::Point<int> screenPos)

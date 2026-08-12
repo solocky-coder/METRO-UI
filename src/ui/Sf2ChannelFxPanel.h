@@ -7,7 +7,14 @@
 //    • Volume slider     (0–100 %,  SfzPlayer::ChannelStrip::volume, 0..1)
 //    • Pan slider        (-100..+100 %, ChannelStrip::pan, -1..+1)
 //    • Reverb-send slider (0–100 %,  ChannelStrip::reverbSend, 0..1)
-//    • Mute toggle       (click the label or the mute box to mute/unmute;
+//    • Select            (click the row's label to select that channel —
+//                          mirrors clicking a track in the Arranger: it
+//                          highlights the row and, via onChannelSelected,
+//                          tells the owning workspace to show that
+//                          channel's preset as the active preset. It does
+//                          NOT mute/unmute — mute has its own dedicated
+//                          box, see below.)
+//    • Mute toggle       (click the small mute box at the row's right edge;
 //                          muted rows dim)
 //
 //  REDESIGN NOTE — this used to be a column-per-channel grid (one column per
@@ -105,6 +112,14 @@ public:
         repaint();
     }
 
+    /** Fired when the user clicks a row's label to select that channel
+     *  (channel index 0-15) — mirrors clicking a track in the Arranger.
+     *  The panel already highlights the row itself (setSelectedChannel());
+     *  this callback is how the owning workspace finds out, so it can show
+     *  that channel's assigned preset as the active preset the same way
+     *  clicking the preset in the list on the left already does. */
+    std::function<void (int channel)> onChannelSelected;
+
     /** Number of currently-active channels — lets the layout that owns this
      *  panel (Sf2InstrumentWorkspace) size its allotted height to match the
      *  actual row count (rowHeight() * this) instead of guessing. */
@@ -201,16 +216,31 @@ public:
     {
         const auto fpt = e.position;
 
-        // Click on a channel's label or mute box toggles mute.
+        // Click on the mute box toggles mute — kept as its own dedicated
+        // target so it never fires from a plain row-select click.
         for (int ch = 0; ch < 16; ++ch)
         {
             if (! (activeMask & (1u << ch))) continue;
             const auto row = rowRectFor (ch);
-            if (labelZone (row).contains (fpt) || muteZone (row).contains (fpt))
+            if (muteZone (row).contains (fpt))
             {
                 const auto strip = processor.sfzPlayer.getChannelStrip (ch);
                 processor.sfzPlayer.setChannelMuted (ch, ! strip.muted);
                 repaint();
+                return;
+            }
+        }
+
+        // Click on a channel's label selects that channel — mirrors
+        // clicking a track in the Arranger (selects it, doesn't mute it).
+        for (int ch = 0; ch < 16; ++ch)
+        {
+            if (! (activeMask & (1u << ch))) continue;
+            const auto row = rowRectFor (ch);
+            if (labelZone (row).contains (fpt))
+            {
+                setSelectedChannel (ch);
+                if (onChannelSelected) onChannelSelected (ch);
                 return;
             }
         }
@@ -441,11 +471,11 @@ private:
             g.drawRect (row.reduced (1.f), 1.5f);
         }
 
-        // Preset label — dimmed when muted, doubles as the mute-toggle target.
-        // Shows the actual 1-based MIDI channel number alongside the preset
-        // name (not just the name) so it's possible to confirm which channel
-        // a controller needs to send on without switching back to the
-        // Workspace MIDI INPUT readout.
+        // Preset label — dimmed when muted, doubles as the row-select
+        // target (see mouseDown()). Shows the actual 1-based MIDI channel
+        // number alongside the preset name (not just the name) so it's
+        // possible to confirm which channel a controller needs to send on
+        // without switching back to the Workspace MIDI INPUT readout.
         g.setColour (strip.muted ? accent.withAlpha (0.35f) : accent);
         g.setFont (DysektLookAndFeel::makeFont(12.f, true));
         juce::String label = "CH " + juce::String (ch + 1) + "  "
