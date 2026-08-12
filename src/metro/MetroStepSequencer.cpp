@@ -7,17 +7,18 @@ namespace dysekt::metro
 {
 namespace
 {
-    constexpr int kRowHeight        = 22;
-    constexpr int kStepHeaderHeight = 20;
+    constexpr int kRowHeight        = 30;
+    constexpr int kStepHeaderHeight = 24;
     constexpr int kToolbarHeight    = MetroMetrics::grid * 6;
-    constexpr int kVelocityLaneHeight = 80;
+    constexpr int kVelocityLaneHeight = 90;
     constexpr int kMinRowHeaderWidth = 128;
     constexpr int kMaxRowHeaderWidth = 176;
-    constexpr int kMinStepWidth = 24;
-    constexpr int kMaxStepWidth = 40;
-    constexpr int kStepGap = 3;
-    constexpr int kGroupGapExtra = 6;
+    constexpr int kMinStepWidth = 32;
+    constexpr int kMaxStepWidth = 56;
+    constexpr int kStepGap = 4;
+    constexpr int kGroupGapExtra = 10;
     constexpr int kDefaultVelocity = 100;
+    constexpr float kCellCornerRadius = 4.0f;
 
     //==========================================================================
     //  A short set of General MIDI percussion names, used both as the
@@ -50,6 +51,37 @@ namespace
     // The MAIN-track / drum-kit default row mapping — a familiar MPC-style
     // 16-pad layout. Chosen from kGmDrumTable so the two stay consistent.
     constexpr int kDefaultRowNotes[] = { 36, 38, 42, 46, 37, 39, 41, 45, 48, 49, 51, 56, 54, 70, 75, 43 };
+
+    // Per-row colours for that same default mapping, so each pad reads as
+    // its own instrument at a glance (kick/snare/hat/clap etc. each get a
+    // distinct hue) instead of the whole kit sharing one flat track colour.
+    // Parallel array, same order/length as kDefaultRowNotes.
+    const Colour kDefaultRowColours[] = {
+        Accent::Blue,    // 36 KICK
+        Accent::Pink,    // 38 SNARE
+        Accent::Cyan,    // 42 CL HAT
+        Accent::Cyan,    // 46 OP HAT
+        Accent::Orange,  // 37 RIM
+        Accent::Purple,  // 39 CLAP
+        Accent::Green,   // 41 LO TOM
+        Accent::Green,   // 45 MID TOM
+        Accent::Green,   // 48 HI TOM
+        Accent::Red,     // 49 CRASH
+        Accent::Yellow,  // 51 RIDE
+        Accent::Orange,  // 56 COWBELL
+        Accent::Purple,  // 54 TAMB
+        Accent::Yellow,  // 70 MARACAS
+        Accent::Orange,  // 75 CLAVES
+        Accent::Red,     // 43 HI TOM 2
+    };
+
+    // Fallback cycle for any drum note outside the default mapping (extras
+    // pulled in from clip content), so those rows are still colourful
+    // rather than defaulting to a single track colour.
+    const Colour kFallbackDrumColours[] = {
+        Accent::Blue, Accent::Pink, Accent::Cyan, Accent::Purple,
+        Accent::Green, Accent::Orange, Accent::Yellow, Accent::Red,
+    };
 
     int stepsPerBeatFor (StepResolution r) noexcept { return (int) r; }
 }
@@ -198,10 +230,12 @@ void MetroStepSequencer::rebuildRows()
 
     if (isMainTrack || isDrumKit)
     {
-        for (int note : kDefaultRowNotes)
+        constexpr int numDefaultRows = (int) (sizeof (kDefaultRowNotes) / sizeof (kDefaultRowNotes[0]));
+        for (int i = 0; i < numDefaultRows; ++i)
         {
+            const int note = kDefaultRowNotes[i];
             const auto name = gmDrumName (note);
-            rows.push_back ({ name.isNotEmpty() ? name : juce::String (note), note, activeTrackInfo.colour });
+            rows.push_back ({ name.isNotEmpty() ? name : juce::String (note), note, kDefaultRowColours[i] });
             mappedNotes.insert (note);
         }
     }
@@ -240,12 +274,17 @@ void MetroStepSequencer::rebuildRows()
             if (mappedNotes.find (n.note) == mappedNotes.end())
                 extras.insert (n.note);
 
+        constexpr int numFallbackColours = (int) (sizeof (kFallbackDrumColours) / sizeof (kFallbackDrumColours[0]));
+        int extraIndex = 0;
         for (int note : extras)
         {
             const auto gmName = gmDrumName (note);
             const auto name = gmName.isNotEmpty() ? gmName
                                                   : juce::MidiMessage::getMidiNoteName (note, true, true, 3);
-            rows.push_back ({ name, note, activeTrackInfo.colour });
+            const bool isDrumRow = isMainTrack || isDrumKit;
+            const auto colour = isDrumRow ? kFallbackDrumColours[extraIndex++ % numFallbackColours]
+                                           : activeTrackInfo.colour;
+            rows.push_back ({ name, note, colour });
         }
     }
 
@@ -591,45 +630,46 @@ void MetroStepSequencer::drawGrid (juce::Graphics& g)
             const bool selected = selectedSteps.count ({ r, s }) > 0;
             const bool onBeat   = (s % 4 == 0);
             const bool onPlayCol = (s == playStep);
+            const auto cellF = cell.toFloat();
 
-            g.setColour (onBeat ? Base::SurfaceAlt : Base::Background);
-            g.fillRect (cell);
+            g.setColour (onBeat ? Base::Elevated : Base::Surface);
+            g.fillRoundedRectangle (cellF, kCellCornerRadius);
 
             if (active)
             {
                 const int velocity = noteIndex >= 0 ? clip->getNotes()[noteIndex].velocity : kDefaultVelocity;
-                const float intensity = juce::jlimit (0.35f, 1.0f, (float) velocity / 127.0f);
+                const float intensity = juce::jlimit (0.45f, 1.0f, (float) velocity / 127.0f);
                 g.setColour (row.colour.withAlpha (intensity));
-                g.fillRect (cell);
+                g.fillRoundedRectangle (cellF, kCellCornerRadius);
             }
 
             if (onPlayCol)
             {
-                g.setColour (Accent::Cyan.withAlpha (0.16f));
-                g.fillRect (cell);
+                g.setColour (Accent::Cyan.withAlpha (0.18f));
+                g.fillRoundedRectangle (cellF, kCellCornerRadius);
             }
 
             if (hovered)
             {
                 g.setColour (juce::Colours::white.withAlpha (0.12f));
-                g.fillRect (cell);
+                g.fillRoundedRectangle (cellF, kCellCornerRadius);
             }
 
             if (selected)
             {
                 g.setColour (Accent::Cyan);
-                g.drawRect (cell, 1);
+                g.drawRoundedRectangle (cellF, kCellCornerRadius, 1.5f);
             }
             else if (hovered)
             {
                 g.setColour (Accent::Cyan.withAlpha (0.5f));
-                g.drawRect (cell, 1);
+                g.drawRoundedRectangle (cellF, kCellCornerRadius, 1.0f);
             }
 
             if (r == focusedRow && s == focusedStep && hasKeyboardFocus (true))
             {
                 g.setColour (Accent::Cyan);
-                g.drawRect (cell.expanded (1), 1);
+                g.drawRoundedRectangle (cellF.expanded (1.0f), kCellCornerRadius, 1.5f);
             }
         }
     }
@@ -700,8 +740,8 @@ void MetroStepSequencer::drawVelocityLane (juce::Graphics& g)
                       .withHeight ((int) (frac * cell.getHeight()));
 
         const bool selected = selectedSteps.count ({ focusedRow, s }) > 0;
-        g.setColour (selected ? Accent::Cyan : row.colour);
-        g.fillRect (bar);
+        g.setColour (selected ? Accent::Cyan : Text::Secondary);
+        g.fillRoundedRectangle (bar.toFloat(), 2.0f);
     }
 
     g.restoreState();
