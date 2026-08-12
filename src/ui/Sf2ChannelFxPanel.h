@@ -2,16 +2,35 @@
 // =============================================================================
 //  Sf2ChannelFxPanel.h  —  Per-channel (per-preset) SF2 mixer strip
 // =============================================================================
-//  Displays one column per active FluidSynth channel.  Each column shows:
+//  Displays one ROW per active FluidSynth channel. Each row shows:
 //    • Preset name (set via setChannelLabel(), from the SF2 program grid)
-//    • Volume knob      (0–100 %,  SfzPlayer::ChannelStrip::volume, 0..1)
-//    • Pan knob         (-100..+100 %, ChannelStrip::pan, -1..+1)
-//    • Reverb-send knob (0–100 %,  ChannelStrip::reverbSend, 0..1)
-//    • Mute toggle       (click the label to mute/unmute; muted columns dim)
+//    • Volume slider     (0–100 %,  SfzPlayer::ChannelStrip::volume, 0..1)
+//    • Pan slider        (-100..+100 %, ChannelStrip::pan, -1..+1)
+//    • Reverb-send slider (0–100 %,  ChannelStrip::reverbSend, 0..1)
+//    • Mute toggle       (click the label or the mute box to mute/unmute;
+//                          muted rows dim)
+//
+//  REDESIGN NOTE — this used to be a column-per-channel grid (one column per
+//  channel, VOL/PAN/REV stacked as knobs inside it). That tied the panel's
+//  vertical AND horizontal footprint to how many channels happened to be
+//  active at once, which kept producing dead space in one axis or the other
+//  no matter how the numbers were tuned:
+//    • Few channels + a tall panel  → knobs capped at a max size, leaving a
+//      dead gap below them before the next section.
+//    • Few channels + a wide panel  → each column stretched to fill/half-
+//      fill the panel, with the (fixed-size) knobs just floating centred in
+//      a mostly-empty column.
+//    • Many channels                → columns had to shrink below a legible
+//      size, or the panel had to scroll sideways past a wall of thin strips.
+//  A row-per-channel list sidesteps all three: row height is fixed and
+//  height simply scales with channel COUNT (2 channels = 2 short rows, not
+//  two overstretched columns), width is filled by horizontal sliders that
+//  have no awkward "too wide" failure mode, and overflow is a plain
+//  vertical scroll — the one list behaviour every user already knows.
 //
 //  Thread safety:
-//    This is the real, already audio-thread-wired per-channel API. All knob
-//    mutations call SfzPlayer::setChannelVolume/setChannelPan/
+//    This is the real, already audio-thread-wired per-channel API. All
+//    slider mutations call SfzPlayer::setChannelVolume/setChannelPan/
 //    setChannelReverbSend/setChannelMuted() directly — these write to
 //    lock-free atomics (SfzPlayer::ChannelStripAtomics) that are read on the
 //    audio thread in SfzPlayer::process(). No pushCommand()/MIDI-learn path
@@ -86,6 +105,14 @@ public:
         repaint();
     }
 
+    /** Number of currently-active channels — lets the layout that owns this
+     *  panel (Sf2InstrumentWorkspace) size its allotted height to match the
+     *  actual row count (rowHeight() * this) instead of guessing. */
+    int getActiveChannelCount() const noexcept { return countActiveBits(); }
+
+    /** Fixed per-channel row height — see getActiveChannelCount(). */
+    static constexpr float rowHeight() noexcept { return kRowH; }
+
     // ── Component ─────────────────────────────────────────────────────────────
 
     void paint (juce::Graphics& g) override
@@ -108,61 +135,56 @@ public:
             return;
         }
 
-        // Columns were previously squeezed to fit the panel's fixed width
-        // (colW = getWidth()/numActive) with no floor, so anything past
-        // ~5-6 simultaneously-active channels shrank below a usable size —
-        // knob circles and labels became illegible slivers, which reads as
-        // "channels just aren't showing" even though they were technically
-        // still being painted. Give every column a minimum width instead,
-        // and let the panel scroll horizontally (mouse wheel / trackpad)
-        // once more channels are active than fit at that minimum width.
-        const float colW = columnWidth (numActive);
-        clampScroll (colW * (float) numActive);
+        const float contentH = kRowH * (float) numActive;
+        clampScroll (contentH);
 
-        int col = 0;
+        g.saveState();
+        g.reduceClipRegion (getLocalBounds());
+
+        int row = 0;
         for (int ch = 0; ch < 16; ++ch)
         {
             if (! (activeMask & (1u << ch))) continue;
 
-            const float x = (float) col * colW - scrollX;
-            if (x + colW >= 0.f && x <= (float) getWidth())   // skip fully off-screen columns
+            const float y = (float) row * kRowH - scrollY;
+            if (y + kRowH >= 0.f && y <= (float) getHeight())   // skip fully off-screen rows
             {
-                const juce::Rectangle<float> colRect (x, 0.f, colW, (float) getHeight());
-                paintChannel (g, ch, colRect, theme);
+                const juce::Rectangle<float> rowRect (0.f, y, (float) getWidth(), kRowH);
+                paintChannelRow (g, ch, rowRect, theme);
             }
-            ++col;
+            ++row;
         }
 
-        // Scroll hint: a thin track+thumb along the bottom edge, only shown
-        // once content is actually wider than the visible panel.
-        const float contentW = colW * (float) numActive;
-        if (contentW > (float) getWidth())
-        {
-            const float trackY = (float) getHeight() - 3.f;
-            g.setColour (theme.separator.withAlpha (0.5f));
-            g.fillRect (0.f, trackY, (float) getWidth(), 3.f);
+        g.restoreState();
 
-            const float thumbW = juce::jmax (24.f, (float) getWidth() * (float) getWidth() / contentW);
-            const float maxScroll = contentW - (float) getWidth();
-            const float thumbX = maxScroll > 0.f ? (scrollX / maxScroll) * ((float) getWidth() - thumbW) : 0.f;
+        // Scroll hint: a thin track+thumb along the right edge, only shown
+        // once content is actually taller than the visible panel.
+        if (contentH > (float) getHeight())
+        {
+            const float trackX = (float) getWidth() - 3.f;
+            g.setColour (theme.separator.withAlpha (0.5f));
+            g.fillRect (trackX, 0.f, 3.f, (float) getHeight());
+
+            const float thumbH = juce::jmax (24.f, (float) getHeight() * (float) getHeight() / contentH);
+            const float maxScroll = contentH - (float) getHeight();
+            const float thumbY = maxScroll > 0.f ? (scrollY / maxScroll) * ((float) getHeight() - thumbH) : 0.f;
             g.setColour (theme.accent.withAlpha (0.6f));
-            g.fillRect (thumbX, trackY, thumbW, 3.f);
+            g.fillRect (trackX, thumbY, 3.f, thumbH);
         }
     }
 
-    void resized() override { clampScroll (columnWidth (countActiveBits()) * (float) countActiveBits()); }
+    void resized() override { clampScroll (kRowH * (float) countActiveBits()); }
 
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override
     {
-        const int numActive = countActiveBits();
-        const float cw = columnWidth (numActive) * (float) numActive;
-        if (cw <= (float) getWidth()) return;   // nothing to scroll
+        const float contentH = kRowH * (float) countActiveBits();
+        if (contentH <= (float) getHeight()) return;   // nothing to scroll
 
-        // Prefer horizontal wheel/trackpad delta; fall back to vertical so a
-        // plain mouse wheel still scrolls this horizontally-laid-out panel.
-        const float delta = (std::abs (wheel.deltaX) > std::abs (wheel.deltaY) ? wheel.deltaX : wheel.deltaY);
-        scrollX -= delta * 240.f;
-        clampScroll (cw);
+        // Prefer vertical wheel/trackpad delta; fall back to horizontal so a
+        // sideways trackpad swipe still scrolls this vertically-laid-out list.
+        const float delta = (std::abs (wheel.deltaY) > std::abs (wheel.deltaX) ? wheel.deltaY : wheel.deltaX);
+        scrollY -= delta * 240.f;
+        clampScroll (contentH);
         repaint();
     }
 
@@ -177,13 +199,14 @@ public:
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        // Click on a channel's label toggles mute.
+        const auto fpt = e.position;
+
+        // Click on a channel's label or mute box toggles mute.
         for (int ch = 0; ch < 16; ++ch)
         {
             if (! (activeMask & (1u << ch))) continue;
-            const auto col = colRectFor (ch);
-            const auto labelRect = col.withHeight (labelH());
-            if (labelRect.contains (e.position))
+            const auto row = rowRectFor (ch);
+            if (labelZone (row).contains (fpt) || muteZone (row).contains (fpt))
             {
                 const auto strip = processor.sfzPlayer.getChannelStrip (ch);
                 processor.sfzPlayer.setChannelMuted (ch, ! strip.muted);
@@ -192,18 +215,18 @@ public:
             }
         }
 
-        dragState = findKnobAt (e.getPosition());
+        // Click on a slider track jumps the value there immediately (typical
+        // horizontal-slider behaviour) and starts a drag for follow-through.
+        dragState = findSliderAt (e.getPosition());
         if (dragState.ch < 0) return;
-        dragStartY   = e.getScreenY();
-        dragStartVal = getCurrentNorm (dragState.ch, dragState.knob);
+        applyNorm (dragState.ch, dragState.knob, normForMouseX (dragState.ch, dragState.knob, e.position.x));
+        repaint();
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
         if (dragState.ch < 0) return;
-        const float delta = (float)(dragStartY - e.getScreenY()) / 120.f;  // px → 0-1
-        const float newNorm = juce::jlimit (0.0f, 1.0f, dragStartVal + delta);
-        applyNorm (dragState.ch, dragState.knob, newNorm);
+        applyNorm (dragState.ch, dragState.knob, normForMouseX (dragState.ch, dragState.knob, e.position.x));
         repaint();
     }
 
@@ -214,55 +237,32 @@ public:
 
     void mouseDoubleClick (const juce::MouseEvent& e) override
     {
-        const auto hit = findKnobAt (e.getPosition());
+        const auto hit = findSliderAt (e.getPosition());
         if (hit.ch < 0) return;
         resetToDefault (hit.ch, hit.knob);
         repaint();
     }
 
 private:
-    // ── Knob IDs — mirrors the real SfzPlayer::ChannelStrip fields ────────────
+    // ── Slider IDs — mirrors the real SfzPlayer::ChannelStrip fields ────────
     enum class Knob { None, Volume, Pan, ReverbSend };
 
-    // kKnobH/kLabelH used to be hard pixel constants (72 / 20 — three knob
-    // rows + the preset label add up to 236px of *required* content). That
-    // was fine as long as whoever laid this panel out always handed it
-    // ≥236px of height — but nothing enforced that, and Sf2InstrumentWorkspace
-    // ended up doing exactly the opposite: after its own fixed-height
-    // sections (knobs, filter/reverb, note meter, keyboard) ate the
-    // available column height, this panel could be handed a rect only a
-    // few px tall. Since paintChannel()/knobRect() drew at the fixed 72/20
-    // sizes regardless, most (or all) of the three knob rows landed outside
-    // the panel's actual bounds and were clipped away — a fully-populated
-    // mixer with real assigned channels, rendering as nothing visible.
-    // kKnobH/kLabelH are now *derived from the panel's own current height*
-    // instead, clamped between a legible floor and the original comfortable
-    // ceiling, so the strip always fits in whatever height it's actually
-    // given — shrinking gracefully under pressure rather than clipping.
-    static constexpr float kKnobHMax   = 72.f;
-    static constexpr float kKnobHMin   = 40.f;   // still shows a full arc + label + value
-    static constexpr float kLabelHMax  = 20.f;
-    static constexpr float kLabelHMin  = 14.f;
-    static constexpr float kPadding    =  4.f;
-    static constexpr float kMinColW    = 96.f;   // floor width so knobs/labels stay legible —
-                                                  // panel scrolls horizontally past this instead
-                                                  // of shrinking columns further
+    static constexpr float kRowH        = 36.f;   // fixed row height — this is what lets the
+                                                    // panel's footprint scale with channel COUNT
+                                                    // instead of with leftover space
+    static constexpr float kAccentW     =  3.f;
+    static constexpr float kPadding     =  8.f;
+    static constexpr float kMuteW       = 16.f;
+    static constexpr float kSliderGap   = 14.f;    // gap between the VOL/PAN/REV blocks
+    static constexpr float kSliderLabelW = 28.f;   // "VOL"/"PAN"/"REV" text
+    static constexpr float kSliderValueW = 34.f;   // value text, right-aligned
+    static constexpr float kTrackH      =  5.f;
 
-    /** Preset-label row height for the current panel height. */
-    float labelH() const noexcept
+    /** Label column width — proportional so it doesn't dominate a narrow
+     *  panel, but capped so it doesn't sprawl on a very wide one. */
+    float labelW() const noexcept
     {
-        return juce::jlimit (kLabelHMin, kLabelHMax, (float) getHeight() * 0.14f);
-    }
-
-    /** Per-knob row height for the current panel height — whatever's left
-     *  after the label row and inter-row padding, split three ways, clamped
-     *  to a legible floor. This is what lets three knob rows actually fit
-     *  (and stay visible) inside however much height the workspace hands
-     *  this panel, instead of assuming a fixed 236px is always available. */
-    float knobH() const noexcept
-    {
-        const float remaining = (float) getHeight() - labelH() - kPadding;
-        return juce::jlimit (kKnobHMin, kKnobHMax, remaining / 3.f);
+        return juce::jlimit (80.f, 170.f, (float) getWidth() * 0.20f);
     }
 
     struct DragState { int ch { -1 }; Knob knob { Knob::None }; };
@@ -276,33 +276,22 @@ private:
         return n;
     }
 
-    /** Column width: divide the panel evenly when few channels are active,
-     *  but never shrink below kMinColW — once numActive would need less
-     *  than that, the panel scrolls instead. */
-    float columnWidth (int numActive) const noexcept
+    void clampScroll (float contentH) noexcept
     {
-        if (numActive <= 0) return kMinColW;
-        return juce::jmax ((float) getWidth() / (float) numActive, kMinColW);
-    }
-
-    void clampScroll (float contentW) noexcept
-    {
-        const float maxScroll = juce::jmax (0.f, contentW - (float) getWidth());
-        scrollX = juce::jlimit (0.f, maxScroll, scrollX);
+        const float maxScroll = juce::jmax (0.f, contentH - (float) getHeight());
+        scrollY = juce::jlimit (0.f, maxScroll, scrollY);
     }
 
     void scrollToChannel (int ch)
     {
         if (! (activeMask & (1u << ch))) return;
-        const int numActive = countActiveBits();
-        const float colW = columnWidth (numActive);
         int ordinal = 0;
         for (int i = 0; i < ch; ++i) if (activeMask & (1u << i)) ++ordinal;
-        const float left = ordinal * colW;
-        const float right = left + colW;
-        if (left < scrollX) scrollX = left;
-        else if (right > scrollX + (float) getWidth()) scrollX = right - (float) getWidth();
-        clampScroll (colW * (float) numActive);
+        const float top = ordinal * kRowH;
+        const float bottom = top + kRowH;
+        if (top < scrollY) scrollY = top;
+        else if (bottom > scrollY + (float) getHeight()) scrollY = bottom - (float) getHeight();
+        clampScroll (kRowH * (float) countActiveBits());
     }
 
     juce::Colour accentFor (int ch, const ThemeData& theme) const
@@ -348,76 +337,109 @@ private:
 
     // ── Layout & hit testing ─────────────────────────────────────────────────
 
-    /** Returns the column rect for channel `ch` (0-15) given activeMask. */
-    juce::Rectangle<float> colRectFor (int ch) const
+    /** Returns the row rect for channel `ch` (0-15) given activeMask. Not
+     *  clipped to the visible panel — callers check/clip as needed. */
+    juce::Rectangle<float> rowRectFor (int ch) const
     {
-        const int numActive = countActiveBits();
-        if (numActive == 0) return {};
-        const float colW = columnWidth (numActive);
-        int col = 0;
+        int row = 0;
         for (int i = 0; i < 16; ++i)
         {
             if (! (activeMask & (1u << i))) continue;
-            if (i == ch) return { (float) col * colW - scrollX, 0.f, colW, (float) getHeight() };
-            ++col;
+            if (i == ch) return { 0.f, (float) row * kRowH - scrollY, (float) getWidth(), kRowH };
+            ++row;
         }
         return {};
     }
 
-    juce::Rectangle<float> knobRect (const juce::Rectangle<float>& col, Knob k) const
+    juce::Rectangle<float> labelZone (const juce::Rectangle<float>& row) const
     {
-        const float y0 = labelH() + kPadding;
-        const float kH = knobH();
-        const float x  = col.getX() + kPadding;
-        const float w  = col.getWidth() - kPadding * 2.f;
+        return { row.getX() + kAccentW + kPadding, row.getY(), labelW(), row.getHeight() };
+    }
 
+    juce::Rectangle<float> muteZone (const juce::Rectangle<float>& row) const
+    {
+        return { row.getRight() - kMuteW - kPadding, row.getY() + (row.getHeight() - kMuteW) * 0.5f,
+                 kMuteW, kMuteW };
+    }
+
+    /** The three VOL/PAN/REV slider blocks fill whatever's left between the
+     *  label and the mute box, split evenly — this is what lets the row use
+     *  the panel's full width with no "too wide" failure mode. */
+    juce::Rectangle<float> sliderBlockRect (const juce::Rectangle<float>& row, Knob k) const
+    {
+        auto area = row;
+        area.removeFromLeft (kAccentW + kPadding + labelW() + kPadding);
+        area.removeFromRight (kMuteW + kPadding * 2.f);
+        const float blockW = (area.getWidth() - kSliderGap * 2.f) / 3.f;
         switch (k)
         {
-            case Knob::Volume:     return { x, y0,            w, kH };
-            case Knob::Pan:        return { x, y0 + kH,       w, kH };
-            case Knob::ReverbSend: return { x, y0 + kH * 2.f, w, kH };
-            default:               return {};
+            case Knob::Volume:     return area.removeFromLeft (blockW);
+            case Knob::Pan:        area.removeFromLeft (blockW + kSliderGap); return area.removeFromLeft (blockW);
+            case Knob::ReverbSend: area.removeFromRight (blockW);             return area.removeFromRight (blockW);
+            default:                return {};
         }
     }
 
-    DragState findKnobAt (juce::Point<int> pt) const
+    /** The draggable track within a slider block (excludes the label/value
+     *  text either side). */
+    juce::Rectangle<float> trackRect (const juce::Rectangle<float>& row, Knob k) const
+    {
+        auto block = sliderBlockRect (row, k);
+        block.removeFromLeft (kSliderLabelW);
+        block.removeFromRight (kSliderValueW);
+        return block.withSizeKeepingCentre (block.getWidth(), kTrackH);
+    }
+
+    float normForMouseX (int ch, Knob k, float mouseX) const noexcept
+    {
+        const auto track = trackRect (rowRectFor (ch), k);
+        if (track.getWidth() <= 0.f) return 0.f;
+        return juce::jlimit (0.f, 1.f, (mouseX - track.getX()) / track.getWidth());
+    }
+
+    DragState findSliderAt (juce::Point<int> pt) const
     {
         const juce::Point<float> fpt = pt.toFloat();
         for (int ch = 0; ch < 16; ++ch)
         {
             if (! (activeMask & (1u << ch))) continue;
-            const auto col = colRectFor (ch);
-            if (! col.contains (fpt)) continue;
+            const auto row = rowRectFor (ch);
+            if (! row.contains (fpt)) continue;
             for (auto k : { Knob::Volume, Knob::Pan, Knob::ReverbSend })
-                if (knobRect (col, k).contains (fpt))
+            {
+                // Generous vertical hit-box (full row height) around the
+                // thin track so it's easy to grab, not just the 5px line.
+                auto hitBox = sliderBlockRect (row, k);
+                if (hitBox.contains (fpt))
                     return { ch, k };
+            }
         }
         return {};
     }
 
     // ── Painting ─────────────────────────────────────────────────────────────
 
-    void paintChannel (juce::Graphics& g,
-                       int ch,
-                       const juce::Rectangle<float>& col,
-                       const ThemeData& theme)
+    void paintChannelRow (juce::Graphics& g,
+                           int ch,
+                           const juce::Rectangle<float>& row,
+                           const ThemeData& theme)
     {
         const auto accent = accentFor (ch, theme);
+        const auto strip = processor.sfzPlayer.getChannelStrip (ch);
+        const float alpha = strip.muted ? 0.4f : 1.0f;
 
-        // Track-colour tab makes the mixer column match its preset row/track.
+        // Track-colour tab makes the mixer row match its preset row/track.
         g.setColour (accent.withAlpha (0.85f));
-        g.fillRect (col.getX(), col.getY(), 3.f, col.getHeight());
+        g.fillRect (row.getX(), row.getY(), kAccentW, row.getHeight());
 
-        // Separator and selected-channel focus outline.
-        g.setColour (theme.separator);
-        g.drawLine (col.getX(), col.getY(), col.getX(), col.getBottom(), 1.f);
+        // Row separator and selected-channel focus outline.
+        g.setColour (theme.separator.withAlpha (0.6f));
+        g.drawLine (row.getX(), row.getBottom(), row.getRight(), row.getBottom(), 1.f);
         if (ch == selectedChannel)
         {
             g.setColour (accent.withAlpha (0.95f));
-            g.drawRect (col.reduced (1.f), 2.f);
+            g.drawRect (row.reduced (1.f), 1.5f);
         }
-
-        const auto strip = processor.sfzPlayer.getChannelStrip (ch);
 
         // Preset label — dimmed when muted, doubles as the mute-toggle target.
         // Shows the actual 1-based MIDI channel number alongside the preset
@@ -425,78 +447,78 @@ private:
         // a controller needs to send on without switching back to the
         // Workspace MIDI INPUT readout.
         g.setColour (strip.muted ? accent.withAlpha (0.35f) : accent);
-        g.setFont (DysektLookAndFeel::makeFont(13.f, true));
-        const auto labelRect = col.withHeight (labelH()).reduced (kPadding, 1.f);
+        g.setFont (DysektLookAndFeel::makeFont(12.f, true));
         juce::String label = "CH " + juce::String (ch + 1) + "  "
                             + (channelLabels[ch].isEmpty() ? juce::String ("(empty)") : channelLabels[ch]);
-        if (strip.muted) label += " (muted)";
-        g.drawText (label, labelRect.toNearestInt(), juce::Justification::centredLeft, true);
+        g.drawText (label, labelZone (row).reduced (0.f, 1.f).toNearestInt(),
+                    juce::Justification::centredLeft, true);
 
-        // Draw each knob
-        paintKnob (g, ch, Knob::Volume,     col, "VOL",  theme, accent, strip.muted);
-        paintKnob (g, ch, Knob::Pan,        col, "PAN",  theme, accent, strip.muted);
-        paintKnob (g, ch, Knob::ReverbSend, col, "REV",  theme, accent, strip.muted);
+        // Sliders
+        paintSlider (g, ch, Knob::Volume,     row, "VOL", theme, accent, strip.muted);
+        paintSlider (g, ch, Knob::Pan,        row, "PAN", theme, accent, strip.muted);
+        paintSlider (g, ch, Knob::ReverbSend, row, "REV", theme, accent, strip.muted);
+
+        // Mute box — small square indicator, also a click target (see
+        // muteZone() / mouseDown()). Filled when muted, outline otherwise.
+        const auto mute = muteZone (row);
+        if (strip.muted)
+        {
+            g.setColour (accent.withAlpha (0.7f));
+            g.fillRoundedRectangle (mute, 3.f);
+        }
+        else
+        {
+            g.setColour (theme.button.withAlpha (0.8f));
+            g.drawRoundedRectangle (mute, 3.f, 1.f);
+        }
     }
 
-    void paintKnob (juce::Graphics& g, int ch, Knob k,
-                    const juce::Rectangle<float>& col,
-                    const char* label,
-                    const ThemeData& theme,
-                    juce::Colour accent,
-                    bool dimmed)
+    void paintSlider (juce::Graphics& g, int ch, Knob k,
+                       const juce::Rectangle<float>& row,
+                       const char* label,
+                       const ThemeData& theme,
+                       juce::Colour accent,
+                       bool dimmed)
     {
         const float norm = getCurrentNorm (ch, k);
-
-        // IMPORTANT: kr here is the FULL per-knob cell (label + circle +
-        // value), not just the circle. Carving three non-overlapping
-        // sub-rects out of it — rather than computing the top label and
-        // bottom value positions independently from kr while also sizing
-        // the circle from kr's full height — is what guarantees they can
-        // never visually collide. (Previously the label/value text and the
-        // knob circle all overlapped: kKnobH=44 only left room for either
-        // the label+circle+value stack OR the circle alone, not both. See
-        // Sf2InstrumentWorkspace::drawKnob for the same fix applied there.)
-        auto kr = knobRect (col, k);
-        // Text row heights scale down alongside the knob cell itself so the
-        // circle always keeps a usable share of kr — at kKnobHMin (34px) a
-        // fixed 14/16 label pair would leave only ~4px for the circle.
-        const float textRowH = juce::jmax (9.f, kr.getHeight() * 0.19f);
-        auto topLabel = kr.removeFromTop (textRowH);
-        auto botLabel = kr.removeFromBottom (textRowH + 2.f);
-        const auto& circleZone = kr;   // whatever's left in the middle
-
-        const float cx     = circleZone.getCentreX();
-        const float cy     = circleZone.getCentreY();
-        const float radius = juce::jmin (circleZone.getWidth(), circleZone.getHeight()) * 0.4f;
-
-        // Track arc
-        constexpr float startAngle = juce::MathConstants<float>::pi * 1.2f;
-        constexpr float endAngle   = juce::MathConstants<float>::pi * 2.8f;
-        const float fillAngle = startAngle + norm * (endAngle - startAngle);
-
         const float alpha = dimmed ? 0.4f : 1.0f;
 
-        juce::Path trackArc;
-        trackArc.addCentredArc (cx, cy, radius, radius, 0.f, startAngle, endAngle, true);
+        auto block = sliderBlockRect (row, k);
+        auto labelRect = block.removeFromLeft (kSliderLabelW);
+        auto valueRect = block.removeFromRight (kSliderValueW);
+        const auto track = block.withSizeKeepingCentre (block.getWidth(), kTrackH);
+
+        // Label
+        g.setFont (DysektLookAndFeel::makeFont(9.f));
+        g.setColour (theme.foreground.withAlpha (0.55f * alpha));
+        g.drawText (label, labelRect.toNearestInt(), juce::Justification::centredLeft);
+
+        // Track background
         g.setColour (theme.button.withMultipliedAlpha (alpha));
-        g.strokePath (trackArc, juce::PathStrokeType (3.f));
+        g.fillRoundedRectangle (track, kTrackH * 0.5f);
 
-        juce::Path fillArc;
-        fillArc.addCentredArc (cx, cy, radius, radius, 0.f, startAngle, fillAngle, true);
+        // Fill — Pan fills from centre (bipolar), Volume/Reverb fill from
+        // the left (unipolar), matching the semantics of each parameter.
         g.setColour (accent.withMultipliedAlpha (alpha));
-        g.strokePath (fillArc, juce::PathStrokeType (3.f));
+        if (k == Knob::Pan)
+        {
+            const float centreX = track.getCentreX();
+            const float handleX = track.getX() + norm * track.getWidth();
+            g.fillRoundedRectangle (juce::Rectangle<float> (juce::jmin (centreX, handleX), track.getY(),
+                                                              std::abs (handleX - centreX), track.getHeight()),
+                                     kTrackH * 0.5f);
+        }
+        else
+        {
+            g.fillRoundedRectangle (track.withWidth (track.getWidth() * norm), kTrackH * 0.5f);
+        }
 
-        // Pointer
-        const float px = cx + radius * 0.6f * std::sin (fillAngle);
-        const float py = cy - radius * 0.6f * std::cos (fillAngle);
-        g.setColour (accent.withMultipliedAlpha (alpha));
-        g.drawLine (cx, cy, px, py, 1.5f);
+        // Handle
+        const float handleX = track.getX() + norm * track.getWidth();
+        g.setColour (theme.foreground.withMultipliedAlpha (alpha));
+        g.fillEllipse (handleX - 3.5f, track.getCentreY() - 3.5f, 7.f, 7.f);
 
-        // Label and value — each in its own carved-out row, never the circleZone.
-        g.setFont (DysektLookAndFeel::makeFont(11.f));
-        g.setColour (theme.foreground.withAlpha (0.6f * alpha));
-        g.drawText (label, topLabel.toNearestInt(), juce::Justification::centred);
-
+        // Value text
         juce::String valStr;
         switch (k)
         {
@@ -509,10 +531,9 @@ private:
             }
             default: valStr = juce::String (juce::roundToInt (norm * 100.f)) + "%"; break;
         }
-
+        g.setFont (DysektLookAndFeel::makeFont(10.f, true));
         g.setColour (theme.foreground.withMultipliedAlpha (alpha));
-        g.setFont (DysektLookAndFeel::makeFont(13.f, true));
-        g.drawText (valStr, botLabel.toNearestInt(), juce::Justification::centred);
+        g.drawText (valStr, valueRect.toNearestInt(), juce::Justification::centredRight);
     }
 
     // ── State ─────────────────────────────────────────────────────────────────
@@ -522,11 +543,9 @@ private:
     juce::String     channelLabels[16];
     juce::Colour     channelColours[16];
     int              selectedChannel { -1 };
-    float            scrollX     { 0.f };      // horizontal scroll offset, px
+    float            scrollY     { 0.f };      // vertical scroll offset, px
 
     DragState dragState;
-    int       dragStartY   { 0 };
-    float     dragStartVal { 0.f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Sf2ChannelFxPanel)
 };

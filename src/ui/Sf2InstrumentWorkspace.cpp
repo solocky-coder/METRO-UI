@@ -681,25 +681,32 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
     //
     // BUGFIX #2: the first fix over-corrected — giving the mixer "whatever
     // was left" also meant that on a tall window it could be handed far
-    // more height than three knob rows ever need. Sf2ChannelFxPanel's knobs
-    // cap out at kKnobHMax (see Sf2ChannelFxPanel::knobH()), so the extra
-    // height just sat there as dead space between the last knob row and
-    // "NOTE ACTIVITY". Now the mixer is capped to its own ideal content
-    // height (kMixerIdealH) once there's enough room for both it and a
-    // comfortable keyboard — any further surplus goes to the keyboard
-    // instead, which actually benefits from being taller, rather than
-    // being stranded as an empty gap. Below that comfort threshold we fall
-    // back to the original elastic behaviour: shrink the keyboard toward
-    // its floor first, then let the mixer itself shrink (via its own
-    // dynamic knob sizing) rather than either one collapsing to nothing.
+    // more height than it ever needed, sitting as dead space below its
+    // content.
+    //
+    // REDESIGN: Sf2ChannelFxPanel moved from a column-per-channel grid to a
+    // row-per-channel list (see the header comment there for why). Its
+    // ideal height is no longer a single fixed constant — it's genuinely
+    // proportional to how many channels are active right now
+    // (getActiveChannelCount() * rowHeight()), so we ask it directly rather
+    // than guessing. Capped at a handful of rows before it's more useful to
+    // just let the panel scroll internally and hand the rest to the
+    // keyboard. Below the comfort threshold we fall back to the same
+    // elastic behaviour as before: shrink the keyboard toward its floor
+    // first, then let the mixer itself shrink (it'll simply show fewer
+    // rows before needing to scroll) rather than either one collapsing to
+    // nothing.
     {
         constexpr int kKeyboardIdealH = 110;
         constexpr int kKeyboardFloorH = 56;
-        constexpr int kMixerIdealH    = 240;   // label(20) + pad(4) + 3*kKnobHMax(72) —
-                                                // matches Sf2ChannelFxPanel's own ceiling, so
-                                                // knobs are already at max size beyond this
-        constexpr int kMixerMinH      = 138;   // matches Sf2ChannelFxPanel's own floor:
-                                                // kLabelHMin(14) + kPadding(4) + 3*kKnobHMin(40)
+        constexpr int kMixerVisibleRowsMax = 5;    // beyond this, scrolling the list is more
+                                                    // useful than the panel eating further height
+        constexpr int kMixerMinH = 44;             // ~1.25 rows — enough to hint "more below,
+                                                    // scroll for it" rather than vanishing
+
+        const int rowH = (int) Sf2ChannelFxPanel::rowHeight();
+        const int activeRows = juce::jmax (1, channelFxPanel.getActiveChannelCount());
+        const int kMixerIdealH = juce::jmin (activeRows, kMixerVisibleRowsMax) * rowH;
 
         // Fixed chrome around the keyboard/mixer split: pad below keyboard,
         // gap above the note meter, the meter itself, its label, pad, the
@@ -710,8 +717,9 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         int keyboardH, mixerH;
         if (splittableH >= kMixerIdealH + kKeyboardIdealH)
         {
-            // Plenty of room: cap the mixer at its ideal size instead of
-            // stretching it, and hand every extra px to the keyboard.
+            // Plenty of room: cap the mixer at its ideal size (matching its
+            // actual row count) instead of stretching it, and hand every
+            // extra px to the keyboard.
             mixerH    = kMixerIdealH;
             keyboardH = splittableH - mixerH;
         }
@@ -724,8 +732,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         else
         {
             // Genuinely starved: keyboard sits at its floor, mixer gets
-            // whatever's left (its own dynamic knob sizing keeps it usable
-            // even below kMixerMinH).
+            // whatever's left (it'll just show fewer rows before scrolling).
             keyboardH = juce::jmin (kKeyboardFloorH, splittableH);
             mixerH    = juce::jmax (0, splittableH - keyboardH);
         }
@@ -816,8 +823,12 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
     {
         constexpr int kKeyboardIdealH = 100;
         constexpr int kKeyboardFloorH = 52;
-        constexpr int kMixerIdealH    = 240;
-        constexpr int kMixerMinH      = 138;
+        constexpr int kMixerVisibleRowsMax = 5;
+        constexpr int kMixerMinH = 44;
+
+        const int rowH = (int) Sf2ChannelFxPanel::rowHeight();
+        const int activeRows = juce::jmax (1, channelFxPanel.getActiveChannelCount());
+        const int kMixerIdealH = juce::jmin (activeRows, kMixerVisibleRowsMax) * rowH;
 
         const int chromeH = kPad + 8 + 20 + 14 + 6 + 18 + 4;
         const int splittableH = juce::jmax (0, c.getHeight() - chromeH);
