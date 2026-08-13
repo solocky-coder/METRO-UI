@@ -7,16 +7,16 @@ namespace dysekt::metro
 {
 namespace
 {
-    constexpr int kRowHeight        = 30;
-    constexpr int kStepHeaderHeight = 24;
+    constexpr int kRowHeight        = 42;
+    constexpr int kStepHeaderHeight = 26;
     constexpr int kToolbarHeight    = MetroMetrics::grid * 6;
     constexpr int kVelocityLaneHeight = 90;
     constexpr int kMinRowHeaderWidth = 128;
     constexpr int kMaxRowHeaderWidth = 176;
     constexpr int kMinStepWidth = 32;
-    constexpr int kMaxStepWidth = 56;
+    constexpr int kMaxStepWidth = 64;
     constexpr int kStepGap = 4;
-    constexpr int kGroupGapExtra = 10;
+    constexpr int kGroupGapExtra = 14;
     constexpr int kDefaultVelocity = 100;
     constexpr float kCellCornerRadius = 4.0f;
 
@@ -589,7 +589,7 @@ void MetroStepSequencer::drawRowHeaders (juce::Graphics& g)
         }
 
         g.setColour (rows[(size_t) r].colour);
-        g.fillRect (cell.removeFromLeft (3));
+        g.fillRect (cell.removeFromLeft (4));
 
         g.setColour (Text::Primary);
         g.drawText (rows[(size_t) r].name, cell.reduced (MetroMetrics::halfGrid, 0),
@@ -628,17 +628,19 @@ void MetroStepSequencer::drawGrid (juce::Graphics& g)
             const bool active = noteIndex >= 0;
             const bool hovered  = (r == hoverRow && s == hoverStep);
             const bool selected = selectedSteps.count ({ r, s }) > 0;
-            const bool onBeat   = (s % 4 == 0);
             const bool onPlayCol = (s == playStep);
             const auto cellF = cell.toFloat();
 
-            g.setColour (onBeat ? Base::Elevated : Base::Surface);
+            // Uniform dark base for every cell — grouping/beat emphasis
+            // comes from the header text and the wider group gaps in
+            // cellBounds(), not from a filled band across the row.
+            g.setColour (Base::Surface);
             g.fillRoundedRectangle (cellF, kCellCornerRadius);
 
             if (active)
             {
                 const int velocity = noteIndex >= 0 ? clip->getNotes()[noteIndex].velocity : kDefaultVelocity;
-                const float intensity = juce::jlimit (0.45f, 1.0f, (float) velocity / 127.0f);
+                const float intensity = juce::jlimit (0.6f, 1.0f, (float) velocity / 127.0f);
                 g.setColour (row.colour.withAlpha (intensity));
                 g.fillRoundedRectangle (cellF, kCellCornerRadius);
             }
@@ -654,6 +656,12 @@ void MetroStepSequencer::drawGrid (juce::Graphics& g)
                 g.setColour (juce::Colours::white.withAlpha (0.12f));
                 g.fillRoundedRectangle (cellF, kCellCornerRadius);
             }
+
+            // Every cell gets a crisp hairline outline — this is what
+            // gives the grid its "boxed pad" look in the mockup, rather
+            // than flat colour with no separation between cells.
+            g.setColour (Base::Border);
+            g.drawRoundedRectangle (cellF, kCellCornerRadius, 1.0f);
 
             if (selected)
             {
