@@ -83,6 +83,11 @@ else()
     endif()
 endif()
 
+option(DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+       "EXPERIMENTAL: FluidSynth audio-groups=16 multi-channel render test (see SfzPlayer.cpp). \
+        Untested — only enable for a supervised debug/ASan run, never a release build."
+       OFF)
+
 # Resolve the sfizz C API include directory.
 # sfizz.h (C API) lives at sfizz/src/sfizz.h in the sfizz source tree.
 # The sfizz::sfizz CMake target only exposes C++ headers, so we add it manually.
@@ -220,6 +225,10 @@ target_compile_definitions(Dysekt PUBLIC
     DYSEKT_STANDALONE=0
 )
 
+if (DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP)
+    target_compile_definitions(Dysekt PUBLIC DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=1)
+endif()
+
 target_link_libraries(Dysekt
     PRIVATE
         juce::juce_audio_utils
@@ -322,6 +331,10 @@ target_compile_definitions(DysektStandalone PUBLIC
     DYSEKT_STANDALONE=1
     $<$<PLATFORM_ID:Windows>:JUCE_ASIO=1>
 )
+
+if (DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP)
+    target_compile_definitions(DysektStandalone PUBLIC DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=1)
+endif()
 
 target_link_libraries(DysektStandalone
     PRIVATE
