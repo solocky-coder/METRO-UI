@@ -522,6 +522,21 @@ void MetroStepSequencer::drawToolbarBackdrop (juce::Graphics& g)
     const auto bounds = toolbarBounds();
     g.setColour (Base::SurfaceAlt);
     g.fillRect (bounds);
+
+    // Group the resolution + length pill clusters into one bordered strip,
+    // echoing the mockup's single boxed "16 STEPS / 1/16 / SWING" cluster
+    // rather than each button floating on its own.
+    if (! collapsed)
+    {
+        auto clusterBounds = res8Button.getBounds().getUnion (len64Button.getBounds());
+        if (! clusterBounds.isEmpty())
+        {
+            clusterBounds = clusterBounds.expanded (MetroMetrics::quarterGrid, MetroMetrics::quarterGrid / 2);
+            g.setColour (Base::Border);
+            g.drawRect (clusterBounds, 1);
+        }
+    }
+
     g.setColour (Base::Border);
     g.drawHorizontalLine (bounds.getBottom() - 1, 0.0f, (float) getWidth());
 }
@@ -587,6 +602,14 @@ void MetroStepSequencer::drawRowHeaders (juce::Graphics& g)
             g.setColour (Base::Elevated);
             g.fillRect (cell);
         }
+        else
+        {
+            g.setColour (Base::Surface);
+            g.fillRect (cell);
+        }
+
+        g.setColour (Base::Border);
+        g.drawRect (cell, 1);
 
         g.setColour (rows[(size_t) r].colour);
         g.fillRect (cell.removeFromLeft (4));
