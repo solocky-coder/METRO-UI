@@ -7,6 +7,17 @@
 #include <cmath>   // std::log2, std::log10 — ADSR unit conversion (see applyFluidAdsrFromUi)
 #include "FluidSynthGlobalLock.h"
 
+// ── EXPERIMENTAL — isolating the Aug 11 load-time crash (see the long
+// comment at the FluidSynth SF2 load site below). This tests whether
+// raising synth.audio-groups to 16 crashes on its own, with reverb/chorus
+// held OFF, as opposed to the audio-channels bump + effects-on combination
+// that was tried and reverted last time. Leave this at 0 for normal builds.
+// Flip to 1 ONLY in a debug/ASan build for a supervised test run — do not
+// ship a release with this on until it's confirmed not to crash.
+#ifndef DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+  #define DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP 0
+#endif
+
 #if DYSEKT_HAS_SFIZZ
   // Include sfizz C API via path relative to the project root.
   // This avoids relying on target_include_directories propagation.
@@ -954,7 +965,19 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         if (span <= 0)
             return;
 
-        // REVERTED to a plain stereo pair (see the load-crash note above) —
+#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+        // EXPERIMENTAL — matches the audio-groups=16 load-time setting
+        // above. All 32 group buffers now get real, distinct per-channel
+        // audio (assuming FluidSynth's default channel%groups mapping),
+        // so measureChannelPeaks()'s groupBuffers[2*ch]/[2*ch+1] reads
+        // become meaningful for every channel, not just ch==0. UNTESTED —
+        // see macro comment up top before enabling outside a debug run.
+        float* groupPtrs[32];
+        for (int i = 0; i < 32; ++i)
+            groupPtrs[i] = groupBuffers[(size_t) i].data() + renderCursor;
+
+        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 32, groupPtrs);
+#else
         // nout=2 matches FluidSynth's default synth.audio-channels=1, the
         // same call shape the preview path already uses safely. All voices
         // across every channel mix down into this one pair; only
@@ -964,6 +987,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
                             groupBuffers[1].data() + renderCursor };
 
         lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 2, pair);
+#endif
         renderCursor = uptoSample;
     };
 
@@ -1422,8 +1446,20 @@ void SfzPlayer::applyPendingLoad()
         fluid_settings_setint (settings, "synth.verbose", 0);
 #endif
 
+#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+        // EXPERIMENTAL — reverb/chorus held OFF deliberately, isolating
+        // audio-groups as the only variable that changed vs. the known-good
+        // nout=2 path below. If this crashes, the groups+effects interaction
+        // theory is wrong and it's back to a debugger session per the note
+        // below. If it loads clean, re-test with effects back on one at a
+        // time before trusting it. UNTESTED — see macro comment up top.
+        fluid_settings_setint (settings, "synth.reverb.active", 0);
+        fluid_settings_setint (settings, "synth.chorus.active", 0);
+        fluid_settings_setint (settings, "synth.audio-groups",  16);
+#else
         fluid_settings_setint (settings, "synth.reverb.active", 1);
         fluid_settings_setint (settings, "synth.chorus.active", 1);
+#endif
 
         // ── REVERTED (see crash dump analysis, Aug 11) ───────────────────────
         // Raising synth.audio-channels to 16 (to match the 32-wide groupSeg
@@ -1450,6 +1486,16 @@ void SfzPlayer::applyPendingLoad()
         // temporarily lost as a result — channelPeakL/R will read 0 for
         // every channel except index 0 — and needs a separate, non-nout-
         // expansion approach later if it's wanted back.
+        //
+        // UPDATE (this pass): the audio-channels bump was never actually
+        // needed for output routing — audio-channels affects MIDI-channel-
+        // to-preset-bank handling, not which group a channel's audio lands
+        // in. The DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP path above only
+        // touches audio-groups, and holds reverb/chorus off, to test
+        // whether the groups+active-effects combination (not the threading
+        // race this comment originally suspected) was the actual trigger.
+        // Still needs a debug/ASan run to confirm — do not trust this
+        // comment as proof it's fixed.
 
         synth = new_fluid_synth (settings);
         fluid_synth_set_sample_rate (synth, (float) currentSR);
