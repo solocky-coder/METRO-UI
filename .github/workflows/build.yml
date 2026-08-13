@@ -24,10 +24,14 @@ jobs:
 
           # Experimental build with the SF2 multi-group toggle compiled in.
           # Per docs/EXPERIMENTAL_MULTI_GROUP_TEST.md this path is untested
-          # and is only ever built as Debug — never as a release config.
+          # and must never be a plain Release build. Use RelWithDebInfo rather
+          # than Debug: same toggle-enabled code path and symbols for
+          # debugging, but linked against the release CRT so the artifact
+          # doesn't require MSVCP140_2D.dll / VCRUNTIME140D.dll (debug-only
+          # DLLs that aren't present on a normal end-user machine).
           - variant: experimental
-            display_name: "Experimental Multi-Group (Debug)"
-            build_config: Debug
+            display_name: "Experimental Multi-Group (RelWithDebInfo)"
+            build_config: RelWithDebInfo
             multi_group_toggle: ON
             artifact_suffix: "-Experimental-MultiGroup"
 
