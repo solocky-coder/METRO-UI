@@ -212,18 +212,6 @@ public:
 
     void timerCallback() override
     {
-        // Decay the meter hold markers — same ~40 dB/s falloff as
-        // MixerPanel's own hold registers (see MixerPanel::timerCallback).
-        // Without this, holdL/R only ever grow (paintChannelRow's drawMeter
-        // call only raises them toward the current peak) and the hold
-        // marker would stick at its loudest-ever value instead of falling.
-        static constexpr float kHoldDecay = 0.94f;
-        for (int ch = 0; ch < 16; ++ch)
-        {
-            holdL[ch] *= kHoldDecay;
-            holdR[ch] *= kHoldDecay;
-        }
-
         // The workspace keeps this mixer visible even before a SoundFont is
         // loaded, where paint() presents its empty-state message.
         repaint();
@@ -304,7 +292,6 @@ private:
     static constexpr float kAccentW     =  3.f;
     static constexpr float kPadding     =  8.f;
     static constexpr float kMuteW       = 16.f;
-    static constexpr float kMeterW      = 46.f;    // real per-channel peak meter, see drawMeter()
     static constexpr float kSliderGap   = 14.f;    // gap between the VOL/PAN/REV blocks
     static constexpr float kSliderLabelW = 28.f;   // "VOL"/"PAN"/"REV" text
     static constexpr float kSliderValueW = 34.f;   // value text, right-aligned
@@ -414,16 +401,6 @@ private:
                  kMuteW, kMuteW };
     }
 
-    /** Real per-channel peak meter, sitting between the REV slider and the
-     *  mute box. See drawMeter() — same data source (SfzPlayer::
-     *  channelPeakL/R) and visual style as MixerPanel's SF2 channel rows,
-     *  just laid out for this panel's shorter row height. */
-    juce::Rectangle<float> meterZone (const juce::Rectangle<float>& row) const
-    {
-        return { row.getRight() - kMuteW - kPadding * 2.f - kMeterW, row.getY() + 4.f,
-                 kMeterW, row.getHeight() - 8.f };
-    }
-
     /** The three VOL/PAN/REV slider blocks fill whatever's left between the
      *  label and the mute box, split evenly — this is what lets the row use
      *  the panel's full width with no "too wide" failure mode. */
@@ -431,7 +408,7 @@ private:
     {
         auto area = row;
         area.removeFromLeft (kAccentW + kPadding + labelW() + kPadding);
-        area.removeFromRight (kMuteW + kPadding * 2.f + kMeterW + kPadding);
+        area.removeFromRight (kMuteW + kPadding * 2.f);
         const float blockW = (area.getWidth() - kSliderGap * 2.f) / 3.f;
         switch (k)
         {
@@ -520,17 +497,6 @@ private:
         paintSlider (g, ch, Knob::Pan,        row, "PAN", theme, accent, strip.muted);
         paintSlider (g, ch, Knob::ReverbSend, row, "REV", theme, accent, strip.muted);
 
-        // Real peak meter — same source SfzPlayer::measureChannelPeaks()
-        // writes for MixerPanel's own SF2 channel rows (actual max-abs-
-        // sample per block, not the NOTE ACTIVITY bar graph elsewhere in
-        // this workspace, which is note-triggered rather than audio-driven).
-        {
-            const float pkL = processor.sfzPlayer.channelPeakL[ch].load (std::memory_order_relaxed);
-            const float pkR = processor.sfzPlayer.channelPeakR[ch].load (std::memory_order_relaxed);
-            const auto mz = meterZone (row);
-            drawMeter (g, mz.getX(), mz.getY(), mz.getWidth(), mz.getHeight(), pkL, pkR, accent, ch);
-        }
-
         // Mute box — small square indicator, also a click target (see
         // muteZone() / mouseDown()). Filled when muted, outline otherwise.
         const auto mute = muteZone (row);
@@ -609,100 +575,6 @@ private:
         g.drawText (valStr, valueRect.toNearestInt(), juce::Justification::centredRight);
     }
 
-    /** Real per-channel peak meter — visually matches MixerPanel::drawMeter()
-     *  (same phosphor green→yellow→red hairline style, same sqrt perceptual
-     *  mapping, same decaying hold marker) so the two mixers read as one
-     *  consistent metering language. Reads the identical audio-thread data
-     *  MixerPanel does (SfzPlayer::channelPeakL/R) — this is not a second,
-     *  independent measurement, just a second place displaying the same one.
-     *
-     *  Unlike MixerPanel (which shares one big hold-slot array across many
-     *  different row types and has to carve out non-overlapping slot ranges
-     *  for slices/master/SF2 channels/etc.), this panel only ever shows SF2
-     *  channels 0-15, so `ch` doubles directly as the hold-array index —
-     *  no slot bookkeeping needed. Also omits the below-bar dB text labels
-     *  MixerPanel draws (this row is 36px tall vs. MixerPanel's 42-52px;
-     *  there's no room), but keeps the tick lines themselves. */
-    void drawMeter (juce::Graphics& g, float x, float y, float w, float h,
-                     float peakL, float peakR, juce::Colour tint, int ch)
-    {
-        if (ch < 0 || ch >= 16 || w <= 0.f || h <= 0.f) return;
-
-        const float gap  = 2.f;
-        const float barH = (h - gap) * 0.5f;
-        const float holdW = 2.f;
-
-        if (peakL > holdL[ch]) holdL[ch] = peakL;
-        if (peakR > holdR[ch]) holdR[ch] = peakR;
-
-        auto toFill = [] (float pk) -> float
-        {
-            return std::sqrt (juce::jlimit (0.0f, 1.0f, pk));
-        };
-
-        auto phosphorCol = [&] (float pos) -> juce::Colour
-        {
-            if (pos < 0.70f)
-            {
-                const float t = pos / 0.70f;
-                return tint.withAlpha (0.25f + t * 0.65f);
-            }
-            else if (pos < 0.85f)
-            {
-                const float t = (pos - 0.70f) / 0.15f;
-                return tint.interpolatedWith (juce::Colour (0xFFFFE000), t).withAlpha (0.88f);
-            }
-            else
-            {
-                const float t = (pos - 0.85f) / 0.15f;
-                return juce::Colour (0xFFFF2222).withAlpha (0.75f + t * 0.20f);
-            }
-        };
-
-        auto drawBar = [&] (float barY, float pk, float hold)
-        {
-            const float fill = toFill (pk);
-            const float litW = fill * (w - holdW - 2.f);
-
-            g.setColour (juce::Colour (0xFF0A0A0A));
-            g.fillRect (x, barY, w, barH);
-            g.setColour (juce::Colour (0xFF1E1E1E));
-            g.drawRect (juce::Rectangle<float> (x, barY, w, barH), 1.f);
-
-            if (litW > 0.f)
-            {
-                g.setColour (phosphorCol (fill));
-                g.fillRect (x + 1.f, barY + 1.f, litW, barH - 2.f);
-            }
-
-            const float hFill = toFill (hold);
-            const float hx = x + 1.f + hFill * (w - holdW - 2.f);
-            if (hFill > 0.01f && hx < x + w - 1.f)
-            {
-                g.setColour (phosphorCol (hFill).withAlpha (0.95f));
-                g.fillRect (hx, barY + 1.f, holdW, barH - 2.f);
-            }
-        };
-
-        drawBar (y, peakL, holdL[ch]);
-        drawBar (y + barH + gap, peakR, holdR[ch]);
-
-        // Subtle -6/-12/-18/-24 dB tick lines across both bars (no text —
-        // see the note above on why labels are dropped at this row height).
-        struct Tick { float db; };
-        static constexpr Tick kTicks[] = { {-6}, {-12}, {-18}, {-24} };
-        for (const auto& tick : kTicks)
-        {
-            const float linear = juce::Decibels::decibelsToGain (tick.db);
-            const float fill   = std::sqrt (juce::jlimit (0.0f, 1.0f, linear));
-            const float tx     = x + 1.f + fill * (w - 4.f);
-            if (tx <= x || tx >= x + w) continue;
-
-            g.setColour (juce::Colour (0xFFFFFFFF).withAlpha (0.10f));
-            g.drawVerticalLine ((int) tx, y, y + barH + gap + barH);
-        }
-    }
-
     // ── State ─────────────────────────────────────────────────────────────────
 
     DysektProcessor& processor;
@@ -711,11 +583,6 @@ private:
     juce::Colour     channelColours[16];
     int              selectedChannel { -1 };
     float            scrollY     { 0.f };      // vertical scroll offset, px
-
-    // Peak-hold for the phosphor meter (UI-side; decayed each tick in
-    // timerCallback(), same ~40 dB/s falloff as MixerPanel's hold registers).
-    float holdL[16] {};
-    float holdR[16] {};
 
     DragState dragState;
 

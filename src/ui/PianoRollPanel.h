@@ -1,27 +1,8 @@
 #pragma once
-#include <map>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "TransportBar.h"
 #include "PianoRollComponent.h"
 #include "../sequencer/SequencerEngine.h"
-#include "../metro/MetroStepSequencer.h"
-
-namespace
-{
-    /** Same drum-vs-instrument test MetroArrangeWorkspace/MetroStepSequencer
-     *  use to decide between a 16-pad drum mapping and a chromatic note
-     *  range — duplicated here (rather than pulled in from metro/) so
-     *  PianoRollPanel doesn't take on a dependency on the rest of the Metro
-     *  UI just to reuse this one small check. */
-    bool pianoRollPanel_isDrumStyleTrack (const SequencerTrackInfo& info) noexcept
-    {
-        const bool isMainTrack = info.type == TrackType::MainSlice;
-        const bool isDrumKit = info.type == TrackType::SfPlayer
-                                 && ! info.isSfzInstrument
-                                 && info.preset.bank == 128;
-        return isMainTrack || isDrumKit;
-    }
-}
 
 //==============================================================================
 //  PianoRollPanel  –  content component (no window chrome of its own)
@@ -30,11 +11,8 @@ namespace
 //    ┌─────────────────────────────────────────────────────┐
 //    │  TransportBar                                        │
 //    ├───────────────────────────────────────────────────────┤
-//    │  PIANO ROLL | STEPS  (tab strip)                      │
-//    ├───────────────────────────────────────────────────────┤
-//    │  PianoRollComponent  or  MetroStepSequencer —          │
-//    │  whichever mode is active for the current track;      │
-//    │  both edit the same MidiClip through SequencerEngine  │
+//    │  PianoRollComponent — draws its own black/white       │
+//    │  keyboard gutter; edits the active track's clip       │
 //    └─────────────────────────────────────────────────────┘
 //
 //  Track selection happens in ArrangeView; this window always opens already
@@ -47,29 +25,12 @@ class PianoRollPanel : public juce::Component
 {
 public:
     static constexpr int kTransportH  = 38;
-    static constexpr int kTabBarH     = 24;
-
-    enum class EditorMode { pianoRoll, steps };
 
     PianoRollPanel (SequencerEngine& seq, AbletonLink* link = nullptr)
-        : engine (seq), transport (seq, link), pianoRoll (seq), stepSequencer (seq)
+        : engine (seq), transport (seq, link), pianoRoll (seq)
     {
         addAndMakeVisible (transport);
         addAndMakeVisible (pianoRoll);
-        addAndMakeVisible (stepSequencer);
-
-        auto setUpTab = [this] (juce::TextButton& b)
-        {
-            b.setClickingTogglesState (false);
-            b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xFF25D9D9));
-            addAndMakeVisible (b);
-        };
-        setUpTab (pianoRollTabButton);
-        setUpTab (stepsTabButton);
-        pianoRollTabButton.onClick = [this] { setEditorMode (EditorMode::pianoRoll); };
-        stepsTabButton.onClick     = [this] { setEditorMode (EditorMode::steps); };
-
-        showEditorMode (currentMode);
 
         engine.addMainTrack();
     }
@@ -77,14 +38,8 @@ public:
     void resized() override
     {
         auto r = getLocalBounds();
-        transport.setBounds (r.removeFromTop (kTransportH));
-
-        auto tabArea = r.removeFromTop (kTabBarH);
-        pianoRollTabButton.setBounds (tabArea.removeFromLeft (juce::jmax (80, tabArea.getWidth() / 6)));
-        stepsTabButton.setBounds     (tabArea.removeFromLeft (juce::jmax (60, tabArea.getWidth() / 5)));
-
-        pianoRoll.setBounds     (r);
-        stepSequencer.setBounds (r);
+        transport.setBounds  (r.removeFromTop  (kTransportH));
+        pianoRoll.setBounds  (r);
     }
 
     void paint (juce::Graphics& g) override
@@ -99,30 +54,9 @@ public:
 
     void setActiveTool (PianoRollComponent::Tool t) { pianoRoll.setActiveTool (t); }
 
-    void setEditorMode (EditorMode mode)
-    {
-        if (activeTrackIndex >= 0)
-            viewModeByTrack[activeTrackIndex] = mode;
-        showEditorMode (mode);
-    }
-
     void setActiveTrackPublic (int trackIndex, int clipIndex = 0)
     {
-        activeTrackIndex = trackIndex;
-
         pianoRoll.setActiveTrack (trackIndex, clipIndex);
-        stepSequencer.setActiveClip (trackIndex, clipIndex);
-
-        auto it = viewModeByTrack.find (trackIndex);
-        const EditorMode mode = (it != viewModeByTrack.end())
-                                   ? it->second
-                                   : (pianoRollPanel_isDrumStyleTrack (engine.getTrackInfo (trackIndex))
-                                        ? EditorMode::steps
-                                        : EditorMode::pianoRoll);
-        // Remember the (possibly just-defaulted) mode so re-opening this
-        // track later stays consistent, same as MetroArrangeWorkspace.
-        viewModeByTrack[trackIndex] = mode;
-        showEditorMode (mode);
     }
 
     //==========================================================================
@@ -166,38 +100,9 @@ public:
     std::function<void(int trackIndex, int midiChannel1Based)> onSfTrackChannelChanged;
 
 private:
-    void showEditorMode (EditorMode mode)
-    {
-        currentMode = mode;
-
-        // Both editors always hold the same clip selection (set in
-        // lock-step in setActiveTrackPublic above) — swapping which one is
-        // visible never loses anything, since neither owns note data of
-        // its own; both read/write straight through to the same MidiClip.
-        pianoRoll.setVisible     (mode == EditorMode::pianoRoll);
-        stepSequencer.setVisible (mode == EditorMode::steps);
-
-        updateTabButtonStates();
-        resized();
-    }
-
-    void updateTabButtonStates()
-    {
-        pianoRollTabButton.setToggleState (currentMode == EditorMode::pianoRoll, juce::dontSendNotification);
-        stepsTabButton.setToggleState     (currentMode == EditorMode::steps,     juce::dontSendNotification);
-    }
-
-    SequencerEngine&               engine;
-    TransportBar                   transport;
-    PianoRollComponent             pianoRoll;
-    dysekt::metro::MetroStepSequencer stepSequencer;
-
-    juce::TextButton pianoRollTabButton { "PIANO ROLL" };
-    juce::TextButton stepsTabButton     { "STEPS" };
-
-    EditorMode currentMode    = EditorMode::pianoRoll;
-    int        activeTrackIndex = -1;
-    std::map<int, EditorMode> viewModeByTrack;
+    SequencerEngine&   engine;
+    TransportBar       transport;
+    PianoRollComponent pianoRoll;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PianoRollPanel)
 };
