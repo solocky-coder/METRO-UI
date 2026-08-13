@@ -7,9 +7,29 @@ on:
 
 jobs:
   build-windows:
-    name: Windows Standalone + VST3
+    name: Windows ${{ matrix.display_name }}
     # Pin the stable VS 2022 image. windows-latest now resolves to the VS 2026 preview image.
     runs-on: windows-2022
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Normal downloadable build. Toggle absent.
+          - variant: standard
+            display_name: "Standard Release"
+            build_config: Release
+            multi_group_toggle: OFF
+            artifact_suffix: ""
+
+          # Experimental build with the SF2 multi-group toggle compiled in.
+          # Per docs/EXPERIMENTAL_MULTI_GROUP_TEST.md this path is untested
+          # and is only ever built as Debug — never as a release config.
+          - variant: experimental
+            display_name: "Experimental Multi-Group (Debug)"
+            build_config: Debug
+            multi_group_toggle: ON
+            artifact_suffix: "-Experimental-MultiGroup"
 
     steps:
       - name: Checkout repository
@@ -96,7 +116,8 @@ jobs:
         shell: pwsh
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_config }} `
+            -DDYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=${{ matrix.multi_group_toggle }} `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
             -DJUCE_BUILD_EXTRAS=OFF `
@@ -106,18 +127,18 @@ jobs:
       # hosted runner's memory limit when MSBuild and MSVC compile in parallel.
       - name: Build Standalone
         shell: pwsh
-        run: cmake --build build --config Release --target DysektStandalone --parallel 1 -- /m:1 /bl:build\standalone.binlog /v:diag
+        run: cmake --build build --config ${{ matrix.build_config }} --target DysektStandalone --parallel 1 -- /m:1 /bl:build\standalone.binlog /v:diag
 
       - name: Build VST3
         shell: pwsh
-        run: cmake --build build --config Release --target Dysekt_VST3 --parallel 1 -- /m:1 /bl:build\vst3.binlog /v:diag
+        run: cmake --build build --config ${{ matrix.build_config }} --target Dysekt_VST3 --parallel 1 -- /m:1 /bl:build\vst3.binlog /v:diag
 
       # Always retain MSBuild diagnostics, including when either build fails.
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: DYSEKT-build-diagnostics
+          name: DYSEKT-build-diagnostics${{ matrix.artifact_suffix }}
           path: build/*.binlog
           if-no-files-found: warn
 
@@ -161,19 +182,19 @@ jobs:
           Get-ChildItem -Path artifacts -Recurse -File -Filter "*.pdb" |
             Remove-Item -Force
 
-          Write-Host "Collected artifacts:"
+          Write-Host "Collected artifacts (${{ matrix.display_name }}):"
           Get-ChildItem artifacts/ -Recurse
 
       - name: Upload Standalone
         uses: actions/upload-artifact@v4
         with:
-          name: DYSEKT-Standalone
+          name: DYSEKT-Standalone${{ matrix.artifact_suffix }}
           path: artifacts/Standalone/
           if-no-files-found: error
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
-          name: DYSEKT-VST3
+          name: DYSEKT-VST3${{ matrix.artifact_suffix }}
           path: artifacts/VST3/
           if-no-files-found: error
