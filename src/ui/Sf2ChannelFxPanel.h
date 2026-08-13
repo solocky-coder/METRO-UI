@@ -294,11 +294,8 @@ private:
     static constexpr float kMuteW       = 16.f;
     static constexpr float kSliderGap   = 14.f;    // gap between the VOL/PAN/REV blocks
     static constexpr float kSliderLabelW = 28.f;   // "VOL"/"PAN"/"REV" text
-    static constexpr float kSliderValueW = 28.f;   // value text, right-aligned — the 3 sliders'
-                                                    // combined 18px savings from the old 34px
-                                                    // funds most of kMeterW below
+    static constexpr float kSliderValueW = 28.f;   // value text, right-aligned
     static constexpr float kTrackH      =  5.f;
-    static constexpr float kMeterW      = 20.f;    // L/R peak meter slot, between REV and mute
 
     /** Label column width — proportional so it doesn't dominate a narrow
      *  panel, but capped so it doesn't sprawl on a very wide one. */
@@ -404,15 +401,6 @@ private:
                  kMuteW, kMuteW };
     }
 
-    /** L/R peak meter slot — sits between the REV slider and the mute box. */
-    juce::Rectangle<float> meterZone (const juce::Rectangle<float>& row) const
-    {
-        const float meterH = row.getHeight() - 10.f;
-        return { row.getRight() - kMuteW - kPadding * 2.f - kMeterW,
-                 row.getY() + (row.getHeight() - meterH) * 0.5f,
-                 kMeterW, meterH };
-    }
-
     /** The three VOL/PAN/REV slider blocks fill whatever's left between the
      *  label and the mute box, split evenly — this is what lets the row use
      *  the panel's full width with no "too wide" failure mode. */
@@ -421,7 +409,6 @@ private:
         auto area = row;
         area.removeFromLeft (kAccentW + kPadding + labelW() + kPadding);
         area.removeFromRight (kMuteW + kPadding * 2.f);
-        area.removeFromRight (kMeterW + kPadding);   // reserve meter slot before the 3-way split
         const float blockW = (area.getWidth() - kSliderGap * 2.f) / 3.f;
         switch (k)
         {
@@ -510,11 +497,6 @@ private:
         paintSlider (g, ch, Knob::Pan,        row, "PAN", theme, accent, strip.muted);
         paintSlider (g, ch, Knob::ReverbSend, row, "REV", theme, accent, strip.muted);
 
-        // Peak meter — real audio-thread level, not the gain sliders above.
-        // channelPeakL/R are populated by SfzPlayer::measureChannelPeaks()
-        // and are safe to read on this Timer-driven paint (see file header).
-        paintMeter (g, ch, row);
-
         // Mute box — small square indicator, also a click target (see
         // muteZone() / mouseDown()). Filled when muted, outline otherwise.
         const auto mute = muteZone (row);
@@ -591,36 +573,6 @@ private:
         g.setFont (DysektLookAndFeel::makeFont(10.f, true));
         g.setColour (theme.foreground.withMultipliedAlpha (alpha));
         g.drawText (valStr, valueRect.toNearestInt(), juce::Justification::centredRight);
-    }
-
-    /** Two thin vertical bars (L/R) showing real post-render peak level for
-     *  this channel — distinct from the VOL slider above, which shows the
-     *  gain *setting*, not the signal actually passing through it. */
-    void paintMeter (juce::Graphics& g, int ch, const juce::Rectangle<float>& row)
-    {
-        auto zone = meterZone (row);
-        const float pkL = juce::jlimit (0.f, 1.f, processor.sfzPlayer.channelPeakL[ch].load (std::memory_order_relaxed));
-        const float pkR = juce::jlimit (0.f, 1.f, processor.sfzPlayer.channelPeakR[ch].load (std::memory_order_relaxed));
-
-        auto drawBar = [&] (juce::Rectangle<float> bar, float pk)
-        {
-            g.setColour (juce::Colours::black.withAlpha (0.25f));
-            g.fillRoundedRectangle (bar, 1.f);
-            if (pk <= 0.001f) return;
-            const float fillH = bar.getHeight() * pk;
-            auto fill = bar.withTop (bar.getBottom() - fillH);
-            const juce::Colour c = pk > 0.9f ? juce::Colour (0xFFD9605A)
-                                  : pk > 0.7f ? juce::Colour (0xFFE0C95A)
-                                              : juce::Colour (0xFF50C8BE);
-            g.setColour (c);
-            g.fillRoundedRectangle (fill, 1.f);
-        };
-
-        const float gap = 2.f;
-        const float barW = (zone.getWidth() - gap) * 0.5f;
-        drawBar (zone.removeFromLeft (barW), pkL);
-        zone.removeFromLeft (gap);
-        drawBar (zone, pkR);
     }
 
     // ── State ─────────────────────────────────────────────────────────────────
