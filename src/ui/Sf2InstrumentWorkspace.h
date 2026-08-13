@@ -231,6 +231,15 @@ private:
     // ── Top bar ────────────────────────────────────────────────────────────
     juce::Rectangle<int> topBarZone, loadedPillZone;
 
+#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+    // Debug-only runtime toggle for SfzPlayer::setExperimentalMultiGroupEnabled().
+    // Only exists in builds compiled with the DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+    // CMake option ON — never appears in a normal/release build. See the
+    // long comment at the top of SfzPlayer.cpp before touching this.
+    juce::ToggleButton experimentalMultiGroupToggle { "EXP: MULTI-GROUP" };
+    juce::Rectangle<int> experimentalToggleZone;
+#endif
+
     // ── Column 1 — preset browser (search + list, no grid) ────────────────
     Sf2ProgramGrid programGrid;   // data model retained; not painted directly
     std::vector<Sf2PresetInfo> presetList;

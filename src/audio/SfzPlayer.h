@@ -61,6 +61,29 @@ public:
     /** Unload current instrument (silent output). */
     void unload();
 
+#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+    /** Runtime on/off switch for the audio-groups=16 / reverb+chorus-off
+     *  experimental load path (see the long comment at the top of
+     *  SfzPlayer.cpp). Only compiled in when the DYSEKT_SF2_EXPERIMENTAL_
+     *  MULTI_GROUP CMake option is ON — that option remains the hard
+     *  kill switch for release builds; this atomic is the convenience
+     *  toggle on top of it for supervised debug-build testing. UI thread
+     *  writes, audio thread reads at the next file (re)load — it does NOT
+     *  retroactively change a synth instance that's already loaded, since
+     *  the settings it gates (audio-groups, reverb.active, chorus.active)
+     *  are fixed at fluid_synth creation time. Reload the file after
+     *  flipping this to pick up the change. */
+    void setExperimentalMultiGroupEnabled (bool shouldBeEnabled) noexcept
+    {
+        experimentalMultiGroupEnabled.store (shouldBeEnabled, std::memory_order_relaxed);
+    }
+
+    bool getExperimentalMultiGroupEnabled() const noexcept
+    {
+        return experimentalMultiGroupEnabled.load (std::memory_order_relaxed);
+    }
+#endif
+
     void setVolume      (float gainLinear);   ///< 0..2
     void setTranspose   (int semitones);      ///< SF2 only — MIDI note shift; SFZ uses setPitchShift
     void setPitchShift  (float semitones);    ///< SFZ audio-rate pitch shift, -24..+24 semitones
@@ -374,6 +397,14 @@ private:
     std::atomic<int>   pendingBank   { 0 };  // bank number for applyProgramChange
     std::atomic<int>   pendingProgram{ 0 };  // program number for applyProgramChange
     std::atomic<bool>  loaded      { false };
+
+#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+    // Runtime companion to the DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP CMake
+    // option — see setExperimentalMultiGroupEnabled() above and the load-site
+    // comment in SfzPlayer.cpp. Defaults OFF even in a build compiled with
+    // the option on, so enabling it is always an explicit action.
+    std::atomic<bool> experimentalMultiGroupEnabled { false };
+#endif
 
     // ── SFZ ADSR atomics (written from any thread, read on audio thread) ──────
     std::atomic<float> sfzAttackSec   { 0.005f };  ///< seconds (SFZ default ~0)

@@ -972,11 +972,29 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         // so measureChannelPeaks()'s groupBuffers[2*ch]/[2*ch+1] reads
         // become meaningful for every channel, not just ch==0. UNTESTED —
         // see macro comment up top before enabling outside a debug run.
-        float* groupPtrs[32];
-        for (int i = 0; i < 32; ++i)
-            groupPtrs[i] = groupBuffers[(size_t) i].data() + renderCursor;
+        //
+        // Gated a second time at runtime by experimentalMultiGroupEnabled:
+        // the CMake option makes this path exist in the binary at all, but
+        // the synth actually loaded (see the load site below) only used
+        // audio-groups=16 if the runtime toggle was ON at load time — read
+        // it again here (rather than caching a decision) purely so the two
+        // branches stay obviously symmetric; loaded is what actually
+        // determines synth's layout, not this flag by itself.
+        if (experimentalMultiGroupEnabled.load (std::memory_order_relaxed))
+        {
+            float* groupPtrs[32];
+            for (int i = 0; i < 32; ++i)
+                groupPtrs[i] = groupBuffers[(size_t) i].data() + renderCursor;
 
-        lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 32, groupPtrs);
+            lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 32, groupPtrs);
+        }
+        else
+        {
+            float* pair[2] = { groupBuffers[0].data() + renderCursor,
+                                groupBuffers[1].data() + renderCursor };
+
+            lastProcessRc = fluid_synth_process (synth, span, 0, nullptr, 2, pair);
+        }
 #else
         // nout=2 matches FluidSynth's default synth.audio-channels=1, the
         // same call shape the preview path already uses safely. All voices
@@ -1453,9 +1471,25 @@ void SfzPlayer::applyPendingLoad()
         // theory is wrong and it's back to a debugger session per the note
         // below. If it loads clean, re-test with effects back on one at a
         // time before trusting it. UNTESTED — see macro comment up top.
-        fluid_settings_setint (settings, "synth.reverb.active", 0);
-        fluid_settings_setint (settings, "synth.chorus.active", 0);
-        fluid_settings_setint (settings, "synth.audio-groups",  16);
+        //
+        // Now runtime-gated on top of the compile-time option: the CMake
+        // flag compiles this path in, but it only actually fires when
+        // experimentalMultiGroupEnabled was switched on before this load —
+        // default is a normal audio-groups=1, reverb/chorus-on load, same
+        // as a build compiled with the option off. Flipping the toggle
+        // after a file is already loaded has no effect until the next load
+        // (these fluid_settings_setint calls only run here, at construction).
+        if (experimentalMultiGroupEnabled.load (std::memory_order_relaxed))
+        {
+            fluid_settings_setint (settings, "synth.reverb.active", 0);
+            fluid_settings_setint (settings, "synth.chorus.active", 0);
+            fluid_settings_setint (settings, "synth.audio-groups",  16);
+        }
+        else
+        {
+            fluid_settings_setint (settings, "synth.reverb.active", 1);
+            fluid_settings_setint (settings, "synth.chorus.active", 1);
+        }
 #else
         fluid_settings_setint (settings, "synth.reverb.active", 1);
         fluid_settings_setint (settings, "synth.chorus.active", 1);

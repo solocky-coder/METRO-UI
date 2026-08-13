@@ -416,6 +416,20 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     };
     addAndMakeVisible (browseButton);
 
+#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+    // Reflect whatever the engine's current state is (default OFF) rather
+    // than assuming — keeps this in sync if some other path ever flips it.
+    experimentalMultiGroupToggle.setToggleState (
+        processor.sfzPlayer.getExperimentalMultiGroupEnabled(),
+        juce::dontSendNotification);
+    experimentalMultiGroupToggle.onClick = [this]
+    {
+        processor.sfzPlayer.setExperimentalMultiGroupEnabled (
+            experimentalMultiGroupToggle.getToggleState());
+    };
+    addAndMakeVisible (experimentalMultiGroupToggle);
+#endif
+
     compactKeyboard = std::make_unique<CompactKeyboard> (*this);
     addAndMakeVisible (*compactKeyboard);
     addAndMakeVisible (channelFxPanel);   // always visible — Column 3 has no tab switch
@@ -659,6 +673,12 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
 {
     topBarZone = bounds.removeFromTop (kTopBarH);
     loadedPillZone = topBarZone.removeFromRight (170).reduced (4);
+#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+    // Debug-only toggle, docked to the left of the loaded pill so it
+    // never competes with the caption text for space.
+    experimentalToggleZone = topBarZone.removeFromRight (150).reduced (4);
+    experimentalMultiGroupToggle.setBounds (experimentalToggleZone);
+#endif
 
     const int w = bounds.getWidth();
     const int colPresetsW = juce::roundToInt ((float) w * kColPresetsFrac);
@@ -813,6 +833,12 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
     // performance/FX + keyboard at the bottom — each gets roughly a third.
     topBarZone = bounds.removeFromTop (kTopBarH);
     loadedPillZone = topBarZone.removeFromRight (170).reduced (4);
+#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+    // Debug-only toggle, docked to the left of the loaded pill so it
+    // never competes with the caption text for space.
+    experimentalToggleZone = topBarZone.removeFromRight (150).reduced (4);
+    experimentalMultiGroupToggle.setBounds (experimentalToggleZone);
+#endif
 
     // Narrow-width stacking: presets get the top third; the merged voice +
     // mixer panel (Sections A/B/C, same as layoutWide but full-width
