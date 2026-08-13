@@ -525,7 +525,7 @@ void MetroStepSequencer::paint (juce::Graphics& g)
 void MetroStepSequencer::drawToolbarBackdrop (juce::Graphics& g)
 {
     const auto bounds = toolbarBounds();
-    g.setColour (Base::SurfaceAlt);
+    g.setColour (Base::Background);
     g.fillRect (bounds);
     g.setColour (Base::Border);
     g.drawHorizontalLine (bounds.getBottom() - 1, 0.0f, (float) getWidth());
@@ -544,7 +544,7 @@ void MetroStepSequencer::drawEmptyState (juce::Graphics& g, const juce::String& 
 void MetroStepSequencer::drawStepHeader (juce::Graphics& g)
 {
     const auto header = stepHeaderBounds();
-    g.setColour (Base::Surface);
+    g.setColour (Base::Background);
     g.fillRect (header);
 
     g.saveState();
@@ -574,7 +574,7 @@ void MetroStepSequencer::drawStepHeader (juce::Graphics& g)
 void MetroStepSequencer::drawRowHeaders (juce::Graphics& g)
 {
     const auto header = rowHeaderBounds();
-    g.setColour (Base::SurfaceAlt);
+    g.setColour (Base::Background);
     g.fillRect (header);
 
     g.saveState();
