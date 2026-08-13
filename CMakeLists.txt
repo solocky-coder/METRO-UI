@@ -298,15 +298,6 @@ target_sources(DysektStandalone PRIVATE
     src/sequencer/SequencerEngine.cpp
     src/sequencer/MidiClip.cpp
     src/ui/FloatingTransportBar.cpp
-    src/metro/MetroArrangeWorkspace.cpp
-    src/metro/MetroArrangementView.cpp
-    src/metro/MetroInspector.cpp
-    src/metro/MetroPianoRoll.cpp
-    src/metro/MetroSidebar.cpp
-    src/metro/MetroStandaloneEditor.cpp
-    src/metro/MetroStepSequencer.cpp
-    src/metro/MetroTransportBar.cpp
-    src/metro/FloatingTransportBar.cpp
     src/standalone/Main.cpp
     src/standalone/MainWindow.cpp
 )

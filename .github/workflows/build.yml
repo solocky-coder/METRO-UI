@@ -82,70 +82,10 @@ jobs:
           Set-Content $file $content
           Write-Host "Patched sfizz MSVC runtime: removed hardcoded MT override."
 
-      # VCPKG_INSTALLATION_ROOT and LOCALAPPDATA are set on the runner's OS
-      # environment already, but expressions like ${{ env.X }} below only
-      # see variables written to $GITHUB_ENV — promote them here so the
-      # cache steps' `path:` can reference them.
-      - name: Expose vcpkg/env paths to job context
-        shell: pwsh
-        run: |
-          echo "VCPKG_INSTALLATION_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
-          echo "LOCALAPPDATA=$env:LOCALAPPDATA" >> $env:GITHUB_ENV
-
-      # vcpkg downloads its own pinned copies of tools (ninja, cmake, etc.)
-      # from GitHub Releases the first time they're needed, and that
-      # download has no retry/backoff beyond a couple of immediate
-      # attempts — a transient 503 from GitHub's CDN fails the whole job.
-      # Caching this directory means the download only has to succeed once;
-      # every run after that reuses the cached copy and never touches
-      # GitHub for it at all.
-      - name: Cache vcpkg downloaded tools
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.VCPKG_INSTALLATION_ROOT }}\downloads
-          key: vcpkg-downloads-${{ runner.os }}-v1
-
-      # Separately, cache vcpkg's built binary packages so FluidSynth (and
-      # its dependencies) aren't recompiled from source on every run.
-      - name: Cache vcpkg binary packages
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.LOCALAPPDATA }}\vcpkg\archives
-          key: vcpkg-archives-${{ runner.os }}-fluidsynth-x64-windows-static-md-v1
-
       - name: Install FluidSynth via vcpkg (static)
         shell: pwsh
         run: |
-          # vcpkg bootstraps its own pinned copies of tools (ninja, cmake,
-          # etc.) via a single unretried curl fetch from GitHub Releases.
-          # Transient network failures there (503s, dropped connections)
-          # kill the whole job even though a second attempt usually
-          # succeeds outright. Retry the whole `vcpkg install` a few times
-          # with backoff rather than trying to special-case every tool it
-          # might need to fetch.
-          $maxAttempts = 5
-          $attempt = 0
-          $succeeded = $false
-          while (-not $succeeded -and $attempt -lt $maxAttempts) {
-            $attempt++
-            Write-Host "vcpkg install attempt $attempt of $maxAttempts..."
-            vcpkg install fluidsynth:x64-windows-static-md
-            if ($LASTEXITCODE -eq 0) {
-              $succeeded = $true
-            } else {
-              Write-Host "vcpkg install failed (exit $LASTEXITCODE)."
-              if ($attempt -lt $maxAttempts) {
-                $delaySeconds = 10 * $attempt
-                Write-Host "Retrying in $delaySeconds seconds..."
-                Start-Sleep -Seconds $delaySeconds
-              }
-            }
-          }
-          if (-not $succeeded) {
-            Write-Error "vcpkg install failed after $maxAttempts attempts."
-            exit 1
-          }
-
+          vcpkg install fluidsynth:x64-windows-static-md
           $vcpkgBin = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\bin"
           if (Test-Path $vcpkgBin) {
             echo "$vcpkgBin" >> $env:GITHUB_PATH
