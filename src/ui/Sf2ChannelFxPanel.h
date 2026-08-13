@@ -598,7 +598,7 @@ private:
      *  gain *setting*, not the signal actually passing through it. */
     void paintMeter (juce::Graphics& g, int ch, const juce::Rectangle<float>& row)
     {
-        const auto zone = meterZone (row);
+        auto zone = meterZone (row);
         const float pkL = juce::jlimit (0.f, 1.f, processor.sfzPlayer.channelPeakL[ch].load (std::memory_order_relaxed));
         const float pkR = juce::jlimit (0.f, 1.f, processor.sfzPlayer.channelPeakR[ch].load (std::memory_order_relaxed));
 
