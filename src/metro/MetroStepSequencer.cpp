@@ -13,12 +13,14 @@ namespace
     constexpr int kVelocityLaneHeight = 90;
     constexpr int kMinRowHeaderWidth = 128;
     constexpr int kMaxRowHeaderWidth = 176;
+    constexpr int kRowHeaderGridGap = 20;
     constexpr int kMinStepWidth = 32;
     constexpr int kMaxStepWidth = 64;
     constexpr int kStepGap = 4;
     constexpr int kGroupGapExtra = 14;
     constexpr int kDefaultVelocity = 100;
     constexpr float kCellCornerRadius = 0.0f;
+    constexpr float kRowHeaderCornerRadius = 3.0f;
 
     //==========================================================================
     //  A short set of General MIDI percussion names, used both as the
@@ -378,7 +380,8 @@ juce::Rectangle<int> MetroStepSequencer::toolbarBounds() const
 
 juce::Rectangle<int> MetroStepSequencer::stepHeaderBounds() const
 {
-    return { rowHeaderWidth(), kToolbarHeight, juce::jmax (0, getWidth() - rowHeaderWidth()), kStepHeaderHeight };
+    const int x = rowHeaderWidth() + kRowHeaderGridGap;
+    return { x, kToolbarHeight, juce::jmax (0, getWidth() - x), kStepHeaderHeight };
 }
 
 juce::Rectangle<int> MetroStepSequencer::rowHeaderBounds() const
@@ -392,13 +395,15 @@ juce::Rectangle<int> MetroStepSequencer::gridBounds() const
 {
     const int top = kToolbarHeight + kStepHeaderHeight;
     const int bottom = getHeight() - kVelocityLaneHeight;
-    return { rowHeaderWidth(), top, juce::jmax (0, getWidth() - rowHeaderWidth()), juce::jmax (0, bottom - top) };
+    const int x = rowHeaderWidth() + kRowHeaderGridGap;
+    return { x, top, juce::jmax (0, getWidth() - x), juce::jmax (0, bottom - top) };
 }
 
 juce::Rectangle<int> MetroStepSequencer::velocityLaneBounds() const
 {
-    return { rowHeaderWidth(), getHeight() - kVelocityLaneHeight,
-             juce::jmax (0, getWidth() - rowHeaderWidth()), kVelocityLaneHeight };
+    const int x = rowHeaderWidth() + kRowHeaderGridGap;
+    return { x, getHeight() - kVelocityLaneHeight,
+             juce::jmax (0, getWidth() - x), kVelocityLaneHeight };
 }
 
 int MetroStepSequencer::gridOffsetX() const
@@ -522,21 +527,6 @@ void MetroStepSequencer::drawToolbarBackdrop (juce::Graphics& g)
     const auto bounds = toolbarBounds();
     g.setColour (Base::SurfaceAlt);
     g.fillRect (bounds);
-
-    // Group the resolution + length pill clusters into one bordered strip,
-    // echoing the mockup's single boxed "16 STEPS / 1/16 / SWING" cluster
-    // rather than each button floating on its own.
-    if (! collapsed)
-    {
-        auto clusterBounds = res8Button.getBounds().getUnion (len64Button.getBounds());
-        if (! clusterBounds.isEmpty())
-        {
-            clusterBounds = clusterBounds.expanded (MetroMetrics::quarterGrid, MetroMetrics::quarterGrid / 2);
-            g.setColour (Base::Border);
-            g.drawRect (clusterBounds, 1);
-        }
-    }
-
     g.setColour (Base::Border);
     g.drawHorizontalLine (bounds.getBottom() - 1, 0.0f, (float) getWidth());
 }
@@ -597,25 +587,35 @@ void MetroStepSequencer::drawRowHeaders (juce::Graphics& g)
         if (! cell.intersects (header))
             continue;
 
+        const auto cellF = cell.toFloat();
+
         if (r == focusedRow && hasKeyboardFocus (true))
         {
             g.setColour (Base::Elevated);
-            g.fillRect (cell);
+            g.fillRoundedRectangle (cellF, kRowHeaderCornerRadius);
         }
         else
         {
             g.setColour (Base::Surface);
-            g.fillRect (cell);
+            g.fillRoundedRectangle (cellF, kRowHeaderCornerRadius);
         }
 
         g.setColour (Base::Border);
-        g.drawRect (cell, 1);
+        g.drawRoundedRectangle (cellF, kRowHeaderCornerRadius, 1.0f);
 
+        // Accent bar: a small inset rounded pill, not a flush full-height
+        // strip — margin from the box edges on all sides, rounded caps.
+        constexpr float kPillWidth  = 8.0f;
+        constexpr float kPillMargin = 7.0f;
+        auto pill = cellF.reduced (0.0f, kPillMargin).withX (cellF.getX() + kPillMargin).withWidth (kPillWidth);
         g.setColour (rows[(size_t) r].colour);
-        g.fillRect (cell.removeFromLeft (4));
+        g.fillRoundedRectangle (pill, kPillWidth * 0.5f);
+
+        auto textArea = cell;
+        textArea.removeFromLeft ((int) (kPillMargin * 2.0f + kPillWidth));
 
         g.setColour (Text::Primary);
-        g.drawText (rows[(size_t) r].name, cell.reduced (MetroMetrics::halfGrid, 0),
+        g.drawText (rows[(size_t) r].name, textArea.reduced (MetroMetrics::halfGrid, 0),
                    juce::Justification::centredLeft, true);
     }
 
