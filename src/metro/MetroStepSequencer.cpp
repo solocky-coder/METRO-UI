@@ -18,7 +18,7 @@ namespace
     constexpr int kStepGap = 4;
     constexpr int kGroupGapExtra = 14;
     constexpr int kDefaultVelocity = 100;
-    constexpr float kCellCornerRadius = 4.0f;
+    constexpr float kCellCornerRadius = 0.0f;
 
     //==========================================================================
     //  A short set of General MIDI percussion names, used both as the
@@ -749,7 +749,7 @@ void MetroStepSequencer::drawVelocityLane (juce::Graphics& g)
 
         const bool selected = selectedSteps.count ({ focusedRow, s }) > 0;
         g.setColour (selected ? Accent::Cyan : Text::Secondary);
-        g.fillRoundedRectangle (bar.toFloat(), 2.0f);
+        g.fillRect (bar);
     }
 
     g.restoreState();
