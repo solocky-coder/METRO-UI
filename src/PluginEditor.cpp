@@ -130,6 +130,11 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  zoneBuilderKeysPanel.setEngineSource (KeysPanel::EngineSource::SfzPlayer2);
  zoneBuilderKeysPanel.setSfzEditable (true);
  zoneBuilderKeysPanel.setAddZoneButtonVisible (true);
+ // This instance only ever shows SFZ/SF2 zones (uiMode 1/2), never the
+ // Slicer — unlike sfzPlayerDropdown.keysPanel, nothing toggles this per
+ // uiMode, so it must default off or it's permanently stuck on the empty
+ // Slicer highlight branch and zone key-colouring never renders.
+ zoneBuilderKeysPanel.setSlicerHighlightEnabled (false);
  zoneBuilderKeysPanel.onAddZoneRequested = [this] { openZoneBuilderAddZone(); };
 zoneBuilderKeysPanel.onRowClicked = [this] (int rowIndex)
 {
