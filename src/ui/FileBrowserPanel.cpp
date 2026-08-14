@@ -2,6 +2,7 @@
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
+#include <cmath>
 
 #include <windows.h>
 
@@ -659,6 +660,17 @@ void FileBrowserPanel::startPreview (const juce::File& f)
     auto* reader = formatManager.createReaderFor (f);
     if (reader == nullptr) return;   // unsupported format or file not ready
 
+    // Guard against dr_mp3 (JUCE's built-in MP3 reader) reporting a bogus
+    // sampleRate of 0 for certain MP3s -- see the identical guard and
+    // comment in SampleData::decodeFromFile(). Handing 0.0 to
+    // transport.setSource() below as the correction rate is what was
+    // crashing preview playback for files this hits.
+    if (reader->sampleRate <= 0.0 || ! std::isfinite (reader->sampleRate))
+    {
+        delete reader;
+        return;
+    }
+
     readerSource = std::make_unique<juce::AudioFormatReaderSource> (reader, true);
     transport.setSource (readerSource.get(), 0, nullptr, reader->sampleRate);
     transport.setGain ((float) volumeSlider.getValue());
@@ -739,6 +751,13 @@ void FileBrowserPanel::startPreviewFromReader (juce::AudioFormatReader* reader)
     readerSource.reset();
 
     if (reader == nullptr) return;
+
+    // Same dr_mp3 zero-sampleRate guard as startPreview(File) -- see comment there.
+    if (reader->sampleRate <= 0.0 || ! std::isfinite (reader->sampleRate))
+    {
+        delete reader;
+        return;
+    }
 
     if (deviceManager.getCurrentAudioDevice() == nullptr)
     {
