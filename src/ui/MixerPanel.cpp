@@ -379,14 +379,19 @@ juce::String MixerPanel::fmtMute (int mg) const
 // ─────────────────────────────────────────────────────────────────────────────
 //  Norm helpers
 // ─────────────────────────────────────────────────────────────────────────────
-// 0 dB maps to (0-kGainMinDb)/(kGainMaxDb-kGainMinDb) — NOT the knob's visual
-// centre — because the real gain range (see kGainMinDb/kGainMaxDb in
-// MixerPanel.h) isn't symmetric around 0 dB. drawKnobInRow's isGain branch
-// derives its centre-tick angle from these same two constants, so the tick
-// and this normalisation can never drift apart again.
+// 0 dB maps to 0.5 (12 o'clock). The two halves of the dial are NOT
+// symmetric -- they mirror the real gain range used everywhere else
+// (masterVolume's NormalisableRange in ParamLayout.cpp, and the -100.f/24.f
+// clamps in this file's own mouseDrag): boost half (0.5 -> 1.0, CW) covers
+// 0 .. +24 dB; cut half (0.0 -> 0.5, CCW) covers -100 .. 0 dB. A previous
+// version of this function assumed a symmetric +-24 dB span, which put the
+// knob's dot/arc badly out of sync with the actual dB readout for any value
+// below -24 dB (e.g. -24 dB rendered as if it were the -100 dB floor).
 float MixerPanel::toNormGain (float db)  const
 {
-    return juce::jlimit (0.f, 1.f, (db - kGainMinDb) / (kGainMaxDb - kGainMinDb));
+    if (db >= 0.f)
+        return juce::jlimit (0.5f, 1.f, 0.5f + (db / 24.f)  * 0.5f);
+    return juce::jlimit (0.f, 0.5f, 0.5f + (db / 100.f) * 0.5f);
 }
 float MixerPanel::toNormPan  (float pan) const { return juce::jlimit (0.f, 1.f, (pan + 1.f) * 0.5f); }
 float MixerPanel::toNormFcut (float hz)  const
@@ -436,9 +441,7 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
     g.setColour (theme.separator.withAlpha (0.6f));
     g.strokePath (track, juce::PathStrokeType (1.5f));
 
-    // Fill arc — for gain knobs: bidirectional from wherever 0 dB actually
-    //            falls in the real -100..+24 range (see toNormGain() below,
-    //            not necessarily 12 o'clock)
+    // Fill arc — for gain knobs: bidirectional from 12 o'clock (norm = 0.5)
     //            for all others: sweep from 7 o'clock (startA) as before
     const auto fillCol = locked ? theme.lockActive
                                 : (isMaster ? theme.accent.brighter (0.15f) : theme.accent);
@@ -446,14 +449,9 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
 
     if (isGain)
     {
-        // 0 dB sits wherever it actually falls in the real -100..+24 dB
-        // range (see kGainMinDb/kGainMaxDb in MixerPanel.h and
-        // toNormGain() above) — not fixed at 12 o'clock/norm=0.5. For the
-        // default -100..+24 range that's ~80% of the way round the sweep,
-        // not the centre.
-        const float zeroNorm  = juce::jlimit (0.f, 1.f,
-                                     (0.f - kGainMinDb) / (kGainMaxDb - kGainMinDb));
-        const float zeroAngle = startA + arcLen * zeroNorm;
+        // 0 dB is at norm=0.5 → 12 o'clock (centre of the sweep)
+        constexpr float zeroNorm  = 0.5f;
+        const float     zeroAngle = startA + arcLen * zeroNorm;   // 12 o'clock
 
         if (std::abs (normC - zeroNorm) > 0.005f)
         {
@@ -469,7 +467,7 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
             g.strokePath (fill, juce::PathStrokeType (1.5f));
         }
 
-        // Small tick marker at the 0 dB position so it's always visible
+        // Small centre-tick marker at 12 o'clock so 0 dB is always visible
         const float tx = (float)cx + r * std::cos (zeroAngle);
         const float ty = (float)cy + r * std::sin (zeroAngle);
         g.setColour (theme.foreground.withAlpha (0.30f));
@@ -761,8 +759,11 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
     // ── Knob columns ────────────────────────────────────────────────────
     const int kcy = ry + kRowH / 2;
 
-    // Gap between a knob's right edge and its value text — see kValueTextGap
-    // in MixerPanel.h (shared by every row type, not just this one).
+    // Gap between a knob's right edge and its value text. Widened from the
+    // previous tight +4px so there's clear breathing room between the knob
+    // and the number, and so the text sits further right, per feedback that
+    // knobs and readouts were reading as visually merged together.
+    static constexpr int kValueTextGap = 14;
 
     auto drawCol = [&] (Col col, float norm, bool locked,
                          const juce::String& valStr)
@@ -930,9 +931,9 @@ void MixerPanel::drawMasterRow (juce::Graphics& g, int ry) const
         const int x  = colX (col);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, norm, false, true, isGain);
-        const int tx = cx + kKnobR + kValueTextGap;
+        const int tx = cx + kKnobR + 4;
         const int tw = kKnobColW - (tx - x) - 2;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));   // was 14.0f — matches slice/SF2/SFZ rows
+        g.setFont (DysektLookAndFeel::makeFont (14.0f));
         g.setColour (theme.accent.withAlpha (0.55f));
         g.drawText (valStr, tx, ry + 1, tw, kMasterH - 2, juce::Justification::centredLeft);
     };
@@ -1029,7 +1030,7 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, true, /*isGain=*/true);
-        const int tx = cx + kKnobR + kValueTextGap;
+        const int tx = cx + kKnobR + 4;
         const int tw = kKnobColW - (tx - x);
         g.setFont (DysektLookAndFeel::makeFont (16.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
@@ -1144,7 +1145,7 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
-        const int tx = cx + kKnobR + kValueTextGap;
+        const int tx = cx + kKnobR + 4;
         const int tw = kKnobColW - (tx - x) - 2;
         g.setFont (DysektLookAndFeel::makeFont (14.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
@@ -1267,7 +1268,7 @@ void MixerPanel::drawSfz2Row (juce::Graphics& g, int ry) const
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, true, /*isGain=*/true);
-        const int tx = cx + kKnobR + kValueTextGap;
+        const int tx = cx + kKnobR + 4;
         const int tw = kKnobColW - (tx - x);
         g.setFont (DysektLookAndFeel::makeFont (16.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
@@ -1376,7 +1377,7 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
-        const int tx = cx + kKnobR + kValueTextGap;
+        const int tx = cx + kKnobR + 4;
         const int tw = kKnobColW - (tx - x) - 2;
         g.setFont (DysektLookAndFeel::makeFont (14.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
