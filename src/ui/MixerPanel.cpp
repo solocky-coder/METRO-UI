@@ -506,6 +506,25 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
     g.fillEllipse ((float)cx - 2.f, (float)cy - 2.f, 4.f, 4.f);
 }
 
+// The readout sits centred in the leftover space between the knob's own
+// right edge and the column's divider line -- not left-justified hard
+// against the knob. knobCx is the knob's centre x (as passed to
+// drawKnobInRow); col identifies which column's divider bounds the text on
+// the right (colX(col) + kKnobColW - 1, matching the vertical divider lines
+// drawn in paint()).
+void MixerPanel::drawKnobValueText (juce::Graphics& g, int knobCx, Col col, int ry, int rowH,
+                                    const juce::String& text, juce::Colour colour,
+                                    float fontHeight) const
+{
+    const int knobRightEdge = knobCx + kKnobR;
+    const int dividerX      = colX (col) + kKnobColW - 1;
+    const int tw            = juce::jmax (0, dividerX - knobRightEdge);
+
+    g.setFont (DysektLookAndFeel::makeFont (fontHeight));
+    g.setColour (colour);
+    g.drawText (text, knobRightEdge, ry + 1, tw, rowH - 2, juce::Justification::centred);
+}
+
 // Flattened — was a rounded badge (2.5f corners) with a two-pass expanding
 // glow halo behind it when active. Now a flat, square-cornered badge with a
 // single flat fill/border, no glow — matching the rest of the shape language,
@@ -759,12 +778,6 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
     // ── Knob columns ────────────────────────────────────────────────────
     const int kcy = ry + kRowH / 2;
 
-    // Gap between a knob's right edge and its value text. Widened from the
-    // previous tight +4px so there's clear breathing room between the knob
-    // and the number, and so the text sits further right, per feedback that
-    // knobs and readouts were reading as visually merged together.
-    static constexpr int kValueTextGap = 14;
-
     auto drawCol = [&] (Col col, float norm, bool locked,
                          const juce::String& valStr)
     {
@@ -772,12 +785,10 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, norm, locked);
 
-        const int tx = cx + kKnobR + kValueTextGap;
-        const int tw = kKnobColW - (tx - x) - 2;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
-        g.setColour (locked ? theme.foreground.withAlpha (0.90f)
-                            : theme.foreground.withAlpha (0.40f));
-        g.drawText (valStr, tx, ry + 1, tw, kRowH - 2, juce::Justification::centredLeft);
+        drawKnobValueText (g, cx, col, ry, kRowH, valStr,
+                           locked ? theme.foreground.withAlpha (0.90f)
+                                  : theme.foreground.withAlpha (0.40f),
+                           16.0f);
     };
 
     // GAIN — isGain=true so fill is bidirectional from 12 o'clock
@@ -786,12 +797,10 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (sl.volume), gainLocked, false, /*isGain=*/true);
-        const int tx = cx + kKnobR + kValueTextGap;
-        const int tw = kKnobColW - (tx - x) - 2;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
-        g.setColour (gainLocked ? theme.foreground.withAlpha (0.90f)
-                                : theme.foreground.withAlpha (0.40f));
-        g.drawText (fmtGain (sl.volume), tx, ry + 1, tw, kRowH - 2, juce::Justification::centredLeft);
+        drawKnobValueText (g, cx, ColGain, ry, kRowH, fmtGain (sl.volume),
+                           gainLocked ? theme.foreground.withAlpha (0.90f)
+                                      : theme.foreground.withAlpha (0.40f),
+                           16.0f);
     }
 
     // PAN — horizontal bipolar slider
@@ -931,11 +940,8 @@ void MixerPanel::drawMasterRow (juce::Graphics& g, int ry) const
         const int x  = colX (col);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, norm, false, true, isGain);
-        const int tx = cx + kKnobR + 4;
-        const int tw = kKnobColW - (tx - x) - 2;
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
-        g.setColour (theme.accent.withAlpha (0.55f));
-        g.drawText (valStr, tx, ry + 1, tw, kMasterH - 2, juce::Justification::centredLeft);
+        drawKnobValueText (g, cx, col, ry, kMasterH, valStr,
+                           theme.accent.withAlpha (0.55f), 14.0f);
     };
 
     drawMasterCol (ColGain, toNormGain (masterDb),  fmtGain (masterDb), /*isGain=*/true);
@@ -1030,11 +1036,8 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, true, /*isGain=*/true);
-        const int tx = cx + kKnobR + 4;
-        const int tw = kKnobColW - (tx - x);
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
-        g.setColour (theme.foreground.withAlpha (0.40f));
-        g.drawText (fmtGain (volDb), tx, ry + 1, tw, kSf2RowH - 2, juce::Justification::centredLeft);
+        drawKnobValueText (g, cx, ColGain, ry, kSf2RowH, fmtGain (volDb),
+                           theme.foreground.withAlpha (0.40f), 16.0f);
     }
 
     // PAN slider
@@ -1145,12 +1148,8 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
-        const int tx = cx + kKnobR + 4;
-        const int tw = kKnobColW - (tx - x) - 2;
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
-        g.setColour (theme.foreground.withAlpha (0.40f));
-        g.drawText (fmtGain (volDb), tx, ry + 1, tw, kSf2ChRowH - 2,
-                    juce::Justification::centredLeft);
+        drawKnobValueText (g, cx, ColGain, ry, kSf2ChRowH, fmtGain (volDb),
+                           theme.foreground.withAlpha (0.40f), 14.0f);
     }
 
     // PAN slider
@@ -1268,11 +1267,8 @@ void MixerPanel::drawSfz2Row (juce::Graphics& g, int ry) const
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, true, /*isGain=*/true);
-        const int tx = cx + kKnobR + 4;
-        const int tw = kKnobColW - (tx - x);
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
-        g.setColour (theme.foreground.withAlpha (0.40f));
-        g.drawText (fmtGain (volDb), tx, ry + 1, tw, kSf2RowH - 2, juce::Justification::centredLeft);
+        drawKnobValueText (g, cx, ColGain, ry, kSf2RowH, fmtGain (volDb),
+                           theme.foreground.withAlpha (0.40f), 16.0f);
     }
 
     // PAN slider
@@ -1377,12 +1373,8 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
-        const int tx = cx + kKnobR + 4;
-        const int tw = kKnobColW - (tx - x) - 2;
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
-        g.setColour (theme.foreground.withAlpha (0.40f));
-        g.drawText (fmtGain (volDb), tx, ry + 1, tw, kSf2ChRowH - 2,
-                    juce::Justification::centredLeft);
+        drawKnobValueText (g, cx, ColGain, ry, kSf2ChRowH, fmtGain (volDb),
+                           theme.foreground.withAlpha (0.40f), 14.0f);
     }
 
     // PAN slider
