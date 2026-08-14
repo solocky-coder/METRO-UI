@@ -37,6 +37,13 @@ public:
     static constexpr int kMasterH     = 56;
     /** Height of the SF-PLAYER header row. */
     static constexpr int kSf2RowH     = 52;
+    /** Height of the thin section-label divider drawn above the SF-PLAYER,
+        SFZ-PLAYER, and MASTER sections (v27 flat-metro layout rework —
+        replaces the old implicit ordering with an explicit labelled band,
+        so each section reads clearly at a glance). Not drawn above the
+        slice section — the column-header row's "SLICE" label already
+        serves that purpose. */
+    static constexpr int kSectionLabelH = 16;
     /** Height of each per-channel sub-row under the SF-PLAYER row. */
     static constexpr int kSf2ChRowH   = 42;
     /** Width of the slice name column. */
@@ -161,6 +168,9 @@ private:
     void drawChroBadge (juce::Graphics&, int cx, int cy, int channel, bool locked) const;
     void drawMeter     (juce::Graphics&, int x, int y, int w, int h,
                         float peakL, float peakR, juce::Colour tint, int sliceIdx) const;
+    /** Thin flat divider band with an upper-case label, drawn immediately
+        above a section's first row (see kSectionLabelH). */
+    void drawSectionLabel (juce::Graphics&, int y, const juce::String& text) const;
 
     juce::String fmtGain (float db)      const;
     juce::String fmtPan  (float pan)     const;

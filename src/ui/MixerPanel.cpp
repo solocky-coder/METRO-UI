@@ -75,7 +75,8 @@ int MixerPanel::sf2TotalH() const
     // SF-PLAYER header row (aggregate gain/pan/meter) is enough on its own.
     // sf2Channels is still populated by setActiveChannels() (other UI may
     // still want that data), it's just not consulted for mixer layout here.
-    return kSf2RowH;
+    // v27: includes the section-label band drawn immediately above the row.
+    return kSectionLabelH + kSf2RowH;
 }
 
 int MixerPanel::sf2ChRowY (int chRowIdx) const
@@ -117,14 +118,18 @@ int MixerPanel::sfz2TotalH() const
     // read it back out, and no channel could ever appear.
     const int visibleZones = n > 0 ? (int) collectVisibleSlices (snap2).size() : 0;
     processor.releaseUiSliceSnapshot2();
-    return n > 0 ? kSf2RowH + visibleZones * kSf2ChRowH : 0;
+    // v27: includes the section-label band drawn immediately above the row,
+    // same treatment as sf2TotalH() — only present at all once n > 0.
+    return n > 0 ? kSectionLabelH + kSf2RowH + visibleZones * kSf2ChRowH : 0;
 }
 
 int MixerPanel::sfz2RowY() const
 {
-    // Sits directly below the SF-PLAYER section (header + any channel rows),
-    // above Master.
-    return sf2RowY() + sf2TotalH();
+    // Sits directly below the SF-PLAYER section (header + its own label),
+    // above Master. Adds its own kSectionLabelH to skip past its label band
+    // — do not route this through sf2TotalH()/sfz2TotalH(), which now each
+    // already include their *own* label height and would double-count.
+    return sf2RowY() + kSf2RowH + kSectionLabelH;
 }
 
 int MixerPanel::sfz2ChRowY (int chRowIdx) const
@@ -156,7 +161,7 @@ void MixerPanel::updateFromSnapshot()
             if (visRow >= 0)
             {
                 const int visTop    = kHeaderH;
-                const int visBottom = getHeight() - sf2TotalH() - sfz2TotalH() - kMasterH;
+                const int visBottom = getHeight() - sf2TotalH() - sfz2TotalH() - kSectionLabelH - kMasterH;
                 const int visH      = visBottom - visTop;
 
                 const int rowTop    = kHeaderH + visRow * kRowH - scrollPixels;
@@ -168,7 +173,7 @@ void MixerPanel::updateFromSnapshot()
                     scrollPixels = kHeaderH + visRow * kRowH - (visH - kRowH);
 
                 // Clamp to valid scroll range
-                const int totalH  = (int) visible.size() * kRowH + kMasterH + sf2TotalH() + sfz2TotalH();
+                const int totalH  = (int) visible.size() * kRowH + kSectionLabelH + kMasterH + sf2TotalH() + sfz2TotalH();
                 const int maxScroll = juce::jmax (0, totalH - (getHeight() - kHeaderH));
                 scrollPixels = juce::jlimit (0, maxScroll, scrollPixels);
             }
@@ -202,11 +207,13 @@ int MixerPanel::sf2RowY() const
 
 int MixerPanel::masterRowY() const
 {
-    // Master row is at the very bottom, below the full SF section (header + channel rows)
-    // and below the SFZ-Player row (if a .sfz file is loaded).
+    // Master row is at the very bottom, below the full SF section (header,
+    // including its own label) and below the SFZ-Player row (if loaded,
+    // including its own label). +kSectionLabelH skips Master's own label
+    // band, drawn immediately above it.
     const auto& snap = processor.getUiSliceSnapshot();
     const int visibleCount = (int) collectVisibleSlices (snap).size();
-    return kHeaderH + visibleCount * kRowH + sf2TotalH() + sfz2TotalH() - scrollPixels;
+    return kHeaderH + visibleCount * kRowH + sf2TotalH() + sfz2TotalH() - scrollPixels + kSectionLabelH;
 }
 
 MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
@@ -229,56 +236,73 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
         c.row = visible[(size_t) logicalRow];   // map display row -> real slice index
         c.isMaster = false;
     }
-    else if (relY >= visibleCount * kRowH &&
-             relY <  visibleCount * kRowH + kSf2RowH)
+    else
     {
-        c.row = -2;
-        c.isSf2 = true;
-    }
-    else if (relY >= visibleCount * kRowH + kSf2RowH &&
-             relY <  visibleCount * kRowH + sf2TotalH())
-    {
-        // Which channel sub-row?
-        const int chIdx = (relY - visibleCount * kRowH - kSf2RowH) / kSf2ChRowH;
-        if (chIdx >= 0 && chIdx < (int) sf2Channels.size())
+        // v27: each section below the slice rows is now [label band][row(s)],
+        // with the label band deliberately not hit-testable (same as the
+        // kHeaderH check at the top of this function). Boundaries are
+        // derived the same way sf2TotalH()/sfz2TotalH()/masterRowY() are,
+        // so keep those four in sync if this ever changes.
+        const int sf2LabelStart = visibleCount * kRowH;
+        const int sf2RowStart   = sf2LabelStart + kSectionLabelH;
+        const int sf2RowEnd     = sf2RowStart + kSf2RowH;                 // == sf2LabelStart + sf2TotalH()
+
+        const int sfzTotal      = sfz2TotalH();                          // 0 when no .sfz file loaded
+        const int sfzLabelStart = sf2RowEnd;
+        const int sfzRowStart   = sfzLabelStart + (sfzTotal > 0 ? kSectionLabelH : 0);
+        const int sfzRowEnd     = sfzRowStart + juce::jmax (0, sfzTotal - kSectionLabelH);
+
+        const int masterLabelStart = sfzTotal > 0 ? sfzRowEnd : sfzLabelStart;
+        const int masterRowStart   = masterLabelStart + kSectionLabelH;
+        const int masterRowEnd     = masterRowStart + kMasterH;
+
+        if (relY >= sf2LabelStart && relY < sf2RowStart)
         {
-            c.isSf2Ch   = true;
-            c.sf2Channel = sf2Channels[(size_t) chIdx].channel;
-            c.row = -4 - chIdx;  // sentinel: negative, distinct from master/sf2
+            return c;   // SF-PLAYER section label band — no hit
         }
-        else return c;
-    }
-    else if (relY >= visibleCount * kRowH + sf2TotalH() &&
-             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH())
-    {
-        const int localY = relY - visibleCount * kRowH - sf2TotalH();
-        if (localY < kSf2RowH)
+        else if (relY >= sf2RowStart && relY < sf2RowEnd)
         {
-            c.row = -3;
-            c.isSfz2 = true;
+            c.row = -2;
+            c.isSf2 = true;
         }
-        else
+        else if (sfzTotal > 0 && relY >= sfzLabelStart && relY < sfzRowStart)
         {
-            const auto& snap2 = processor.getUiSliceSnapshot2();
-            const auto  visibleZones = collectVisibleSlices (snap2);
-            processor.releaseUiSliceSnapshot2();
-            const int zoneChIdx = (localY - kSf2RowH) / kSf2ChRowH;
-            if (zoneChIdx >= 0 && zoneChIdx < (int) visibleZones.size())
+            return c;   // SFZ-PLAYER section label band — no hit
+        }
+        else if (sfzTotal > 0 && relY >= sfzRowStart && relY < sfzRowEnd)
+        {
+            const int localY = relY - sfzRowStart;
+            if (localY < kSf2RowH)
             {
-                c.isSfz2Ch    = true;
-                c.sfz2ZoneIdx = visibleZones[(size_t) zoneChIdx];
-                c.row = -100 - zoneChIdx;  // sentinel: negative, distinct from sf2Ch's -4-i
+                c.row = -3;
+                c.isSfz2 = true;
             }
-            else return c;
+            else
+            {
+                const auto& snap2 = processor.getUiSliceSnapshot2();
+                const auto  visibleZones = collectVisibleSlices (snap2);
+                processor.releaseUiSliceSnapshot2();
+                const int zoneChIdx = (localY - kSf2RowH) / kSf2ChRowH;
+                if (zoneChIdx >= 0 && zoneChIdx < (int) visibleZones.size())
+                {
+                    c.isSfz2Ch    = true;
+                    c.sfz2ZoneIdx = visibleZones[(size_t) zoneChIdx];
+                    c.row = -100 - zoneChIdx;  // sentinel: negative, distinct from sf2Ch's -4-i
+                }
+                else return c;
+            }
         }
+        else if (relY >= masterLabelStart && relY < masterRowStart)
+        {
+            return c;   // MASTER section label band — no hit
+        }
+        else if (relY >= masterRowStart && relY < masterRowEnd)
+        {
+            c.row = -1;
+            c.isMaster = true;
+        }
+        else return c;  // below content
     }
-    else if (relY >= visibleCount * kRowH + sf2TotalH() + sfz2TotalH() &&
-             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH)
-    {
-        c.row = -1;
-        c.isMaster = true;
-    }
-    else return c;  // below content
 
     // Which column?
     const int cx = pos.x;
@@ -510,6 +534,23 @@ void MixerPanel::drawMuteBadge (juce::Graphics& g, int cx, int cy,
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : theme.foreground.withAlpha (0.3f));
     g.drawText (juce::String (muteGroup), r.toNearestInt(), juce::Justification::centred);
+}
+
+void MixerPanel::drawSectionLabel (juce::Graphics& g, int y, const juce::String& text) const
+{
+    const auto& theme = getTheme();
+
+    // Flat divider band — same square-corner, no-gradient language as the
+    // rest of the panel (see drawMeter's v27 rework). Deliberately not part
+    // of any row's hit-test region (see hitTest()'s label-band checks).
+    g.setColour (theme.darkBar.darker (0.15f));
+    g.fillRect (0, y, getWidth(), kSectionLabelH);
+    g.setColour (theme.separator.withAlpha (0.35f));
+    g.drawHorizontalLine (y + kSectionLabelH - 1, 0.f, (float) getWidth());
+
+    g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
+    g.setColour (theme.foreground.withAlpha (0.42f));
+    g.drawText (text, 10, y, getWidth() - 20, kSectionLabelH, juce::Justification::centredLeft);
 }
 
 void MixerPanel::drawHeader (juce::Graphics& g) const
@@ -1439,9 +1480,11 @@ void MixerPanel::paint (juce::Graphics& g)
         }
     }
 
+    drawSectionLabel (g, sf2RowY() - kSectionLabelH, "SF-PLAYER");
     drawSf2Row    (g, sf2RowY());
     if (sfz2TotalH() > 0)
     {
+        drawSectionLabel (g, sfz2RowY() - kSectionLabelH, "SFZ-PLAYER");
         drawSfz2Row (g, sfz2RowY());
         const auto& snap2 = processor.getUiSliceSnapshot2();
         const auto  visibleZones = collectVisibleSlices (snap2);
@@ -1449,6 +1492,7 @@ void MixerPanel::paint (juce::Graphics& g)
         for (int i = 0; i < (int) visibleZones.size(); ++i)
             drawSfz2ChannelRow (g, sfz2ChRowY (i), visibleZones[(size_t) i]);
     }
+    drawSectionLabel (g, masterRowY() - kSectionLabelH, "MASTER");
     drawMasterRow (g, masterRowY());
 
     // Column dividers
@@ -2080,7 +2124,7 @@ void MixerPanel::mouseWheelMove (const juce::MouseEvent&,
 {
     const auto& snap = processor.getUiSliceSnapshot();
     const int visibleCount = (int) collectVisibleSlices (snap).size();
-    const int contentH = visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH;
+    const int contentH = visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kSectionLabelH + kMasterH;
     const int visibleH = getHeight() - kHeaderH;
     const int maxScroll = juce::jmax (0, contentH - visibleH);
 
