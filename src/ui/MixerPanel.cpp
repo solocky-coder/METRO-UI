@@ -395,7 +395,17 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
     g.drawEllipse ((float)cx - (r + 3.5f), (float)cy - (r + 3.5f), (r + 3.5f) * 2.f, (r + 3.5f) * 2.f, 1.0f);
 
     // Track arc (background) — 270° sweep, 7 o'clock → 5 o'clock
-    const float startA  = juce::MathConstants<float>::pi * 0.75f;
+    //
+    // juce::Path::addCentredArc measures angles clockwise from 12 o'clock.
+    // "7 o'clock" as a raw compass position is pi*0.75 rad *only* in the
+    // unshifted (cos/sin) convention that DualLcdControlFrame's pointer-line
+    // math uses — for addCentredArc's convention it must be shifted by
+    // +halfPi first (see DualLcdControlFrame.cpp's kStart -> arcStart).
+    // Passing pi*0.75 straight into addCentredArc (as this used to do)
+    // actually lands the sweep's start ~90° early, which is why the 0 dB
+    // indicator was rendering at 9 o'clock instead of 12 o'clock.
+    const float startA  = juce::MathConstants<float>::pi * 0.75f
+                         + juce::MathConstants<float>::halfPi;
     const float arcLen  = juce::MathConstants<float>::pi * 1.5f;
     juce::Path track;
     track.addCentredArc ((float)cx, (float)cy, r, r, 0.f, startA, startA + arcLen, true);
