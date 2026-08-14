@@ -690,12 +690,16 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
                 g.strokePath (fill, juce::PathStrokeType (sf1 (2.2f)));
             }
 
-            // 0 dB tick marker
+            // 0 dB tick marker. zeroAngle is in the JUCE-shifted (arcStart-based)
+            // convention used for addCentredArc above; std::cos/sin below need the
+            // unshifted kStart-based convention (same one the pointer line uses),
+            // so subtract back out the halfPi shift.
+            const float zeroAngleM = zeroAngle - halfPi;
             g.setColour (fg.withAlpha (0.35f));
-            g.drawLine ((float)k2cx + (float)(kr - 3) * std::cos (zeroAngle),
-                        (float)kcy  + (float)(kr - 3) * std::sin (zeroAngle),
-                        (float)k2cx + (float)kr * std::cos (zeroAngle),
-                        (float)kcy  + (float)kr * std::sin (zeroAngle), 1.0f);
+            g.drawLine ((float)k2cx + (float)(kr - 3) * std::cos (zeroAngleM),
+                        (float)kcy  + (float)(kr - 3) * std::sin (zeroAngleM),
+                        (float)k2cx + (float)kr * std::cos (zeroAngleM),
+                        (float)kcy  + (float)kr * std::sin (zeroAngleM), 1.0f);
 
             // Pointer line
             float angle = kStart + volN * arcLen;

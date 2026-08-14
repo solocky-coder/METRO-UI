@@ -71,12 +71,7 @@ void MixerPanel::setActiveChannels (const std::vector<Sf2PresetInfo>& presets,
 // ─────────────────────────────────────────────────────────────────────────────
 int MixerPanel::sf2TotalH() const
 {
-    // Per-channel sub-rows are no longer shown in the mixer — the
-    // SF-PLAYER header row (aggregate gain/pan/meter) is enough on its own.
-    // sf2Channels is still populated by setActiveChannels() (other UI may
-    // still want that data), it's just not consulted for mixer layout here.
-    // v27: includes the section-label band drawn immediately above the row.
-    return kSectionLabelH + kSf2RowH;
+    return kSf2RowH + (int) sf2Channels.size() * kSf2ChRowH;
 }
 
 int MixerPanel::sf2ChRowY (int chRowIdx) const
@@ -118,18 +113,14 @@ int MixerPanel::sfz2TotalH() const
     // read it back out, and no channel could ever appear.
     const int visibleZones = n > 0 ? (int) collectVisibleSlices (snap2).size() : 0;
     processor.releaseUiSliceSnapshot2();
-    // v27: includes the section-label band drawn immediately above the row,
-    // same treatment as sf2TotalH() — only present at all once n > 0.
-    return n > 0 ? kSectionLabelH + kSf2RowH + visibleZones * kSf2ChRowH : 0;
+    return n > 0 ? kSf2RowH + visibleZones * kSf2ChRowH : 0;
 }
 
 int MixerPanel::sfz2RowY() const
 {
-    // Sits directly below the SF-PLAYER section (header + its own label),
-    // above Master. Adds its own kSectionLabelH to skip past its label band
-    // — do not route this through sf2TotalH()/sfz2TotalH(), which now each
-    // already include their *own* label height and would double-count.
-    return sf2RowY() + kSf2RowH + kSectionLabelH;
+    // Sits directly below the SF-PLAYER section (header + any channel rows),
+    // above Master.
+    return sf2RowY() + sf2TotalH();
 }
 
 int MixerPanel::sfz2ChRowY (int chRowIdx) const
@@ -161,7 +152,7 @@ void MixerPanel::updateFromSnapshot()
             if (visRow >= 0)
             {
                 const int visTop    = kHeaderH;
-                const int visBottom = getHeight() - sf2TotalH() - sfz2TotalH() - kSectionLabelH - kMasterH;
+                const int visBottom = getHeight() - sf2TotalH() - sfz2TotalH() - kMasterH;
                 const int visH      = visBottom - visTop;
 
                 const int rowTop    = kHeaderH + visRow * kRowH - scrollPixels;
@@ -173,7 +164,7 @@ void MixerPanel::updateFromSnapshot()
                     scrollPixels = kHeaderH + visRow * kRowH - (visH - kRowH);
 
                 // Clamp to valid scroll range
-                const int totalH  = (int) visible.size() * kRowH + kSectionLabelH + kMasterH + sf2TotalH() + sfz2TotalH();
+                const int totalH  = (int) visible.size() * kRowH + kMasterH + sf2TotalH() + sfz2TotalH();
                 const int maxScroll = juce::jmax (0, totalH - (getHeight() - kHeaderH));
                 scrollPixels = juce::jlimit (0, maxScroll, scrollPixels);
             }
@@ -200,22 +191,18 @@ int MixerPanel::rowY (int sliceIdx) const
 int MixerPanel::sf2RowY() const
 {
     // SF-PLAYER row sits immediately below the slice rows, above Master.
-    // +kSectionLabelH skips past this section's own label band, drawn
-    // immediately above it (matches sfz2RowY()/masterRowY()).
     const auto& snap = processor.getUiSliceSnapshot();
     const int visibleCount = (int) collectVisibleSlices (snap).size();
-    return kHeaderH + visibleCount * kRowH - scrollPixels + kSectionLabelH;
+    return kHeaderH + visibleCount * kRowH - scrollPixels;
 }
 
 int MixerPanel::masterRowY() const
 {
-    // Master row is at the very bottom, below the full SF section (header,
-    // including its own label) and below the SFZ-Player row (if loaded,
-    // including its own label). +kSectionLabelH skips Master's own label
-    // band, drawn immediately above it.
+    // Master row is at the very bottom, below the full SF section (header + channel rows)
+    // and below the SFZ-Player row (if a .sfz file is loaded).
     const auto& snap = processor.getUiSliceSnapshot();
     const int visibleCount = (int) collectVisibleSlices (snap).size();
-    return kHeaderH + visibleCount * kRowH + sf2TotalH() + sfz2TotalH() - scrollPixels + kSectionLabelH;
+    return kHeaderH + visibleCount * kRowH + sf2TotalH() + sfz2TotalH() - scrollPixels;
 }
 
 MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
@@ -238,73 +225,56 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
         c.row = visible[(size_t) logicalRow];   // map display row -> real slice index
         c.isMaster = false;
     }
-    else
+    else if (relY >= visibleCount * kRowH &&
+             relY <  visibleCount * kRowH + kSf2RowH)
     {
-        // v27: each section below the slice rows is now [label band][row(s)],
-        // with the label band deliberately not hit-testable (same as the
-        // kHeaderH check at the top of this function). Boundaries are
-        // derived the same way sf2TotalH()/sfz2TotalH()/masterRowY() are,
-        // so keep those four in sync if this ever changes.
-        const int sf2LabelStart = visibleCount * kRowH;
-        const int sf2RowStart   = sf2LabelStart + kSectionLabelH;
-        const int sf2RowEnd     = sf2RowStart + kSf2RowH;                 // == sf2LabelStart + sf2TotalH()
-
-        const int sfzTotal      = sfz2TotalH();                          // 0 when no .sfz file loaded
-        const int sfzLabelStart = sf2RowEnd;
-        const int sfzRowStart   = sfzLabelStart + (sfzTotal > 0 ? kSectionLabelH : 0);
-        const int sfzRowEnd     = sfzRowStart + juce::jmax (0, sfzTotal - kSectionLabelH);
-
-        const int masterLabelStart = sfzTotal > 0 ? sfzRowEnd : sfzLabelStart;
-        const int masterRowStart   = masterLabelStart + kSectionLabelH;
-        const int masterRowEnd     = masterRowStart + kMasterH;
-
-        if (relY >= sf2LabelStart && relY < sf2RowStart)
-        {
-            return c;   // SF-PLAYER section label band — no hit
-        }
-        else if (relY >= sf2RowStart && relY < sf2RowEnd)
-        {
-            c.row = -2;
-            c.isSf2 = true;
-        }
-        else if (sfzTotal > 0 && relY >= sfzLabelStart && relY < sfzRowStart)
-        {
-            return c;   // SFZ-PLAYER section label band — no hit
-        }
-        else if (sfzTotal > 0 && relY >= sfzRowStart && relY < sfzRowEnd)
-        {
-            const int localY = relY - sfzRowStart;
-            if (localY < kSf2RowH)
-            {
-                c.row = -3;
-                c.isSfz2 = true;
-            }
-            else
-            {
-                const auto& snap2 = processor.getUiSliceSnapshot2();
-                const auto  visibleZones = collectVisibleSlices (snap2);
-                processor.releaseUiSliceSnapshot2();
-                const int zoneChIdx = (localY - kSf2RowH) / kSf2ChRowH;
-                if (zoneChIdx >= 0 && zoneChIdx < (int) visibleZones.size())
-                {
-                    c.isSfz2Ch    = true;
-                    c.sfz2ZoneIdx = visibleZones[(size_t) zoneChIdx];
-                    c.row = -100 - zoneChIdx;  // sentinel: negative, distinct from sf2Ch's -4-i
-                }
-                else return c;
-            }
-        }
-        else if (relY >= masterLabelStart && relY < masterRowStart)
-        {
-            return c;   // MASTER section label band — no hit
-        }
-        else if (relY >= masterRowStart && relY < masterRowEnd)
-        {
-            c.row = -1;
-            c.isMaster = true;
-        }
-        else return c;  // below content
+        c.row = -2;
+        c.isSf2 = true;
     }
+    else if (relY >= visibleCount * kRowH + kSf2RowH &&
+             relY <  visibleCount * kRowH + sf2TotalH())
+    {
+        // Which channel sub-row?
+        const int chIdx = (relY - visibleCount * kRowH - kSf2RowH) / kSf2ChRowH;
+        if (chIdx >= 0 && chIdx < (int) sf2Channels.size())
+        {
+            c.isSf2Ch   = true;
+            c.sf2Channel = sf2Channels[(size_t) chIdx].channel;
+            c.row = -4 - chIdx;  // sentinel: negative, distinct from master/sf2
+        }
+        else return c;
+    }
+    else if (relY >= visibleCount * kRowH + sf2TotalH() &&
+             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH())
+    {
+        const int localY = relY - visibleCount * kRowH - sf2TotalH();
+        if (localY < kSf2RowH)
+        {
+            c.row = -3;
+            c.isSfz2 = true;
+        }
+        else
+        {
+            const auto& snap2 = processor.getUiSliceSnapshot2();
+            const auto  visibleZones = collectVisibleSlices (snap2);
+            processor.releaseUiSliceSnapshot2();
+            const int zoneChIdx = (localY - kSf2RowH) / kSf2ChRowH;
+            if (zoneChIdx >= 0 && zoneChIdx < (int) visibleZones.size())
+            {
+                c.isSfz2Ch    = true;
+                c.sfz2ZoneIdx = visibleZones[(size_t) zoneChIdx];
+                c.row = -100 - zoneChIdx;  // sentinel: negative, distinct from sf2Ch's -4-i
+            }
+            else return c;
+        }
+    }
+    else if (relY >= visibleCount * kRowH + sf2TotalH() + sfz2TotalH() &&
+             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH)
+    {
+        c.row = -1;
+        c.isMaster = true;
+    }
+    else return c;  // below content
 
     // Which column?
     const int cx = pos.x;
@@ -381,20 +351,9 @@ juce::String MixerPanel::fmtMute (int mg) const
 // ─────────────────────────────────────────────────────────────────────────────
 //  Norm helpers
 // ─────────────────────────────────────────────────────────────────────────────
-// 0 dB maps to 0.5 (12 o'clock). The two halves of the dial are NOT
-// symmetric -- they mirror the real gain range used everywhere else
-// (masterVolume's NormalisableRange in ParamLayout.cpp, and the -100.f/24.f
-// clamps in this file's own mouseDrag): boost half (0.5 -> 1.0, CW) covers
-// 0 .. +24 dB; cut half (0.0 -> 0.5, CCW) covers -100 .. 0 dB. A previous
-// version of this function assumed a symmetric +-24 dB span, which put the
-// knob's dot/arc badly out of sync with the actual dB readout for any value
-// below -24 dB (e.g. -24 dB rendered as if it were the -100 dB floor).
-float MixerPanel::toNormGain (float db)  const
-{
-    if (db >= 0.f)
-        return juce::jlimit (0.5f, 1.f, 0.5f + (db / 24.f)  * 0.5f);
-    return juce::jlimit (0.f, 0.5f, 0.5f + (db / 100.f) * 0.5f);
-}
+// 0 dB maps to 0.5 (12 o'clock).  Range: -24 dB (fully CCW) → +24 dB (fully CW).
+// Values below -24 clamp to 0; values above +24 clamp to 1.
+float MixerPanel::toNormGain (float db)  const { return juce::jlimit (0.f, 1.f, (db + 24.f) / 48.f); }
 float MixerPanel::toNormPan  (float pan) const { return juce::jlimit (0.f, 1.f, (pan + 1.f) * 0.5f); }
 float MixerPanel::toNormFcut (float hz)  const
 {
@@ -469,12 +428,16 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
             g.strokePath (fill, juce::PathStrokeType (1.5f));
         }
 
-        // Small centre-tick marker at 12 o'clock so 0 dB is always visible
-        const float tx = (float)cx + r * std::cos (zeroAngle);
-        const float ty = (float)cy + r * std::sin (zeroAngle);
+        // Small centre-tick marker at 12 o'clock so 0 dB is always visible.
+        // zeroAngle is in JUCE's arc convention (0 = 12 o'clock, clockwise);
+        // std::cos/sin expect the standard convention (0 = 3 o'clock). Offset
+        // by -halfPi to convert, same as the arc/indicator fix elsewhere.
+        const float zeroAngleM = zeroAngle - juce::MathConstants<float>::halfPi;
+        const float tx = (float)cx + r * std::cos (zeroAngleM);
+        const float ty = (float)cy + r * std::sin (zeroAngleM);
         g.setColour (theme.foreground.withAlpha (0.30f));
-        g.drawLine ((float)cx + (r - 2.f) * std::cos (zeroAngle),
-                    (float)cy + (r - 2.f) * std::sin (zeroAngle),
+        g.drawLine ((float)cx + (r - 2.f) * std::cos (zeroAngleM),
+                    (float)cy + (r - 2.f) * std::sin (zeroAngleM),
                     tx, ty, 1.0f);
     }
     else
@@ -497,8 +460,9 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
     // (0 dB / 0%) without becoming a stray line at this knob's small size.
     {
         const float indAngle = startA + arcLen * normC0;
-        const float ix = (float)cx + r * std::cos (indAngle);
-        const float iy = (float)cy + r * std::sin (indAngle);
+        const float indAngleM = indAngle - juce::MathConstants<float>::halfPi;
+        const float ix = (float)cx + r * std::cos (indAngleM);
+        const float iy = (float)cy + r * std::sin (indAngleM);
         g.setColour (locked ? theme.lockActive : theme.foreground.withAlpha (0.85f));
         g.fillEllipse (ix - 1.5f, iy - 1.5f, 3.f, 3.f);
     }
@@ -506,25 +470,6 @@ void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
     // Centre dot
     g.setColour (locked ? theme.lockActive.withAlpha (0.7f) : theme.accent.withAlpha (0.55f));
     g.fillEllipse ((float)cx - 2.f, (float)cy - 2.f, 4.f, 4.f);
-}
-
-// The readout sits centred in the leftover space between the knob's own
-// right edge and the column's divider line -- not left-justified hard
-// against the knob. knobCx is the knob's centre x (as passed to
-// drawKnobInRow); col identifies which column's divider bounds the text on
-// the right (colX(col) + kKnobColW - 1, matching the vertical divider lines
-// drawn in paint()).
-void MixerPanel::drawKnobValueText (juce::Graphics& g, int knobCx, Col col, int ry, int rowH,
-                                    const juce::String& text, juce::Colour colour,
-                                    float fontHeight) const
-{
-    const int knobRightEdge = knobCx + kKnobR;
-    const int dividerX      = colX (col) + kKnobColW - 1;
-    const int tw            = juce::jmax (0, dividerX - knobRightEdge);
-
-    g.setFont (DysektLookAndFeel::makeFont (fontHeight));
-    g.setColour (colour);
-    g.drawText (text, knobRightEdge, ry + 1, tw, rowH - 2, juce::Justification::centred);
 }
 
 // Flattened — was a rounded badge (2.5f corners) with a two-pass expanding
@@ -566,23 +511,6 @@ void MixerPanel::drawMuteBadge (juce::Graphics& g, int cx, int cy,
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : theme.foreground.withAlpha (0.3f));
     g.drawText (juce::String (muteGroup), r.toNearestInt(), juce::Justification::centred);
-}
-
-void MixerPanel::drawSectionLabel (juce::Graphics& g, int y, const juce::String& text) const
-{
-    const auto& theme = getTheme();
-
-    // Flat divider band — same square-corner, no-gradient language as the
-    // rest of the panel (see drawMeter's v27 rework). Deliberately not part
-    // of any row's hit-test region (see hitTest()'s label-band checks).
-    g.setColour (theme.darkBar.darker (0.15f));
-    g.fillRect (0, y, getWidth(), kSectionLabelH);
-    g.setColour (theme.separator.withAlpha (0.35f));
-    g.drawHorizontalLine (y + kSectionLabelH - 1, 0.f, (float) getWidth());
-
-    g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
-    g.setColour (theme.foreground.withAlpha (0.42f));
-    g.drawText (text, 10, y, getWidth() - 20, kSectionLabelH, juce::Justification::centredLeft);
 }
 
 void MixerPanel::drawHeader (juce::Graphics& g) const
@@ -640,75 +568,108 @@ void MixerPanel::drawMeter (juce::Graphics& g,
                              float peakL, float peakR,
                              juce::Colour tint, int si) const
 {
-    // ── Flat metro segmented meter ────────────────────────────────────────
-    // v27 UI rework: discrete LED-style blocks (L top, R bottom) instead of
-    // the old continuous phosphor-glow fill. Matches the flat/sharp-corner,
-    // no-gradient language already used everywhere else in this panel
-    // (drawKnobInRow, the pan-slider tracks — see their "flat, square
-    // corners" comments). Hard colour break per zone instead of an
-    // interpolated gradient; hold marker is a flat highlighted segment
-    // instead of a glowing hairline. dB tick labels are dropped — the
-    // segment boundaries themselves are the resolution the meter now reads
-    // at, and labels underneath every row were the biggest single source of
-    // clutter in the old design.
+    // ── Phosphor hairline meter ───────────────────────────────────────────
+    // Two channels (L top, R bottom), each a single 1px fill bar plus a
+    // glowing 1px hold marker.  Colours shift green → yellow → red like
+    // a phosphor CRT trace.
 
-    static constexpr int kNumSegments = 24;
-    static constexpr int kSegGap      = 1;
-
-    const int gap  = 2;
-    const int barH = (h - gap) / 2;   // height of each channel bar
+    const int gap    = 2;
+    const int barH   = (h - gap) / 2;   // height of each channel bar
+    const int holdW  = 2;               // hold marker width in px
 
     // Update hold registers
     const int si2 = juce::jlimit (0, kMaxHoldSlices - 1, si);
     if (peakL > holdL[si2]) holdL[si2] = peakL;
     if (peakR > holdR[si2]) holdR[si2] = peakR;
 
-    // Perceptual mapping — sqrt gives better resolution at low levels.
+    // Perceptual mapping: sqrt gives better visual resolution in the low end
     auto toFill = [] (float pk) -> float
     {
         return std::sqrt (juce::jlimit (0.0f, 1.0f, pk));
     };
 
-    // Flat colour per segment index — green / amber / red zones, matching
-    // the same three-zone language and hex values used by
-    // Sf2ChannelFxPanel::paintMeter, just applied per-segment instead of
-    // per-pixel-gradient.
-    auto segColour = [&] (int segIdx) -> juce::Colour
+    // Phosphor colour at normalised position 0-1 along bar
+    auto phosphorCol = [&] (float pos, float /*pk*/) -> juce::Colour
     {
-        const float pos = (float) segIdx / (float) (kNumSegments - 1);
-        if (pos < 0.70f)      return tint;
-        if (pos < 0.85f)      return juce::Colour (0xFFE0C95A);
-        return juce::Colour (0xFFD9605A);
-    };
-
-    const float segW = (float) w / (float) kNumSegments;
-
-    auto drawBar = [&] (int barY, float pk, float hold)
-    {
-        const int litSegs = juce::roundToInt (toFill (pk) * (float) kNumSegments);
-        const int holdSeg = juce::jlimit (0, kNumSegments - 1,
-                                juce::roundToInt (toFill (hold) * (float) kNumSegments) - 1);
-        const bool showHold = hold > 0.01f;
-
-        for (int s = 0; s < kNumSegments; ++s)
+        if (pos < 0.70f)
         {
-            const juce::Rectangle<float> seg ((float) x + (float) s * segW, (float) barY,
-                                               juce::jmax (1.0f, segW - (float) kSegGap), (float) barH);
-
-            g.setColour (s < litSegs ? segColour (s) : juce::Colour (0xFF12201C));
-            g.fillRect (seg);
-
-            // Hold marker — brighter flat cap on the held segment, no glow
-            if (showHold && s == holdSeg)
-            {
-                g.setColour (juce::Colours::white.withAlpha (0.85f));
-                g.fillRect (seg.withHeight (2.0f));
-            }
+            // Green zone: dim base → bright phosphor green
+            const float t = pos / 0.70f;
+            return tint.withAlpha (0.25f + t * 0.65f);
+        }
+        else if (pos < 0.85f)
+        {
+            // Yellow zone
+            const float t = (pos - 0.70f) / 0.15f;
+            return tint.interpolatedWith (juce::Colour (0xFFFFE000), t)
+                       .withAlpha (0.88f);
+        }
+        else
+        {
+            // Red zone
+            const float t = (pos - 0.85f) / 0.15f;
+            return juce::Colour (0xFFFF2222).withAlpha (0.75f + t * 0.20f);
         }
     };
 
-    drawBar (y,               peakL, holdL[si2]);
-    drawBar (y + barH + gap,  peakR, holdR[si2]);
+    auto drawBar = [&] (int barY, float pk, float hold)
+    {
+        const float fill = toFill (pk);
+        const int   litW = juce::roundToInt (fill * (float)(w - holdW - 2));
+
+        // Dark background track
+        g.setColour (juce::Colour (0xFF0A0A0A));
+        g.fillRect (x, barY, w, barH);
+
+        // Thin border
+        g.setColour (juce::Colour (0xFF1E1E1E));
+        g.drawRect (x, barY, w, barH);
+
+        // Flat fill — single accent colour, no gradient
+        if (litW > 0)
+        {
+            g.setColour (phosphorCol (fill, pk));
+            g.fillRect (x + 1, barY + 1, litW, barH - 2);
+        }
+
+        // Hold marker — bright hairline, no glow
+        const float hFill = toFill (hold);
+        const int   hx    = x + 1 + juce::roundToInt (hFill * (float)(w - holdW - 2));
+        if (hFill > 0.01f && hx < x + w - 1)
+        {
+            g.setColour (phosphorCol (hFill, hold).withAlpha (0.95f));
+            g.fillRect  (hx, barY + 1, holdW, barH - 2);
+        }
+    };
+
+    drawBar (y,            peakL, holdL[si2]);
+    drawBar (y + barH + gap, peakR, holdR[si2]);
+
+    // ── dB tick marks ────────────────────────────────────────────────────
+    // Draw subtle vertical lines at -6, -12, -18, -24 dB across both bars.
+    // toFill uses sqrt mapping so we must invert: fill = sqrt(linear) → tickX.
+    struct Tick { float db; const char* label; };
+    static constexpr Tick kTicks[] = { {-6,"−6"}, {-12,"−12"}, {-18,"−18"}, {-24,"−24"} };
+    g.setFont (DysektLookAndFeel::makeFont (6.5f));
+    for (const auto& tick : kTicks)
+    {
+        const float linear = juce::Decibels::decibelsToGain (tick.db);
+        const float fill   = std::sqrt (juce::jlimit (0.0f, 1.0f, linear));
+        const int   tx     = x + 1 + juce::roundToInt (fill * (float)(w - 4));
+        if (tx <= x || tx >= x + w) continue;
+
+        // Tick line spanning both bars + gap
+        g.setColour (juce::Colour (0xFFFFFFFF).withAlpha (0.10f));
+        g.drawVerticalLine (tx, (float) y, (float)(y + barH + gap + barH));
+
+        // Label below bottom bar — only if there's enough horizontal space
+        if (tx - x > 14)
+        {
+            g.setColour (juce::Colour (0xFFFFFFFF).withAlpha (0.18f));
+            g.drawText (tick.label, tx - 10, y + barH + gap + barH + 1, 20, 6,
+                        juce::Justification::centred);
+        }
+    }
 }
 
 void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected) const
@@ -780,6 +741,12 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
     // ── Knob columns ────────────────────────────────────────────────────
     const int kcy = ry + kRowH / 2;
 
+    // Gap between a knob's right edge and its value text. Widened from the
+    // previous tight +4px so there's clear breathing room between the knob
+    // and the number, and so the text sits further right, per feedback that
+    // knobs and readouts were reading as visually merged together.
+    static constexpr int kValueTextGap = 14;
+
     auto drawCol = [&] (Col col, float norm, bool locked,
                          const juce::String& valStr)
     {
@@ -787,10 +754,12 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, norm, locked);
 
-        drawKnobValueText (g, cx, col, ry, kRowH, valStr,
-                           locked ? theme.foreground.withAlpha (0.90f)
-                                  : theme.foreground.withAlpha (0.40f),
-                           16.0f);
+        const int tx = cx + kKnobR + kValueTextGap;
+        const int tw = kKnobColW - (tx - x) - 2;
+        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setColour (locked ? theme.foreground.withAlpha (0.90f)
+                            : theme.foreground.withAlpha (0.40f));
+        g.drawText (valStr, tx, ry + 1, tw, kRowH - 2, juce::Justification::centredLeft);
     };
 
     // GAIN — isGain=true so fill is bidirectional from 12 o'clock
@@ -799,10 +768,12 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (sl.volume), gainLocked, false, /*isGain=*/true);
-        drawKnobValueText (g, cx, ColGain, ry, kRowH, fmtGain (sl.volume),
-                           gainLocked ? theme.foreground.withAlpha (0.90f)
-                                      : theme.foreground.withAlpha (0.40f),
-                           16.0f);
+        const int tx = cx + kKnobR + kValueTextGap;
+        const int tw = kKnobColW - (tx - x) - 2;
+        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setColour (gainLocked ? theme.foreground.withAlpha (0.90f)
+                                : theme.foreground.withAlpha (0.40f));
+        g.drawText (fmtGain (sl.volume), tx, ry + 1, tw, kRowH - 2, juce::Justification::centredLeft);
     }
 
     // PAN — horizontal bipolar slider
@@ -942,8 +913,11 @@ void MixerPanel::drawMasterRow (juce::Graphics& g, int ry) const
         const int x  = colX (col);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, norm, false, true, isGain);
-        drawKnobValueText (g, cx, col, ry, kMasterH, valStr,
-                           theme.accent.withAlpha (0.55f), 14.0f);
+        const int tx = cx + kKnobR + 4;
+        const int tw = kKnobColW - (tx - x) - 2;
+        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setColour (theme.accent.withAlpha (0.55f));
+        g.drawText (valStr, tx, ry + 1, tw, kMasterH - 2, juce::Justification::centredLeft);
     };
 
     drawMasterCol (ColGain, toNormGain (masterDb),  fmtGain (masterDb), /*isGain=*/true);
@@ -1038,8 +1012,11 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, true, /*isGain=*/true);
-        drawKnobValueText (g, cx, ColGain, ry, kSf2RowH, fmtGain (volDb),
-                           theme.foreground.withAlpha (0.40f), 16.0f);
+        const int tx = cx + kKnobR + 4;
+        const int tw = kKnobColW - (tx - x);
+        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setColour (theme.foreground.withAlpha (0.40f));
+        g.drawText (fmtGain (volDb), tx, ry + 1, tw, kSf2RowH - 2, juce::Justification::centredLeft);
     }
 
     // PAN slider
@@ -1095,6 +1072,11 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
         holdR[kSf2HoldSlot] = std::max (holdR[kSf2HoldSlot], pkR);
         drawMeter (g, mx, ry + 4, mw, kSf2RowH - 8, pkL, pkR, theme.accent, kSf2HoldSlot);
     }
+
+    // ── Per-channel sub-rows ───────────────────────────────────────────────
+    for (int i = 0; i < (int) sf2Channels.size(); ++i)
+        drawSf2ChannelRow (g, sf2ChRowY (i), sf2Channels[(size_t)i].channel,
+                           sf2Channels[(size_t)i].preset);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1150,8 +1132,12 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
-        drawKnobValueText (g, cx, ColGain, ry, kSf2ChRowH, fmtGain (volDb),
-                           theme.foreground.withAlpha (0.40f), 14.0f);
+        const int tx = cx + kKnobR + 4;
+        const int tw = kKnobColW - (tx - x) - 2;
+        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setColour (theme.foreground.withAlpha (0.40f));
+        g.drawText (fmtGain (volDb), tx, ry + 1, tw, kSf2ChRowH - 2,
+                    juce::Justification::centredLeft);
     }
 
     // PAN slider
@@ -1269,8 +1255,11 @@ void MixerPanel::drawSfz2Row (juce::Graphics& g, int ry) const
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, true, /*isGain=*/true);
-        drawKnobValueText (g, cx, ColGain, ry, kSf2RowH, fmtGain (volDb),
-                           theme.foreground.withAlpha (0.40f), 16.0f);
+        const int tx = cx + kKnobR + 4;
+        const int tw = kKnobColW - (tx - x);
+        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setColour (theme.foreground.withAlpha (0.40f));
+        g.drawText (fmtGain (volDb), tx, ry + 1, tw, kSf2RowH - 2, juce::Justification::centredLeft);
     }
 
     // PAN slider
@@ -1375,8 +1364,12 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
         const int x  = colX (ColGain);
         const int cx = x + kKnobR + 8;
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
-        drawKnobValueText (g, cx, ColGain, ry, kSf2ChRowH, fmtGain (volDb),
-                           theme.foreground.withAlpha (0.40f), 14.0f);
+        const int tx = cx + kKnobR + 4;
+        const int tw = kKnobColW - (tx - x) - 2;
+        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setColour (theme.foreground.withAlpha (0.40f));
+        g.drawText (fmtGain (volDb), tx, ry + 1, tw, kSf2ChRowH - 2,
+                    juce::Justification::centredLeft);
     }
 
     // PAN slider
@@ -1485,11 +1478,9 @@ void MixerPanel::paint (juce::Graphics& g)
         }
     }
 
-    drawSectionLabel (g, sf2RowY() - kSectionLabelH, "SF-PLAYER");
     drawSf2Row    (g, sf2RowY());
     if (sfz2TotalH() > 0)
     {
-        drawSectionLabel (g, sfz2RowY() - kSectionLabelH, "SFZ-PLAYER");
         drawSfz2Row (g, sfz2RowY());
         const auto& snap2 = processor.getUiSliceSnapshot2();
         const auto  visibleZones = collectVisibleSlices (snap2);
@@ -1497,7 +1488,6 @@ void MixerPanel::paint (juce::Graphics& g)
         for (int i = 0; i < (int) visibleZones.size(); ++i)
             drawSfz2ChannelRow (g, sfz2ChRowY (i), visibleZones[(size_t) i]);
     }
-    drawSectionLabel (g, masterRowY() - kSectionLabelH, "MASTER");
     drawMasterRow (g, masterRowY());
 
     // Column dividers
@@ -2129,7 +2119,7 @@ void MixerPanel::mouseWheelMove (const juce::MouseEvent&,
 {
     const auto& snap = processor.getUiSliceSnapshot();
     const int visibleCount = (int) collectVisibleSlices (snap).size();
-    const int contentH = visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kSectionLabelH + kMasterH;
+    const int contentH = visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH;
     const int visibleH = getHeight() - kHeaderH;
     const int maxScroll = juce::jmax (0, contentH - visibleH);
 
