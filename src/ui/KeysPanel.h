@@ -245,7 +245,8 @@ private:
     int   kNumBlack      = kTotalBlack;
 
     void  drawKey           (juce::Graphics&, const KeyRect&,
-                             bool hasSlice, bool hovered, bool active) const;
+                             bool hasMark, juce::Colour markColour,
+                             bool hovered, bool active) const;
     float noteToX           (int note, int kbX) const;
     float noteKeyWidth      (int note) const;
     juce::Colour zoneColourForNote (int note) const;

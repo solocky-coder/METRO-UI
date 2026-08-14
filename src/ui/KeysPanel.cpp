@@ -2,6 +2,7 @@
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
+#include <map>
 
 // =============================================================================
 // Full 128-note keyboard helpers
@@ -1116,16 +1117,25 @@ void KeysPanel::paint (juce::Graphics& g)
     }
 
     // ── Keyboard ──────────────────────────────────────────────────────────────
-    // Populate slicedNotes only when the slicer is the active mode.
-    // When the SF-player panel is shown, slicerHighlightEnabled is set to false
-    // so slicer MIDI-note assignments never produce coloured outlines on the
-    // SF-player keyboard — regardless of whether keyzones have been loaded yet.
-    std::set<int> slicedNotes;
+    // Build the mark colour for each note to highlight/label distinctly. In
+    // Slicer mode that's the theme accent for notes with a slice assigned;
+    // in SF-player mode slicerHighlightEnabled is false (slicer note
+    // assignments aren't meaningful there), so instead each note inside a
+    // loaded SFZ/SF2 zone's key range is tinted with that zone's own colour
+    // — overlapping/adjacent zones then read as visually distinct rather
+    // than all collapsing into one uniform accent highlight.
+    std::map<int, juce::Colour> noteMarkColour;
     if (slicerHighlightEnabled)
     {
         const auto& ui = processor.getUiSliceSnapshot();
         for (int s = 0; s < ui.numSlices; ++s)
-            slicedNotes.insert (ui.slices[(size_t) s].midiNote);
+            noteMarkColour[ui.slices[(size_t) s].midiNote] = getTheme().accent;
+    }
+    else
+    {
+        for (const auto& z : keyzones)
+            for (int n = z.loKey; n <= z.hiKey; ++n)
+                noteMarkColour[n] = z.colour;
     }
 
     // White keys first
@@ -1136,7 +1146,10 @@ void KeysPanel::paint (juce::Graphics& g)
         const bool midiActive = (n >= 0 && n < 128)
             ? ((n < 64 ? (sfzActiveSnap[0] >> n) : (sfzActiveSnap[1] >> (n - 64))) & 1) != 0
             : false;
-        drawKey (g, kr, slicedNotes.count (n) > 0, n == hoveredNote, n == lastActiveNote || midiActive);
+        const auto it = noteMarkColour.find (n);
+        const bool hasMark = it != noteMarkColour.end();
+        drawKey (g, kr, hasMark, hasMark ? it->second : juce::Colours::transparentBlack,
+                 n == hoveredNote, n == lastActiveNote || midiActive);
     }
     // Black keys on top
     for (const auto& kr : keyRects)
@@ -1146,7 +1159,10 @@ void KeysPanel::paint (juce::Graphics& g)
         const bool midiActive = (n >= 0 && n < 128)
             ? ((n < 64 ? (sfzActiveSnap[0] >> n) : (sfzActiveSnap[1] >> (n - 64))) & 1) != 0
             : false;
-        drawKey (g, kr, slicedNotes.count (n) > 0, n == hoveredNote, n == lastActiveNote || midiActive);
+        const auto it = noteMarkColour.find (n);
+        const bool hasMark = it != noteMarkColour.end();
+        drawKey (g, kr, hasMark, hasMark ? it->second : juce::Colours::transparentBlack,
+                 n == hoveredNote, n == lastActiveNote || midiActive);
     }
 
     // ── Root-pitch dots ───────────────────────────────────────────────────────
@@ -1177,7 +1193,8 @@ void KeysPanel::paint (juce::Graphics& g)
 // =============================================================================
 
 void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
-                          bool hasSlice, bool hovered, bool active) const
+                          bool hasMark, juce::Colour markColour,
+                          bool hovered, bool active) const
 {
     const auto& theme  = getTheme();
     const auto  accent = theme.accent;
@@ -1185,9 +1202,15 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
 
     if (! kr.isBlack)
     {
-        const juce::Colour fillCol = active  ? accent.withBrightness (0.92f).withAlpha (0.9f)
-                                    : hovered ? juce::Colour (0xFFF4F4F4)
-                                              : juce::Colour (0xFFECECEC);
+        juce::Colour fillCol = active  ? accent.withBrightness (0.92f).withAlpha (0.9f)
+                              : hovered ? juce::Colour (0xFFF4F4F4)
+                                        : juce::Colour (0xFFECECEC);
+
+        // Wash the key with a light tint of its zone's own colour, rather
+        // than a single uniform accent border — lets overlapping/adjacent
+        // zones read as visually distinct at a glance.
+        if (hasMark && ! active)
+            fillCol = fillCol.interpolatedWith (markColour, 0.22f);
 
         g.setColour (fillCol);
         g.fillRoundedRectangle (b.reduced (0.5f, 0.f).withTrimmedBottom (-4.f), 0.0f);
@@ -1199,26 +1222,30 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
         if ((kr.note % 12) == 0 && b.getWidth() >= 6.f)
         {
             // Label was previously 8pt shoved into the last 12px of the key —
-            // effectively unreadable. Bumped up considerably and given more
-            // vertical room so it's actually legible at a glance.
-            g.setFont   (DysektLookAndFeel::makeFont (16.0f));
-            g.setColour (hasSlice ? accent.withAlpha (0.9f) : juce::Colour (0xFF505050));
+            // effectively unreadable. Bumped up considerably, made bold and
+            // pure black, and given more vertical room so it's actually
+            // legible at a glance against the light key surface.
+            g.setFont   (DysektLookAndFeel::makeFont (16.0f, true));
+            g.setColour (juce::Colours::black);
             g.drawText  (juce::MidiMessage::getMidiNoteName (kr.note, true, true, 3),
                          kr.bounds.getX(), kr.bounds.getBottom() - 22,
                          kr.bounds.getWidth(), 20, juce::Justification::centred);
         }
 
-        if (hasSlice)
+        if (hasMark)
         {
-            g.setColour (accent.withAlpha (0.80f));
-            g.drawRoundedRectangle (b.reduced (0.8f, 0.5f), 0.0f, 1.0f);
+            g.setColour (markColour.withAlpha (0.85f));
+            g.drawRoundedRectangle (b.reduced (0.8f, 0.5f), 0.0f, 1.2f);
         }
     }
     else
     {
-        const juce::Colour fillCol = active  ? accent.darker (0.1f)
-                                    : hovered ? juce::Colour (0xFF383838)
-                                              : juce::Colour (0xFF222222);
+        juce::Colour fillCol = active  ? accent.darker (0.1f)
+                              : hovered ? juce::Colour (0xFF383838)
+                                        : juce::Colour (0xFF222222);
+
+        if (hasMark && ! active)
+            fillCol = fillCol.interpolatedWith (markColour, 0.35f);
 
         g.setColour (fillCol);
         g.fillRoundedRectangle (b, 0.0f);
@@ -1227,10 +1254,10 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
         g.fillRoundedRectangle (b.getX() + 1.0f, b.getY() + 1.0f,
                                 b.getWidth() - 2.0f, 3.5f, 0.0f);
 
-        if (hasSlice)
+        if (hasMark)
         {
-            g.setColour (accent.withAlpha (0.85f));
-            g.drawRoundedRectangle (b.reduced (0.6f), 0.0f, 0.8f);
+            g.setColour (markColour.withAlpha (0.90f));
+            g.drawRoundedRectangle (b.reduced (0.6f), 0.0f, 1.0f);
         }
 
         g.setColour (juce::Colours::black.withAlpha (0.60f));
