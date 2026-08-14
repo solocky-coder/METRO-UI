@@ -200,9 +200,11 @@ int MixerPanel::rowY (int sliceIdx) const
 int MixerPanel::sf2RowY() const
 {
     // SF-PLAYER row sits immediately below the slice rows, above Master.
+    // +kSectionLabelH skips past this section's own label band, drawn
+    // immediately above it (matches sfz2RowY()/masterRowY()).
     const auto& snap = processor.getUiSliceSnapshot();
     const int visibleCount = (int) collectVisibleSlices (snap).size();
-    return kHeaderH + visibleCount * kRowH - scrollPixels;
+    return kHeaderH + visibleCount * kRowH - scrollPixels + kSectionLabelH;
 }
 
 int MixerPanel::masterRowY() const
