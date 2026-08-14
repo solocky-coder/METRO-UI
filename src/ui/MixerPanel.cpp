@@ -655,30 +655,13 @@ void MixerPanel::drawMeter (juce::Graphics& g,
     drawBar (y,            peakL, holdL[si2]);
     drawBar (y + barH + gap, peakR, holdR[si2]);
 
-    // ── dB tick marks ────────────────────────────────────────────────────
-    // Draw subtle vertical lines at -6, -12, -18, -24 dB across both bars.
-    // toFill uses sqrt mapping so we must invert: fill = sqrt(linear) → tickX.
-    struct Tick { float db; const char* label; };
-    static constexpr Tick kTicks[] = { {-6,"−6"}, {-12,"−12"}, {-18,"−18"}, {-24,"−24"} };
-    g.setFont (DysektLookAndFeel::makeFont (6.5f));
-    for (const auto& tick : kTicks)
+    // Divider hairline between L and R bars, in place of the old dB tick
+    // grid — the 4-line grid plus labels was too busy when repeated on
+    // every row; a single line here still separates the channels clearly.
+    if (gap > 0)
     {
-        const float linear = juce::Decibels::decibelsToGain (tick.db);
-        const float fill   = std::sqrt (juce::jlimit (0.0f, 1.0f, linear));
-        const int   tx     = x + 1 + juce::roundToInt (fill * (float)(w - 4));
-        if (tx <= x || tx >= x + w) continue;
-
-        // Tick line spanning both bars + gap
-        g.setColour (juce::Colour (0xFFFFFFFF).withAlpha (0.10f));
-        g.drawVerticalLine (tx, (float) y, (float)(y + barH + gap + barH));
-
-        // Label below bottom bar — only if there's enough horizontal space
-        if (tx - x > 14)
-        {
-            g.setColour (juce::Colour (0xFFFFFFFF).withAlpha (0.18f));
-            g.drawText (tick.label, tx - 10, y + barH + gap + barH + 1, 20, 6,
-                        juce::Justification::centred);
-        }
+        g.setColour (juce::Colour (0xFF3A3A3A));
+        g.drawHorizontalLine (y + barH, (float) x, (float)(x + w));
     }
 }
 
