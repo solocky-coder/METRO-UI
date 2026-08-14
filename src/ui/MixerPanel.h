@@ -60,6 +60,22 @@ public:
     static constexpr int kNumCols     = 8;
     /** Width of the horizontal peak meter column after OUT. */
     static constexpr int kMeterColW   = 120;
+    /** Real gain parameter range in dB, matching ParamLayout.cpp's
+        masterVolume NormalisableRange(-100.0f, 24.0f) exactly, and the
+        -100..+24 clamp used by every gain drag/commit path in this file
+        (mouseDrag's ColGain cases, the text-editor commit handler).
+        toNormGain()/drawKnobInRow() must both derive the knob's 0 dB tick
+        position from these same two constants, or the knob's rotation and
+        the dB readout next to it silently fall out of sync — e.g. a gain
+        knob with only a ±24 dB visual sweep pins at its end-stop for any
+        value below -24 dB, even though the number keeps counting down to
+        -100. */
+    static constexpr float kGainMinDb = -100.0f;
+    static constexpr float kGainMaxDb =   24.0f;
+    /** Gap between a knob's right edge and its value text. Shared by every
+        row type (slice, master, SF-PLAYER, SFZ-PLAYER, and their sub-rows)
+        so none of them can drift back to a cramped, hard-to-read gap. */
+    static constexpr int kValueTextGap = 14;
 
     explicit MixerPanel (DysektProcessor& p);
     ~MixerPanel() override;
