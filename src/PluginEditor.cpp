@@ -554,6 +554,18 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              // rather than querying engine state that doesn't carry it.
              zoneBuilderTargetSfz = f;
 
+             // Keep the native multisampler model in sync with whatever .sfz
+             // was just loaded, so opening MULTISAMPLER (K) reflects the file
+             // that's actually playing instead of stale/empty content from
+             // whatever was last explicitly imported via its own button.
+             // syncEngine=false: sfzPlayer2.loadFile() above already points
+             // playback at the original file directly — resyncing here would
+             // just reload a redundant, lossily round-tripped copy of it.
+             // Silent on a clean import; onImportWarnings surfaces the rest
+             // (same MessageOverlay path used elsewhere, e.g. drum-kit
+             // auto-detect below already pops up unprompted after a load).
+             multisamplerEditor.importFromFile (f, false);
+
              // A different .sfz just became the target — any zones staged
              // against the previous target no longer apply. Drop them rather
              // than silently carrying them (and their scratch file, which was
@@ -585,7 +597,19 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      if (ext != ".sfz" && ext != ".sf2")
          showTrimDialog (f);
  };
- waveformView.onSfzPlayerFileDropped = [this] (const juce::File& f) { offerDrumKitAutoRouting (f); };
+ waveformView.onSfzPlayerFileDropped = [this] (const juce::File& f)
+ {
+     offerDrumKitAutoRouting (f);
+     // Same rationale as browserPanel.onLoadRequest's uiMode==1 branch —
+     // this is the drag-and-drop equivalent load path, so it needs the same
+     // multisampler sync to avoid MULTISAMPLER only reflecting whichever
+     // path was used most recently. Unlike that path, this one never calls
+     // sfzPlayer2.loadFile() directly (see WaveformView::filesDropped's
+     // comment — sliceManager2 renders playback here, not the live sfzPlayer2
+     // engine), so leave syncEngine at its default true: this resync may be
+     // the only thing pointing sfzPlayer2 at real content for this load path.
+     multisamplerEditor.importFromFile (f);
+ };
  waveformView.onShortcutsToggle = [this] { toggleShortcutsPanel(); };
  waveformView.onRenameRequest = [this] (int sliceIdx, const juce::String& currentName)
  {
@@ -2558,6 +2582,9 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // kit is loaded — behave identically, unsaved-zones prompt included.
 void DysektEditor::toggleZoneBuilder (bool on)
 {
+    if (on && showMultisamplerEditor)
+        toggleMultisamplerEditor (false);   // mutually exclusive — see toggleMultisamplerEditor's comment
+
     if (! on && zoneBuilderDirty)
     {
         // Whichever control fired this (SCB toggle or tab-icon) may already

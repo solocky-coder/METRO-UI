@@ -46,6 +46,9 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     addAndMakeVisible (titleLabel);
 
+    addAndMakeVisible (addZoneButton);
+    addZoneButton.onClick = [this] { addZoneClicked(); };
+
     addAndMakeVisible (importButton);
     importButton.onClick = [this] { importSfzClicked(); };
 
@@ -124,6 +127,8 @@ void MultisamplerEditor::resized()
     exportButton.setBounds (header.removeFromRight (90));
     header.removeFromRight (4);
     importButton.setBounds (header.removeFromRight (90));
+    header.removeFromRight (4);
+    addZoneButton.setBounds (header.removeFromRight (84));
 
     auto inspector = r.removeFromBottom (kInspectorH - 4);
     r.removeFromTop (6);
@@ -145,13 +150,14 @@ void MultisamplerEditor::resized()
 
 // ── Instrument lifecycle ────────────────────────────────────────────────
 
-void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument)
+void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bool syncEngine)
 {
     instrument = std::move (newInstrument);
     dirty = false;
     zoneMapView.setInstrument (&instrument);
     refreshInspectorFromSelection();
-    performEngineSync();   // not debounced — a wholesale swap should reflect immediately
+    if (syncEngine)
+        performEngineSync();   // not debounced — a wholesale swap should reflect immediately
     if (onInstrumentChanged) onInstrumentChanged();
     repaint();
 }
@@ -160,6 +166,66 @@ void MultisamplerEditor::newInstrumentClicked()
 {
     setInstrument (MultisamplerInstrument{});
     instrument.name = "New Instrument";
+}
+
+void MultisamplerEditor::addZoneClicked()
+{
+    // Same convention as PluginEditor's raw-SFZ zone builder
+    // (openZoneBuilderAddZone): pick a sample first, then confirm the key
+    // range in AddZoneOverlay before committing the zone.
+    fileChooser = std::make_unique<juce::FileChooser> ("Add sample as new zone…", juce::File(),
+                                                         "*.wav;*.aif;*.aiff;*.flac;*.ogg");
+    fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto chosen = fc.getResult();
+            if (! chosen.existsAsFile()) return; // cancelled
+
+            // Default: start just above the highest key currently mapped, so a
+            // second Add Zone doesn't silently overlap the first — mirrors
+            // openZoneBuilderAddZone()'s prevHiKey logic exactly.
+            int prevHiKey = -1;
+            for (const auto& z : instrument.zones)
+                prevHiKey = juce::jmax (prevHiKey, z.highKey);
+            const int defaultLo = (prevHiKey < 0) ? 0 : juce::jmin (prevHiKey + 1, 127);
+
+            zoneAddOverlay = std::make_unique<AddZoneOverlay> (chosen.getFileNameWithoutExtension(), defaultLo);
+            zoneAddOverlay->onResult = [this, chosen] (int lo, int hi, int root, bool confirmed)
+            {
+                // Defer the reset so it runs after onResult has returned and
+                // AddZoneOverlay is no longer on the call stack (use-after-free
+                // fix — same pattern PluginEditor's equivalent flow uses).
+                juce::MessageManager::callAsync ([this]
+                {
+                    if (zoneAddOverlay)
+                    {
+                        removeChildComponent (zoneAddOverlay.get());
+                        zoneAddOverlay.reset();
+                    }
+                });
+
+                if (! confirmed) return;
+
+                SampleZone zone;
+                zone.sampleFile = chosen;
+                zone.lowKey     = lo;
+                zone.highKey    = hi;
+                zone.rootKey    = root;
+                const auto& added = instrument.addZone (std::move (zone));
+
+                dirty = true;
+                zoneMapView.setSelectedZoneIds ({ added.id });
+                zoneMapView.refresh();
+                refreshInspectorFromSelection();
+                scheduleEngineSync();
+                if (onInstrumentChanged) onInstrumentChanged();
+                repaint();
+            };
+
+            addAndMakeVisible (*zoneAddOverlay);
+            zoneAddOverlay->setBounds (getLocalBounds());
+            zoneAddOverlay->toFront (true);
+        });
 }
 
 // ── SFZ import / export ─────────────────────────────────────────────────
@@ -172,25 +238,30 @@ void MultisamplerEditor::importSfzClicked()
         {
             const auto file = fc.getResult();
             if (! file.existsAsFile()) return;
-
-            auto result = SfzImporter::importFile (file);
-            if (! result.success)
-            {
-                if (onImportWarnings)
-                {
-                    SfzImporter::Warning fatal;
-                    fatal.kind   = SfzImporter::Warning::Kind::malformedOpcode;
-                    fatal.detail = result.errorMessage.isNotEmpty()
-                                       ? result.errorMessage : "Import failed.";
-                    onImportWarnings (file.getFileName(), false, { fatal });
-                }
-                return;
-            }
-
-            setInstrument (std::move (result.instrument));
-            if (! result.warnings.empty() && onImportWarnings)
-                onImportWarnings (file.getFileName(), true, result.warnings);
+            importFromFile (file);
         });
+}
+
+bool MultisamplerEditor::importFromFile (const juce::File& file, bool syncEngine)
+{
+    auto result = SfzImporter::importFile (file);
+    if (! result.success)
+    {
+        if (onImportWarnings)
+        {
+            SfzImporter::Warning fatal;
+            fatal.kind   = SfzImporter::Warning::Kind::malformedOpcode;
+            fatal.detail = result.errorMessage.isNotEmpty()
+                               ? result.errorMessage : "Import failed.";
+            onImportWarnings (file.getFileName(), false, { fatal });
+        }
+        return false;
+    }
+
+    setInstrument (std::move (result.instrument), syncEngine);
+    if (! result.warnings.empty() && onImportWarnings)
+        onImportWarnings (file.getFileName(), true, result.warnings);
+    return true;
 }
 
 void MultisamplerEditor::exportSfzClicked()

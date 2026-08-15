@@ -24,6 +24,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ZoneMapView.h"
+#include "../AddZoneOverlay.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/SfzImporter.h"
 
@@ -40,10 +41,26 @@ public:
     void resized() override;
 
     /** Replaces the instrument outright (e.g. loading a .metrokit — Phase 4).
-        Triggers an immediate (non-debounced) engine resync. */
-    void setInstrument (MultisamplerInstrument newInstrument);
+        Triggers an immediate (non-debounced) engine resync by default. Pass
+        syncEngine=false when the caller already knows the live engine is
+        correctly pointed at the source (e.g. a background sync from a load
+        path that already called sfzPlayer2.loadFile() on the original file
+        directly) — resyncing in that case would just reload a redundant,
+        lossily round-tripped copy for no benefit. */
+    void setInstrument (MultisamplerInstrument newInstrument, bool syncEngine = true);
 
     const MultisamplerInstrument& getInstrument() const noexcept { return instrument; }
+
+    /** Imports an .sfz directly, no file picker — the shared body behind
+        importSfzClicked() (after the user picks a file) and also callable by
+        whoever owns the app's other .sfz load paths (browser, drag-and-drop),
+        so this panel's model stays in sync with whatever .sfz is loaded
+        elsewhere instead of only ever changing via its own IMPORT SFZ button.
+        Fires onImportWarnings on failure or partial success, same contract as
+        clicking IMPORT SFZ; silent on a clean import. Returns true on success
+        (even with warnings). Pass syncEngine=false when the caller already
+        pointed the live engine at `file` directly — see setInstrument(). */
+    bool importFromFile (const juce::File& file, bool syncEngine = true);
 
     /** True once at least one committed edit has happened since the last
         save/load — mirrors the zoneBuilderDirty flag PluginEditor already
@@ -84,6 +101,9 @@ private:
     void importSfzClicked();
     void exportSfzClicked();
     void newInstrumentClicked();
+    void addZoneClicked();   // pick a sample, then AddZoneOverlay for lo/hi/root — the
+                              // native-model equivalent of PluginEditor's
+                              // openZoneBuilderAddZone()/showZoneBuilderAddZoneOverlay()
 
     void refreshInspectorFromSelection();
     void applyInspectorFieldsToSelection();   // called on each field's onReturn/onFocusLost
@@ -96,10 +116,12 @@ private:
 
     // ── Header ───────────────────────────────────────────────────────────
     juce::Label  titleLabel;
+    juce::TextButton addZoneButton { "ADD ZONE" };
     juce::TextButton importButton  { "IMPORT SFZ" };
     juce::TextButton exportButton  { "EXPORT SFZ" };
     juce::TextButton newButton     { "NEW" };
     std::unique_ptr<juce::FileChooser> fileChooser;
+    std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;   // modal popup; owned only while open
 
     // ── Compact inspector strip (single-zone editing) ──────────────────────
     // Shown only when exactly one zone is selected; hidden (and inert) for
