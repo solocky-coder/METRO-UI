@@ -3,6 +3,7 @@
 #include "../DysektLookAndFeel.h"
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
+#include "../../audio/SfzZoneColours.h"
 
 namespace
 {
@@ -150,6 +151,47 @@ void MultisamplerEditor::resized()
 
 // ── Instrument lifecycle ────────────────────────────────────────────────
 
+std::vector<KeysPanel::Keyzone> MultisamplerEditor::toKeyzones (const MultisamplerInstrument& instrument)
+{
+    std::vector<KeysPanel::Keyzone> zones;
+    zones.reserve (instrument.zones.size());
+
+    int colIdx = 0;
+    for (const auto& z : instrument.zones)
+    {
+        if (! z.enabled)
+            continue;   // matches SfzExporter — a muted zone was never in the file ZONES would parse either
+
+        KeysPanel::Keyzone kz;
+        kz.loKey     = z.lowKey;
+        kz.hiKey     = z.highKey;
+        kz.loVel     = z.lowVelocity;
+        kz.hiVel     = z.highVelocity;
+        kz.rootPitch = z.rootKey;
+        kz.isLooped  = (z.loopMode != LoopMode::noLoop);
+        kz.isSfz     = true;   // editable, same convention as parseSfzZones()
+
+        // Same palette/indexing as parseSfzZones() so a file's zone colours
+        // read identically regardless of which editor produced this list —
+        // see toKeyzones()'s header comment.
+        kz.colour = SfzZoneColours::zoneColour (colIdx);
+        ++colIdx;
+
+        kz.name = z.sampleFile != juce::File()
+                      ? z.sampleFile.getFileNameWithoutExtension()
+                      : ("Zone " + juce::String (colIdx));
+
+        kz.volDb      = z.gainDb;
+        kz.pan        = z.pan;
+        kz.tuneCents  = z.tuneCents;
+        kz.releaseSec = z.releaseSeconds;
+
+        zones.push_back (kz);
+    }
+
+    return zones;
+}
+
 void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bool syncEngine)
 {
     instrument = std::move (newInstrument);
@@ -157,7 +199,7 @@ void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bo
     zoneMapView.setInstrument (&instrument);
     refreshInspectorFromSelection();
     if (syncEngine)
-        performEngineSync();   // not debounced — a wholesale swap should reflect immediately
+        performEngineSync (true);   // not debounced — a wholesale swap should reflect immediately
     if (onInstrumentChanged) onInstrumentChanged();
     repaint();
 }
@@ -259,6 +301,7 @@ bool MultisamplerEditor::importFromFile (const juce::File& file, bool syncEngine
     }
 
     setInstrument (std::move (result.instrument), syncEngine);
+    lastSavedFile = file;   // setInstrument() already cleared dirty — this is now the save target
     if (! result.warnings.empty() && onImportWarnings)
         onImportWarnings (file.getFileName(), true, result.warnings);
     return true;
@@ -276,8 +319,49 @@ void MultisamplerEditor::exportSfzClicked()
 
             SfzExporter::Options opts;
             opts.useRelativeSamplePaths = true;
-            SfzExporter::exportToFile (instrument, file, opts);
+            if (SfzExporter::exportToFile (instrument, file, opts))
+            {
+                // The file just picked is now the thing SAVE / discard-revert
+                // operate against, same as an IMPORT SFZ would set it.
+                lastSavedFile = file;
+                clearDirtyFlag();
+            }
         });
+}
+
+void MultisamplerEditor::saveInPlace()
+{
+    if (lastSavedFile == juce::File())
+    {
+        // Never imported from or saved to anything yet (e.g. built from
+        // scratch via NEW) — there's nothing to silently overwrite, so
+        // fall back to the same Save-As picker EXPORT SFZ uses.
+        exportSfzClicked();
+        return;
+    }
+
+    SfzExporter::Options opts;
+    opts.useRelativeSamplePaths = true;
+    if (SfzExporter::exportToFile (instrument, lastSavedFile, opts))
+        clearDirtyFlag();
+}
+
+void MultisamplerEditor::discardPendingEdits()
+{
+    if (lastSavedFile.existsAsFile())
+    {
+        // Reload from disk — this both undoes the in-memory edits and
+        // resyncs the live engine back to what's actually on disk (it may
+        // currently be pointed at a debounced preview of the discarded
+        // edits, per performEngineSync()).
+        importFromFile (lastSavedFile, true);
+    }
+    else
+    {
+        // Never saved anywhere — "discard" just means back to blank.
+        setInstrument (MultisamplerInstrument{});
+    }
+    clearDirtyFlag();   // belt-and-braces: both paths above already do this
 }
 
 // ── Engine sync (plan §5 "Playback synchronization") ────────────────────
@@ -292,10 +376,10 @@ void MultisamplerEditor::scheduleEngineSync()
 void MultisamplerEditor::timerCallback()
 {
     stopTimer();
-    performEngineSync();
+    performEngineSync (false);   // debounced timer only ever fires after an in-place edit
 }
 
-void MultisamplerEditor::performEngineSync()
+void MultisamplerEditor::performEngineSync (bool isFreshLoad)
 {
     // Cache-directory file, not a user-visible path — same convention as
     // other generated-preview files elsewhere in the codebase. Fixed name is
@@ -315,6 +399,31 @@ void MultisamplerEditor::performEngineSync()
     // next audio block boundary (see SfzPlayer.h threading comment) — no
     // audio-thread file access happens here or inside loadFile() itself.
     processor.sfzPlayer2.loadFile (cacheFile, processor.fileLoadPool);
+
+    // The line above only updates sfzPlayer2 — the live sfizz/FluidSynth
+    // engine — but sfzPlayer2.process() is never actually called; what
+    // voicePool2 plays back is the pre-rendered slice data in
+    // sliceManager2/sampleData2 (and, in turn, whatever the SFZ-PLAYER's
+    // Slice/waveform view is showing), populated only by SoundFontLoader
+    // via loadSoundFontAsync(..., SoundFontLoadTarget::SfzPlayer2). Without
+    // re-running that here, every MULTISAMPLER edit reaches playback but
+    // never the Slice view or the samples voicePool2 actually renders —
+    // same gap SfzPlayerDropdownPanel::writeSfzZoneChange's identical
+    // comment describes for the ZONES editor, fixed there the same way.
+    //
+    // Only mark this a "zone edit" rebuild (preserve each slice's
+    // DYSEKT-only fields — custom ADSR, per-slice EQ/filter, chromatic
+    // channel, mute group, etc. — across the rebuild) when it genuinely is
+    // one, i.e. the debounced-timer path following a real in-place edit.
+    // setInstrument()'s immediate isFreshLoad=true call is a wholesale
+    // model swap (import/New/discard) and must behave like any other fresh
+    // file load: wipe every slice clean rather than carrying over
+    // per-slice customisation that belonged to whatever was loaded before.
+    // See zoneBuilderReloadPending's declaration in PluginProcessor.h and
+    // writeSfzZoneChange's identical distinction for the ZONES editor.
+    if (! isFreshLoad)
+        processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
+    processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
 }
 
 // ── Inspector ────────────────────────────────────────────────────────────

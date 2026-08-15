@@ -32,6 +32,64 @@ namespace
         return s;
     }
 
+    // ── Raw header preservation ──────────────────────────────────────────
+    // These four headers carry real authoring content (curve tables, effect
+    // chains, master-bus settings, MIDI CC mappings) that MultisamplerInstrument
+    // has nowhere to represent — unlike an unsupported region opcode, there's
+    // no per-zone extraOpcodes slot a whole <effect> block could hang off of.
+    // Rather than lose that content the first time a file round-trips through
+    // MULTISAMPLER, capture each block's exact source text (starting at its
+    // '<name...>' tag, running to just before the next header tag or EOF —
+    // comments, blank lines, and original formatting all included) and carry
+    // it on MultisamplerInstrument::rawExtraHeaders for SfzExporter to
+    // re-emit byte-for-byte. Scans the raw, un-tokenized source text directly
+    // (rather than reusing `tokens`) specifically so this preserves exact
+    // formatting instead of only the semantic content the tokenizer keeps.
+    std::vector<juce::String> extractRawHeaderBlocks (const juce::String& sourceText,
+                                                        const std::set<juce::String>& headerNames)
+    {
+        std::vector<juce::String> blocks;
+        const int len = sourceText.length();
+        int pos = 0;
+
+        while (pos < len)
+        {
+            const int open = sourceText.indexOfChar (pos, '<');
+            if (open < 0) break;
+            const int close = sourceText.indexOfChar (open, '>');
+            if (close < 0) break;
+
+            const auto tagName = sourceText.substring (open + 1, close).trim().toLowerCase();
+
+            if (headerNames.count (tagName))
+            {
+                const int nextOpen = sourceText.indexOfChar (close + 1, '<');
+                const int blockEnd = (nextOpen >= 0) ? nextOpen : len;
+
+                auto block = sourceText.substring (open, blockEnd);
+                // Trim only trailing whitespace (the run-up to the next tag,
+                // or EOF) so re-emitted blocks don't accumulate blank lines
+                // on every save/reload cycle — everything before that stays
+                // untouched, comments included.
+                while (block.isNotEmpty()
+                       && (block.getLastCharacter() == '\n' || block.getLastCharacter() == '\r'
+                           || block.getLastCharacter() == ' '  || block.getLastCharacter() == '\t'))
+                    block = block.dropLastCharacters (1);
+
+                if (block.isNotEmpty())
+                    blocks.push_back (block);
+
+                pos = blockEnd;
+            }
+            else
+            {
+                pos = close + 1;
+            }
+        }
+
+        return blocks;
+    }
+
     // ── Raw token stream ─────────────────────────────────────────────────
     struct Token
     {
@@ -418,6 +476,13 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
 
     const auto tokens = tokenize (sfzText, result.warnings);
 
+    // Capture <curve>/<effect>/<master>/<midi> content verbatim before the
+    // token-driven pass below, which only tracks their presence (for the
+    // unsupportedHeader warning) and otherwise discards them — see
+    // extractRawHeaderBlocks()'s comment for why this needs the raw text
+    // rather than the token stream.
+    result.instrument.rawExtraHeaders = extractRawHeaderBlocks (sfzText, skippedHeaders());
+
     OpcodeMap globalOpcodes;
     OpcodeMap groupOpcodes;
     OpcodeMap regionOpcodes;
@@ -501,7 +566,8 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
             {
                 skippingHeaderBody = true;
                 result.warnings.push_back ({ Warning::Kind::unsupportedHeader, t.line,
-                                              "<" + t.headerName + "> is not imported in this release" });
+                                              "<" + t.headerName + "> is not editable in this release; "
+                                              "its content is preserved as-is and re-exported unchanged" });
             }
             else
             {

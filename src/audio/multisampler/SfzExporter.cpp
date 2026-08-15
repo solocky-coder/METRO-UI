@@ -95,6 +95,14 @@ juce::String SfzExporter::render (const MultisamplerInstrument& instrument,
                           instrument.transposeSemitones, instrument.masterGainDb,
                           instrument.fineTuneCents);
 
+    // Re-emit <curve>/<effect>/<master>/<midi> (etc.) content captured
+    // verbatim on import — see MultisamplerInstrument::rawExtraHeaders and
+    // SfzImporter's extractRawHeaderBlocks(). Appended after the regions so
+    // a file that round-trips through MULTISAMPLER doesn't lose this
+    // content, even though nothing here can edit it.
+    for (const auto& block : instrument.rawExtraHeaders)
+        out << block << "\n\n";
+
     return out;
 }
 

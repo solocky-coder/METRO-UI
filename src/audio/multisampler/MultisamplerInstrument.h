@@ -26,6 +26,19 @@ struct MultisamplerInstrument
 
     std::vector<SampleZone> zones;
 
+    /** Raw, byte-for-byte text of every top-level header block the importer
+        doesn't understand and can't safely round-trip as region opcodes —
+        <curve>, <effect>, <master>, <midi>, and anything else outside
+        SfzImporter's supported header set (see skippedHeaders() there).
+        Each entry starts at that header's '<name...>' tag and runs to just
+        before the next header tag or EOF, exactly as it appeared in the
+        source file. SfzExporter re-emits these verbatim on save so a file
+        using them doesn't silently lose that content the first time it's
+        edited and saved through MULTISAMPLER — unlike zone-level opcodes
+        (see SampleZone::extraOpcodes), these blocks are never interpreted
+        or edited by METRO-UI, only carried through unchanged. */
+    std::vector<juce::String> rawExtraHeaders;
+
     float masterGainDb        = 0.0f;
     int   transposeSemitones  = 0;
     float fineTuneCents       = 0.0f;

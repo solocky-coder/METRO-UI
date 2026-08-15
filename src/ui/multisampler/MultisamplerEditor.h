@@ -25,6 +25,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ZoneMapView.h"
 #include "../AddZoneOverlay.h"
+#include "../KeysPanel.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/SfzImporter.h"
 
@@ -51,6 +52,22 @@ public:
 
     const MultisamplerInstrument& getInstrument() const noexcept { return instrument; }
 
+    /** Consolidation-plan step 3: the same keyboard-highlight data ZONES
+        gets from SfzPlayerDropdownPanel::parseSfzZones(), derived instead
+        from a MultisamplerInstrument — so sfzPlayerDropdown.keysPanel can
+        be repointed at whichever .sfz is currently loaded via MULTISAMPLER
+        without depending on ZONES' scratch-file text at all. Static/free of
+        `this` so PluginEditor can call it on any instrument snapshot it
+        already has (e.g. getInstrument()) without needing a live
+        MultisamplerEditor edit in flight. Colour indexing matches
+        parseSfzZones()/SfzZoneColours exactly (same palette, same
+        top-to-bottom zones[] order) so a file's zone colours don't change
+        depending on which editor most recently produced them. Disabled
+        (muted) zones are skipped, matching what SfzExporter actually
+        writes to the engine — a disabled zone was never in the exported
+        SFZ ZONES would have parsed either. */
+    static std::vector<KeysPanel::Keyzone> toKeyzones (const MultisamplerInstrument& instrument);
+
     /** Imports an .sfz directly, no file picker — the shared body behind
         importSfzClicked() (after the user picks a file) and also callable by
         whoever owns the app's other .sfz load paths (browser, drag-and-drop),
@@ -64,10 +81,32 @@ public:
 
     /** True once at least one committed edit has happened since the last
         save/load — mirrors the zoneBuilderDirty flag PluginEditor already
-        tracks for the raw-SFZ zone builder, so an eventual "unsaved changes"
-        prompt can treat both the same way. */
+        tracks for the raw-SFZ zone builder, so an "unsaved changes" prompt
+        can treat both the same way (see toggleMultisamplerEditor). */
     bool isDirty() const noexcept { return dirty; }
     void clearDirtyFlag() noexcept { dirty = false; }
+
+    /** SAVE half of the zoneBuilder-style save/discard pair. Writes the
+        current instrument back to whichever file it was last imported from
+        or exported to (silent overwrite, no picker) and clears the dirty
+        flag on success. If this instrument has never been pointed at a
+        file (e.g. built from scratch via NEW), falls back to the same
+        Save-As file picker as clicking EXPORT SFZ — there's nothing to
+        overwrite yet. */
+    void saveInPlace();
+
+    /** DISCARD half of the save/discard pair. Throws away edits since the
+        last import/save by reloading the instrument from whichever file
+        saveInPlace()/importFromFile() last pointed it at, or resetting to
+        a blank instrument if there is no such file. Always leaves the
+        dirty flag clear. */
+    void discardPendingEdits();
+
+    /** The file saveInPlace() would overwrite, or an invalid File() if
+        this instrument has never been imported from / saved to one. Lets
+        PluginEditor phrase its unsaved-changes prompt accurately (e.g.
+        offering "Save" only when there's somewhere to save to). */
+    const juce::File& getLastSavedFile() const noexcept { return lastSavedFile; }
 
     /** Fired after every committed model edit (drag-commit, inspector apply,
         import, New) — after the debounced resync has been scheduled, not
@@ -96,7 +135,14 @@ private:
     void timerCallback() override;   // fires once, kEngineSyncDebounceMs after the last edit
 
     void scheduleEngineSync();       // (re)start the debounce timer
-    void performEngineSync();        // export to cache SFZ + sfzPlayer2.loadFile()
+    // isFreshLoad: true when called right after setInstrument() wholesale-swapped
+    // the model (import/New/discard) — sliceManager2 should wipe every slice
+    // clean, same as any other fresh file load. false (the debounced-timer
+    // path) means this is a genuine in-place zone edit and per-slice
+    // DYSEKT-only fields (custom ADSR/EQ/filter/mute group/etc.) should
+    // survive the rebuild instead — see zoneBuilderReloadPending's
+    // declaration in PluginProcessor.h and performEngineSync()'s own comment.
+    void performEngineSync (bool isFreshLoad);
 
     void importSfzClicked();
     void exportSfzClicked();
@@ -111,6 +157,7 @@ private:
     DysektProcessor& processor;
     MultisamplerInstrument instrument;
     bool dirty = false;
+    juce::File lastSavedFile;   // last file imported from or exported/saved to; File() if none yet
 
     ZoneMapView zoneMapView;
 

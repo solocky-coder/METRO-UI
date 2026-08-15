@@ -253,6 +253,20 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
  multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
  multisamplerEditor.onInstrumentChanged = [this]
  {
+     // Consolidation-plan step 3: keep BOTH keyboard-highlight displays
+     // (zoneBuilderKeysPanel — ZONES' own matrix — and
+     // sfzPlayerDropdown.keysPanel, the normal SFZ-PLAYER view's live
+     // highlighting) in sync with MULTISAMPLER edits too, not just ZONES
+     // edits (see refreshZoneBuilderPreview()'s identical push for the
+     // ZONES side). Previously only ZONES-driven changes ever reached
+     // these — an edit made purely in MULTISAMPLER left both stale until
+     // some ZONES-side action happened to refresh them. Using
+     // MultisamplerEditor::toKeyzones() directly on the live model means
+     // this no longer depends on re-parsing any file off disk at all.
+     const auto keyzones = MultisamplerEditor::toKeyzones (multisamplerEditor.getInstrument());
+     zoneBuilderKeysPanel.setKeyzones (keyzones);
+     sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
+
      // Nothing to persist yet (Phase 4 / .metrokit isn't wired to plugin
      // state), but repaint so the panel's own dirty-dot indicator and any
      // future window-title "*" affordance stay current.
@@ -2656,6 +2670,55 @@ void DysektEditor::toggleZoneBuilder (bool on)
 
 void DysektEditor::toggleMultisamplerEditor (bool on)
 {
+    // Consolidation-plan step 2: MULTISAMPLER's own unsaved-changes guard,
+    // mirroring toggleZoneBuilder's zoneBuilderDirty prompt above so both
+    // editors protect the user the same way when the panel closes with
+    // uncommitted edits (drag-edit, inspector apply, Add Zone, etc. — see
+    // MultisamplerEditor::isDirty()).
+    if (! on && multisamplerEditor.isDirty())
+    {
+        // Unlike ZONES, nothing else (header tab icon, SCB button) tracks
+        // an independent "active" look for this panel to desync from —
+        // the K-shortcut is its only toggle — so there's no extra state to
+        // put back to "on" here; just keep the panel open and showing
+        // until the prompt below is resolved.
+        showMultisamplerEditor = true;
+
+        const bool haveSaveTarget = multisamplerEditor.getLastSavedFile() != juce::File();
+        confirmOverlay = std::make_unique<ConfirmOverlay> (
+            "Unsaved Instrument",
+            haveSaveTarget
+                ? "This instrument has edits that haven't been saved yet. Save them before leaving?"
+                : "This instrument has edits that haven't been saved yet. Save them (choose a file) before leaving?",
+            "Save",
+            "Discard");
+        addAndMakeVisible (*confirmOverlay);
+        confirmOverlay->setBounds (getLocalBounds());
+        confirmOverlay->toFront (true);
+        confirmOverlay->onResult = [this] (bool save)
+        {
+            confirmOverlay.reset();
+            if (save)
+                // If there's no existing save target this falls through to
+                // an async Save-As picker (see saveInPlace()) that
+                // outlives this callback — the panel below closes right
+                // away regardless, and the save completes silently in the
+                // background once the user picks a file. Acceptable for
+                // now (matches ZONES' own commitZoneBuilderPendingZones(),
+                // which is synchronous only because it writes to an
+                // already-known scratch file); a "block close until Save-As
+                // resolves" refinement can follow later if it's missed.
+                multisamplerEditor.saveInPlace();
+            else
+                multisamplerEditor.discardPendingEdits();
+
+            showMultisamplerEditor = false;
+            resized();
+            repaint();
+        };
+        return;
+    }
+
     showMultisamplerEditor = on;
     if (on && showZoneBuilder)
         toggleZoneBuilder (false);   // mutually exclusive — see header comment

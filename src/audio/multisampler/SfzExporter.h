@@ -16,7 +16,10 @@
 //  the model (plan §12, "Playback/editor mismatch").
 //
 //  Only disabled (muted) zones are skipped; everything else in the supported
-//  opcode subset round-trips through SfzImporter unchanged.
+//  opcode subset round-trips through SfzImporter unchanged. <curve>/<effect>/
+//  <master>/<midi> content the importer can't represent natively is also
+//  round-tripped, verbatim rather than semantically — see
+//  MultisamplerInstrument::rawExtraHeaders.
 // =============================================================================
 
 #include "MultisamplerInstrument.h"

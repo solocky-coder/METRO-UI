@@ -141,6 +141,11 @@ juce::String InstrumentSerializer::toJson (const MultisamplerInstrument& instrum
         zonesArr.add (zoneToVar (z, bundleRoot));
     root->setProperty ("zones", zonesArr);
 
+    juce::Array<juce::var> rawHeadersArr;
+    for (const auto& h : instrument.rawExtraHeaders)
+        rawHeadersArr.add (h);
+    root->setProperty ("rawExtraHeaders", rawHeadersArr);
+
     return juce::JSON::toString (juce::var (root));
 }
 
@@ -193,6 +198,13 @@ InstrumentSerializer::LoadResult InstrumentSerializer::fromJson (const juce::Str
             else
                 result.errorMessage << "Skipped a malformed zone entry: " << err << "\n";
         }
+    }
+
+    if (auto* rawHeadersArr = root.getProperty ("rawExtraHeaders", {}).getArray())
+    {
+        instrument.rawExtraHeaders.reserve ((size_t) rawHeadersArr->size());
+        for (const auto& hv : *rawHeadersArr)
+            instrument.rawExtraHeaders.push_back (hv.toString());
     }
 
     result.success = true;
