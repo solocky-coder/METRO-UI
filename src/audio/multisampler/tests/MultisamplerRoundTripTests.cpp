@@ -39,6 +39,30 @@ lovel=1 hivel=63 volume=-3 tune=12
 sample=Grand Piano C3 Loud.wav lokey=48 hikey=59 pitch_keycenter=53
 lovel=64 hivel=127 volume=0
 )SFZ";
+
+    /** Modeled directly on a real commercial library file (a DigitalSoundFactory
+        / E-mu Mo'Phatt drum kit) that exposed both the default_path and
+        note-name-key bugs on first real-world import: a <control> default_path
+        that ~98% of its regions depend on for sample resolution, and a region
+        mixing a numeric key= with note-name lokey=/hikey=/pitch_keycenter= on
+        the SAME region — exactly the combination that used to collapse to
+        key range 0-0 instead of either being honoured or reported. */
+    const char* kRealWorldSfz = R"SFZ(
+<control>
+default_path=Kit Samples\
+
+<group>
+lovel=0
+hivel=127
+
+<region> sample=Kick.wav lokey=C2 hikey=E2 lovel=0 hivel=127 pitch_keycenter=D#-1
+key=36
+ampeg_decay=31.457
+
+<region> sample=Snare.wav
+lokey=38 hikey=38
+pitch_keycenter=38
+)SFZ";
 }
 
 class MultisamplerRoundTripTests final : public juce::UnitTest
@@ -53,6 +77,8 @@ public:
         testSfzExportImportRoundTrip();
         testJsonRoundTripIsLossless();
         testValidation();
+        testDefaultPathResolution();
+        testNoteNameKeyOpcodes();
     }
 
 private:
@@ -104,6 +130,70 @@ private:
             if (it != z.extraOpcodes.end())
                 expectEquals (it->second, juce::String ("0.5"));
         }
+    }
+
+    void testDefaultPathResolution()
+    {
+        beginTest ("<control> default_path= is prepended to relative sample= paths");
+
+        // Lay out an actual "Kick.wav" / "Snare.wav" under a "Kit Samples"
+        // subfolder next to a temp .sfz, matching kRealWorldSfz's bare
+        // filenames + default_path convention, and confirm the importer
+        // finds them there instead of reporting them missing.
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                        .getNonexistentChildFile ("dysekt_default_path_test", "", false);
+        root.createDirectory();
+        auto samplesDir = root.getChildFile ("Kit Samples");
+        samplesDir.createDirectory();
+        samplesDir.getChildFile ("Kick.wav").replaceWithText ("not really audio");
+        samplesDir.getChildFile ("Snare.wav").replaceWithText ("not really audio");
+
+        auto sfzFile = root.getChildFile ("kit.sfz");
+        sfzFile.replaceWithText (kRealWorldSfz);
+
+        const auto result = SfzImporter::importFile (sfzFile);
+        expect (result.success);
+        expectEquals (result.instrument.zones.size(), (size_t) 2);
+
+        // Neither region's sample= includes "Kit Samples/" itself — only
+        // default_path supplies it. If this resolves without default_path
+        // support, both would report as missing.
+        for (const auto& z : result.instrument.zones)
+            expect (! z.hasMissingSample());
+
+        expectEquals (result.instrument.zones[0].sampleFile.getFileName(), juce::String ("Kick.wav"));
+        expectEquals (result.instrument.zones[0].sampleFile.getParentDirectory().getFileName(),
+                      juce::String ("Kit Samples"));
+
+        root.deleteRecursively();
+    }
+
+    void testNoteNameKeyOpcodes()
+    {
+        beginTest ("Note-name key/lokey/hikey/pitch_keycenter parse to real MIDI notes, not 0");
+
+        const auto result = SfzImporter::importText (kRealWorldSfz, juce::File());
+        expect (result.success);
+        expectEquals (result.instrument.zones.size(), (size_t) 2);
+
+        // First region: lokey=C2 hikey=E2 pitch_keycenter=D#-1, PLUS an
+        // explicit key=36 on the same region. Per SFZ semantics (and this
+        // importer's existing, deliberate design) explicit lokey/hikey/
+        // pitch_keycenter beat key= — the point of this test is that none
+        // of the three collapse to 0, not that they match key=36.
+        const auto& kick = result.instrument.zones[0];
+        expectEquals (kick.lowKey, 48);    // C2
+        expectEquals (kick.highKey, 52);   // E2
+        expectEquals (kick.rootKey, 15);   // D#-1
+        expect (kick.lowKey != 0 && kick.highKey != 0 && kick.rootKey != 0);
+
+        // Second region: plain numeric lokey/hikey/pitch_keycenter — confirms
+        // the numeric fast path still works unchanged alongside the new
+        // note-name path.
+        const auto& snare = result.instrument.zones[1];
+        expectEquals (snare.lowKey, 38);
+        expectEquals (snare.highKey, 38);
+        expectEquals (snare.rootKey, 38);
     }
 
     void testSfzExportImportRoundTrip()

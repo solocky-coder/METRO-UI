@@ -1,4 +1,5 @@
 #include "SfzImporter.h"
+#include "../SfzKeyParsing.h"
 #include <map>
 #include <set>
 
@@ -23,8 +24,11 @@ namespace
     {
         // Headers we intentionally do not import in the first release
         // (plan §5: "macros, includes, keyswitches, curves, and advanced
-        // modulation can be scheduled after the core release").
-        static const std::set<juce::String> s = { "control", "curve", "effect", "master", "midi" };
+        // modulation can be scheduled after the core release"). <control>
+        // is handled separately below — its default_path= opcode IS read
+        // (see resolveSamplePath), everything else in it is skipped like
+        // these headers are in full.
+        static const std::set<juce::String> s = { "curve", "effect", "master", "midi" };
         return s;
     }
 
@@ -231,13 +235,51 @@ namespace
         return it == m.end() ? fallback : it->second.getIntValue();
     }
 
+    /** Like intOpcode(), but for the four key-related opcodes that may hold
+        either a raw MIDI number or a note name (see SfzKeyParsing.h). A
+        plain intOpcode() on "c3" silently returns 0 — which looks like a
+        valid, if surprising, key value rather than a parse failure — so
+        this needs its own path rather than reusing intOpcode() with a
+        different getIntValue()-alike. Pushes a malformedOpcode warning and
+        keeps `fallback` if the value can't be parsed either way. */
+    int keyOpcode (const OpcodeMap& m, const juce::String& key, int fallback,
+                   int regionIndex, int lineForWarnings, std::vector<SfzImporter::Warning>& warnings)
+    {
+        const auto it = m.find (key);
+        if (it == m.end())
+            return fallback;
+
+        const int parsed = SfzKeyParsing::parseKeyValue (it->second);
+        if (parsed < 0)
+        {
+            warnings.push_back ({ SfzImporter::Warning::Kind::malformedOpcode, lineForWarnings,
+                                   "Region " + juce::String (regionIndex) + ": couldn't parse "
+                                       + key + "=" + it->second + " as a MIDI note or note name" });
+            return fallback;
+        }
+        return parsed;
+    }
+
     int64_t int64Opcode (const OpcodeMap& m, const juce::String& key, int64_t fallback)
     {
         const auto it = m.find (key);
         return it == m.end() ? fallback : (int64_t) it->second.getLargeIntValue();
     }
 
-    juce::File resolveSamplePath (const juce::String& rawPath, const juce::File& baseDirectory)
+    /** `defaultPath` is the <control> header's default_path= value (empty if
+        none was set). Per the SFZ spec it is unconditionally prepended to
+        every relative sample= path from the point it's declared onward — no
+        attempt is made to detect "this path already looks like it includes
+        the default_path folder" and skip prepending, since that's a string-
+        matching heuristic with real false positives/negatives (a sample
+        genuinely named to look like the folder; different casing; etc). A
+        file that redundantly repeats the folder name in some regions after
+        already setting default_path is an authoring inconsistency in that
+        file, not something the importer should silently paper over — those
+        regions will correctly show up as missing samples, recoverable via
+        MultisamplerInstrument::relinkAllFromFolder(). */
+    juce::File resolveSamplePath (const juce::String& rawPath, const juce::File& baseDirectory,
+                                   const juce::String& defaultPath)
     {
         if (rawPath.isEmpty())
             return {};
@@ -249,13 +291,24 @@ namespace
         if (juce::File::isAbsolutePath (normalised))
             return asAbsolute;
 
-        if (baseDirectory == juce::File())
-            return juce::File::getCurrentWorkingDirectory().getChildFile (normalised);
+        juce::File base = (baseDirectory == juce::File())
+                         ? juce::File::getCurrentWorkingDirectory()
+                         : baseDirectory;
 
-        return baseDirectory.getChildFile (normalised);
+        if (defaultPath.isNotEmpty())
+        {
+            auto normalisedDefault = defaultPath.replaceCharacter ('\\', '/');
+            while (normalisedDefault.endsWithChar ('/'))
+                normalisedDefault = normalisedDefault.dropLastCharacters (1);
+            if (normalisedDefault.isNotEmpty())
+                base = base.getChildFile (normalisedDefault);
+        }
+
+        return base.getChildFile (normalised);
     }
 
     SampleZone buildZone (const OpcodeMap& resolved, const juce::File& baseDirectory,
+                           const juce::String& defaultPath,
                            int regionIndex, std::vector<SfzImporter::Warning>& warnings, int lineForWarnings)
     {
         SampleZone z;
@@ -267,15 +320,23 @@ namespace
         // opcodes on the effective region override earlier ones — here that
         // reduces to "explicit lokey/hikey beat key=" since inheritance has
         // already been flattened into `resolved` in file order).
+        //
+        // All four of key/lokey/hikey/pitch_keycenter go through keyOpcode()
+        // rather than intOpcode() because SFZ allows note-name values here
+        // ("c3", "d#-1") — a plain getIntValue() silently returns 0 for
+        // those, which previously corrupted every region in a note-named
+        // file (or a file mixing key= with note-named lokey/hikey/
+        // pitch_keycenter on the same region, as real commercial libraries
+        // do) down to key 0 instead of reporting the problem.
         if (resolved.count ("key"))
         {
-            const auto k = juce::jlimit (0, 127, intOpcode (resolved, "key", 60));
+            const auto k = keyOpcode (resolved, "key", 60, regionIndex, lineForWarnings, warnings);
             z.lowKey = z.highKey = z.rootKey = k;
         }
 
-        z.lowKey  = juce::jlimit (0, 127, intOpcode (resolved, "lokey", z.lowKey));
-        z.highKey = juce::jlimit (0, 127, intOpcode (resolved, "hikey", z.highKey));
-        z.rootKey = juce::jlimit (0, 127, intOpcode (resolved, "pitch_keycenter", z.rootKey));
+        z.lowKey  = keyOpcode (resolved, "lokey", z.lowKey, regionIndex, lineForWarnings, warnings);
+        z.highKey = keyOpcode (resolved, "hikey", z.highKey, regionIndex, lineForWarnings, warnings);
+        z.rootKey = keyOpcode (resolved, "pitch_keycenter", z.rootKey, regionIndex, lineForWarnings, warnings);
 
         z.lowVelocity  = juce::jlimit (0, 127, intOpcode (resolved, "lovel", 1));
         z.highVelocity = juce::jlimit (0, 127, intOpcode (resolved, "hivel", 127));
@@ -316,7 +377,7 @@ namespace
         const auto sampleIt = resolved.find ("sample");
         if (sampleIt != resolved.end())
         {
-            z.sampleFile = resolveSamplePath (sampleIt->second, baseDirectory);
+            z.sampleFile = resolveSamplePath (sampleIt->second, baseDirectory, defaultPath);
             if (! z.sampleFile.existsAsFile())
                 warnings.push_back ({ SfzImporter::Warning::Kind::missingSample, lineForWarnings,
                                        "Region " + juce::String (regionIndex) + ": " + sampleIt->second });
@@ -362,6 +423,14 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
     OpcodeMap regionOpcodes;
     bool inRegion = false;
     bool skippingHeaderBody = false;   // inside <control>/<curve>/etc — ignore its opcodes
+    bool inControlHeader = false;      // specifically <control> — default_path= is still read from here
+
+    // default_path=, captured from <control> if present. Per spec, prepended
+    // to every relative sample= from this point in the file onward (see
+    // resolveSamplePath's header comment for why no other <control> opcode
+    // is handled). Tracked here rather than in an OpcodeMap so it never
+    // leaks into a zone's extraOpcodes.
+    juce::String currentDefaultPath;
 
     // Which inheritance level bare (non-region) opcodes currently apply to.
     // Starts at Global so a file with no <global> header still lets stray
@@ -381,7 +450,8 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
         for (const auto& [k, v] : regionOpcodes) resolved[k] = v;
 
         ++regionIndex;
-        result.instrument.zones.push_back (buildZone (resolved, baseDirectory, regionIndex, result.warnings, lastLine));
+        result.instrument.zones.push_back (buildZone (resolved, baseDirectory, currentDefaultPath,
+                                                        regionIndex, result.warnings, lastLine));
 
         regionOpcodes.clear();
         inRegion = false;
@@ -394,6 +464,8 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
         if (t.type == Token::Type::header)
         {
             flushRegion();
+
+            inControlHeader = false;
 
             if (t.headerName == "region")
             {
@@ -413,6 +485,18 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
                 context = Context::global;
                 skippingHeaderBody = false;
             }
+            else if (t.headerName == "control")
+            {
+                // Still a "skipped" header for every opcode except
+                // default_path= (handled specially below) — see
+                // resolveSamplePath's comment for why the rest of <control>
+                // stays out of scope.
+                skippingHeaderBody = true;
+                inControlHeader = true;
+                result.warnings.push_back ({ Warning::Kind::unsupportedHeader, t.line,
+                                              "<control> opcodes other than default_path are not imported "
+                                              "in this release" });
+            }
             else if (skippedHeaders().count (t.headerName))
             {
                 skippingHeaderBody = true;
@@ -430,7 +514,11 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
 
         // Token::Type::opcode
         if (skippingHeaderBody)
+        {
+            if (inControlHeader && t.opcodeKey == "default_path")
+                currentDefaultPath = t.opcodeValue;
             continue;
+        }
 
         if (inRegion)
             applyToken (regionOpcodes, t);
