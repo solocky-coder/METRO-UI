@@ -202,6 +202,12 @@ target_sources(Dysekt PRIVATE
     src/ui/WaveformOverview.cpp
     src/ui/ArchiveIntegration.cpp
     src/ui/GlobalEqPanel.cpp
+    src/ui/multisampler/MultisamplerEditor.cpp
+    src/ui/multisampler/ZoneMapView.cpp
+    src/audio/multisampler/MultisamplerInstrument.cpp
+    src/audio/multisampler/InstrumentSerializer.cpp
+    src/audio/multisampler/SfzImporter.cpp
+    src/audio/multisampler/SfzExporter.cpp
     # SequencerEngine and MidiClip are standalone-only — the DAW is the sequencer
 )
 
@@ -304,6 +310,12 @@ target_sources(DysektStandalone PRIVATE
     src/ui/WaveformOverview.cpp
     src/ui/ArchiveIntegration.cpp
     src/ui/GlobalEqPanel.cpp
+    src/ui/multisampler/MultisamplerEditor.cpp
+    src/ui/multisampler/ZoneMapView.cpp
+    src/audio/multisampler/MultisamplerInstrument.cpp
+    src/audio/multisampler/InstrumentSerializer.cpp
+    src/audio/multisampler/SfzImporter.cpp
+    src/audio/multisampler/SfzExporter.cpp
     src/sequencer/SequencerEngine.cpp
     src/sequencer/MidiClip.cpp
     src/ui/FloatingTransportBar.cpp
