@@ -16,7 +16,7 @@ namespace
         if (stored.isEmpty())
             return {};
         const juce::File asIs (stored);
-        if (asIs.isAbsolutePath())
+        if (juce::File::isAbsolutePath (stored))
             return asIs;
         if (bundleRoot != juce::File())
             return bundleRoot.getChildFile (stored);

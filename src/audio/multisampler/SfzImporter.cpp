@@ -246,7 +246,7 @@ namespace
         auto normalised = rawPath.replaceCharacter ('\\', '/');
 
         const juce::File asAbsolute (normalised);
-        if (asAbsolute.isAbsolutePath())
+        if (juce::File::isAbsolutePath (normalised))
             return asAbsolute;
 
         if (baseDirectory == juce::File())

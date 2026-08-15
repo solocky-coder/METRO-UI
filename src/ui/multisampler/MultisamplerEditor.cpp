@@ -6,22 +6,22 @@
 
 namespace
 {
-    juce::Label makeStaticLabel (const juce::String& text)
+    // juce::Label (like all juce::Component subclasses) has a deleted copy
+    // constructor/assignment and no move operations, so it can't be built
+    // and returned by value into an existing member. Configure in place
+    // via a reference instead.
+    void configureStaticLabel (juce::Label& l, const juce::String& text)
     {
-        juce::Label l;
         l.setText (text, juce::dontSendNotification);
         l.setJustificationType (juce::Justification::centredLeft);
         l.setInterceptsMouseClicks (false, false);
-        return l;
     }
 
-    juce::Label makeEditableField()
+    void configureEditableField (juce::Label& l)
     {
-        juce::Label l;
         l.setEditable (false, true, false);   // single click doesn't start editing; double-click does
         l.setJustificationType (juce::Justification::centred);
         l.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-        return l;
     }
 }
 
@@ -42,7 +42,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         if (onInstrumentChanged) onInstrumentChanged();
     };
 
-    titleLabel = makeStaticLabel ("MULTISAMPLER");
+    configureStaticLabel (titleLabel, "MULTISAMPLER");
     titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     addAndMakeVisible (titleLabel);
 
@@ -56,7 +56,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     newButton.onClick = [this] { newInstrumentClicked(); };
 
     // ── Inspector strip ──────────────────────────────────────────────────
-    inspectorTitle = makeStaticLabel ("NO ZONE SELECTED");
+    configureStaticLabel (inspectorTitle, "NO ZONE SELECTED");
     inspectorTitle.setFont (juce::FontOptions (11.0f));
     addAndMakeVisible (inspectorTitle);
 
@@ -72,12 +72,12 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     };
     for (const auto& s : specs)
     {
-        *s.labelWidget = makeStaticLabel (s.labelText);
+        configureStaticLabel (*s.labelWidget, s.labelText);
         s.labelWidget->setFont (juce::FontOptions (9.0f));
         s.labelWidget->setJustificationType (juce::Justification::centred);
         addAndMakeVisible (*s.labelWidget);
 
-        *s.fieldWidget = makeEditableField();
+        configureEditableField (*s.fieldWidget);
         s.fieldWidget->onTextChange = [this] { applyInspectorFieldsToSelection(); };
         addAndMakeVisible (*s.fieldWidget);
     }
