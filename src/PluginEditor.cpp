@@ -248,6 +248,62 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
 };
  addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
  zoneBuilderKeysPanel.getProperties().set ("dysektThemeKey", "accent");
+
+ addChildComponent (multisamplerEditor); // hidden until showMultisamplerEditor is true
+ multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
+ multisamplerEditor.onInstrumentChanged = [this]
+ {
+     // Nothing to persist yet (Phase 4 / .metrokit isn't wired to plugin
+     // state), but repaint so the panel's own dirty-dot indicator and any
+     // future window-title "*" affordance stay current.
+     repaint();
+ };
+ multisamplerEditor.onImportWarnings = [this] (const juce::String& sourceFileName,
+                                                bool importSucceeded,
+                                                const std::vector<SfzImporter::Warning>& warnings)
+ {
+     static const auto kindLabel = [] (SfzImporter::Warning::Kind k) -> juce::String
+     {
+         switch (k)
+         {
+             case SfzImporter::Warning::Kind::unsupportedOpcode:  return "Unsupported opcode";
+             case SfzImporter::Warning::Kind::unsupportedHeader:  return "Unsupported header";
+             case SfzImporter::Warning::Kind::missingSample:      return "Missing sample";
+             case SfzImporter::Warning::Kind::malformedOpcode:    return "Import error";
+             case SfzImporter::Warning::Kind::unresolvedInclude:  return "Unresolved #include";
+             default:                                             return "Warning";
+         }
+     };
+
+     // Cap the listed lines so a file with hundreds of stray opcodes doesn't
+     // produce an unreadable wall of text — the point is to flag that
+     // something was dropped/preserved-but-unedited, not to be a full lint
+     // report. warnings is never empty when this fires (see
+     // MultisamplerEditor::importSfzClicked()).
+     constexpr int kMaxLines = 8;
+     juce::StringArray lines;
+     for (int i = 0; i < (int) warnings.size() && i < kMaxLines; ++i)
+     {
+         const auto& w = warnings[(size_t) i];
+         juce::String line = kindLabel (w.kind);
+         if (w.lineNumber > 0) line << " (line " << w.lineNumber << ")";
+         if (w.detail.isNotEmpty()) line << ": " << w.detail;
+         lines.add (line);
+     }
+     if ((int) warnings.size() > kMaxLines)
+         lines.add ("… and " + juce::String ((int) warnings.size() - kMaxLines) + " more");
+
+     messageOverlay = std::make_unique<MessageOverlay> (
+         importSucceeded ? "Import Completed With Warnings" : "Import Failed",
+         (importSucceeded ? juce::String ("Imported ") : juce::String ("Could not import "))
+             + sourceFileName + (importSucceeded ? juce::String (" — some data may not round-trip:") : juce::String())
+             + "\n\n" + lines.joinIntoString ("\n"),
+         MessageOverlay::Kind::Warning);
+     addAndMakeVisible (*messageOverlay);
+     messageOverlay->setBounds (getLocalBounds());
+     messageOverlay->toFront (true);
+     messageOverlay->onDismiss = [this] { messageOverlay.reset(); };
+ };
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
  // so the timer re-populates the zone matrix on the next completed load.
  sfzDropdown.onFileLoaded = [this] (const juce::File&)
@@ -1736,6 +1792,7 @@ void DysektEditor::resized()
      sfzPlayerDropdown.setVisible (false);  sfzPlayerDropdown.setBounds ({});
      padGridView.setVisible  (false);       padGridView.setBounds  ({});
      zoneBuilderKeysPanel.setVisible (false); zoneBuilderKeysPanel.setBounds ({});
+     multisamplerEditor.setVisible (false);  multisamplerEditor.setBounds ({});
  }
  else if (initBrowserOpen)
  {
@@ -1746,6 +1803,7 @@ void DysektEditor::resized()
      sfzPlayerDropdown.setVisible (false);  sfzPlayerDropdown.setBounds ({});
      padGridView.setVisible  (false);       padGridView.setBounds  ({});
      zoneBuilderKeysPanel.setVisible (false); zoneBuilderKeysPanel.setBounds ({});
+     multisamplerEditor.setVisible (false);  multisamplerEditor.setBounds ({});
  }
  else if (uiMode == 0 || trimActive)
  {
@@ -1766,6 +1824,8 @@ void DysektEditor::resized()
      sfzPlayerDropdown.setBounds ({});
      zoneBuilderKeysPanel.setVisible (false);
      zoneBuilderKeysPanel.setBounds ({});
+     multisamplerEditor.setVisible (false);
+     multisamplerEditor.setBounds ({});
  }
  else if (uiMode == 1)
  {
@@ -1773,11 +1833,12 @@ void DysektEditor::resized()
     // depending on the SCB toggles. ZONES (showZoneBuilder) takes priority
     // over PADS since the SCB never shows both toggles at once (see
     // SliceControlBar::isSfzPlayer2Mode gating), but guard anyway.
-    const bool showZones1 = showZoneBuilder && ! trimActive;
-    const bool showPads1  = showPadGrid && ! showZones1;
+    const bool showZones1  = showZoneBuilder && ! trimActive;
+    const bool showMulti1  = showMultisamplerEditor && ! trimActive && ! showZones1;
+    const bool showPads1   = showPadGrid && ! showZones1 && ! showMulti1;
 
-    waveformView.setVisible (! showPads1 && ! showZones1);
-    waveformView.setBounds ((showPads1 || showZones1) ? juce::Rectangle<int>()
+    waveformView.setVisible (! showPads1 && ! showZones1 && ! showMulti1);
+    waveformView.setBounds ((showPads1 || showZones1 || showMulti1) ? juce::Rectangle<int>()
                                       : juce::Rectangle<int> (screenX, y, screenW, waveH));
     padGridView.setVisible (showPads1);
     padGridView.setBounds (showPads1 ? juce::Rectangle<int> (screenX, y, screenW, waveH)
@@ -1795,6 +1856,13 @@ void DysektEditor::resized()
     zoneBuilderKeysPanel.setVisible (showZones1);
     zoneBuilderKeysPanel.setBounds (showZones1 ? juce::Rectangle<int> (kFrameX, zbTop, kFrameW, zbHeight)
                                                : juce::Rectangle<int>());
+
+    // multisamplerEditor draws its own complete frame too — same full-width,
+    // un-inset bounds as zoneBuilderKeysPanel above (and for the same reason).
+    multisamplerEditor.setVisible (showMulti1);
+    multisamplerEditor.setBounds (showMulti1 ? juce::Rectangle<int> (kFrameX, zbTop, kFrameW, zbHeight)
+                                              : juce::Rectangle<int>());
+
     sfzDropdown.setVisible (false);
     sfzDropdown.setBounds ({});
     sfzPlayerDropdown.setVisible (false);
@@ -1813,6 +1881,8 @@ void DysektEditor::resized()
      padGridView.setBounds ({});
      zoneBuilderKeysPanel.setVisible (false);
      zoneBuilderKeysPanel.setBounds ({});
+     multisamplerEditor.setVisible (false);
+     multisamplerEditor.setBounds ({});
  }
 
   // ── Trim bar: hide behind browser or mixer, restore when they close ───────
@@ -1982,6 +2052,11 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
 #endif
 
  if (code == '?') { toggleShortcutsPanel(); return true; }
+
+ // MULTISAMPLER panel — SFZ-PLAYER only, same gating as the 'L' PADS
+ // shortcut below. Mutually exclusive with ZONES (toggleMultisamplerEditor
+ // turns showZoneBuilder off, same as toggleZoneBuilder does the reverse).
+ if (code == 'K' && uiMode == 1) { toggleMultisamplerEditor (! showMultisamplerEditor); return true; }
 
  if (code == 'M')
  {
@@ -2550,6 +2625,26 @@ void DysektEditor::toggleZoneBuilder (bool on)
     }
     resized();
     repaint(); // clear waveform/overview areas vacated by the old view
+}
+
+void DysektEditor::toggleMultisamplerEditor (bool on)
+{
+    showMultisamplerEditor = on;
+    if (on && showZoneBuilder)
+        toggleZoneBuilder (false);   // mutually exclusive — see header comment
+
+    if (on && initBrowserOpen)
+    {
+        // Same rationale as toggleZoneBuilder's identical guard above:
+        // opening this panel is itself an explicit "I'm working with the
+        // SFZ-Player" action, so clear the empty-state browser auto-open.
+        initBrowserOpen = false;
+        browserPanel.setVisible (false);
+        headerBar.setBrowserActive (false);
+    }
+
+    resized();
+    repaint();
 }
 
 void DysektEditor::refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary)

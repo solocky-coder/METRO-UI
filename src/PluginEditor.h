@@ -35,6 +35,7 @@
 #include "ui/PadGridView.h"
 #include "ui/KeysPanel.h"
 #include "ui/AddZoneOverlay.h"
+#include "ui/multisampler/MultisamplerEditor.h"
 #if DYSEKT_STANDALONE
 #include "ui/PianoRollPanel.h"
 #include "ui/ArrangeView.h"
@@ -144,6 +145,13 @@ private:
     bool showZoneBuilder = false;  ///< true = zoneBuilderKeysPanel, false = WaveformView (within uiMode 1 / SFZ-PLAYER)
     bool hasSampleLoaded = false;   // true once a sample with audio is loaded
     bool hasSampleLoaded2 = false;  // true once SFZ-PLAYER (sliceManager2/sampleData2) has a real sample loaded
+
+    /// SFZ-PLAYER MULTISAMPLER view (native MultisamplerInstrument model —
+    /// see METRO-UI_MULTISAMPLER_IMPLEMENTATION.md §6). Distinct from, and
+    /// mutually exclusive with, showZoneBuilder's raw-SFZ zoneBuilderKeysPanel
+    /// flow: this is the model-first editor, that's the older direct-SFZ-text
+    /// workflow. Both currently coexist inside uiMode == 1; see resized().
+    bool showMultisamplerEditor = false;
     bool iconNeedsApplying = true;   // set icon once peer is available
 
     // ── SFZ-PLAYER zone builder (ZONES toggle in SliceControlBar) ──────────────
@@ -202,6 +210,14 @@ private:
     // and DualLcdControlFrame's ZONES tab-icon, so both entry points behave
     // identically (including the unsaved-zones confirm prompt on close).
     void toggleZoneBuilder (bool on);
+
+    // Opens/closes the native-model MULTISAMPLER panel (multisamplerEditor).
+    // Mutually exclusive with the zone builder — turning one on turns the
+    // other off, same as ZONES vs PADS. No unsaved-changes prompt yet since
+    // multisamplerEditor's instrument isn't persisted to plugin state until
+    // Phase 4 (.metrokit) lands; it simply keeps editing in memory across
+    // toggles like padGridView does.
+    void toggleMultisamplerEditor (bool on);
 
     void ensureZoneBuilderScratchExists();   // rebuild scratch file from pending zones, reload preview + matrix
     void refreshZoneBuilderPreview();       // re-derive + load whichever file (scratch/target) is current, refresh matrix
@@ -272,6 +288,7 @@ private:
     MixerPanel       mixerPanel;
     PadGridView      padGridView;
     KeysPanel        zoneBuilderKeysPanel { processor }; // SFZ-PLAYER ZONES view — standalone, NOT sfzPlayerDropdown.keysPanel
+    MultisamplerEditor multisamplerEditor { processor }; // SFZ-PLAYER MULTISAMPLER view — native-model successor, see above
     Sf2InstrumentWorkspace sfzDropdown;   // name kept — see all call sites below
     SfzPlayerDropdownPanel sfzPlayerDropdown;
     ShortcutsPanel   shortcutsPanel { processor };
