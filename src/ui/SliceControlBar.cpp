@@ -1111,10 +1111,10 @@ void SliceControlBar::paint (juce::Graphics& g)
  x += cw + si (4);
  }
 
- // Selected-zone readout — SFZ-PLAYER ZONES view only, appended after OUT
- // MAIN in the same row rather than replacing anything. See
+ // Selected-zone readout — SFZ-PLAYER ZONES/MULTISAMPLER views, appended
+ // after OUT MAIN in the same row rather than replacing anything. See
  // setSfzZoneSummary() doc comment.
- if (sfzMode && zoneViewActive)
+ if (sfzMode && (zoneViewActive || multisamplerViewActive))
  {
  g.setColour (getTheme().separator.withAlpha (0.5f));
  g.drawVerticalLine (x + 2, (float) row1y + 4, (float) row1y + 28);
@@ -1669,7 +1669,7 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
  activeDragCell = -1;
  activeSfzZoneField = 0;
  auto pos = e.getPosition();
- if (isSfzPlayer2Mode() && zoneViewActive && sfzZoneSummary.valid)
+ if (isSfzPlayer2Mode() && (zoneViewActive || multisamplerViewActive) && sfzZoneSummary.valid)
  {
      for (const auto& zoneCell : sfzZoneCells)
          if (zoneCell.bounds.contains (pos))

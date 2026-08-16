@@ -2772,6 +2772,7 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
                 multisamplerEditor.discardPendingEdits();
 
             showMultisamplerEditor = false;
+            sliceControlBar.setMultisamplerViewActive (false);   // see the unconditional sync a few lines below — this early-return path needs it too
             sliceControlBar.clearSfzZoneSummary();   // leaving MULTISAMPLER — don't leave its zone readout stuck in the SCB
             resized();
             repaint();
@@ -2782,6 +2783,19 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
     showMultisamplerEditor = on;
     if (on && showZoneBuilder)
         hideZoneBuilderView();   // view switch, not a close — see hideZoneBuilderView()'s doc comment
+
+    // The zone-summary strip in the SCB (loKey/hiKey/root/pitch/pan/volume/
+    // release/loop) is shared between ZONES and MULTISAMPLER, but its
+    // paint()/drag-edit code gates on zoneViewActive — which also drives the
+    // SCB's own "ZONES" button look AND that button's click-to-toggle
+    // behaviour (see SliceControlBar::mouseDown's zoneToggleBtnArea check).
+    // Reusing zoneViewActive here would make that button read as "active"
+    // while MULTISAMPLER is open and, worse, make clicking it flip straight
+    // back to inactive instead of switching to ZONES. setMultisamplerViewActive
+    // is the same idea as setZoneViewActive but scoped to just the summary
+    // strip, so MULTISAMPLER gets a working readout without touching ZONES'
+    // own toggle semantics.
+    sliceControlBar.setMultisamplerViewActive (on);
     if (! on)
         sliceControlBar.clearSfzZoneSummary();   // same rationale as the dirty-guard branch above
 
@@ -2818,6 +2832,7 @@ void DysektEditor::hideZoneBuilderView()
 void DysektEditor::hideMultisamplerViewForSwitch()
 {
     showMultisamplerEditor = false;
+    sliceControlBar.setMultisamplerViewActive (false);
     sliceControlBar.clearSfzZoneSummary();
 }
 

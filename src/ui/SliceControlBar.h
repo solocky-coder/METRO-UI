@@ -36,6 +36,18 @@ public:
     /// Fired when the user clicks the ZONES toggle button (SFZ-PLAYER mode only).
     std::function<void (bool zoneActive)> onZoneViewToggle;
 
+    // MULTISAMPLER counterpart of setZoneViewActive() above — set externally
+    // by the editor whenever MULTISAMPLER opens/closes. Deliberately a
+    // separate flag rather than reusing zoneViewActive: that flag also
+    // drives the SCB's own "ZONES" button look and its click-to-toggle
+    // handler (see mouseDown's zoneToggleBtnArea check), which belongs to
+    // ZONES specifically. This one exists purely to let the selected-zone
+    // readout strip (loKey/hiKey/root/pitch/pan/volume/release/loop) draw
+    // and accept drag-edits while MULTISAMPLER is the active panel instead,
+    // without touching that button's behaviour.
+    void setMultisamplerViewActive (bool on) { multisamplerViewActive = on; repaint(); }
+    bool getMultisamplerViewActive() const noexcept { return multisamplerViewActive; }
+
     // SAVE button — appears to the left of ZONES (SFZ-PLAYER mode only) while
     // there are staged-but-unsaved zone-builder changes. Set externally by the
     // editor whenever its pending-zone list goes from empty <-> non-empty.
@@ -79,6 +91,7 @@ private:
     juce::Rectangle<int> waveToggleBtnArea; // hit-tested in mouseDown — WAVE button
 
     bool  zoneViewActive = false;   // mirrors editor showZoneBuilder
+    bool  multisamplerViewActive = false;   // mirrors editor showMultisamplerEditor — see setMultisamplerViewActive()
     juce::Rectangle<int> zoneToggleBtnArea; // hit-tested in mouseDown — ZONES button (SFZ-PLAYER only)
 
     bool  zoneDirty = false;        // mirrors editor zoneBuilderDirty — shows/hides the SAVE button
