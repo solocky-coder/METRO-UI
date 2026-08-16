@@ -162,7 +162,16 @@ void SliceLcdDisplay::buildDisplayData()
     data.sustainLevel = sl.sustainLevel;
     data.releaseSec   = sl.releaseSec;
     data.reverse     = sl.reverse;
-    data.loopMode    = sl.loopMode;
+
+    // Root cause 3 fix: for an SFZ-PLAYER note split into a one-shot
+    // attack head + looping sustain tail (see PluginProcessor.cpp's
+    // head/tail split), the head's own loopMode is intentionally always 0
+    // — only the (never directly selectable) tail's loopMode reflects the
+    // real loop. Follow the chain here so the LCD shows what's actually
+    // playing instead of always reading "Off" from the head.
+    data.loopMode = (sl.nextSliceIdx >= 0 && sl.nextSliceIdx < snap.numSlices)
+                         ? snap.slices[(size_t) sl.nextSliceIdx].loopMode
+                         : sl.loopMode;
     data.oneShot     = sl.oneShot;
     data.muteGroup   = sl.muteGroup;
     data.globalMono  = processor.apvts.getRawParameterValue (ParamIds::globalMono)->load() > 0.5f;

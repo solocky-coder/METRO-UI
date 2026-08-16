@@ -1481,6 +1481,70 @@ void SfzPlayerDropdownPanel::reloadZones (const juce::File& f)
 //  writeSfzZoneChange  —  patch one <region> block in the SFZ text file
 // =============================================================================
 
+// Helper: line index one past the end of the region block starting at
+// regionStart (the next <region>/<group>/<global> header, or EOF).
+static int regionBlockEnd (const juce::StringArray& lines, int regionStart)
+{
+    for (int i = regionStart + 1; i < lines.size(); ++i)
+    {
+        const auto lower = lines[i].trim().toLowerCase();
+        if (lower.startsWith ("<region>") || lower.startsWith ("<group>") ||
+            lower.startsWith ("<global>"))
+            return i;
+    }
+    return lines.size();
+}
+
+// Root cause 2 helper (ZONES): resolve this region's sample= opcode to a
+// playable file and read its length in frames, so toggling LOOP on can
+// write real whole-sample loop_start/loop_end — see writeSfzZoneChange.
+// There's no loop-point editor in ZONES for the user to specify explicit
+// points, so "loop the whole sample" is the only sensible meaning of a
+// bare on/off toggle.
+static juce::int64 findSampleLengthForRegion (const juce::File& sfzFile,
+                                               const juce::StringArray& lines,
+                                               int regionStart, int regionEnd)
+{
+    juce::String rawPath;
+    for (int i = regionStart; i < regionEnd; ++i)
+    {
+        const auto& lineOrig = lines[i];
+        const int sRaw = lineOrig.toLowerCase().indexOf ("sample=");
+        if (sRaw < 0)
+            continue;
+
+        juce::String p = lineOrig.substring (sRaw + 7).trim();
+        // Strip trailing opcode tokens (word= ...) so paths containing
+        // spaces aren't cut short — same approach parseSfzZones uses.
+        for (;;)
+        {
+            auto si = p.lastIndexOf (" ");
+            if (si < 0) break;
+            if (p.substring (si + 1).containsChar ('=')) p = p.substring (0, si).trim();
+            else break;
+        }
+        rawPath = p.unquoted();
+        break;
+    }
+
+    if (rawPath.isEmpty())
+        return -1;
+
+    const juce::File sampleFile = juce::File::isAbsolutePath (rawPath)
+                                       ? juce::File (rawPath)
+                                       : sfzFile.getParentDirectory().getChildFile (rawPath);
+    if (! sampleFile.existsAsFile())
+        return -1;
+
+    juce::AudioFormatManager fm;
+    fm.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (sampleFile));
+    if (reader == nullptr)
+        return -1;
+
+    return (juce::int64) reader->lengthInSamples;
+}
+
 // Helper: set or replace an opcode value within a region line-block.
 // 'lines' is the full file split by line. 'regionStart' is the line index of
 // the <region> header. We search forward (until the next <region>/<group> or
@@ -1545,17 +1609,7 @@ void SfzPlayerDropdownPanel::deleteSfzZone (const juce::File& f, int rowIndex)
     if (regionStart < 0) return;  // region not found — bail
 
     // Block runs until the next <region>/<group>/<global> header or EOF.
-    int regionEnd = lines.size();
-    for (int i = regionStart + 1; i < lines.size(); ++i)
-    {
-        const auto lower = lines[i].trim().toLowerCase();
-        if (lower.startsWith ("<region>") || lower.startsWith ("<group>") ||
-            lower.startsWith ("<global>"))
-        {
-            regionEnd = i;
-            break;
-        }
-    }
+    const int regionEnd = regionBlockEnd (lines, regionStart);
 
     lines.removeRange (regionStart, regionEnd - regionStart);
     f.replaceWithText (lines.joinIntoString ("\n"));
@@ -1609,9 +1663,41 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
     setOpcode (lines, regionLine, "ampeg_release",juce::String (z.releaseSec, 3));
 
     if (z.isLooped)
+    {
         setOpcode (lines, regionLine, "loop_mode", "loop_continuous");
+
+        // Root cause 2 fix: loop_mode alone isn't actionable by
+        // SoundFontLoader without valid loop_start/loop_end opcodes (see
+        // parseSfzPerRegionLoopPoints) — previously ZONES only ever wrote
+        // loop_mode, so flipping LOOP on silently did nothing on reload.
+        // Only add points if this region doesn't already have its own
+        // (never clobber an explicit range authored elsewhere).
+        const int regionEnd = regionBlockEnd (lines, regionLine);
+        bool hasExplicitPoints = false;
+        for (int i = regionLine; i < regionEnd; ++i)
+        {
+            const auto lower = lines[i].toLowerCase();
+            if (lower.contains ("loop_start=") || lower.contains ("loop_end="))
+            {
+                hasExplicitPoints = true;
+                break;
+            }
+        }
+
+        if (! hasExplicitPoints)
+        {
+            const juce::int64 sampleLength = findSampleLengthForRegion (f, lines, regionLine, regionEnd);
+            if (sampleLength > 1)
+            {
+                setOpcode (lines, regionLine, "loop_start", "0");
+                setOpcode (lines, regionLine, "loop_end", juce::String (sampleLength - 1));
+            }
+        }
+    }
     else
+    {
         setOpcode (lines, regionLine, "loop_mode", "no_loop");
+    }
 
     // Persist the zone's colour as a custom (non-standard) opcode. Real SFZ
     // players (sfizz, etc.) ignore opcodes they don't recognise, so this is

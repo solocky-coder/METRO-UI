@@ -1910,7 +1910,16 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
  }
  else if (fieldId == F::FieldLoop)
  {
- int cur = (sl.lockMask & kLockLoop) ? sl.loopMode
+ // Root cause 3 fix: same head/tail chain-follow as SliceLcdDisplay —
+ // an SFZ-PLAYER one-shot attack head always has its own loopMode at 0
+ // (see PluginProcessor.cpp's head/tail split), so the popup's current
+ // checkmark must read the chained tail's loopMode instead, or this
+ // menu disagrees with the LCD for exactly the same reason the LCD
+ // used to disagree with the SCB.
+ const int effectiveLoopMode = (sl.nextSliceIdx >= 0 && sl.nextSliceIdx < ui.numSlices)
+                                    ? ui.slices[(size_t) sl.nextSliceIdx].loopMode
+                                    : sl.loopMode;
+ int cur = (sl.lockMask & kLockLoop) ? effectiveLoopMode
  : (int) processor.apvts.getRawParameterValue (ParamIds::defaultLoop)->load();
  addItems ({ "Off", "Loop", "Ping-Pong" }, cur);
  }

@@ -455,7 +455,29 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
         case SliceControlBar::ZonePan:     z.pan          = value; break;
         case SliceControlBar::ZoneVolume:  z.gainDb       = value; break;
         case SliceControlBar::ZoneRelease: z.releaseSeconds = value; break;
-        case SliceControlBar::ZoneLoop:    z.loopMode     = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop; break;
+        case SliceControlBar::ZoneLoop:
+            z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
+
+            // Root cause 2 fix (MULTISAMPLER): SfzExporter only writes
+            // loop_start/loop_end when z.loopStart/z.loopEnd are already
+            // set (see SfzExporter.cpp's appendRegion), so toggling LOOP on
+            // with none set exported loop_mode=loop_continuous with no
+            // points — unactionable by SoundFontLoader on reload. There's
+            // no loop-point editor here for the user to set explicit
+            // points, so auto-fill the whole sample the first time LOOP is
+            // turned on. Never overwrites an already-set range.
+            if (z.loopMode == LoopMode::loopContinuous && (z.loopStart < 0 || z.loopEnd < 0))
+            {
+                juce::AudioFormatManager fm;
+                fm.registerBasicFormats();
+                std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (z.sampleFile));
+                if (reader != nullptr && reader->lengthInSamples > 1)
+                {
+                    z.loopStart = 0;
+                    z.loopEnd   = reader->lengthInSamples - 1;
+                }
+            }
+            break;
         default: return;
     }
 

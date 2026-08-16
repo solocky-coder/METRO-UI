@@ -3240,6 +3240,20 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
 
                     // Tail is intentionally left unpinned (midiMap never
                     // points to it) and marked as the actual loop region.
+                    //
+                    // Root cause 3: the head — not the tail — is what the
+                    // SCB/LCD select and display for this note. We can't
+                    // simply mirror loopMode=1 onto the head too: Slice::
+                    // loopMode also drives real playback (VoicePool reads it
+                    // to decide whether a voice loops in place), and the
+                    // head must NOT loop in place — it has to play through
+                    // once and hand off to the tail via nextSliceIdx, or the
+                    // chain to the tail is never reached at all. So the
+                    // head's own loopMode is intentionally left at 0 here;
+                    // the UI-facing fix instead makes display code follow
+                    // nextSliceIdx to read the tail's real loopMode when a
+                    // slice is chained — see SliceLcdDisplay.cpp and
+                    // SliceControlBar.cpp.
                     sliceManager2.getSlice (tailIdx).loopMode = 1;   // forward loop, whole-slice
 
                     pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey });

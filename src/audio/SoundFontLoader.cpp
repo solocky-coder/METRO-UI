@@ -78,6 +78,30 @@ static std::pair<int,int> parseSfzLoopPoints (const juce::File& sfzFile)
     if (loopStart < 0 || loopEnd <= loopStart)
         return { -1, -1 };
 
+    // Root cause 1 fix: loop_mode= is the actual authority on whether a
+    // sample loops — previously this parser (and the caller) inferred
+    // looping purely from loop_start/loop_end being present, and never
+    // looked at loop_mode at all. That meant a file with an explicit
+    // loop_mode=no_loop (or one_shot) but stray loop_start/loop_end opcodes
+    // — e.g. points carried over from a source .wav's sample chunk — would
+    // still be treated as looping. Absence of loop_mode falls back to the
+    // old points-imply-loop behavior, for files that never specify it.
+    juce::String loopModeStr;
+    {
+        const juce::String key ("loop_mode");
+        int pos = text.indexOfIgnoreCase (key + "=");
+        if (pos >= 0)
+        {
+            pos += key.length() + 1;
+            int end = pos;
+            while (end < text.length() && ! juce::CharacterFunctions::isWhitespace (text[end]))
+                ++end;
+            loopModeStr = text.substring (pos, end).trim().toLowerCase();
+        }
+    }
+    if (loopModeStr == "no_loop" || loopModeStr == "one_shot")
+        return { -1, -1 };
+
     return { loopStart, loopEnd };
 }
 
@@ -178,6 +202,33 @@ static std::vector<SfzRegionLoop> parseSfzPerRegionLoopPoints (const juce::File&
         rl.loopEnd   = scanIntOpcode (chunk, "loop_end");
         if (rl.loopStart < 0 || rl.loopEnd <= rl.loopStart)
             continue;   // this region has no (valid) loop — skip, leave as one-shot
+
+        // Root cause 1 fix (per-region): same loop_mode authority as
+        // parseSfzLoopPoints above — an explicit no_loop/one_shot on this
+        // region wins over stray loop_start/loop_end opcodes. See that
+        // function's comment for the full rationale.
+        {
+            juce::String loopModeStr;
+            int searchFrom = 0;
+            for (;;)
+            {
+                int pos = chunk.indexOfIgnoreCase (searchFrom, "loop_mode=");
+                if (pos < 0) break;
+                if (pos > 0 && juce::CharacterFunctions::isLetter (chunk[pos - 1]))
+                {
+                    searchFrom = pos + 1;
+                    continue;
+                }
+                const int valStart = pos + (int) juce::String ("loop_mode=").length();
+                int valEnd = valStart;
+                while (valEnd < chunk.length() && ! juce::CharacterFunctions::isWhitespace (chunk[valEnd]))
+                    ++valEnd;
+                loopModeStr = chunk.substring (valStart, valEnd).trim().toLowerCase();
+                break;
+            }
+            if (loopModeStr == "no_loop" || loopModeStr == "one_shot")
+                continue;
+        }
 
         result.push_back (rl);
     }
