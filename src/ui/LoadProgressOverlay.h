@@ -50,12 +50,9 @@ public:
         UIHelpers::drawPopupBox (g, box, T);
 
         const int padX = 18;
-        g.setFont (DysektLookAndFeel::makeFont (13.0f, true));
-        g.setColour (T.accent);
-        g.drawFittedText (label,
-                          box.getX() + padX, box.getY() + 18,
-                          box.getWidth() - padX * 2, 42,
-                          juce::Justification::centredLeft, 2);
+        UIHelpers::drawWrappedText (g, label, labelFont(), T.accent,
+                    juce::Rectangle<float> ((float) (box.getX() + padX), (float) (box.getY() + 18),
+                                             (float) (box.getWidth() - padX * 2), (float) labelHeight()));
 
         const auto track = juce::Rectangle<int> (box.getX() + padX, box.getBottom() - 30,
                                                    box.getWidth() - padX * 2, 6);
@@ -82,10 +79,34 @@ private:
     juce::String label;
     float        progress = 0.0f;
 
+    static juce::Font labelFont() { return DysektLookAndFeel::makeFont (13.0f, true); }
+
+    int labelHeight() const
+    {
+        const int padX = 18;
+        const int w = juce::jmin (360, getWidth() - 40);
+        const int textWidth = juce::jmax (10, w - padX * 2);
+        // Same 2-line cap as the old drawFittedText call — a status label
+        // this long was always going to be unusual, so still bound it
+        // rather than let a pathological string blow the popup out; unlike
+        // before, though, it wraps/clips at a fixed legible size instead of
+        // shrinking to fit.
+        return juce::jmin (UIHelpers::measureWrappedTextHeight (label, labelFont(), textWidth),
+                            (int) (labelFont().getHeight() * 2 + 4));
+    }
+
     juce::Rectangle<int> dialogBox() const
     {
         const int w = juce::jmin (360, getWidth() - 40);
-        const int h = 96;
+
+        // 18 = top offset of the label (matches paint()); 30 = space below
+        // it reserved for the progress track + bottom margin (matches the
+        // track's own "box.getBottom() - 30" placement below).
+        const int contentH = 18 + labelHeight() + 30;
+
+        const int maxH = juce::jmax (96, getHeight() - 40);
+        const int h    = juce::jlimit (96, maxH, contentH);
+
         return { (getWidth() - w) / 2, (getHeight() - h) / 2, w, h };
     }
 

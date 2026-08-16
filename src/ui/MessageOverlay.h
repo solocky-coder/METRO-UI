@@ -62,12 +62,14 @@ public:
                     box.getWidth() - padX * 2, 20,
                     juce::Justification::centredLeft, false);
 
-        g.setFont (DysektLookAndFeel::makeFont (12.5f));
-        g.setColour (T.foreground.withAlpha (0.85f));
-        g.drawFittedText (messageText,
-                    box.getX() + padX, box.getY() + 42,
-                    box.getWidth() - padX * 2, box.getHeight() - 42 - 46,
-                    juce::Justification::topLeft, 4, 1.0f);
+        // Fixed, always-legible size — no more g.drawFittedText() shrinking
+        // this down to fit a hard-capped box; dialogBox() below grows to fit
+        // this text instead. See UIHelpers::measureWrappedTextHeight/
+        // drawWrappedText's comment for why.
+        UIHelpers::drawWrappedText (g, messageText, bodyFont(), T.foreground.withAlpha (0.85f),
+                    juce::Rectangle<float> ((float) (box.getX() + padX), (float) (box.getY() + 42),
+                                             (float) (box.getWidth() - padX * 2),
+                                             (float) (box.getHeight() - 42 - 46)));
     }
 
     void resized() override
@@ -99,10 +101,27 @@ private:
     Kind messageKind;
     juce::TextButton okBtn;
 
+    static juce::Font bodyFont() { return DysektLookAndFeel::makeFont (12.5f); }
+
     juce::Rectangle<int> dialogBox() const
     {
+        const int padX = 18;
         const int w = juce::jmin (420, getWidth() - 40);
-        const int h = 156;
+        const int textWidth = juce::jmax (10, w - padX * 2);
+
+        // 42 = top offset of the text block (matches paint()); 46 = space
+        // reserved below it for the button row + bottom margin (matches
+        // resized()'s okBtn placement, 14px above the box bottom).
+        const int textH   = UIHelpers::measureWrappedTextHeight (messageText, bodyFont(), textWidth);
+        const int contentH = 42 + textH + 46;
+
+        // Never smaller than the original fixed size (keeps short messages
+        // looking the same as before), never taller than the window allows
+        // minus a margin — drawWrappedText() clips cleanly if a message is
+        // so long it still doesn't fit even at that cap.
+        const int maxH = juce::jmax (156, getHeight() - 40);
+        const int h = juce::jlimit (156, maxH, contentH);
+
         return juce::Rectangle<int> (
             (getWidth()  - w) / 2,
             (getHeight() - h) / 2,

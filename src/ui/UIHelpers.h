@@ -320,6 +320,54 @@ inline float computeZoomFactor (float deltaY)
     return std::pow (1.01f, deltaY);
 }
 
+// ── Auto-sizing popup body text ─────────────────────────────────────────────
+// Every popup dialog (MessageOverlay, ArchiveMessageOverlay, ConfirmOverlay,
+// LoadProgressOverlay, ...) used to size its body-text area off a FIXED
+// dialogBox() height and rely on g.drawFittedText()'s font-shrinking
+// fallback (or, for ConfirmOverlay, single-line truncation) to cram
+// overflow into that fixed space. Fine for a short one-line message, but a
+// longer one — e.g. SfzImporter's multi-line import-warnings list — could
+// get shrunk down to an illegibly tiny font rather than the box just
+// growing to fit it (this is exactly what happened: see the Import
+// Completed With Warnings popup this pair of helpers was added to fix).
+//
+// measureWrappedTextHeight() tells a caller's dialogBox() how tall the
+// message actually needs to be, wrapped at a given width, at a FIXED font
+// size (no shrinking) — so the box can grow to fit instead. drawWrappedText()
+// then renders with that same fixed font, clipped to the area actually
+// allotted, so if a truly enormous message still exceeds the caller's own
+// max-height clamp, it clips cleanly at a still-legible size rather than
+// shrinking to fit or silently truncating mid-word.
+inline int measureWrappedTextHeight (const juce::String& text, const juce::Font& font, int width)
+{
+    if (width <= 0 || text.isEmpty())
+        return 0;
+
+    juce::AttributedString as;
+    as.setText (text);
+    as.setFont (font);
+
+    juce::TextLayout layout;
+    layout.createLayout (as, (float) width);
+    return (int) std::ceil (layout.getHeight());
+}
+
+inline void drawWrappedText (juce::Graphics& g, const juce::String& text, const juce::Font& font,
+                              juce::Colour colour, juce::Rectangle<float> area)
+{
+    juce::AttributedString as;
+    as.setText (text);
+    as.setFont (font);
+    as.setColour (colour);
+
+    juce::TextLayout layout;
+    layout.createLayout (as, area.getWidth());
+
+    juce::Graphics::ScopedSaveState ss (g);
+    g.reduceClipRegion (area.getSmallestIntegerContainer());
+    layout.draw (g, area);
+}
+
 } // namespace UIHelpers
 
 namespace UILayout

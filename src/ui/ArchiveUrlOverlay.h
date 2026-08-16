@@ -41,12 +41,13 @@ public:
                     box.getWidth() - padX * 2, 20,
                     juce::Justification::centredLeft, false);
 
-        g.setFont (DysektLookAndFeel::makeFont (11.5f));
-        g.setColour (T.foreground.withAlpha (0.85f));
-        g.drawFittedText (bodyText,
-                          box.getX() + padX, box.getY() + 46,
-                          box.getWidth() - padX * 2, box.getHeight() - 90,
-                          juce::Justification::topLeft, 6);
+        // Fixed, always-legible size — dialogBox() grows to fit this text
+        // instead of this shrinking to fit a fixed box (see
+        // UIHelpers::measureWrappedTextHeight/drawWrappedText).
+        UIHelpers::drawWrappedText (g, bodyText, bodyFont(), T.foreground.withAlpha (0.85f),
+                    juce::Rectangle<float> ((float) (box.getX() + padX), (float) (box.getY() + 46),
+                                             (float) (box.getWidth() - padX * 2),
+                                             (float) (box.getHeight() - 90)));
     }
 
     void resized() override
@@ -72,10 +73,23 @@ private:
 
     void dismiss() { if (onDismiss) onDismiss(); }
 
+    static juce::Font bodyFont() { return DysektLookAndFeel::makeFont (11.5f); }
+
     juce::Rectangle<int> dialogBox() const
     {
+        const int padX = 18;
         const int w = juce::jmin (400, getWidth() - 40);
-        const int h = 160;
+        const int textWidth = juce::jmax (10, w - padX * 2);
+
+        // 46 = top offset of the body text (matches paint()); 44 = space
+        // below it for the button row + margin (matches resized()'s okBtn
+        // placement, 14px above the box bottom, 26px tall).
+        const int textH    = UIHelpers::measureWrappedTextHeight (bodyText, bodyFont(), textWidth);
+        const int contentH = 46 + textH + 44;
+
+        const int maxH = juce::jmax (160, getHeight() - 40);
+        const int h    = juce::jlimit (160, maxH, contentH);
+
         return { (getWidth() - w) / 2, (getHeight() - h) / 2, w, h };
     }
 

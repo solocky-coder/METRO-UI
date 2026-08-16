@@ -47,12 +47,14 @@ public:
                     box.getWidth() - padX * 2, 20,
                     juce::Justification::centredLeft, false);
 
-        g.setFont (DysektLookAndFeel::makeFont (12.0f));
-        g.setColour (T.foreground.withAlpha (0.85f));
-        g.drawText (messageText,
-                    box.getX() + padX, box.getY() + 46,
-                    box.getWidth() - padX * 2, 36,
-                    juce::Justification::centredLeft, true);
+        // Fixed, always-legible size, wrapped across as many lines as it
+        // needs — dialogBox() below grows to fit instead of this getting
+        // cut off with an ellipsis at a fixed one-line height. See
+        // UIHelpers::measureWrappedTextHeight/drawWrappedText's comment.
+        UIHelpers::drawWrappedText (g, messageText, bodyFont(), T.foreground.withAlpha (0.85f),
+                    juce::Rectangle<float> ((float) (box.getX() + padX), (float) (box.getY() + 46),
+                                             (float) (box.getWidth() - padX * 2),
+                                             (float) messageHeight()));
     }
 
     void resized() override
@@ -79,10 +81,32 @@ private:
     juce::String titleText, messageText;
     juce::TextButton yesBtn, noBtn;
 
+    static juce::Font bodyFont() { return DysektLookAndFeel::makeFont (12.0f); }
+
+    // Wrapped text height at the box's actual text width — shared by
+    // dialogBox() (to size the box) and paint() (to size the draw area),
+    // computed once per call rather than cached since messageText/width
+    // only change on construction/resize, both infrequent for a modal popup.
+    int messageHeight() const
+    {
+        const int padX = 18;
+        const int w = juce::jmin (400, getWidth() - 40);
+        const int textWidth = juce::jmax (10, w - padX * 2);
+        return UIHelpers::measureWrappedTextHeight (messageText, bodyFont(), textWidth);
+    }
+
     juce::Rectangle<int> dialogBox() const
     {
         const int w = juce::jmin (400, getWidth() - 40);
-        const int h = 148;
+
+        // 46 = top offset of the message text (matches paint()); 14 = gap
+        // between text and button row; 28 = button height; 14 = bottom margin
+        // (matches resized()'s btnY, 14px above the box bottom).
+        const int contentH = 46 + messageHeight() + 14 + 28 + 14;
+
+        const int maxH = juce::jmax (148, getHeight() - 40);
+        const int h    = juce::jlimit (148, maxH, contentH);
+
         return juce::Rectangle<int> (
             (getWidth()  - w) / 2,
             (getHeight() - h) / 2,
