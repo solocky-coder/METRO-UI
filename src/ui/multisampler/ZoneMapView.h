@@ -148,7 +148,7 @@ private:
 
     static constexpr int kEdgeGrabPx = 5;
     static constexpr int kKeyCellPx = 18;         // the black/white note cells themselves
-    static constexpr int kOctaveLabelPx = 12;     // "C1"/"C2"... row underneath the cells
+    static constexpr int kOctaveLabelPx = 15;     // "C1"/"C2"... row underneath the cells
     static constexpr int kKeyboardStripPx = kKeyCellPx + kOctaveLabelPx;
     static constexpr int kVelocityRulerPx = 28;   // velocity scale along the left
 

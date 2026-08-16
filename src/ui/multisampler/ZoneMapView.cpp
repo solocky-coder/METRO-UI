@@ -523,15 +523,26 @@ void ZoneMapView::paint (juce::Graphics& g)
     // latter silently shifts every highlighted key half a cell to the right
     // of the zone column it's supposed to sit under (and collapses key 127
     // to zero width, since xForKey(128) clamps to the same x as xForKey(127)).
+    //
+    // Clamped to g_area's left/right edges, same as rebuildLayout() clips
+    // zone bounds to gridArea() via getIntersection() — without this, key 0
+    // and key 127's half-cell overflow spills past the grid on both sides,
+    // making the keyboard visibly wider than the zone tiles above it.
     const float halfKeyW = std::abs (xForKey (1) - xForKey (0)) * 0.5f;
+    const float gridLeft  = (float) g_area.getX();
+    const float gridRight = (float) g_area.getRight();
     for (int key = 0; key < 128; ++key)
     {
-        const float x0 = xForKey (key) - halfKeyW;
-        const float x1 = xForKey (key) + halfKeyW;
+        const float x0 = juce::jmax (gridLeft,  xForKey (key) - halfKeyW);
+        const float x1 = juce::jmin (gridRight, xForKey (key) + halfKeyW);
         const bool active = isNoteActive (key);
-        g.setColour (active
-                        ? theme.accent
-                        : (blackKey[key % 12] ? theme.darkBar : theme.foreground.withAlpha (0.15f)));
+        // Explicit flat black/white rather than theme-derived tones — the
+        // previous theme.darkBar / foreground-at-15%-alpha pairing reads as
+        // two shades of the same dark grey against this app's dark theme,
+        // not a recognisable black/white key strip.
+        static const juce::Colour whiteKey (0xffe8e8e6);
+        static const juce::Colour blackKeyColour (0xff1c1c1f);
+        g.setColour (active ? theme.accent : (blackKey[key % 12] ? blackKeyColour : whiteKey));
         g.fillRect (juce::Rectangle<float> (x0, (float) g_area.getBottom(), x1 - x0, (float) kKeyCellPx));
     }
     g.setColour (theme.separator);
@@ -540,16 +551,20 @@ void ZoneMapView::paint (juce::Graphics& g)
     // Octave labels ("C1", "C2"...) under the strip, at the same x as the
     // octave gridlines above — one glance ties a column all the way from
     // the zone grid down through the keyboard to a note name, instead of
-    // counting keys from the nearest C.
-    g.setFont (juce::FontOptions (9.5f));
+    // counting keys from the nearest C. Larger and bolder than the first
+    // pass, which was unreadable at 9.5px; and each label rectangle is
+    // clamped inside g_area the same way the key cells are above, so the
+    // row never spills past the grid's left/right edges either.
+    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
     for (int key = 0; key <= 127; key += 12)
     {
         const float cx = xForKey (key);
         const bool active = isNoteActive (key);
-        g.setColour (active ? theme.accent : theme.foreground.withAlpha (0.45f));
+        g.setColour (active ? theme.accent : theme.foreground.withAlpha (0.7f));
+        const float labelX = juce::jlimit (gridLeft, gridRight - 30.0f, cx - 15.0f);
         g.drawText (UIHelpers::midiNoteToName (key),
-                    juce::Rectangle<float> (cx - 16.0f, (float) g_area.getBottom() + (float) kKeyCellPx,
-                                             32.0f, (float) kOctaveLabelPx),
+                    juce::Rectangle<float> (labelX, (float) g_area.getBottom() + (float) kKeyCellPx,
+                                             30.0f, (float) kOctaveLabelPx),
                     juce::Justification::centred);
     }
 
@@ -579,21 +594,23 @@ void ZoneMapView::paint (juce::Graphics& g)
 
         // On-tile label: sample name + key/velocity range, same info the
         // ZONES list row shows, so a glance at the grid tells you what's
-        // mapped without opening the inspector. Text colour comes from the
-        // zone's own colour ramp (darkest stop) rather than plain white, so
-        // it stays legible against every palette colour without a shadow.
+        // mapped without opening the inspector. Fixed light colour rather
+        // than a darkened version of the zone's own hue — the tile fill is
+        // that hue alpha-blended over a near-black background, so a
+        // same-hue-darkened label ends up close to the same luminance as
+        // the tile itself and disappears. White reads against every
+        // palette colour regardless of fill alpha.
         if (r.bounds.getWidth() > 24.0f && r.bounds.getHeight() > 16.0f)
         {
             auto textArea = r.bounds.toNearestInt().reduced (4, 2);
-            const auto textColour = r.colour.darker (0.75f).withAlpha (0.95f);
 
-            g.setColour (textColour);
+            g.setColour (juce::Colours::white.withAlpha (0.92f));
             g.setFont (juce::FontOptions (11.0f, juce::Font::plain));
             g.drawText (r.label, textArea.removeFromTop (14), juce::Justification::topLeft, true);
 
             if (textArea.getHeight() > 10)
             {
-                g.setColour (textColour.withAlpha (0.75f));
+                g.setColour (juce::Colours::white.withAlpha (0.68f));
                 g.setFont (juce::FontOptions (9.5f));
                 const auto rangeText = UIHelpers::midiNoteToName (r.lowKey) + "-" + UIHelpers::midiNoteToName (r.highKey)
                                         + "  v" + juce::String (r.lowVel) + "-" + juce::String (r.highVel);
