@@ -64,9 +64,18 @@ void ZoneMapView::selectZonesForNewNotes (uint64_t newLo, uint64_t newHi)
     // onSelectionChanged callback MultisamplerEditor already wires up to
     // refreshInspectorFromSelection() — MIDI-driven selection should look
     // identical downstream to a click, not need a separate code path in
-    // the editor. Velocity isn't in this bitmask, so this matches on key
-    // range only; a chord across several velocity-split zones selects all
-    // of them, same as shift-clicking each would.
+    // the editor.
+    //
+    // Matching on key range alone (as an earlier version of this did) was
+    // wrong for any velocity-layered instrument — several zones commonly
+    // share the same key range, split only by velocity, so a single note
+    // would hit every layer at once, land on "MULTIPLE ZONES SELECTED",
+    // and never populate the SCB readout (only a click, which picks one
+    // rect via topmostZoneAt, ever did). Use SampleZone::matches(), the
+    // same key+velocity test voicePool2's real playback effectively
+    // resolves, so a played note selects the one zone that actually
+    // sounded for it. A chord across genuinely different key/velocity
+    // zones still multi-selects, same as shift-clicking each would.
     std::vector<juce::Uuid> hitIds;
     for (int note = 0; note < 128; ++note)
     {
@@ -74,8 +83,10 @@ void ZoneMapView::selectZonesForNewNotes (uint64_t newLo, uint64_t newHi)
         const int      bit  = (note < 64) ? note : (note - 64);
         if (((word >> bit) & 1) == 0) continue;
 
+        const int velocity = (int) processor.sfz2LastNoteOnVelocity[note].load (std::memory_order_relaxed);
+
         for (const auto& z : instrument->zones)
-            if (z.keyInRange (note)
+            if (z.matches (note, velocity)
                 && std::find (hitIds.begin(), hitIds.end(), z.id) == hitIds.end())
                 hitIds.push_back (z.id);
     }
