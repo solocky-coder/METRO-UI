@@ -86,6 +86,14 @@ private:
         juce::Colour colour;             // SfzZoneColours::zoneColour(), same index MultisamplerEditor::toKeyzones() uses
         bool missingSample = false;
         bool overlapping   = false;
+
+        // Cached at rebuildLayout() time (from the matching SampleZone) so
+        // paint() can draw an on-tile label without re-resolving the zone
+        // by id every frame — same "cache the derived layout, don't re-walk
+        // the model in paint" approach the rest of this class already uses.
+        juce::String label;      // sample file name (sans extension), or "(no sample)"
+        int lowKey  = 0, highKey  = 0;
+        int lowVel  = 1, highVel  = 127;
     };
 
     // Grid geometry -----------------------------------------------------
@@ -139,7 +147,9 @@ private:
     juce::Uuid hoverZoneId = juce::Uuid::null();   // for cursor feedback only
 
     static constexpr int kEdgeGrabPx = 5;
-    static constexpr int kKeyboardStripPx = 18;   // piano-key strip along the bottom
+    static constexpr int kKeyCellPx = 18;         // the black/white note cells themselves
+    static constexpr int kOctaveLabelPx = 12;     // "C1"/"C2"... row underneath the cells
+    static constexpr int kKeyboardStripPx = kKeyCellPx + kOctaveLabelPx;
     static constexpr int kVelocityRulerPx = 28;   // velocity scale along the left
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ZoneMapView)

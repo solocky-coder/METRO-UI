@@ -3,6 +3,7 @@
 #include "../../audio/SfzZoneColours.h"
 #include "../../PluginProcessor.h"
 #include "../DysektLookAndFeel.h"
+#include "../UIHelpers.h"
 #include <algorithm>
 #include <cmath>
 
@@ -128,6 +129,10 @@ void ZoneMapView::rebuildLayout()
         ZoneRect r;
         r.id = z.id;
         r.missingSample = z.hasMissingSample();
+        r.label = z.sampleFile != juce::File() ? z.sampleFile.getFileNameWithoutExtension()
+                                                 : juce::String ("(no sample)");
+        r.lowKey = z.lowKey;  r.highKey = z.highKey;
+        r.lowVel = z.lowVelocity; r.highVel = z.highVelocity;
 
         // A user-picked colour (see showZoneContextMenu) always wins over
         // the palette-index default, matching MultisamplerEditor::
@@ -527,10 +532,26 @@ void ZoneMapView::paint (juce::Graphics& g)
         g.setColour (active
                         ? theme.accent
                         : (blackKey[key % 12] ? theme.darkBar : theme.foreground.withAlpha (0.15f)));
-        g.fillRect (juce::Rectangle<float> (x0, (float) g_area.getBottom(), x1 - x0, (float) kKeyboardStripPx));
+        g.fillRect (juce::Rectangle<float> (x0, (float) g_area.getBottom(), x1 - x0, (float) kKeyCellPx));
     }
     g.setColour (theme.separator);
     g.drawHorizontalLine (g_area.getBottom(), (float) g_area.getX(), (float) g_area.getRight());
+
+    // Octave labels ("C1", "C2"...) under the strip, at the same x as the
+    // octave gridlines above — one glance ties a column all the way from
+    // the zone grid down through the keyboard to a note name, instead of
+    // counting keys from the nearest C.
+    g.setFont (juce::FontOptions (9.5f));
+    for (int key = 0; key <= 127; key += 12)
+    {
+        const float cx = xForKey (key);
+        const bool active = isNoteActive (key);
+        g.setColour (active ? theme.accent : theme.foreground.withAlpha (0.45f));
+        g.drawText (UIHelpers::midiNoteToName (key),
+                    juce::Rectangle<float> (cx - 16.0f, (float) g_area.getBottom() + (float) kKeyCellPx,
+                                             32.0f, (float) kOctaveLabelPx),
+                    juce::Justification::centred);
+    }
 
     // Zones.
     for (const auto& r : cachedRects)
@@ -547,10 +568,38 @@ void ZoneMapView::paint (juce::Graphics& g)
             return false;
         }();
 
+        // Flat metro tile: solid colour, not the previous washed-out alpha
+        // wash — a resting zone should read as a real block, not a faint
+        // tint over the grid. Selection/hover/sounding still lift it, but
+        // off the same higher floor rather than starting near-transparent.
         auto fill = r.missingSample ? juce::Colours::red.withAlpha (0.25f)
-                                     : r.colour.withAlpha (sounding ? 0.80f : (selected ? 0.55f : (hovered ? 0.38f : 0.24f)));
+                                     : r.colour.withAlpha (sounding ? 1.00f : (selected ? 0.85f : (hovered ? 0.70f : 0.55f)));
         g.setColour (fill);
         g.fillRect (r.bounds);
+
+        // On-tile label: sample name + key/velocity range, same info the
+        // ZONES list row shows, so a glance at the grid tells you what's
+        // mapped without opening the inspector. Text colour comes from the
+        // zone's own colour ramp (darkest stop) rather than plain white, so
+        // it stays legible against every palette colour without a shadow.
+        if (r.bounds.getWidth() > 24.0f && r.bounds.getHeight() > 16.0f)
+        {
+            auto textArea = r.bounds.toNearestInt().reduced (4, 2);
+            const auto textColour = r.colour.darker (0.75f).withAlpha (0.95f);
+
+            g.setColour (textColour);
+            g.setFont (juce::FontOptions (11.0f, juce::Font::plain));
+            g.drawText (r.label, textArea.removeFromTop (14), juce::Justification::topLeft, true);
+
+            if (textArea.getHeight() > 10)
+            {
+                g.setColour (textColour.withAlpha (0.75f));
+                g.setFont (juce::FontOptions (9.5f));
+                const auto rangeText = UIHelpers::midiNoteToName (r.lowKey) + "-" + UIHelpers::midiNoteToName (r.highKey)
+                                        + "  v" + juce::String (r.lowVel) + "-" + juce::String (r.highVel);
+                g.drawText (rangeText, textArea, juce::Justification::topLeft, true);
+            }
+        }
 
         if (r.overlapping)
         {
