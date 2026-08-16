@@ -116,6 +116,20 @@ struct SfzSliceDescriptor
     // juce::Colour so this POD struct stays trivially copyable across the
     // background-thread → processBlock hand-off.
     juce::uint32 zoneColourArgb = 0;
+
+    // The exact [lokey,hikey] of the <region> this note belongs to (SfzPlayer2
+    // target only; -1/-1 = "unset"). Stamped alongside zoneColourArgb, same
+    // regionRanges match. Lets a mixer-routing edit (OUT/MIX in the SCB) made
+    // against one note propagate to every other note that shares the SAME
+    // zone -- and, for a zone spanning multiple keys, every key within that
+    // one zone -- rather than only the single slice under the cursor. Two
+    // *different* regions that happen to share an identical key range (e.g.
+    // velocity layers or round-robins stacked on one zone) are intentionally
+    // treated as the same zone for this purpose too, exact-match, not just
+    // overlap -- see PluginProcessor.cpp's CmdSetSliceParam FieldOutputBus/
+    // FieldShowInMixer handling.
+    int zoneLoKey = -1;
+    int zoneHiKey = -1;
 };
 
 // Heap-allocated payload posted via pendingSfzSlices atomic.

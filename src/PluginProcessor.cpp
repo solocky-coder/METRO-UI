@@ -1332,6 +1332,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                     case FieldReleaseTail: s.releaseTail = val > 0.5f; if (!skipLock) s.lockMask |= kLockReleaseTail; break;
                     case FieldReverse:    s.reverse = val > 0.5f;    if (!skipLock) s.lockMask |= kLockReverse;    break;
                     case FieldOutputBus:
+                    {
                         s.outputBus = juce::jlimit (0, 15, (int) val);
                         if (!skipLock) s.lockMask |= kLockOutputBus;
                         // Routing a slice off Main is a strong enough signal
@@ -1347,8 +1348,47 @@ void DysektProcessor::handleCommand (const Command& cmd)
                         // earlier explicit hide.
                         if (s.outputBus != 0)
                             s.showInMixer = true;
+                        // SFZ-PLAYER only: a "zone" as the user thinks of it
+                        // (one key range) is actually one Slice PER KEY in
+                        // that range (see SoundFontLoader's per-note
+                        // expansion), plus potentially other regions
+                        // (velocity layers/round-robins) sharing the exact
+                        // same range. OUT is a mixer-routing decision for
+                        // the whole zone, not one key/one sample within it —
+                        // apply it to every sibling slice so they can't
+                        // silently end up on different buses. Slicer
+                        // (targetEngine2 == false) never sets zoneLoKey/
+                        // zoneHiKey, so this is a no-op there.
+                        if (cmd.targetEngine2 && s.zoneLoKey >= 0)
+                        {
+                            for (int i = 0; i < sm.getNumSlices(); ++i)
+                            {
+                                if (i == sel) continue;
+                                auto& sib = sm.getSlice (i);
+                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                    continue;
+                                sib.outputBus = s.outputBus;
+                                if (!skipLock) sib.lockMask |= kLockOutputBus;
+                                if (sib.outputBus != 0) sib.showInMixer = true;
+                            }
+                        }
                         break;
-                    case FieldShowInMixer: s.showInMixer = val > 0.5f; break;
+                    }
+                    case FieldShowInMixer:
+                        s.showInMixer = val > 0.5f;
+                        // Same zone-wide propagation as FieldOutputBus above.
+                        if (cmd.targetEngine2 && s.zoneLoKey >= 0)
+                        {
+                            for (int i = 0; i < sm.getNumSlices(); ++i)
+                            {
+                                if (i == sel) continue;
+                                auto& sib = sm.getSlice (i);
+                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                    continue;
+                                sib.showInMixer = s.showInMixer;
+                            }
+                        }
+                        break;
                     case FieldLoop:       s.loopMode = (int) val;    if (!skipLock) s.lockMask |= kLockLoop;      break;
                     case FieldOneShot:    s.oneShot = val > 0.5f;    if (!skipLock) s.lockMask |= kLockOneShot;   break;
                     case FieldCentsDetune:   s.centsDetune    = val;       if (!skipLock) s.lockMask |= kLockCentsDetune; break;
@@ -3099,6 +3139,8 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 int      midiNote;
                 bool     hasColour;
                 uint32_t colourArgb;
+                int      zoneLoKey;
+                int      zoneHiKey;
             };
             std::vector<PendingZonePin> pendingZonePins;
             pendingZonePins.reserve (zonesOwner2->slices.size());
@@ -3119,7 +3161,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // No (valid) loop region for this note — plain one-shot slice.
                     int idx = sliceManager2.createSlice (desc.startSample, desc.endSample);
                     if (idx >= 0)
-                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb });
+                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey });
                     continue;
                 }
 
@@ -3142,19 +3184,26 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // points to it) and marked as the actual loop region.
                     sliceManager2.getSlice (tailIdx).loopMode = 1;   // forward loop, whole-slice
 
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey });
 
                     // Head + tail belong to the same zone — same colour on
                     // both so the loop-split doesn't look like two zones.
                     // (Head's colour is applied in pass 2 below with its pin.)
                     if (hasZoneColour)
                         sliceManager2.getSlice (tailIdx).colour = juce::Colour (desc.zoneColourArgb);
+                    // Same reasoning for zone key range — the tail is never
+                    // directly selectable in the SCB (see nextSliceIdx above)
+                    // so it can't itself be the target of an OUT/MIX edit,
+                    // but stamping it anyway keeps it consistent with its
+                    // head in case anything ever iterates slices by zone.
+                    sliceManager2.getSlice (tailIdx).zoneLoKey = desc.zoneLoKey;
+                    sliceManager2.getSlice (tailIdx).zoneHiKey = desc.zoneHiKey;
                 }
                 else if (headIdx >= 0)
                 {
                     // Tail creation failed (cap reached) — fall back to a
                     // plain one-shot head so the note still plays something.
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey });
                 }
             }
 
@@ -3167,6 +3216,8 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 sliceManager2.pinSliceMidiNote (pin.sliceIdx, pin.midiNote);
                 if (pin.hasColour)
                     sliceManager2.getSlice (pin.sliceIdx).colour = juce::Colour (pin.colourArgb);
+                sliceManager2.getSlice (pin.sliceIdx).zoneLoKey = pin.zoneLoKey;
+                sliceManager2.getSlice (pin.sliceIdx).zoneHiKey = pin.zoneHiKey;
             }
 
             // Reapply anything captured above, just before clearAll(), for

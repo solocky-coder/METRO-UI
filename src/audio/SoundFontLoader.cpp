@@ -1030,6 +1030,8 @@ private:
                         continue;
 
                     desc.zoneColourArgb = SfzZoneColours::zoneColourArgb (i);
+                    desc.zoneLoKey      = rk.loKey;
+                    desc.zoneHiKey      = rk.hiKey;
                     break;   // first matching region wins (matches Step 3c's rule)
                 }
             }

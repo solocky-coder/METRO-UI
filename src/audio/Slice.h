@@ -92,6 +92,21 @@ struct Slice
     // the mixer.
     bool     showInMixer    = false;
 
+    // SFZ-PLAYER only (sliceManager2): the exact [lokey,hikey] of the
+    // <region>/zone this note-slice was expanded from. -1/-1 for every
+    // Slicer slice (sliceManager never sets this) and for any SFZ-PLAYER
+    // slice built outside the normal zone-load path. Stamped once at load
+    // time from SfzSliceDescriptor::zoneLoKey/zoneHiKey (see
+    // SoundFontLoader's Step 3d) -- purely a structural read of the source
+    // file, never user-edited directly. Used to group same-zone slices for
+    // OUT/MIX so a mixer-routing edit applies to the whole zone (every key
+    // in its range, and any other zone with an identical range, e.g.
+    // velocity layers/round-robins) rather than just the one slice the SCB
+    // happened to have selected -- see PluginProcessor.cpp's
+    // CmdSetSliceParam FieldOutputBus/FieldShowInMixer handling.
+    int      zoneLoKey      = -1;
+    int      zoneHiKey      = -1;
+
     /** -1 = no chain. Otherwise, the index of a slice to retrigger (looping)
      *  the instant this one-shot slice's voice naturally reaches its end.
      *  Used exclusively by the SFZ-PLAYER engine to approximate SFZ
