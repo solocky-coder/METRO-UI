@@ -915,6 +915,7 @@ void SliceControlBar::paint (juce::Graphics& g)
  }
 
  cells.clear();
+ sfzZoneCells.clear();
 
  // Scale all fixed pixel constants proportionally with component height
  paintSf = (float) getHeight() / 72.0f;
