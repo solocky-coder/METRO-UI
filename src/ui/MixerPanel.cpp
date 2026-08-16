@@ -34,6 +34,60 @@ namespace
                 return r;
         return -1;
     }
+
+    // SFZ-PLAYER only: like collectVisibleSlices above, but merges every
+    // slice sharing a zone's [zoneLoKey,zoneHiKey] — i.e. every MIDI key,
+    // plus any velocity layer/round-robin, expanded from the same <region>
+    // (see SoundFontLoader's per-note expansion and Slice::zoneLoKey's doc
+    // comment) — into a single mixer row, instead of one row per expanded
+    // slice. So a 7-key zone with MIX on produces exactly one row here,
+    // not seven.
+    //
+    // Deliberately a SEPARATE helper from collectVisibleSlices, not a mode
+    // added to it: collectVisibleSlices is also called at 7 Slicer call
+    // sites with sliceManager's snapshot, and every Slicer slice has
+    // zoneLoKey == -1 (sliceManager never stamps it) — a naive shared
+    // dedupe-by-zone would collapse every Slicer slice with MIX on into a
+    // single (-1,-1) row, a real regression. Slices here with
+    // zoneLoKey == -1 (SFZ-PLAYER slices built outside the normal
+    // zone-load path) get the same treatment: never merged with each
+    // other, one row each, exactly like collectVisibleSlices — nothing
+    // without a real zone identity silently vanishes into someone else's
+    // row.
+    //
+    // Returns one REPRESENTATIVE real slice index per visible zone — the
+    // lowest-indexed visible slice in that zone. Callers that need the
+    // rest of the zone (editing all siblings' GAIN/PAN, aggregating the
+    // peak meter) re-derive the sibling list from that slice's
+    // zoneLoKey/zoneHiKey; see drawSfz2ChannelRow.
+    std::vector<int> collectVisibleSfzZones (const DysektProcessor::UiSliceSnapshot& snap2)
+    {
+        std::vector<int> out;
+        out.reserve ((size_t) snap2.numSlices);
+        for (int i = 0; i < snap2.numSlices; ++i)
+        {
+            const auto& s = snap2.slices[(size_t) i];
+            if (! s.showInMixer) continue;
+
+            if (s.zoneLoKey >= 0)
+            {
+                bool alreadySeen = false;
+                for (int prev : out)
+                {
+                    const auto& p = snap2.slices[(size_t) prev];
+                    if (p.zoneLoKey == s.zoneLoKey && p.zoneHiKey == s.zoneHiKey)
+                    {
+                        alreadySeen = true;
+                        break;
+                    }
+                }
+                if (alreadySeen) continue;
+            }
+
+            out.push_back (i);
+        }
+        return out;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,7 +165,7 @@ int MixerPanel::sfz2TotalH() const
     // this was previously never consulted here, so the per-zone toggle in
     // the SFZ-Player zone view set Slice::showInMixer but nothing ever
     // read it back out, and no channel could ever appear.
-    const int visibleZones = n > 0 ? (int) collectVisibleSlices (snap2).size() : 0;
+    const int visibleZones = n > 0 ? (int) collectVisibleSfzZones (snap2).size() : 0;
     processor.releaseUiSliceSnapshot2();
     return n > 0 ? kSf2RowH + visibleZones * kSf2ChRowH : 0;
 }
@@ -256,7 +310,7 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
         else
         {
             const auto& snap2 = processor.getUiSliceSnapshot2();
-            const auto  visibleZones = collectVisibleSlices (snap2);
+            const auto  visibleZones = collectVisibleSfzZones (snap2);
             processor.releaseUiSliceSnapshot2();
             const int zoneChIdx = (localY - kSf2RowH) / kSf2ChRowH;
             if (zoneChIdx >= 0 && zoneChIdx < (int) visibleZones.size())
@@ -1343,12 +1397,22 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
 
     const int kcy = ry + kSf2ChRowH / 2;
 
-    // Name column
+    // Name column — for a real zone (zoneLoKey >= 0) show the key range
+    // this merged row actually covers (e.g. "C3-G3", or just "C3" for a
+    // single-key zone) rather than one arbitrary sibling's sample name,
+    // since the row now represents every key/layer in the zone, not just
+    // the representative slice it happens to be drawn from. Slices with no
+    // real zone identity (zoneLoKey == -1) fall back to the sample name,
+    // same as before.
     g.setFont (DysektLookAndFeel::makeFont (11.0f));
     g.setColour (theme.foreground.withAlpha (0.55f));
-    const juce::String nameStr = sl.name.isNotEmpty()
-                                     ? sl.name.substring (0, 14)
-                                     : ("Zone " + juce::String (zoneIdx + 1));
+    const juce::String nameStr = sl.zoneLoKey >= 0
+        ? (sl.zoneLoKey == sl.zoneHiKey
+               ? juce::MidiMessage::getMidiNoteName (sl.zoneLoKey, true, true, 3)
+               : juce::MidiMessage::getMidiNoteName (sl.zoneLoKey, true, true, 3) + "-"
+                 + juce::MidiMessage::getMidiNoteName (sl.zoneHiKey, true, true, 3))
+        : (sl.name.isNotEmpty() ? sl.name.substring (0, 14)
+                                 : ("Zone " + juce::String (zoneIdx + 1)));
     g.drawText (nameStr, 6, ry, kNameColW - 8, kSf2ChRowH, juce::Justification::centredLeft);
 
     const float volDb = sl.volume;
@@ -1417,13 +1481,38 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
     // into slicePeak2L/R (indexed by voicePool2's sliceIdx), same source the
     // Slicer's own per-slice meters use via slicePeakL/R. No longer reusing
     // the aggregate sfzPlayer2 peak now that the real per-zone data exists.
+    //
+    // This row now represents every key/layer in the zone (see
+    // collectVisibleSfzZones), not just the one representative slice it's
+    // drawn from — a single sample sounding within the zone should still
+    // light this meter up, so aggregate (max, not sum — these are peaks,
+    // not a mix bus) across every sibling sharing zoneIdx's
+    // zoneLoKey/zoneHiKey. Slices with no real zone identity
+    // (zoneLoKey == -1) fall back to just their own peak, same as before.
     {
         const int mx = colX (ColOut) + kKnobColW + 4;
         const int mw = getWidth() - mx - 6;
         if (mw > 20 && zoneIdx >= 0 && zoneIdx < kMaxMeterSlices)
         {
-            const float pkL = processor.slicePeak2L[(size_t) zoneIdx].load (std::memory_order_relaxed);
-            const float pkR = processor.slicePeak2R[(size_t) zoneIdx].load (std::memory_order_relaxed);
+            float pkL = 0.f, pkR = 0.f;
+            if (sl.zoneLoKey >= 0)
+            {
+                for (int i = 0; i < snap2.numSlices; ++i)
+                {
+                    const auto& sib = snap2.slices[(size_t) i];
+                    if (sib.zoneLoKey != sl.zoneLoKey || sib.zoneHiKey != sl.zoneHiKey)
+                        continue;
+                    if (i < 0 || i >= kMaxMeterSlices)
+                        continue;
+                    pkL = std::max (pkL, processor.slicePeak2L[(size_t) i].load (std::memory_order_relaxed));
+                    pkR = std::max (pkR, processor.slicePeak2R[(size_t) i].load (std::memory_order_relaxed));
+                }
+            }
+            else
+            {
+                pkL = processor.slicePeak2L[(size_t) zoneIdx].load (std::memory_order_relaxed);
+                pkR = processor.slicePeak2R[(size_t) zoneIdx].load (std::memory_order_relaxed);
+            }
             // Hold slots below the aggregate row's kMaxHoldSlices-19, one per
             // visible zone row — kMaxHoldSlices-20 downward.
             const int holdSlot = juce::jmax (0, kMaxHoldSlices - 20 - zoneIdx);
@@ -1478,7 +1567,7 @@ void MixerPanel::paint (juce::Graphics& g)
     {
         drawSfz2Row (g, sfz2RowY());
         const auto& snap2 = processor.getUiSliceSnapshot2();
-        const auto  visibleZones = collectVisibleSlices (snap2);
+        const auto  visibleZones = collectVisibleSfzZones (snap2);
         processor.releaseUiSliceSnapshot2();
         for (int i = 0; i < (int) visibleZones.size(); ++i)
             drawSfz2ChannelRow (g, sfz2ChRowY (i), visibleZones[(size_t) i]);
@@ -1810,9 +1899,13 @@ void MixerPanel::mouseDrag (const juce::MouseEvent& e)
     {
         // The zone was already selected on sliceManager2 in mouseDown, so
         // CmdSetSliceParam{targetEngine2=true} lands on the right zone.
+        // zoneWide=true propagates GAIN/PAN to every sibling slice in the
+        // zone (see Command::zoneWide) — this merged row now represents
+        // the whole zone, not just the representative slice it drags.
         DysektProcessor::Command cmd2;
         cmd2.type          = DysektProcessor::CmdSetSliceParam;
         cmd2.targetEngine2 = true;
+        cmd2.zoneWide      = true;
         if (drag.col == ColGain)
         {
             newVal = juce::jlimit (-100.f, 24.f, drag.startVal + dy * 0.5f * fineMult);
@@ -2053,9 +2146,12 @@ void MixerPanel::mouseDoubleClick (const juce::MouseEvent& e)
             sel.targetEngine2 = true;
             processor.pushCommand (sel);
 
+            // zoneWide=true — same zone-row propagation as the drag-commit
+            // path above (see Command::zoneWide).
             DysektProcessor::Command cmd2;
             cmd2.type          = DysektProcessor::CmdSetSliceParam;
             cmd2.targetEngine2 = true;
+            cmd2.zoneWide      = true;
             if (col == ColGain)
             {
                 cmd2.intParam1   = DysektProcessor::FieldVolume;

@@ -244,6 +244,21 @@ public:
          *  engine 2 -- SFZ-PLAYER has no manual slicing, so slice-bounds/
          *  creation/deletion commands are never sent with this flag set. */
         bool targetEngine2 { false };
+        /** CmdSetSliceParam only, and only meaningful together with
+         *  targetEngine2 == true: when true, FieldVolume/FieldPan writes
+         *  propagate to every sibling slice sharing the selected slice's
+         *  zoneLoKey/zoneHiKey (see FieldVolume/FieldPan's zone-propagation
+         *  block in handleCommand), the same "whole zone, not one key/one
+         *  sample" behaviour FieldOutputBus/FieldShowInMixer already apply
+         *  unconditionally. GAIN/PAN can't propagate unconditionally like
+         *  those two, though -- SliceControlBar legitimately edits a single
+         *  SFZ-PLAYER slice's volume/pan too (real per-sample trim, the same
+         *  kind of intentional per-key variation as ADSR), and that must
+         *  stay single-slice. This flag is how MixerPanel's merged per-zone
+         *  row (the only call site that sets it) opts in to the wider write
+         *  without changing SliceControlBar's behaviour at all. Defaults to
+         *  false so every pre-existing call site is unaffected. */
+        bool zoneWide { false };
     };
 
     // ── UI snapshot (double-buffered, written on audio thread) ───────────────
@@ -887,11 +902,27 @@ private:
     std::atomic<int> overflowWriteIndex { 0 };
     std::atomic<int> overflowReadIndex  { 0 };
 
-    // Coalescing slots for high-frequency drag commands
-    std::atomic<bool>  pendingSetSliceParam         { false };
-    std::atomic<int>   pendingSetSliceParamField    { 0 };
-    std::atomic<float> pendingSetSliceParamValue    { 0.0f };
-    std::atomic<int>   pendingSetSliceParamSkipLock { 0 };   // preserves intParam2 through coalesce
+    // Coalescing slots for high-frequency drag commands.
+    // CmdSetSliceParam gets one slot PER ENGINE (index 0 = Slicer/
+    // targetEngine2==false, index 1 = SFZ-PLAYER/targetEngine2==true) so a
+    // Slicer edit and an SFZ-Player edit that both need to coalesce in the
+    // same drain window don't clobber each other -- previously this was a
+    // single shared slot, so the second engine's store() would silently
+    // discard the first engine's still-unapplied value rather than merging
+    // with it (they're unrelated commands, not two increments of the same
+    // drag). targetEngine2 itself doesn't need its own atomic anymore --
+    // it's just which slot the value lives in.
+    std::array<std::atomic<bool>,  2> pendingSetSliceParam         { false, false };
+    std::array<std::atomic<int>,   2> pendingSetSliceParamField    { 0, 0 };
+    std::array<std::atomic<float>, 2> pendingSetSliceParamValue    { 0.0f, 0.0f };
+    std::array<std::atomic<int>,   2> pendingSetSliceParamSkipLock { 0, 0 };   // preserves intParam2 through coalesce
+    // zoneWide is only ever true for slot 1 (SFZ-PLAYER) in practice, but
+    // lives per-slot for symmetry/simplicity rather than as a special case.
+    // See Command::zoneWide's doc comment for what it does and why a
+    // coalesced CmdSetSliceParam previously lost this bit entirely
+    // (defaulted back to false on drain), silently turning a merged
+    // SFZ-PLAYER zone-row GAIN/PAN drag into a single-slice write.
+    std::array<std::atomic<bool>,  2> pendingSetSliceParamZoneWide { false, false };
 
     std::atomic<bool> pendingSetSliceBounds      { false };
     std::atomic<int>  pendingSetSliceBoundsIdx   { -1 };

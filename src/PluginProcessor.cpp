@@ -885,10 +885,16 @@ bool DysektProcessor::enqueueCoalescedCommand (const Command& cmd)
 
     if (cmd.type == CmdSetSliceParam)
     {
-        pendingSetSliceParamField.store (cmd.intParam1, std::memory_order_relaxed);
-        pendingSetSliceParamValue.store (cmd.floatParam1, std::memory_order_relaxed);
-        pendingSetSliceParamSkipLock.store (cmd.intParam2, std::memory_order_relaxed);
-        pendingSetSliceParam.store (true, std::memory_order_release);
+        // See the pendingSetSliceParam* array doc comments in
+        // PluginProcessor.h: one slot per engine so a Slicer coalesce and
+        // an SFZ-PLAYER coalesce landing in the same drain window don't
+        // overwrite each other.
+        const int slot = cmd.targetEngine2 ? 1 : 0;
+        pendingSetSliceParamField[(size_t) slot].store (cmd.intParam1, std::memory_order_relaxed);
+        pendingSetSliceParamValue[(size_t) slot].store (cmd.floatParam1, std::memory_order_relaxed);
+        pendingSetSliceParamSkipLock[(size_t) slot].store (cmd.intParam2, std::memory_order_relaxed);
+        pendingSetSliceParamZoneWide[(size_t) slot].store (cmd.zoneWide, std::memory_order_relaxed);
+        pendingSetSliceParam[(size_t) slot].store (true, std::memory_order_release);
         return true;
     }
 
@@ -919,15 +925,24 @@ void DysektProcessor::drainCoalescedCommands (bool& handledAny)
         handledAny = true;
     }
 
-    if (pendingSetSliceParam.exchange (false, std::memory_order_acq_rel))
+    // Drain both per-engine slots (see the pendingSetSliceParam* array doc
+    // comments in PluginProcessor.h) -- a burst that filled the FIFO could
+    // have left one coalesced value pending for each engine, and both are
+    // independent, unrelated commands that each still need to be applied.
+    for (int slot = 0; slot < 2; ++slot)
     {
-        Command cmd;
-        cmd.type = CmdSetSliceParam;
-        cmd.intParam1 = pendingSetSliceParamField.load (std::memory_order_relaxed);
-        cmd.floatParam1 = pendingSetSliceParamValue.load (std::memory_order_relaxed);
-        cmd.intParam2 = pendingSetSliceParamSkipLock.load (std::memory_order_relaxed);
-        handleCommand (cmd);
-        handledAny = true;
+        if (pendingSetSliceParam[(size_t) slot].exchange (false, std::memory_order_acq_rel))
+        {
+            Command cmd;
+            cmd.type = CmdSetSliceParam;
+            cmd.intParam1 = pendingSetSliceParamField[(size_t) slot].load (std::memory_order_relaxed);
+            cmd.floatParam1 = pendingSetSliceParamValue[(size_t) slot].load (std::memory_order_relaxed);
+            cmd.intParam2 = pendingSetSliceParamSkipLock[(size_t) slot].load (std::memory_order_relaxed);
+            cmd.targetEngine2 = (slot == 1);
+            cmd.zoneWide = pendingSetSliceParamZoneWide[(size_t) slot].load (std::memory_order_relaxed);
+            handleCommand (cmd);
+            handledAny = true;
+        }
     }
 }
 
@@ -1174,12 +1189,17 @@ void DysektProcessor::handleCommand (const Command& cmd)
 
                 if (!turningOn)
                 {
-                    // UNLOCK PATH: discard any in-flight coalesced CmdSetSliceParam.
+                    // UNLOCK PATH: discard any in-flight coalesced CmdSetSliceParam
+                    // for THIS SAME ENGINE (see the pendingSetSliceParam* array doc
+                    // comments in PluginProcessor.h -- one slot per engine now).
                     // Without this, a stale drag value sitting in the coalescer fires
                     // *after* the lock bit clears and overwrites s.attackSec etc. with
                     // whatever the last drag position happened to be — causing the node
-                    // to jump to an init/arbitrary value on unlock.
-                    pendingSetSliceParam.store (false, std::memory_order_release);
+                    // to jump to an init/arbitrary value on unlock. Scoped to
+                    // cmd.targetEngine2's slot only — discarding unconditionally would
+                    // also wipe out an unrelated, still-valid in-flight coalesced edit
+                    // on the OTHER engine if one happened to be pending at the same time.
+                    pendingSetSliceParam[(size_t) (cmd.targetEngine2 ? 1 : 0)].store (false, std::memory_order_release);
                 }
 
                 if (turningOn)
@@ -1328,7 +1348,28 @@ void DysektProcessor::handleCommand (const Command& cmd)
                     case FieldFormant:   s.formantSemitones = val;   if (!skipLock) s.lockMask |= kLockFormant;     break;
                     case FieldFormantComp: s.formantComp = val > 0.5f; if (!skipLock) s.lockMask |= kLockFormantComp; break;
                     case FieldGrainMode:  s.grainMode = (int) val;   if (!skipLock) s.lockMask |= kLockGrainMode;  break;
-                    case FieldVolume:     s.volume = val;            if (!skipLock) s.lockMask |= kLockVolume;    break;
+                    case FieldVolume:
+                        s.volume = val;
+                        if (!skipLock) s.lockMask |= kLockVolume;
+                        // MixerPanel's merged SFZ-PLAYER zone row only —
+                        // see Command::zoneWide's doc comment for why this
+                        // can't be unconditional like FieldOutputBus/
+                        // FieldShowInMixer below (SliceControlBar sends
+                        // this same field for legitimate single-slice
+                        // trim and must not propagate).
+                        if (cmd.targetEngine2 && cmd.zoneWide && s.zoneLoKey >= 0)
+                        {
+                            for (int i = 0; i < sm.getNumSlices(); ++i)
+                            {
+                                if (i == sel) continue;
+                                auto& sib = sm.getSlice (i);
+                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                    continue;
+                                sib.volume = s.volume;
+                                if (!skipLock) sib.lockMask |= kLockVolume;
+                            }
+                        }
+                        break;
                     case FieldReleaseTail: s.releaseTail = val > 0.5f; if (!skipLock) s.lockMask |= kLockReleaseTail; break;
                     case FieldReverse:    s.reverse = val > 0.5f;    if (!skipLock) s.lockMask |= kLockReverse;    break;
                     case FieldOutputBus:
@@ -1392,7 +1433,24 @@ void DysektProcessor::handleCommand (const Command& cmd)
                     case FieldLoop:       s.loopMode = (int) val;    if (!skipLock) s.lockMask |= kLockLoop;      break;
                     case FieldOneShot:    s.oneShot = val > 0.5f;    if (!skipLock) s.lockMask |= kLockOneShot;   break;
                     case FieldCentsDetune:   s.centsDetune    = val;       if (!skipLock) s.lockMask |= kLockCentsDetune; break;
-                    case FieldPan:           s.pan            = val;       if (!skipLock) s.lockMask |= kLockPan;         break;
+                    case FieldPan:
+                        s.pan = val;
+                        if (!skipLock) s.lockMask |= kLockPan;
+                        // Same MixerPanel-zone-row-only propagation as
+                        // FieldVolume above — see Command::zoneWide.
+                        if (cmd.targetEngine2 && cmd.zoneWide && s.zoneLoKey >= 0)
+                        {
+                            for (int i = 0; i < sm.getNumSlices(); ++i)
+                            {
+                                if (i == sel) continue;
+                                auto& sib = sm.getSlice (i);
+                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                    continue;
+                                sib.pan = s.pan;
+                                if (!skipLock) sib.lockMask |= kLockPan;
+                            }
+                        }
+                        break;
                     case FieldFilterCutoff:  s.filterCutoff   = val;       if (!skipLock) s.lockMask |= kLockFilter;      break;
                     case FieldFilterRes:       s.filterRes       = val;       if (!skipLock) s.lockMask |= kLockFilter;      break;
                     case FieldEqLowGain:       s.eqLowGain       = val;       if (!skipLock) s.lockMask |= kLockEqLow;       break;
