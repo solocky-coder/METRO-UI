@@ -60,6 +60,15 @@ namespace
         o->setProperty ("sequenceLength", z.sequenceLength);
         o->setProperty ("enabled", z.enabled);
 
+        // Custom colour override — stored as the same 8-digit ARGB hex
+        // juce::Colour::toString() produces (and dysekt_zone_color carries
+        // in exported SFZ), so a .metrokit round-trip and an SFZ round-trip
+        // agree on a zone's colour. Omitted (hasCustomColour left absent /
+        // false on load) means "derive from palette index", same default
+        // as a freshly-imported plain SFZ.
+        if (z.hasCustomColour)
+            o->setProperty ("customColour", juce::Colour (z.customColourArgb).toString());
+
         juce::Array<juce::var> extras;
         for (const auto& [k, v] : z.extraOpcodes)
         {
@@ -103,6 +112,16 @@ namespace
 
         outZone.filterCutoffHz  = (float) (double) v.getProperty ("filterCutoffHz", 20000.0);
         outZone.filterResonance = (float) (double) v.getProperty ("filterResonance", 0.0);
+
+        if (v.hasProperty ("customColour"))
+        {
+            const auto c = juce::Colour::fromString (v.getProperty ("customColour", {}).toString());
+            outZone.hasCustomColour  = true;
+            outZone.customColourArgb = ((juce::uint32) c.getAlpha() << 24)
+                                      | ((juce::uint32) c.getRed()   << 16)
+                                      | ((juce::uint32) c.getGreen() << 8)
+                                      | ((juce::uint32) c.getBlue());
+        }
 
         outZone.group            = (int) v.getProperty ("group", 0);
         outZone.offBy            = (int) v.getProperty ("offBy", 0);

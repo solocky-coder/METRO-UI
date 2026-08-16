@@ -44,6 +44,16 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         scheduleEngineSync();
         if (onInstrumentChanged) onInstrumentChanged();
     };
+    zoneMapView.onZoneDeleted = [this]
+    {
+        // Same downstream effects as a committed drag edit (dirty flag,
+        // debounced resync, chrome notification) — a deletion is just
+        // another committed model edit, it just didn't come from a drag.
+        dirty = true;
+        refreshInspectorFromSelection();
+        scheduleEngineSync();
+        if (onInstrumentChanged) onInstrumentChanged();
+    };
 
     configureStaticLabel (titleLabel, "MULTISAMPLER");
     titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
@@ -140,10 +150,16 @@ std::vector<KeysPanel::Keyzone> MultisamplerEditor::toKeyzones (const Multisampl
         kz.isLooped  = (z.loopMode != LoopMode::noLoop);
         kz.isSfz     = true;   // editable, same convention as parseSfzZones()
 
-        // Same palette/indexing as parseSfzZones() so a file's zone colours
-        // read identically regardless of which editor produced this list —
-        // see toKeyzones()'s header comment.
-        kz.colour = SfzZoneColours::zoneColour (colIdx);
+        // A user-picked colour (see ZoneMapView::showZoneContextMenu) always
+        // wins over the palette-index default — same preference rule
+        // ZoneMapView::rebuildLayout() applies, so the keyboard highlight
+        // never disagrees with the zone map about a manually recoloured
+        // zone's colour. Otherwise: same palette/indexing as
+        // parseSfzZones() so a file's zone colours read identically
+        // regardless of which editor produced this list — see
+        // toKeyzones()'s header comment.
+        kz.colour = z.hasCustomColour ? juce::Colour (z.customColourArgb)
+                                       : SfzZoneColours::zoneColour (colIdx);
         ++colIdx;
 
         kz.name = z.sampleFile != juce::File()

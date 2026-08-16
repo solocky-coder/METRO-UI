@@ -9,7 +9,10 @@
 ZoneMapView::ZoneMapView (DysektProcessor& processorToUse)
     : processor (processorToUse)
 {
-    setWantsKeyboardFocus (false);
+    // Needs focus now so Delete/Backspace (see keyPressed) can reach this
+    // component — previously false because nothing here consumed key
+    // events at all.
+    setWantsKeyboardFocus (true);
     startTimerHz (30);   // matches KeysPanel's poll rate for the same atomics
 }
 
@@ -126,12 +129,15 @@ void ZoneMapView::rebuildLayout()
         r.id = z.id;
         r.missingSample = z.hasMissingSample();
 
-        // Same palette AND same indexing rule (disabled zones don't consume
-        // a colour slot) as MultisamplerEditor::toKeyzones() / SfzExporter,
-        // so a zone's colour here always matches its colour on the live
-        // keyboard highlight and in a re-imported ZONES view of the same
-        // file — see toKeyzones()'s header comment.
-        r.colour = z.enabled ? SfzZoneColours::zoneColour (colIdx) : getTheme().foreground.withAlpha (0.25f);
+        // A user-picked colour (see showZoneContextMenu) always wins over
+        // the palette-index default, matching MultisamplerEditor::
+        // toKeyzones()'s identical preference — otherwise a manually
+        // recoloured zone would look "reset" the moment another zone above
+        // it shifts every subsequent palette index.
+        if (z.hasCustomColour)
+            r.colour = juce::Colour (z.customColourArgb);
+        else
+            r.colour = z.enabled ? SfzZoneColours::zoneColour (colIdx) : getTheme().foreground.withAlpha (0.25f);
         if (z.enabled) ++colIdx;
 
         const float x0 = xForKey (z.lowKey)  - halfKeyW;
@@ -188,6 +194,8 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
 {
     if (instrument == nullptr) return;
 
+    grabKeyboardFocus();   // so a subsequent Delete/Backspace (see keyPressed) reaches this component
+
     const auto p = e.position;
     const auto* hit = topmostZoneAt (p);
 
@@ -199,6 +207,23 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
             if (onSelectionChanged) onSelectionChanged();
             repaint();
         }
+        dragMode = DragMode::none;
+        return;
+    }
+
+    if (e.mods.isRightButtonDown())
+    {
+        // Right-click always at least targets the clicked zone, same as
+        // ZONES' onRowRightClicked — select it first (unless it's already
+        // part of a multi-selection the user is about to bulk-delete) so
+        // "Delete Zone" has an unambiguous target.
+        if (std::find (selectedIds.begin(), selectedIds.end(), hit->id) == selectedIds.end())
+        {
+            selectedIds = { hit->id };
+            if (onSelectionChanged) onSelectionChanged();
+            repaint();
+        }
+        showZoneContextMenu (hit->id, e.getScreenPosition());
         dragMode = DragMode::none;
         return;
     }
@@ -325,6 +350,128 @@ void ZoneMapView::mouseExit (const juce::MouseEvent&)
 void ZoneMapView::resized()
 {
     rebuildLayout();
+}
+
+// ── Deletion ─────────────────────────────────────────────────────────────
+
+bool ZoneMapView::keyPressed (const juce::KeyPress& key)
+{
+    if (instrument == nullptr || selectedIds.empty())
+        return false;
+
+    if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+    {
+        // Delete-key path always targets the current selection as a whole
+        // (there's no single "clicked" zone here), unlike the right-click
+        // menu's single-target default — matches ZONES having no keyboard
+        // shortcut for this at all today, so this is pure upside rather
+        // than a behaviour change to match.
+        deleteZones (selectedIds.front());
+        return true;
+    }
+    return false;
+}
+
+void ZoneMapView::deleteZones (const juce::Uuid& rightClickedId)
+{
+    if (instrument == nullptr) return;
+
+    // If the right-clicked/keyed zone is part of the current multi-
+    // selection, delete the whole selection; otherwise it's a lone
+    // right-click on a zone that isn't selected, so only that one goes.
+    std::vector<juce::Uuid> toDelete;
+    if (std::find (selectedIds.begin(), selectedIds.end(), rightClickedId) != selectedIds.end())
+        toDelete = selectedIds;
+    else
+        toDelete = { rightClickedId };
+
+    bool anyRemoved = false;
+    for (const auto& id : toDelete)
+        anyRemoved |= instrument->removeZone (id);
+
+    if (! anyRemoved) return;
+
+    selectedIds.clear();
+    dragMode = DragMode::none;
+    rebuildLayout();
+    repaint();
+
+    if (onSelectionChanged)  onSelectionChanged();
+    if (onZoneDeleted)       onZoneDeleted();
+}
+
+// ── Context menu ─────────────────────────────────────────────────────────
+
+void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int> screenPos)
+{
+    if (instrument == nullptr) return;
+    auto* zone = instrument->findZone (zoneId);
+    if (zone == nullptr) return;
+
+    // Same 16-colour named palette as ZONES' onRowRightClicked (see
+    // PluginEditor.cpp) and the Slicer's "Slice Color" picker (SliceLane.cpp)
+    // — kept identical so the colour-picker UX matches everywhere in the
+    // app a zone/slice can be recoloured.
+    static const struct { const char* name; juce::uint32 argb; } kPal[] = {
+        { "Cyan",    0xFF00C8FF }, { "Green",   0xFF00FF87 },
+        { "Yellow",  0xFFFFE800 }, { "Orange",  0xFFFF6B00 },
+        { "Red",     0xFFFF2D55 }, { "Pink",    0xFFFF2D9A },
+        { "Violet",  0xFFB44FFF }, { "Blue",    0xFF4A80FF },
+        { "Sky",     0xFF00BFFF }, { "Mint",    0xFF00FFD0 },
+        { "Lime",    0xFFA8FF3E }, { "Gold",    0xFFFFD700 },
+        { "Coral",   0xFFFF7F50 }, { "Magenta", 0xFFFF00FF },
+        { "White",   0xFFE8E8E8 }, { "Silver",  0xFF888888 },
+    };
+
+    const juce::Colour curCol = zone->hasCustomColour
+                                     ? juce::Colour (zone->customColourArgb)
+                                     : juce::Colours::transparentBlack;
+    juce::PopupMenu colourSub;
+    for (int ci = 0; ci < 16; ++ci)
+    {
+        juce::Colour c ((juce::uint32) kPal[ci].argb);
+        colourSub.addColouredItem (20 + ci, kPal[ci].name, c,
+                                   true, zone->hasCustomColour && c.toDisplayString (false) == curCol.toDisplayString (false));
+    }
+
+    auto* topLvl = getTopLevelComponent();
+    float ms = DysektLookAndFeel::getMenuScale();
+    juce::PopupMenu menu;
+    const bool multi = std::find (selectedIds.begin(), selectedIds.end(), zoneId) != selectedIds.end()
+                            && selectedIds.size() > 1;
+    menu.addItem (1, multi ? "Delete " + juce::String ((int) selectedIds.size()) + " Zones" : "Delete Zone");
+    menu.addSeparator();
+    menu.addSubMenu ("Zone Color", colourSub);
+    menu.showMenuAsync (
+        juce::PopupMenu::Options()
+            .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
+            .withParentComponent (topLvl)
+            .withStandardItemHeight ((int) (24 * ms)),
+        [this, zoneId] (int result)
+        {
+            if (instrument == nullptr) return;   // view may have been repointed while the menu was open
+
+            if (result == 1)
+            {
+                deleteZones (zoneId);
+            }
+            else if (result >= 20 && result < 36)
+            {
+                static const juce::uint32 kPalARGB[] = {
+                    0xFF00C8FF, 0xFF00FF87, 0xFFFFE800, 0xFFFF6B00,
+                    0xFFFF2D55, 0xFFFF2D9A, 0xFFB44FFF, 0xFF4A80FF,
+                    0xFF00BFFF, 0xFF00FFD0, 0xFFA8FF3E, 0xFFFFD700,
+                    0xFFFF7F50, 0xFFFF00FF, 0xFFE8E8E8, 0xFF888888,
+                };
+                auto* z = instrument->findZone (zoneId);
+                if (z == nullptr) return;
+                z->hasCustomColour  = true;
+                z->customColourArgb = kPalARGB[result - 20];
+                rebuildLayout();
+                repaint();
+                if (onZoneEditCommitted) onZoneEditCommitted();   // persists via the normal debounced-resync/dirty path
+            }
+        });
 }
 
 // ── Painting ─────────────────────────────────────────────────────────────

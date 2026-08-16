@@ -14,19 +14,20 @@ full Phase 1 scope ("Model and reliable SFZ round-trip").
 | `SfzExporter.h/.cpp` | Renders the model back to SFZ for sfizz playback and for the "Export SFZ" bundle action. Emits one fully-resolved `<region>` per zone (see the header comment for why it doesn't reconstruct `<global>`/`<group>` inheritance). |
 | `InstrumentSerializer.h/.cpp` | `instrument.json` (de)serialization — the *lossless* round trip for `.metrokit` bundles, independent of anything SFZ can't express (e.g. `masterGainDb`, `maxVoices`). |
 | `tests/MultisamplerRoundTripTests.cpp` | `juce::UnitTest` coverage for tokenization/inheritance, the SFZ round trip, the JSON round trip, and `validate()`. |
+| `ui/multisampler/ZoneMapView.h/.cpp` | Phase 2 mapping editor: true 2D key×velocity drag-editing (move + per-edge resize), overlap/missing-sample highlighting, live MIDI note highlighting off `sfz2ActiveNotes`, zone deletion (Delete/Backspace or right-click "Delete Zone", single or multi-select), and per-zone colour override via right-click "Zone Color" (same 16-colour palette as ZONES). |
+| `ui/multisampler/MultisamplerEditor.h/.cpp` | Top-level panel: owns the model, hosts `ZoneMapView`, wires the shared `SliceControlBar` for numeric field edits, Import/Export/New/Add Zone, save-in-place/discard with dirty tracking, and the debounced sfzPlayer2 engine resync. |
 
 ## What's deliberately not here yet
 
-Everything UI-facing (`ZoneMapView`, `ZoneInspector`, drag-and-drop
-auto-mapping, the debounced sfizz sync bridge) is Phase 2/3 per the plan and
-depends on this model existing first. The interactive HTML mockup delivered
-earlier in this conversation shows the intended UI; wiring it to real JUCE
-components against this model is the next slice.
+`.metrokit` folder/zip packaging and Collect Samples/Relink orchestration
+remain Phase 4 per the plan. Also still out of scope, per §5: `#include`
+directives, keyswitches, curves, and the `<control>`/`<effect>`/`<master>`
+headers (raw text is preserved on round-trip via `rawExtraHeaders`, just
+never interpreted/edited).
 
-Also out of scope for Phase 1, per the plan: `.metrokit` folder/zip packaging
-and Collect Samples/Relink orchestration (Phase 4), `#include` directives,
-keyswitches, curves, and the `<control>`/`<effect>`/`<master>` headers
-(explicitly deferred by §5).
+As of the zone-deletion + colour-persistence pass, MULTISAMPLER has reached
+feature parity with ZONES on the core model/edit loop — see the parity
+review earlier in this conversation for the full comparison.
 
 ## Wiring this into the existing project
 

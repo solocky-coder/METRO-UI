@@ -15,7 +15,8 @@ namespace
             "pitch_keycenter", "tune", "transpose", "volume", "pan",
             "offset", "end", "loop_mode", "loop_start", "loop_end",
             "ampeg_attack", "ampeg_decay", "ampeg_sustain", "ampeg_release",
-            "cutoff", "resonance", "group", "off_by", "seq_position", "seq_length"
+            "cutoff", "resonance", "group", "off_by", "seq_position", "seq_length",
+            "dysekt_zone_color"
         };
         return s;
     }
@@ -426,6 +427,24 @@ namespace
         // sfz `resonance` is a dB peak (typically 0..40dB); the native model
         // keeps a normalised 0..1 for its filter UI, so remap here.
         z.filterResonance = juce::jlimit (0.0f, 1.0f, floatOpcode (resolved, "resonance", 0.0f) / 40.0f);
+
+        // Custom colour override — same opcode ZONES round-trips through
+        // (see PluginEditor::setZoneBuilderZoneColour / writeSfzZoneChange).
+        // Opcode keys are already lowercased by the tokenizer (see the
+        // `resolved` build-up above), so "dysekt_zone_color" always matches
+        // regardless of the source file's original casing.
+        if (resolved.count ("dysekt_zone_color"))
+        {
+            const auto c = juce::Colour::fromString (resolved.at ("dysekt_zone_color"));
+            z.hasCustomColour  = true;
+            // Rebuild the packed ARGB from component accessors rather than
+            // relying on a getARGB()-style internal accessor, which JUCE
+            // doesn't expose publicly as a plain uint32 getter.
+            z.customColourArgb = ((juce::uint32) c.getAlpha() << 24)
+                                | ((juce::uint32) c.getRed()   << 16)
+                                | ((juce::uint32) c.getGreen() << 8)
+                                | ((juce::uint32) c.getBlue());
+        }
 
         z.group           = intOpcode (resolved, "group", 0);
         z.offBy           = intOpcode (resolved, "off_by", 0);

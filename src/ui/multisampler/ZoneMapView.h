@@ -60,6 +60,13 @@ public:
         off, as opposed to onZoneEditing's every-frame updates. */
     std::function<void()> onZoneEditCommitted;
 
+    /** Fired after a zone (or the last of several selected zones) is deleted
+        via the Delete-key/right-click-menu path below — same "commit"
+        contract as onZoneEditCommitted (model is already updated by the
+        time this fires), but kept separate so the owning panel can tell a
+        deletion apart from a drag when it matters (e.g. status text). */
+    std::function<void()> onZoneDeleted;
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -67,6 +74,7 @@ public:
     void mouseUp   (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
+    bool keyPressed (const juce::KeyPress&) override;
 
 private:
     enum class DragMode { none, move, resizeLeft, resizeRight, resizeTop, resizeBottom };
@@ -90,6 +98,19 @@ private:
     void rebuildLayout();          // recomputes cachedRects from *instrument
     DragMode hitTestEdges (const ZoneRect&, juce::Point<float>) const;
     const ZoneRect* topmostZoneAt (juce::Point<float>) const;
+
+    /** Deletes every currently-selected zone (or, if `rightClickedId` isn't
+        part of the current selection, just that one — matches how ZONES'
+        right-click menu operates on "the row you clicked", not whatever was
+        selected before). Clears selection, rebuilds layout, and fires
+        onZoneDeleted. No-op if the instrument is null or nothing resolves. */
+    void deleteZones (const juce::Uuid& rightClickedId);
+
+    /** Right-click context menu: "Delete Zone" + the same 16-colour named
+        palette submenu ZONES' onRowRightClicked shows (see PluginEditor.cpp),
+        kept identical so the picker UX matches everywhere in the app a
+        zone/slice can be recoloured. */
+    void showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int> screenPos);
 
     MultisamplerInstrument* instrument = nullptr;
     std::vector<ZoneRect> cachedRects;   // one per instrument->zones entry, same order

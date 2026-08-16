@@ -74,6 +74,15 @@ namespace
         if (z.sequenceLength > 1)
             out << "seq_position=" << z.sequencePosition << " seq_length=" << z.sequenceLength << "\n";
 
+        // Custom colour override — same opcode/format ZONES writes via
+        // PluginEditor::setZoneBuilderZoneColour (juce::Colour::toString(),
+        // an 8-digit ARGB hex string), so a file coloured in either editor
+        // reads back identically in the other. Omitted entirely when unset
+        // so a zone with no override doesn't pick up a colour on reload
+        // that the user never actually chose.
+        if (z.hasCustomColour)
+            out << "dysekt_zone_color=" << juce::Colour (z.customColourArgb).toString() << "\n";
+
         for (const auto& [k, v] : z.extraOpcodes)
             out << k << "=" << v << "\n";
 
