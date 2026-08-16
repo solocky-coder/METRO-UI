@@ -1,6 +1,7 @@
 #include "MultisamplerEditor.h"
 #include "../../PluginProcessor.h"
 #include "../DysektLookAndFeel.h"
+#include "../SliceControlBar.h"
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
 #include "../../audio/SfzZoneColours.h"
@@ -17,24 +18,25 @@ namespace
         l.setJustificationType (juce::Justification::centredLeft);
         l.setInterceptsMouseClicks (false, false);
     }
-
-    void configureEditableField (juce::Label& l)
-    {
-        l.setEditable (false, true, false);   // single click doesn't start editing; double-click does
-        l.setJustificationType (juce::Justification::centred);
-        l.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    }
 }
 
 MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
-    : processor (processorToUse)
+    : processor (processorToUse), zoneMapView (processorToUse)
 {
     instrument.name = "New Instrument";
 
     addAndMakeVisible (zoneMapView);
     zoneMapView.setInstrument (&instrument);
     zoneMapView.onSelectionChanged = [this] { refreshInspectorFromSelection(); };
-    zoneMapView.onZoneEditing      = [this] { dirty = true; repaint(); };
+    zoneMapView.onZoneEditing      = [this]
+    {
+        dirty = true;
+        // Live-drag readout — matches ZONES' onZoneEdited pushing into SCB
+        // on every drag frame, not just on commit, via the same
+        // refreshInspectorFromSelection() -> onZoneSelectionOrEditChanged path.
+        refreshInspectorFromSelection();
+        repaint();
+    };
     zoneMapView.onZoneEditCommitted = [this]
     {
         dirty = true;
@@ -59,32 +61,11 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     addAndMakeVisible (newButton);
     newButton.onClick = [this] { newInstrumentClicked(); };
 
-    // ── Inspector strip ──────────────────────────────────────────────────
+    // ── Selection status strip ──────────────────────────────────────────
     configureStaticLabel (inspectorTitle, "NO ZONE SELECTED");
     inspectorTitle.setFont (juce::FontOptions (11.0f));
     addAndMakeVisible (inspectorTitle);
 
-    struct FieldSpec { juce::Label* labelWidget; juce::Label* fieldWidget; const char* labelText; };
-    const FieldSpec specs[] = {
-        { &lowKeyLabel,  &lowKeyField,  "LO KEY" },
-        { &highKeyLabel, &highKeyField, "HI KEY" },
-        { &rootKeyLabel, &rootKeyField, "ROOT" },
-        { &lowVelLabel,  &lowVelField,  "LO VEL" },
-        { &highVelLabel, &highVelField, "HI VEL" },
-        { &gainLabel,    &gainField,    "GAIN dB" },
-        { &panLabel,     &panField,     "PAN" },
-    };
-    for (const auto& s : specs)
-    {
-        configureStaticLabel (*s.labelWidget, s.labelText);
-        s.labelWidget->setFont (juce::FontOptions (9.0f));
-        s.labelWidget->setJustificationType (juce::Justification::centred);
-        addAndMakeVisible (*s.labelWidget);
-
-        configureEditableField (*s.fieldWidget);
-        s.fieldWidget->onTextChange = [this] { applyInspectorFieldsToSelection(); };
-        addAndMakeVisible (*s.fieldWidget);
-    }
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
 }
 
@@ -131,22 +112,10 @@ void MultisamplerEditor::resized()
     header.removeFromRight (4);
     addZoneButton.setBounds (header.removeFromRight (84));
 
-    auto inspector = r.removeFromBottom (kInspectorH - 4);
+    inspectorTitle.setBounds (r.removeFromBottom (kInspectorH - 4));
     r.removeFromTop (6);
 
     zoneMapView.setBounds (r);
-
-    inspectorTitle.setBounds (inspector.removeFromLeft (130));
-    const int numFields = 7;
-    const int fieldW = juce::jmax (36, inspector.getWidth() / numFields);
-    juce::Label* labels[] = { &lowKeyLabel, &highKeyLabel, &rootKeyLabel, &lowVelLabel, &highVelLabel, &gainLabel, &panLabel };
-    juce::Label* fields[] = { &lowKeyField, &highKeyField, &rootKeyField, &lowVelField, &highVelField, &gainField, &panField };
-    for (int i = 0; i < numFields; ++i)
-    {
-        auto col = inspector.removeFromLeft (fieldW);
-        labels[i]->setBounds (col.removeFromTop (12));
-        fields[i]->setBounds (col);
-    }
 }
 
 // ── Instrument lifecycle ────────────────────────────────────────────────
@@ -428,6 +397,16 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
 
 // ── Inspector ────────────────────────────────────────────────────────────
 
+int MultisamplerEditor::getSelectedZoneIndex() const noexcept
+{
+    if (inspectedZoneId == juce::Uuid::null())
+        return -1;
+    for (size_t i = 0; i < instrument.zones.size(); ++i)
+        if (instrument.zones[i].id == inspectedZoneId)
+            return (int) i;
+    return -1;
+}
+
 void MultisamplerEditor::refreshInspectorFromSelection()
 {
     const auto& selected = zoneMapView.getSelectedZoneIds();
@@ -442,50 +421,47 @@ void MultisamplerEditor::refreshInspectorFromSelection()
 
     inspectedZoneId = (zone != nullptr) ? zone->id : juce::Uuid::null();
 
-    juce::Label* fields[] = { &lowKeyField, &highKeyField, &rootKeyField, &lowVelField, &highVelField, &gainField, &panField };
-    for (auto* f : fields) f->setEnabled (zone != nullptr);
-
     if (zone == nullptr)
     {
         inspectorTitle.setText (selected.empty() ? "NO ZONE SELECTED" : "MULTIPLE ZONES SELECTED", juce::dontSendNotification);
-        for (auto* f : fields) f->setText ({}, juce::dontSendNotification);
-        return;
+    }
+    else
+    {
+        inspectorTitle.setText (zone->sampleFile.getFileName().isNotEmpty()
+                                    ? zone->sampleFile.getFileName() : juce::String ("(no sample)"),
+                                 juce::dontSendNotification);
     }
 
-    inspectorTitle.setText (zone->sampleFile.getFileName().isNotEmpty()
-                                ? zone->sampleFile.getFileName() : juce::String ("(no sample)"),
-                             juce::dontSendNotification);
-    lowKeyField.setText  (juce::String (zone->lowKey),  juce::dontSendNotification);
-    highKeyField.setText (juce::String (zone->highKey), juce::dontSendNotification);
-    rootKeyField.setText (juce::String (zone->rootKey), juce::dontSendNotification);
-    lowVelField.setText  (juce::String (zone->lowVelocity),  juce::dontSendNotification);
-    highVelField.setText (juce::String (zone->highVelocity), juce::dontSendNotification);
-    gainField.setText    (juce::String (zone->gainDb, 1), juce::dontSendNotification);
-    panField.setText     (juce::String (zone->pan, 2),    juce::dontSendNotification);
+    // Drives the shared SliceControlBar — see this method's declaration
+    // comment. PluginEditor reads getSelectedZoneIndex()/getInstrument()
+    // right after this fires to build the SCB readout, exactly mirroring
+    // zoneBuilderKeysPanel::onRowClicked's push into
+    // sliceControlBar.setSfzZoneSummary() for ZONES.
+    if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
 }
 
-void MultisamplerEditor::applyInspectorFieldsToSelection()
+void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field, float value)
 {
-    if (inspectedZoneId == juce::Uuid::null()) return;
-    auto* zone = instrument.findZone (inspectedZoneId);
-    if (zone == nullptr) return;
+    if (zoneIndex < 0 || zoneIndex >= (int) instrument.zones.size())
+        return;
+    auto& z = instrument.zones[(size_t) zoneIndex];
 
-    const int lo   = juce::jlimit (0, 127, lowKeyField.getText().getIntValue());
-    const int hi    = juce::jlimit (lo, 127, highKeyField.getText().getIntValue());
-    const int root  = juce::jlimit (0, 127, rootKeyField.getText().getIntValue());
-    const int loVel = juce::jlimit (1, 127, lowVelField.getText().getIntValue());
-    const int hiVel  = juce::jlimit (loVel, 127, highVelField.getText().getIntValue());
-
-    zone->lowKey       = lo;
-    zone->highKey      = hi;
-    zone->rootKey       = root;
-    zone->lowVelocity   = loVel;
-    zone->highVelocity  = hiVel;
-    zone->gainDb        = (float) gainField.getText().getDoubleValue();
-    zone->pan           = juce::jlimit (-1.0f, 1.0f, (float) panField.getText().getDoubleValue());
+    switch (field)
+    {
+        case SliceControlBar::ZoneLoKey:   z.lowKey       = juce::jmin (z.highKey, juce::roundToInt (value)); break;
+        case SliceControlBar::ZoneHiKey:   z.highKey      = juce::jmax (z.lowKey,  juce::roundToInt (value)); break;
+        case SliceControlBar::ZoneRoot:    z.rootKey      = juce::roundToInt (value); break;
+        case SliceControlBar::ZonePitch:   z.tuneCents    = value; break;
+        case SliceControlBar::ZonePan:     z.pan          = value; break;
+        case SliceControlBar::ZoneVolume:  z.gainDb       = value; break;
+        case SliceControlBar::ZoneRelease: z.releaseSeconds = value; break;
+        case SliceControlBar::ZoneLoop:    z.loopMode     = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop; break;
+        default: return;
+    }
 
     dirty = true;
     zoneMapView.refresh();
     scheduleEngineSync();
     if (onInstrumentChanged) onInstrumentChanged();
+    refreshInspectorFromSelection();   // pushes the just-applied value back into SCB's own readout
 }

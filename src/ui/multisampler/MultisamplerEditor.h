@@ -108,6 +108,34 @@ public:
         offering "Save" only when there's somewhere to save to). */
     const juce::File& getLastSavedFile() const noexcept { return lastSavedFile; }
 
+    /** -1 if zero or multiple zones are selected in the zone map; otherwise
+        the index into getInstrument().zones for the single selected zone.
+        Lets PluginEditor drive the shared SliceControlBar (SCB) readout the
+        exact same way it already does for ZONES
+        (zoneBuilderKeysPanel::onRowClicked -> sliceControlBar.
+        setSfzZoneSummary), keyed off this index instead of ZONES' row
+        index — see onZoneSelectionOrEditChanged. */
+    int getSelectedZoneIndex() const noexcept;
+
+    /** Fired whenever the selected zone (per getSelectedZoneIndex()) or its
+        data changes — a selection click, a live drag, a drag commit, or a
+        SliceControlBar field edit applied via applySliceControlBarFieldEdit().
+        This is MULTISAMPLER's exact counterpart of ZONES'
+        zoneBuilderKeysPanel::onRowClicked/onZoneEdited pair; PluginEditor
+        hooks this the same way to push sliceControlBar.setSfzZoneSummary()/
+        clearSfzZoneSummary(), so the SCB behaves identically regardless of
+        which editor is open. */
+    std::function<void()> onZoneSelectionOrEditChanged;
+
+    /** Applies one SliceControlBar field edit (see SliceControlBar::
+        SfzZoneField) to the zone at `zoneIndex` (as returned by
+        getSelectedZoneIndex()). PluginEditor's existing
+        sliceControlBar.onSfzZoneParamEdited handler forwards here instead
+        of its ZONES-matrix logic whenever MULTISAMPLER, not ZONES, is the
+        active editor — same trigger, same field enum, different model
+        underneath. No-op if zoneIndex is out of range. */
+    void applySliceControlBarFieldEdit (int zoneIndex, int field, float value);
+
     /** Fired after every committed model edit (drag-commit, inspector apply,
         import, New) — after the debounced resync has been scheduled, not
         after it completes. Lets PluginEditor update window chrome / the
@@ -152,7 +180,6 @@ private:
                               // openZoneBuilderAddZone()/showZoneBuilderAddZoneOverlay()
 
     void refreshInspectorFromSelection();
-    void applyInspectorFieldsToSelection();   // called on each field's onReturn/onFocusLost
 
     DysektProcessor& processor;
     MultisamplerInstrument instrument;
@@ -170,18 +197,19 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
     std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;   // modal popup; owned only while open
 
-    // ── Compact inspector strip (single-zone editing) ──────────────────────
-    // Shown only when exactly one zone is selected; hidden (and inert) for
-    // zero or multi-selection, matching ZoneMapView's shift-click multi-select
-    // — multi-field editing across a selection is a Phase-2 follow-up.
+    // ── Selection status strip ──────────────────────────────────────────
+    // Just a slim "N zones · (selection state)" readout now — actual
+    // per-zone editing lives entirely in the shared SliceControlBar (see
+    // onZoneSelectionOrEditChanged/applySliceControlBarFieldEdit above),
+    // the exact same component ZONES edits through, rather than this panel
+    // maintaining its own separate lo/hi/root/vel/gain/pan field row that
+    // could drift out of sync with SCB's idea of the same zone.
     juce::Label inspectorTitle;
-    juce::Label lowKeyLabel, highKeyLabel, rootKeyLabel, lowVelLabel, highVelLabel, gainLabel, panLabel;
-    juce::Label lowKeyField, highKeyField, rootKeyField, lowVelField, highVelField, gainField, panField;
     juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing/multiple selected
 
     static constexpr int kEngineSyncDebounceMs = 300;
     static constexpr int kHeaderH    = 32;
-    static constexpr int kInspectorH = 30;
+    static constexpr int kInspectorH = 20;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultisamplerEditor)
 };

@@ -25,11 +25,14 @@
 #include <functional>
 
 struct MultisamplerInstrument;
+class DysektProcessor;
 
-class ZoneMapView : public juce::Component
+class ZoneMapView : public juce::Component,
+                     private juce::Timer
 {
 public:
-    ZoneMapView();
+    explicit ZoneMapView (DysektProcessor& processorToUse);
+    ~ZoneMapView() override;
 
     /** Non-owning. Pass nullptr to show an empty grid. */
     void setInstrument (MultisamplerInstrument* instrumentToShow);
@@ -72,6 +75,7 @@ private:
     {
         juce::Uuid id;
         juce::Rectangle<float> bounds;   // in component-local pixels
+        juce::Colour colour;             // SfzZoneColours::zoneColour(), same index MultisamplerEditor::toKeyzones() uses
         bool missingSample = false;
         bool overlapping   = false;
     };
@@ -90,6 +94,18 @@ private:
     MultisamplerInstrument* instrument = nullptr;
     std::vector<ZoneRect> cachedRects;   // one per instrument->zones entry, same order
     std::vector<juce::Uuid> selectedIds;
+
+    // ── Live MIDI highlighting ──────────────────────────────────────────
+    // MULTISAMPLER always drives sfzPlayer2 (see MultisamplerEditor's engine
+    // -sync comment), so the piano-key strip and currently-sounding zones
+    // read processor.sfz2ActiveNotes the same way KeysPanel does when bound
+    // to EngineSource::SfzPlayer2 — same atomics, same 30Hz poll, so a note
+    // played through MULTISAMPLER lights up identically to how it would in
+    // ZONES' keyboard.
+    DysektProcessor& processor;
+    void timerCallback() override;
+    uint64_t activeNotesSnap[2] = { 0, 0 };
+    bool isNoteActive (int note) const noexcept;
 
     // Live drag state
     DragMode   dragMode = DragMode::none;

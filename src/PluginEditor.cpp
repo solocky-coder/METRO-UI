@@ -217,6 +217,15 @@ zoneBuilderKeysPanel.onRowRightClicked = [this] (int rowIndex, juce::Point<int> 
 };
 sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float value)
 {
+    if (showMultisamplerEditor)
+    {
+        // Same SCB, same field enum, MULTISAMPLER's native model underneath
+        // instead of ZONES' raw-SFZ scratch file — see
+        // MultisamplerEditor::applySliceControlBarFieldEdit's doc comment.
+        multisamplerEditor.applySliceControlBarFieldEdit (rowIndex, field, value);
+        return;
+    }
+
     const auto& zones = zoneBuilderKeysPanel.getKeyzones();
     if (rowIndex < 0 || rowIndex >= (int) zones.size()) return;
     auto z = zones[(size_t) rowIndex];
@@ -271,6 +280,31 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      // state), but repaint so the panel's own dirty-dot indicator and any
      // future window-title "*" affordance stay current.
      repaint();
+ };
+ multisamplerEditor.onZoneSelectionOrEditChanged = [this]
+ {
+     // MULTISAMPLER's exact counterpart of zoneBuilderKeysPanel::
+     // onRowClicked/onZoneEdited pushing into sliceControlBar
+     // .setSfzZoneSummary() further down this file — same SCB, same
+     // fields, different model underneath. Guarded on showMultisamplerEditor
+     // so a stale callback firing while MULTISAMPLER isn't even the active
+     // editor can't stomp on ZONES' own SCB readout.
+     if (! showMultisamplerEditor) return;
+
+     const int idx = multisamplerEditor.getSelectedZoneIndex();
+     const auto& zones = multisamplerEditor.getInstrument().zones;
+     if (idx < 0 || idx >= (int) zones.size())
+     {
+         sliceControlBar.clearSfzZoneSummary();
+         return;
+     }
+     const auto& z = zones[(size_t) idx];
+     sliceControlBar.setSfzZoneSummary (idx,
+         z.sampleFile != juce::File() ? z.sampleFile.getFileNameWithoutExtension()
+                                       : juce::String ("Zone " + juce::String (idx + 1)),
+         z.lowKey, z.highKey, z.rootKey,
+         z.tuneCents, z.pan, z.gainDb, z.releaseSeconds,
+         z.loopMode != LoopMode::noLoop);
  };
  multisamplerEditor.onImportWarnings = [this] (const juce::String& sourceFileName,
                                                 bool importSucceeded,
@@ -1764,7 +1798,7 @@ void DysektEditor::resized()
  // builder directly, so an empty SFZ-PLAYER tab no longer shows the SCB.
  // showZoneBuilder is always reset to false on leaving uiMode 1 (see
  // setUiMode), so it can't leak a stale SCB into the Slicer tab.
- if ((hasRealSample || showZoneBuilder) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
+ if ((hasRealSample || showZoneBuilder || showMultisamplerEditor) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);
@@ -1778,7 +1812,12 @@ void DysektEditor::resized()
  }
 
  // Overview row: allocate space and show only when waveform view is active.
- if ((uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample && !showPadGrid && !showZoneBuilder)
+ // Excludes MULTISAMPLER too — this bar zooms/scrolls sliceManager2's
+ // waveform, which isn't even the content on screen while MULTISAMPLER is
+ // open (that's zoneMapView, a 2D key/velocity grid with no zoom concept of
+ // its own yet), so previously it sat there fully unresponsive to anything
+ // the user did with it — see the bug report this fixed.
+ if ((uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample && !showPadGrid && !showZoneBuilder && !showMultisamplerEditor)
  {
      auto overviewRow = area.removeFromBottom (kOverviewRowH);
      const int overviewY = overviewRow.getY() + kInterGap;
@@ -2713,6 +2752,7 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
                 multisamplerEditor.discardPendingEdits();
 
             showMultisamplerEditor = false;
+            sliceControlBar.clearSfzZoneSummary();   // leaving MULTISAMPLER — don't leave its zone readout stuck in the SCB
             resized();
             repaint();
         };
@@ -2722,6 +2762,8 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
     showMultisamplerEditor = on;
     if (on && showZoneBuilder)
         toggleZoneBuilder (false);   // mutually exclusive — see header comment
+    if (! on)
+        sliceControlBar.clearSfzZoneSummary();   // same rationale as the dirty-guard branch above
 
     if (on && initBrowserOpen)
     {

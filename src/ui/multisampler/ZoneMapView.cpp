@@ -1,12 +1,44 @@
 #include "ZoneMapView.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
+#include "../../audio/SfzZoneColours.h"
+#include "../../PluginProcessor.h"
 #include "../DysektLookAndFeel.h"
 #include <algorithm>
 #include <cmath>
 
-ZoneMapView::ZoneMapView()
+ZoneMapView::ZoneMapView (DysektProcessor& processorToUse)
+    : processor (processorToUse)
 {
     setWantsKeyboardFocus (false);
+    startTimerHz (30);   // matches KeysPanel's poll rate for the same atomics
+}
+
+ZoneMapView::~ZoneMapView()
+{
+    stopTimer();
+}
+
+bool ZoneMapView::isNoteActive (int note) const noexcept
+{
+    if (note < 0 || note > 127) return false;
+    const uint64_t word = (note < 64) ? activeNotesSnap[0] : activeNotesSnap[1];
+    const int      bit  = (note < 64) ? note : (note - 64);
+    return ((word >> bit) & 1) != 0;
+}
+
+void ZoneMapView::timerCallback()
+{
+    // Same bitmask MultisamplerEditor's engine-sync path plays through
+    // (sfzPlayer2) — see this class's header comment. Torn reads are fine,
+    // same as KeysPanel's identical use of these atomics: display-only.
+    const uint64_t lo = processor.sfz2ActiveNotes[0].load (std::memory_order_relaxed);
+    const uint64_t hi = processor.sfz2ActiveNotes[1].load (std::memory_order_relaxed);
+    if (lo != activeNotesSnap[0] || hi != activeNotesSnap[1])
+    {
+        activeNotesSnap[0] = lo;
+        activeNotesSnap[1] = hi;
+        repaint();
+    }
 }
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -87,11 +119,20 @@ void ZoneMapView::rebuildLayout()
     const auto g = gridArea().toFloat();
 
     cachedRects.reserve (instrument->zones.size());
+    int colIdx = 0;
     for (const auto& z : instrument->zones)
     {
         ZoneRect r;
         r.id = z.id;
         r.missingSample = z.hasMissingSample();
+
+        // Same palette AND same indexing rule (disabled zones don't consume
+        // a colour slot) as MultisamplerEditor::toKeyzones() / SfzExporter,
+        // so a zone's colour here always matches its colour on the live
+        // keyboard highlight and in a re-imported ZONES view of the same
+        // file — see toKeyzones()'s header comment.
+        r.colour = z.enabled ? SfzZoneColours::zoneColour (colIdx) : getTheme().foreground.withAlpha (0.25f);
+        if (z.enabled) ++colIdx;
 
         const float x0 = xForKey (z.lowKey)  - halfKeyW;
         const float x1 = xForKey (z.highKey) + halfKeyW;
@@ -319,12 +360,19 @@ void ZoneMapView::paint (juce::Graphics& g)
 
     // Piano-key strip along the bottom (just black/white shading, no labels
     // beyond octave C markers — this is a mapping aid, not a keyboard widget).
+    // Notes currently sounding through sfzPlayer2 (real MIDI input, on-screen
+    // keyboard clicks elsewhere, or MULTISAMPLER's own preview — anything
+    // that lights up processor.sfz2ActiveNotes) light up in the theme accent
+    // colour, same as KeysPanel's keyboard does for ZONES.
     static const bool blackKey[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
     for (int key = 0; key < 128; ++key)
     {
         const float x0 = xForKey (key);
         const float x1 = xForKey (key + 1);
-        g.setColour (blackKey[key % 12] ? theme.darkBar : theme.foreground.withAlpha (0.15f));
+        const bool active = isNoteActive (key);
+        g.setColour (active
+                        ? theme.accent
+                        : (blackKey[key % 12] ? theme.darkBar : theme.foreground.withAlpha (0.15f)));
         g.fillRect (juce::Rectangle<float> (x0, (float) g_area.getBottom(), x1 - x0, (float) kKeyboardStripPx));
     }
     g.setColour (theme.separator);
@@ -336,8 +384,17 @@ void ZoneMapView::paint (juce::Graphics& g)
         const bool selected = std::find (selectedIds.begin(), selectedIds.end(), r.id) != selectedIds.end();
         const bool hovered   = r.id == hoverZoneId;
 
+        const bool sounding = [&]
+        {
+            const auto* zone = instrument != nullptr ? instrument->findZone (r.id) : nullptr;
+            if (zone == nullptr) return false;
+            for (int n = 0; n < 128; ++n)
+                if (isNoteActive (n) && zone->keyInRange (n)) return true;
+            return false;
+        }();
+
         auto fill = r.missingSample ? juce::Colours::red.withAlpha (0.25f)
-                                     : theme.accent.withAlpha (selected ? 0.55f : (hovered ? 0.38f : 0.24f));
+                                     : r.colour.withAlpha (sounding ? 0.80f : (selected ? 0.55f : (hovered ? 0.38f : 0.24f)));
         g.setColour (fill);
         g.fillRect (r.bounds);
 
@@ -353,8 +410,8 @@ void ZoneMapView::paint (juce::Graphics& g)
             g.restoreState();
         }
 
-        g.setColour (selected ? theme.accent : theme.separator.withAlpha (0.8f));
-        g.drawRect (r.bounds, selected ? 2.0f : 1.0f);
+        g.setColour (sounding ? juce::Colours::white : (selected ? theme.accent : theme.separator.withAlpha (0.8f)));
+        g.drawRect (r.bounds, (sounding || selected) ? 2.0f : 1.0f);
 
         if (r.missingSample)
         {
