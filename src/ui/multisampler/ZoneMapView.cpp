@@ -512,10 +512,17 @@ void ZoneMapView::paint (juce::Graphics& g)
     // that lights up processor.sfz2ActiveNotes) light up in the theme accent
     // colour, same as KeysPanel's keyboard does for ZONES.
     static const bool blackKey[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
+    // Cells are centred on xForKey(key) using the same half-cell width the
+    // zone rects and octave gridlines are built around (see rebuildLayout's
+    // halfKeyW), not spanned across [xForKey(key), xForKey(key+1)] — the
+    // latter silently shifts every highlighted key half a cell to the right
+    // of the zone column it's supposed to sit under (and collapses key 127
+    // to zero width, since xForKey(128) clamps to the same x as xForKey(127)).
+    const float halfKeyW = std::abs (xForKey (1) - xForKey (0)) * 0.5f;
     for (int key = 0; key < 128; ++key)
     {
-        const float x0 = xForKey (key);
-        const float x1 = xForKey (key + 1);
+        const float x0 = xForKey (key) - halfKeyW;
+        const float x1 = xForKey (key) + halfKeyW;
         const bool active = isNoteActive (key);
         g.setColour (active
                         ? theme.accent
