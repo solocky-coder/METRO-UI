@@ -39,10 +39,51 @@ void ZoneMapView::timerCallback()
     const uint64_t hi = processor.sfz2ActiveNotes[1].load (std::memory_order_relaxed);
     if (lo != activeNotesSnap[0] || hi != activeNotesSnap[1])
     {
+        // Newly-triggered notes only (rising edges), so a note-off in this
+        // same poll window doesn't get treated as "new". Playing a note
+        // should select its zone the way a click does — MIDI input into
+        // the multisampler is auditioning a mapping, and the inspector
+        // (SCB) should follow along without requiring a mouse click too.
+        const uint64_t newLo = lo & ~activeNotesSnap[0];
+        const uint64_t newHi = hi & ~activeNotesSnap[1];
+
         activeNotesSnap[0] = lo;
         activeNotesSnap[1] = hi;
+
+        if ((newLo != 0 || newHi != 0) && instrument != nullptr)
+            selectZonesForNewNotes (newLo, newHi);
+
         repaint();
     }
+}
+
+void ZoneMapView::selectZonesForNewNotes (uint64_t newLo, uint64_t newHi)
+{
+    // Mirrors the click-selection path in mouseDown(): replace the
+    // selection with whatever's newly playing, then fire the same
+    // onSelectionChanged callback MultisamplerEditor already wires up to
+    // refreshInspectorFromSelection() — MIDI-driven selection should look
+    // identical downstream to a click, not need a separate code path in
+    // the editor. Velocity isn't in this bitmask, so this matches on key
+    // range only; a chord across several velocity-split zones selects all
+    // of them, same as shift-clicking each would.
+    std::vector<juce::Uuid> hitIds;
+    for (int note = 0; note < 128; ++note)
+    {
+        const uint64_t word = (note < 64) ? newLo : newHi;
+        const int      bit  = (note < 64) ? note : (note - 64);
+        if (((word >> bit) & 1) == 0) continue;
+
+        for (const auto& z : instrument->zones)
+            if (z.keyInRange (note)
+                && std::find (hitIds.begin(), hitIds.end(), z.id) == hitIds.end())
+                hitIds.push_back (z.id);
+    }
+
+    if (hitIds.empty()) return;
+
+    selectedIds = std::move (hitIds);
+    if (onSelectionChanged) onSelectionChanged();
 }
 
 // ── Public API ───────────────────────────────────────────────────────────

@@ -135,6 +135,7 @@ private:
     void timerCallback() override;
     uint64_t activeNotesSnap[2] = { 0, 0 };
     bool isNoteActive (int note) const noexcept;
+    void selectZonesForNewNotes (uint64_t newLo, uint64_t newHi);
 
     // Live drag state
     DragMode   dragMode = DragMode::none;
