@@ -63,6 +63,23 @@ ampeg_decay=31.457
 lokey=38 hikey=38
 pitch_keycenter=38
 )SFZ";
+
+    /** Same shape as kRealWorldSfz, but its <control> block also carries
+        octave_offset= alongside default_path= — an opcode this importer
+        doesn't support. Used to confirm the unsupportedHeader warning still
+        fires when something is genuinely dropped, not just whenever
+        <control> appears at all. */
+    const char* kControlWithExtraOpcodeSfz = R"SFZ(
+<control>
+default_path=Kit Samples\
+octave_offset=1
+
+<group>
+lovel=0
+hivel=127
+
+<region> sample=Kick.wav lokey=36 hikey=36 pitch_keycenter=36
+)SFZ";
 }
 
 class MultisamplerRoundTripTests final : public juce::UnitTest
@@ -78,6 +95,7 @@ public:
         testJsonRoundTripIsLossless();
         testValidation();
         testDefaultPathResolution();
+        testControlHeaderWarningOnlyWhenOpcodesDropped();
         testNoteNameKeyOpcodes();
     }
 
@@ -155,6 +173,13 @@ private:
         expect (result.success);
         expectEquals (result.instrument.zones.size(), (size_t) 2);
 
+        // kRealWorldSfz's <control> block contains only default_path= —
+        // nothing was actually dropped on import, so no unsupportedHeader
+        // warning should fire for it. (Regression coverage for a bug where
+        // the warning fired unconditionally just because <control> was
+        // present, regardless of what was inside it.)
+        expect (result.warnings.empty());
+
         // Neither region's sample= includes "Kit Samples/" itself — only
         // default_path supplies it. If this resolves without default_path
         // support, both would report as missing.
@@ -166,6 +191,35 @@ private:
                       juce::String ("Kit Samples"));
 
         root.deleteRecursively();
+    }
+
+    void testControlHeaderWarningOnlyWhenOpcodesDropped()
+    {
+        beginTest ("<control> only warns when it actually contains opcodes other than default_path");
+
+        // default_path= alone: nothing dropped, so no warning.
+        const auto cleanResult = SfzImporter::importText (kRealWorldSfz, juce::File());
+        expect (cleanResult.success);
+        expect (cleanResult.warnings.empty());
+
+        // default_path= plus octave_offset=: octave_offset is genuinely
+        // unsupported and dropped, so the warning should fire exactly once,
+        // pointing at the <control> header's line.
+        const auto flaggedResult = SfzImporter::importText (kControlWithExtraOpcodeSfz, juce::File());
+        expect (flaggedResult.success);
+
+        const auto it = std::find_if (flaggedResult.warnings.begin(), flaggedResult.warnings.end(),
+                                       [] (auto& w)
+                                       {
+                                           return w.kind == SfzImporter::Warning::Kind::unsupportedHeader
+                                               && w.detail.contains ("<control>");
+                                       });
+        expect (it != flaggedResult.warnings.end());
+        if (it != flaggedResult.warnings.end())
+            expectEquals (it->lineNumber, 2); // the "<control>" line itself in kControlWithExtraOpcodeSfz
+
+        // default_path= should still have been honoured despite the warning.
+        expectEquals (flaggedResult.instrument.zones.size(), (size_t) 1);
     }
 
     void testNoteNameKeyOpcodes()

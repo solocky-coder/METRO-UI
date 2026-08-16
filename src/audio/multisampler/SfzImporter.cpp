@@ -490,6 +490,14 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
     bool skippingHeaderBody = false;   // inside <control>/<curve>/etc — ignore its opcodes
     bool inControlHeader = false;      // specifically <control> — default_path= is still read from here
 
+    // Whether the <control> block currently being scanned contains any
+    // opcode besides default_path=. The unsupportedHeader warning is only
+    // worth surfacing when something was actually dropped, so this is
+    // decided once the block's opcodes have been seen rather than the
+    // moment <control> is opened.
+    bool controlHeaderHadOtherOpcodes = false;
+    int controlHeaderLine = 0;
+
     // default_path=, captured from <control> if present. Per spec, prepended
     // to every relative sample= from this point in the file onward (see
     // resolveSamplePath's header comment for why no other <control> opcode
@@ -530,6 +538,12 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
         {
             flushRegion();
 
+            if (inControlHeader && controlHeaderHadOtherOpcodes)
+            {
+                result.warnings.push_back ({ Warning::Kind::unsupportedHeader, controlHeaderLine,
+                                              "<control> opcodes other than default_path are not imported "
+                                              "in this release" });
+            }
             inControlHeader = false;
 
             if (t.headerName == "region")
@@ -555,12 +569,14 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
                 // Still a "skipped" header for every opcode except
                 // default_path= (handled specially below) — see
                 // resolveSamplePath's comment for why the rest of <control>
-                // stays out of scope.
+                // stays out of scope. Whether this is actually worth a
+                // warning depends on what opcodes turn up inside it, so
+                // the warning itself is deferred until the block closes
+                // (see the flushRegion()-adjacent check above).
                 skippingHeaderBody = true;
                 inControlHeader = true;
-                result.warnings.push_back ({ Warning::Kind::unsupportedHeader, t.line,
-                                              "<control> opcodes other than default_path are not imported "
-                                              "in this release" });
+                controlHeaderHadOtherOpcodes = false;
+                controlHeaderLine = t.line;
             }
             else if (skippedHeaders().count (t.headerName))
             {
@@ -581,8 +597,13 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
         // Token::Type::opcode
         if (skippingHeaderBody)
         {
-            if (inControlHeader && t.opcodeKey == "default_path")
-                currentDefaultPath = t.opcodeValue;
+            if (inControlHeader)
+            {
+                if (t.opcodeKey == "default_path")
+                    currentDefaultPath = t.opcodeValue;
+                else
+                    controlHeaderHadOtherOpcodes = true;
+            }
             continue;
         }
 
@@ -594,6 +615,15 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
             applyToken (globalOpcodes, t);
     }
     flushRegion();
+
+    // If <control> was the last header block in the file, the deferred
+    // warning above never got a following header token to trigger it.
+    if (inControlHeader && controlHeaderHadOtherOpcodes)
+    {
+        result.warnings.push_back ({ Warning::Kind::unsupportedHeader, controlHeaderLine,
+                                      "<control> opcodes other than default_path are not imported "
+                                      "in this release" });
+    }
 
     result.success = true;
     return result;
