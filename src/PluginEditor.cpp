@@ -890,9 +890,11 @@ void DysektEditor::setUiMode (int mode)
  // from it.
  if (uiMode != 0 && trimSession != nullptr && ! trimSession->active)
      trimSession.reset();
- // Leaving SFZ-PLAYER — reset zone-builder view so it can't leak into other
- // tabs (e.g. keep the SCB spuriously visible in Slicer; see the SCB
- // visibility gate in resized() for why this previously mattered).
+ // Leaving SFZ-PLAYER — reset zone-builder / MULTISAMPLER view so neither
+ // can leak into other tabs (e.g. keep the SCB spuriously visible in
+ // Slicer, or silently replace the normal waveform view when the user tabs
+ // back into SFZ-PLAYER later; see the SCB visibility gate and the
+ // uiMode == 1 branch in resized() for why this matters).
  if (uiMode != 1)
  {
      showZoneBuilder = false;
@@ -911,6 +913,15 @@ void DysektEditor::setUiMode (int mode)
      if (zoneBuilderScratchFile.existsAsFile())
          zoneBuilderScratchFile.deleteFile();
      zoneBuilderScratchFile = juce::File();
+
+     // MULTISAMPLER's counterpart of the showZoneBuilder reset above — this
+     // was previously missing, so leaving MULTISAMPLER open, tabbing away,
+     // and tabbing back showed the Multisampler panel again instead of the
+     // normal SFZ-PLAYER waveform view. Unlike ZONES, this doesn't discard
+     // anything: multisamplerEditor's in-memory edits and dirty flag are
+     // untouched, only the "which view is visible" flag resets — so the
+     // user's edits are still there if they reopen it with the K shortcut.
+     showMultisamplerEditor = false;
  }
 
  syncBrowserMode();
@@ -2635,8 +2646,17 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // kit is loaded — behave identically, unsaved-zones prompt included.
 void DysektEditor::toggleZoneBuilder (bool on)
 {
+    // While both editors temporarily coexist (MULTISAMPLER isn't
+    // feature-complete yet — ZONES stays until it is), switching from
+    // MULTISAMPLER to ZONES is just picking a different view of the same
+    // SFZ-PLAYER session, not abandoning MULTISAMPLER's work. Route through
+    // hideMultisamplerViewForSwitch() instead of toggleMultisamplerEditor
+    // (false) so MULTISAMPLER's dirty flag/staged edits survive untouched —
+    // switching back to it later finds everything exactly as it was, and no
+    // "Unsaved Instrument" prompt interrupts a plain view switch. That guard
+    // still fires for a real close (e.g. leaving the SFZ-PLAYER tab).
     if (on && showMultisamplerEditor)
-        toggleMultisamplerEditor (false);   // mutually exclusive — see toggleMultisamplerEditor's comment
+        hideMultisamplerViewForSwitch();
 
     if (! on && zoneBuilderDirty)
     {
@@ -2761,7 +2781,7 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
 
     showMultisamplerEditor = on;
     if (on && showZoneBuilder)
-        toggleZoneBuilder (false);   // mutually exclusive — see header comment
+        hideZoneBuilderView();   // view switch, not a close — see hideZoneBuilderView()'s doc comment
     if (! on)
         sliceControlBar.clearSfzZoneSummary();   // same rationale as the dirty-guard branch above
 
@@ -2777,6 +2797,28 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
 
     resized();
     repaint();
+}
+
+// Non-destructive counterparts of toggleZoneBuilder(false) / toggleMultisamplerEditor
+// (false) used ONLY when one editor is switching the visible panel to the
+// other — never for an actual close. Each just hides its own view and syncs
+// the matching toggle look; neither touches the other editor's dirty flag,
+// staged scratch file, or in-memory edits, so flipping back and forth
+// between ZONES and MULTISAMPLER while both exist can't lose work or pop an
+// unsaved-changes prompt. Delete both once ZONES is retired and this
+// temporary coexistence period (see toggleZoneBuilder's doc comment) ends.
+void DysektEditor::hideZoneBuilderView()
+{
+    showZoneBuilder = false;
+    sliceControlBar.setZoneViewActive (false);
+    headerBar.dualFrame().setZoneBuilderActive (false);
+    sliceControlBar.clearSfzZoneSummary();
+}
+
+void DysektEditor::hideMultisamplerViewForSwitch()
+{
+    showMultisamplerEditor = false;
+    sliceControlBar.clearSfzZoneSummary();
 }
 
 void DysektEditor::refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary)

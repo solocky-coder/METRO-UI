@@ -209,15 +209,31 @@ private:
     // Opens/closes the zone builder. Shared by SliceControlBar's ZONES toggle
     // and DualLcdControlFrame's ZONES tab-icon, so both entry points behave
     // identically (including the unsaved-zones confirm prompt on close).
+    // Opening this while MULTISAMPLER is showing just switches the visible
+    // panel (via hideMultisamplerViewForSwitch()) — MULTISAMPLER's own edits
+    // and dirty state are left untouched, not discarded.
     void toggleZoneBuilder (bool on);
 
     // Opens/closes the native-model MULTISAMPLER panel (multisamplerEditor).
-    // Mutually exclusive with the zone builder — turning one on turns the
-    // other off, same as ZONES vs PADS. No unsaved-changes prompt yet since
-    // multisamplerEditor's instrument isn't persisted to plugin state until
-    // Phase 4 (.metrokit) lands; it simply keeps editing in memory across
-    // toggles like padGridView does.
+    // ZONES and MULTISAMPLER coexist temporarily while MULTISAMPLER is still
+    // mid-development — ZONES will be removed once it's feature-complete —
+    // so only one is ever visible at a time, but toggling one while the
+    // other is open is treated as a plain view switch (via
+    // hideZoneBuilderView() / hideMultisamplerViewForSwitch()), not a close:
+    // it never discards the other editor's staged/unsaved work and never
+    // pops its unsaved-changes prompt. That prompt still fires on an actual
+    // close (e.g. turning MULTISAMPLER off with no ZONES view opening in its
+    // place) via multisamplerEditor.isDirty().
     void toggleMultisamplerEditor (bool on);
+
+    // Hides the ZONES / MULTISAMPLER panel respectively without running
+    // either's unsaved-changes guard — used only when the OTHER panel is
+    // opening in its place (a same-session view switch), never for a real
+    // close. See toggleZoneBuilder/toggleMultisamplerEditor's doc comments.
+    // Both are temporary: delete along with ZONES once MULTISAMPLER is
+    // feature-complete and fully replaces it.
+    void hideZoneBuilderView();
+    void hideMultisamplerViewForSwitch();
 
     void ensureZoneBuilderScratchExists();   // rebuild scratch file from pending zones, reload preview + matrix
     void refreshZoneBuilderPreview();       // re-derive + load whichever file (scratch/target) is current, refresh matrix
