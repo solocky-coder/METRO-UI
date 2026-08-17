@@ -148,7 +148,12 @@ private:
     juce::Uuid hoverZoneId = juce::Uuid::null();   // for cursor feedback only
 
     static constexpr int kEdgeGrabPx = 5;
-    static constexpr int kKeyCellPx = 18;         // the black/white note cells themselves
+    static constexpr int kKeyCellPx = 34;         // the black/white note cells themselves —
+                                                   // was 18; grown by 16px to absorb the space
+                                                   // freed when MultisamplerEditor's bottom
+                                                   // status strip was removed in favour of the
+                                                   // header zone-summary readout (see
+                                                   // MultisamplerEditor::resized()'s doc comment)
     static constexpr int kOctaveLabelPx = 15;     // "C1"/"C2"... row underneath the cells
     static constexpr int kKeyboardStripPx = kKeyCellPx + kOctaveLabelPx;
     static constexpr int kVelocityRulerPx = 28;   // velocity scale along the left

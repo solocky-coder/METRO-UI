@@ -5,6 +5,7 @@
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
 #include "../../audio/SfzZoneColours.h"
+#include <cmath>
 
 namespace
 {
@@ -71,10 +72,11 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     addAndMakeVisible (newButton);
     newButton.onClick = [this] { newInstrumentClicked(); };
 
-    // ── Selection status strip ──────────────────────────────────────────
-    configureStaticLabel (inspectorTitle, "NO ZONE SELECTED");
-    inspectorTitle.setFont (juce::FontOptions (11.0f));
-    addAndMakeVisible (inspectorTitle);
+    // ── Header zone-summary readout ─────────────────────────────────────
+    configureStaticLabel (headerZoneSummary, "Select a zone to edit");
+    headerZoneSummary.setFont (juce::FontOptions (11.5f));
+    headerZoneSummary.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (headerZoneSummary);
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
 }
@@ -98,7 +100,6 @@ void MultisamplerEditor::paint (juce::Graphics& g)
 
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH, 4.0f, bounds.getWidth() - 4.0f);
-    g.drawHorizontalLine (getHeight() - kInspectorH, 4.0f, bounds.getWidth() - 4.0f);
 
     if (dirty)
     {
@@ -121,8 +122,9 @@ void MultisamplerEditor::resized()
     importButton.setBounds (header.removeFromRight (90));
     header.removeFromRight (4);
     addZoneButton.setBounds (header.removeFromRight (84));
+    header.removeFromLeft (10);   // gap after titleLabel
+    headerZoneSummary.setBounds (header);   // whatever's left between title and buttons
 
-    inspectorTitle.setBounds (r.removeFromBottom (kInspectorH - 4));
     r.removeFromTop (6);
 
     zoneMapView.setBounds (r);
@@ -439,13 +441,33 @@ void MultisamplerEditor::refreshInspectorFromSelection()
 
     if (zone == nullptr)
     {
-        inspectorTitle.setText (selected.empty() ? "NO ZONE SELECTED" : "MULTIPLE ZONES SELECTED", juce::dontSendNotification);
+        // Same wording as SliceControlBar::drawSfzZoneSummary's own empty
+        // state, so this header readout and the SCB's own row agree
+        // exactly when nothing (or more than one zone) is selected.
+        headerZoneSummary.setText (selected.empty() ? "Select a zone to edit" : "Multiple zones selected",
+                                    juce::dontSendNotification);
     }
     else
     {
-        inspectorTitle.setText (zone->sampleFile.getFileName().isNotEmpty()
-                                    ? zone->sampleFile.getFileName() : juce::String ("(no sample)"),
-                                 juce::dontSendNotification);
+        // Mirrors SliceControlBar::drawSfzZoneSummary()'s field set and
+        // formatting exactly (loKey/hiKey/ROOT/PITCH/PAN/VOLUME/RELEASE/
+        // LOOP) so this reads as the same information, not a shorthand
+        // version of it — see this label's declaration comment.
+        const auto note = [] (int n) { return UIHelpers::midiNoteToName (juce::jlimit (0, 127, n)); };
+        const juce::String panStr = zone->pan == 0.0f
+            ? "C" : (zone->pan < 0.0f ? "L" : "R") + juce::String (juce::roundToInt (std::abs (zone->pan) * 100.0f));
+
+        juce::String text = zone->sampleFile.getFileName().isNotEmpty()
+                                ? zone->sampleFile.getFileName() : juce::String ("(no sample)");
+        text << "   loKey " << note (zone->lowKey)
+             << "   hiKey " << note (zone->highKey)
+             << "   ROOT "  << (zone->rootKey >= 0 ? note (zone->rootKey) : juce::String ("--"))
+             << "   PITCH " << juce::roundToInt (zone->tuneCents) << "ct"
+             << "   PAN "   << panStr
+             << "   VOLUME " << juce::String (zone->gainDb, 1) << "dB"
+             << "   RELEASE " << juce::String (zone->releaseSeconds, 3) << "s"
+             << "   LOOP "  << (zone->loopMode != LoopMode::noLoop ? "ON" : "OFF");
+        headerZoneSummary.setText (text, juce::dontSendNotification);
     }
 
     // Drives the shared SliceControlBar — see this method's declaration

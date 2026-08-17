@@ -26,6 +26,7 @@
 #include "ZoneMapView.h"
 #include "../AddZoneOverlay.h"
 #include "../KeysPanel.h"
+#include "../UIHelpers.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/SfzImporter.h"
 
@@ -197,19 +198,25 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
     std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;   // modal popup; owned only while open
 
-    // ── Selection status strip ──────────────────────────────────────────
-    // Just a slim "N zones · (selection state)" readout now — actual
-    // per-zone editing lives entirely in the shared SliceControlBar (see
+    // ── Header zone-summary readout ─────────────────────────────────────
+    // Same loKey/hiKey/root/pitch/pan/volume/release/loop info the shared
+    // SliceControlBar already shows for the selected zone (see
+    // SliceControlBar::drawSfzZoneSummary), mirrored here inline in this
+    // panel's own header so it's visible right where zones are being
+    // clicked/played, without needing to look down at the SCB row at the
+    // bottom of the whole plugin window. Replaces the old bottom "selection
+    // status" strip (a single-line filename/placeholder readout) that used
+    // to sit between the zone map and the piano-key ruler — that strip is
+    // gone, and ZoneMapView's own keyboard strip (kKeyboardStripPx) grew to
+    // absorb the vertical space it freed up instead. Read-only; per-zone
+    // *editing* still lives entirely in the SCB (see
     // onZoneSelectionOrEditChanged/applySliceControlBarFieldEdit above),
-    // the exact same component ZONES edits through, rather than this panel
-    // maintaining its own separate lo/hi/root/vel/gain/pan field row that
-    // could drift out of sync with SCB's idea of the same zone.
-    juce::Label inspectorTitle;
+    // this is purely a convenience duplicate of the same data.
+    juce::Label headerZoneSummary;
     juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing/multiple selected
 
     static constexpr int kEngineSyncDebounceMs = 300;
     static constexpr int kHeaderH    = 32;
-    static constexpr int kInspectorH = 20;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultisamplerEditor)
 };
