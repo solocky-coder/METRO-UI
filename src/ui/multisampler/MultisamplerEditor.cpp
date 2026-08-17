@@ -409,7 +409,27 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     // See zoneBuilderReloadPending's declaration in PluginProcessor.h and
     // writeSfzZoneChange's identical distinction for the ZONES editor.
     if (! isFreshLoad)
+    {
         processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
+
+        // See zoneBuilderReselectNote's doc comment in PluginProcessor.h —
+        // lets processBlock re-select the rebuilt slice for the zone the
+        // user is currently editing, instead of leaving selectedSlice at
+        // the -1 sliceManager2.clearAll() always resets it to, which
+        // otherwise blanks both LCDs and the SCB's knob strip on every
+        // single field drag. Must be set before loadSoundFontAsync below so
+        // it's already valid by the time the render completes, however many
+        // blocks that takes — mirrors
+        // SfzPlayerDropdownPanel::writeSfzZoneChange's identical fix for
+        // the ZONES editor exactly.
+        const int selectedIdx = getSelectedZoneIndex();
+        if (selectedIdx >= 0)
+        {
+            const auto& z = instrument.zones[(size_t) selectedIdx];
+            processor.zoneBuilderReselectNote.store (z.rootKey >= 0 ? z.rootKey : z.lowKey,
+                                                      std::memory_order_release);
+        }
+    }
     processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
 }
 
