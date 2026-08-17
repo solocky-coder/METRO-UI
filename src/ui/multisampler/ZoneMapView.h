@@ -67,6 +67,15 @@ public:
         deletion apart from a drag when it matters (e.g. status text). */
     std::function<void()> onZoneDeleted;
 
+    /** Right-click context menu: "Delete Zone" + the same 16-colour named
+        palette submenu ZONES' onRowRightClicked shows (see PluginEditor.cpp),
+        kept identical so the picker UX matches everywhere in the app a
+        zone/slice can be recoloured. Public because MultisamplerEditor's
+        table view reuses this same menu for its own right-click path (see
+        MultisamplerEditor.cpp), rather than duplicating the delete/recolour
+        logic. */
+    void showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int> screenPos);
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -105,12 +114,6 @@ private:
         selected before). Clears selection, rebuilds layout, and fires
         onZoneDeleted. No-op if the instrument is null or nothing resolves. */
     void deleteZones (const juce::Uuid& rightClickedId);
-
-    /** Right-click context menu: "Delete Zone" + the same 16-colour named
-        palette submenu ZONES' onRowRightClicked shows (see PluginEditor.cpp),
-        kept identical so the picker UX matches everywhere in the app a
-        zone/slice can be recoloured. */
-    void showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int> screenPos);
 
     MultisamplerInstrument* instrument = nullptr;
     std::vector<ZoneRect> cachedRects;   // one per instrument->zones entry, same order
