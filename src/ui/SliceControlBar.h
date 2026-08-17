@@ -90,7 +90,7 @@ private:
     juce::Rectangle<int> padToggleBtnArea;  // hit-tested in mouseDown — PADS button
     juce::Rectangle<int> waveToggleBtnArea; // hit-tested in mouseDown — WAVE button
 
-    bool  zoneViewActive = false;   // mirrors editor showZoneBuilder
+    bool  zoneViewActive = false;   // mirrors multisamplerEditor.getViewMode() == Table (formerly a separate showZoneBuilder flag)
     bool  multisamplerViewActive = false;   // mirrors editor showMultisamplerEditor — see setMultisamplerViewActive()
     juce::Rectangle<int> zoneToggleBtnArea; // hit-tested in mouseDown — ZONES button (SFZ-PLAYER only)
 
