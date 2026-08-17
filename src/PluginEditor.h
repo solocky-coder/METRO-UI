@@ -235,6 +235,16 @@ private:
     void hideZoneBuilderView();
     void hideMultisamplerViewForSwitch();
 
+    // Repoints zoneBuilderTargetSfz at whatever MULTISAMPLER currently has
+    // saved to disk, and drops any ZONES-own staged session (dirty flag +
+    // scratch file) built against the previous target. Called on ZONES'
+    // own toggle-open — MULTISAMPLER is becoming the sole owner of "what
+    // .sfz is currently loaded" (it's the survivor once ZONES is retired),
+    // so ZONES treats it as the source of truth instead of trusting its
+    // own possibly-stale state. See the doc comment on the definition for
+    // the one case this doesn't yet cover.
+    void syncZoneBuilderFromMultisampler();
+
     void ensureZoneBuilderScratchExists();   // rebuild scratch file from pending zones, reload preview + matrix
     void refreshZoneBuilderPreview();       // re-derive + load whichever file (scratch/target) is current, refresh matrix
     void deleteZoneBuilderZone (int rowIndex); // remove a zone from the scratch file and refresh

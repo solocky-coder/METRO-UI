@@ -5,7 +5,6 @@
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
 #include "../../audio/SfzZoneColours.h"
-#include <cmath>
 
 namespace
 {
@@ -72,11 +71,10 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     addAndMakeVisible (newButton);
     newButton.onClick = [this] { newInstrumentClicked(); };
 
-    // ── Header zone-summary readout ─────────────────────────────────────
-    configureStaticLabel (headerZoneSummary, "Select a zone to edit");
-    headerZoneSummary.setFont (juce::FontOptions (11.5f));
-    headerZoneSummary.setJustificationType (juce::Justification::centred);
-    addAndMakeVisible (headerZoneSummary);
+    // ── Selection status strip ──────────────────────────────────────────
+    configureStaticLabel (inspectorTitle, "NO ZONE SELECTED");
+    inspectorTitle.setFont (juce::FontOptions (11.0f));
+    addAndMakeVisible (inspectorTitle);
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
 }
@@ -100,6 +98,7 @@ void MultisamplerEditor::paint (juce::Graphics& g)
 
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH, 4.0f, bounds.getWidth() - 4.0f);
+    g.drawHorizontalLine (getHeight() - kInspectorH, 4.0f, bounds.getWidth() - 4.0f);
 
     if (dirty)
     {
@@ -122,9 +121,8 @@ void MultisamplerEditor::resized()
     importButton.setBounds (header.removeFromRight (90));
     header.removeFromRight (4);
     addZoneButton.setBounds (header.removeFromRight (84));
-    header.removeFromLeft (10);   // gap after titleLabel
-    headerZoneSummary.setBounds (header);   // whatever's left between title and buttons
 
+    inspectorTitle.setBounds (r.removeFromBottom (kInspectorH - 4));
     r.removeFromTop (6);
 
     zoneMapView.setBounds (r);
@@ -294,6 +292,52 @@ bool MultisamplerEditor::importFromFile (const juce::File& file, bool syncEngine
     return true;
 }
 
+bool MultisamplerEditor::syncFromExternalEdit (const juce::File& previewFile, bool isSaveTarget)
+{
+    auto result = SfzImporter::importFile (previewFile);
+    if (! result.success)
+    {
+        if (onImportWarnings)
+        {
+            SfzImporter::Warning fatal;
+            fatal.kind   = SfzImporter::Warning::Kind::malformedOpcode;
+            fatal.detail = result.errorMessage.isNotEmpty()
+                               ? result.errorMessage : "Import failed.";
+            onImportWarnings (previewFile.getFileName(), false, { fatal });
+        }
+        return false;
+    }
+
+    // syncEngine=false — see this method's doc comment: ZONES already
+    // pointed sfzPlayer2 at previewFile directly before calling here.
+    setInstrument (std::move (result.instrument), false);
+
+    // Only a real, user-owned on-disk file is safe to adopt as the save
+    // target — never an in-progress ZONES scratch file (see doc comment).
+    if (isSaveTarget)
+    {
+        lastSavedFile = previewFile;   // setInstrument() already cleared dirty — this now matches disk
+    }
+    else
+    {
+        // previewFile is a staged ZONES edit that hasn't been committed to
+        // lastSavedFile yet — setInstrument() unconditionally clears dirty,
+        // but this instrument does NOT match what's on disk at
+        // lastSavedFile, so leaving dirty false here would let MULTISAMPLER
+        // think it's clean (e.g. skip its own unsaved-changes prompt) while
+        // silently holding ZONES' uncommitted edits.
+        dirty = true;
+        if (onInstrumentChanged) onInstrumentChanged();
+        repaint();
+    }
+
+
+    if (! result.warnings.empty() && onImportWarnings)
+        onImportWarnings (previewFile.getFileName(), true, result.warnings);
+    return true;
+}
+
+
 void MultisamplerEditor::exportSfzClicked()
 {
     fileChooser = std::make_unique<juce::FileChooser> ("Export SFZ…", juce::File(), "*.sfz");
@@ -409,27 +453,7 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     // See zoneBuilderReloadPending's declaration in PluginProcessor.h and
     // writeSfzZoneChange's identical distinction for the ZONES editor.
     if (! isFreshLoad)
-    {
         processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
-
-        // See zoneBuilderReselectNote's doc comment in PluginProcessor.h —
-        // lets processBlock re-select the rebuilt slice for the zone the
-        // user is currently editing, instead of leaving selectedSlice at
-        // the -1 sliceManager2.clearAll() always resets it to, which
-        // otherwise blanks both LCDs and the SCB's knob strip on every
-        // single field drag. Must be set before loadSoundFontAsync below so
-        // it's already valid by the time the render completes, however many
-        // blocks that takes — mirrors
-        // SfzPlayerDropdownPanel::writeSfzZoneChange's identical fix for
-        // the ZONES editor exactly.
-        const int selectedIdx = getSelectedZoneIndex();
-        if (selectedIdx >= 0)
-        {
-            const auto& z = instrument.zones[(size_t) selectedIdx];
-            processor.zoneBuilderReselectNote.store (z.rootKey >= 0 ? z.rootKey : z.lowKey,
-                                                      std::memory_order_release);
-        }
-    }
     processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
 }
 
@@ -461,86 +485,13 @@ void MultisamplerEditor::refreshInspectorFromSelection()
 
     if (zone == nullptr)
     {
-        // Same wording as SliceControlBar::drawSfzZoneSummary's own empty
-        // state, so this header readout and the SCB's own row agree
-        // exactly when nothing (or more than one zone) is selected.
-        headerZoneSummary.setText (selected.empty() ? "Select a zone to edit" : "Multiple zones selected",
-                                    juce::dontSendNotification);
+        inspectorTitle.setText (selected.empty() ? "NO ZONE SELECTED" : "MULTIPLE ZONES SELECTED", juce::dontSendNotification);
     }
     else
     {
-        // Mirrors SliceControlBar::drawSfzZoneSummary()'s field set and
-        // formatting exactly (loKey/hiKey/ROOT/PITCH/PAN/VOLUME/RELEASE/
-        // LOOP) so this reads as the same information, not a shorthand
-        // version of it — see this label's declaration comment.
-        const auto note = [] (int n) { return UIHelpers::midiNoteToName (juce::jlimit (0, 127, n)); };
-        const juce::String panStr = zone->pan == 0.0f
-            ? "C" : (zone->pan < 0.0f ? "L" : "R") + juce::String (juce::roundToInt (std::abs (zone->pan) * 100.0f));
-
-        juce::String text = zone->sampleFile.getFileName().isNotEmpty()
-                                ? zone->sampleFile.getFileName() : juce::String ("(no sample)");
-        text << "   loKey " << note (zone->lowKey)
-             << "   hiKey " << note (zone->highKey)
-             << "   ROOT "  << (zone->rootKey >= 0 ? note (zone->rootKey) : juce::String ("--"))
-             << "   PITCH " << juce::roundToInt (zone->tuneCents) << "ct"
-             << "   PAN "   << panStr
-             << "   VOLUME " << juce::String (zone->gainDb, 1) << "dB"
-             << "   RELEASE " << juce::String (zone->releaseSeconds, 3) << "s"
-             << "   LOOP "  << (zone->loopMode != LoopMode::noLoop ? "ON" : "OFF");
-        headerZoneSummary.setText (text, juce::dontSendNotification);
-    }
-
-    // Reselect the already-rendered sliceManager2 slice for this zone so the
-    // SCB doesn't sit on "No slice selected" (and the waveform/per-slice knob
-    // rows gated behind idx>=0 in SliceControlBar::paint stay blank) until the
-    // user happens to edit a field. Previously the only path that ever wrote
-    // sliceManager2.selectedSlice for MULTISAMPLER was zoneBuilderReselectNote,
-    // and that's only consumed inside PluginProcessor's zoneBuilderReloadPending
-    // branch — i.e. only after an edit-triggered rebuild, never on a plain
-    // click. A zone that's already been synced to the engine has a live slice
-    // sitting there right now; there's no need to wait for a rebuild to find
-    // it. Reads come from getUiSliceSnapshot2() rather than sliceManager2
-    // directly — the snapshot is the documented UI-thread-safe copy (see
-    // PluginProcessor.h's UiSliceSnapshot comment), whereas sliceManager2's
-    // own vectors are audio-thread-owned. Mirrors the exact-note-then-
-    // stamped-range-fallback algorithm PluginProcessor.cpp's reselect branch
-    // uses, just performed synchronously here instead of deferred to the next
-    // rebuild.
-    if (zone != nullptr)
-    {
-        const auto& snap = processor.getUiSliceSnapshot2();
-        const int wantNote = zone->rootKey >= 0 ? zone->rootKey : zone->lowKey;
-
-        // The snapshot has no midiNoteToSlice()-style direct index, so scan
-        // for an exact-note match first, then fall back to any slice stamped
-        // with this zone's key range (same tie-break: closest note wins).
-        int reselectIdx = -1;
-        for (int i = 0; i < snap.numSlices; ++i)
-        {
-            const auto& s = snap.slices[(size_t) i];
-            if (s.active && s.midiNote == wantNote) { reselectIdx = i; break; }
-        }
-        if (reselectIdx < 0)
-        {
-            int bestIdx = -1, bestDist = -1;
-            for (int i = 0; i < snap.numSlices; ++i)
-            {
-                const auto& s = snap.slices[(size_t) i];
-                if (! s.active) continue;
-                if (wantNote < s.zoneLoKey || wantNote > s.zoneHiKey) continue;
-                const int dist = std::abs (s.midiNote - wantNote);
-                if (bestIdx < 0 || dist < bestDist) { bestDist = dist; bestIdx = i; }
-            }
-            reselectIdx = bestIdx;
-        }
-
-        if (reselectIdx >= 0)
-            processor.sliceManager2.selectedSlice.store (reselectIdx, std::memory_order_relaxed);
-        // No live slice for this zone yet (never synced, or mid-rebuild) —
-        // leave selectedSlice alone rather than forcing it to -1: a rebuild
-        // already in flight will resolve it via zoneBuilderReselectNote once
-        // it lands, and clearing here would just flash "No slice selected"
-        // for a frame if a match was actually about to arrive.
+        inspectorTitle.setText (zone->sampleFile.getFileName().isNotEmpty()
+                                    ? zone->sampleFile.getFileName() : juce::String ("(no sample)"),
+                                 juce::dontSendNotification);
     }
 
     // Drives the shared SliceControlBar — see this method's declaration
@@ -559,22 +510,8 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
 
     switch (field)
     {
-        // Also clamp rootKey back inside [lowKey, highKey] whenever a
-        // LOKEY/HIKEY drag would otherwise push it outside the zone's own
-        // range. An out-of-range root isn't just cosmetically odd — it's a
-        // note the region can never actually respond to (SFZ region
-        // matching is lokey/hikey-only), so nothing in the rebuilt engine
-        // ever renders it, and performEngineSync()'s reselect (keyed on
-        // rootKey) then has no slice to find. Mirrors the exact same
-        // implicit invariant the loop-point autofill below already assumes.
-        case SliceControlBar::ZoneLoKey:
-            z.lowKey  = juce::jmin (z.highKey, juce::roundToInt (value));
-            if (z.rootKey >= 0) z.rootKey = juce::jmax (z.rootKey, z.lowKey);
-            break;
-        case SliceControlBar::ZoneHiKey:
-            z.highKey = juce::jmax (z.lowKey,  juce::roundToInt (value));
-            if (z.rootKey >= 0) z.rootKey = juce::jmin (z.rootKey, z.highKey);
-            break;
+        case SliceControlBar::ZoneLoKey:   z.lowKey       = juce::jmin (z.highKey, juce::roundToInt (value)); break;
+        case SliceControlBar::ZoneHiKey:   z.highKey      = juce::jmax (z.lowKey,  juce::roundToInt (value)); break;
         case SliceControlBar::ZoneRoot:    z.rootKey      = juce::roundToInt (value); break;
         case SliceControlBar::ZonePitch:   z.tuneCents    = value; break;
         case SliceControlBar::ZonePan:     z.pan          = value; break;

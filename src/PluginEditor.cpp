@@ -246,14 +246,19 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
     // consistently and gives an undo path via DISCARD, matching Add Zone and
     // Delete Zone.
     ensureZoneBuilderScratchExists();
-    sfzPlayerDropdown.writeSfzZoneChange (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz,
-                                    rowIndex, z);
+    const juce::File writtenFile = zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz;
+    sfzPlayerDropdown.writeSfzZoneChange (writtenFile, rowIndex, z);
     sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
                                        z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
     // clearSummary=false — this is a live edit of the currently-selected row,
     // not a fresh load/add/discard, so the SCB readout the line above just
     // wrote should stay on screen instead of being wiped by the refresh.
-    refreshZoneBuilderMatrix (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz, false);
+    refreshZoneBuilderMatrix (writtenFile, false);
+    // writeSfzZoneChange() already hot-reloaded sfzPlayer2 with writtenFile
+    // itself (see its own comment) — mirror the edit into MULTISAMPLER's
+    // model too, same as every other ZONES mutation. See
+    // refreshZoneBuilderPreview()'s identical call for the rationale.
+    multisamplerEditor.syncFromExternalEdit (writtenFile, writtenFile == zoneBuilderTargetSfz);
 };
  addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
  zoneBuilderKeysPanel.getProperties().set ("dysektThemeKey", "accent");
@@ -2716,11 +2721,13 @@ void DysektEditor::toggleZoneBuilder (bool on)
             headerBar.setBrowserActive (false);
         }
 
-        // zoneBuilderTargetSfz is set synchronously in onLoadRequest at
-        // load time (see comment there) — just reflect it here, no engine
-        // query needed. refreshZoneBuilderPreview() picks whichever file is
-        // currently authoritative (the scratch file if a staged session
-        // survived a tab switch back in, otherwise the raw on-disk target).
+        // MULTISAMPLER may have loaded/imported/edited something since
+        // ZONES last had a target — repoint at whatever it's holding now
+        // rather than trusting our own possibly-stale zoneBuilderTargetSfz.
+        // refreshZoneBuilderPreview() then picks whichever file is
+        // currently authoritative (a staged ZONES scratch file if one
+        // survived, otherwise the just-resynced on-disk target).
+        syncZoneBuilderFromMultisampler();
         refreshZoneBuilderPreview();
     }
     resized();
@@ -3035,6 +3042,34 @@ bool DysektEditor::appendZoneToSfz (const juce::File& sfzFile, const juce::Strin
     return ! stream.getStatus().failed();
 }
 
+// See doc comment in PluginEditor.h. MULTISAMPLER's on-disk save target
+// (getLastSavedFile()) becomes ZONES' target too — deliberately its saved
+// file, never MULTISAMPLER's internal preview cache, because ZONES writes
+// SAVE straight to zoneBuilderTargetSfz (see commitZoneBuilderPendingZones)
+// and that must always be a real, user-owned file.
+//
+// KNOWN GAP: if MULTISAMPLER has live edits it hasn't saved yet
+// (isDirty()), getLastSavedFile()'s on-disk bytes are stale relative to
+// what's actually loaded/playing right now — ZONES will show that stale
+// saved state (or nothing, if MULTISAMPLER has never been saved) until
+// MULTISAMPLER saves. Fully closing that gap means ZONES stops writing to
+// its own file at all and routes its edits back through
+// multisamplerEditor's model instead (the next step toward retiring ZONES
+// altogether) — out of scope for this resync-on-open fix.
+void DysektEditor::syncZoneBuilderFromMultisampler()
+{
+    zoneBuilderTargetSfz = multisamplerEditor.getLastSavedFile();
+
+    // A different (or newly-resynced) target no longer matches whatever
+    // ZONES-own staged session was in progress against the old one — same
+    // reset browserPanel.onLoadRequest already does on a fresh .sfz load.
+    zoneBuilderDirty = false;
+    sliceControlBar.setZoneDirty (false);
+    if (zoneBuilderScratchFile.existsAsFile())
+        zoneBuilderScratchFile.deleteFile();
+    zoneBuilderScratchFile = juce::File();
+}
+
 // Lazily creates the scratch file — a byte-for-byte copy of the real
 // on-disk target — the first time any change is staged in a zone-builder
 // session, and marks the session dirty. A no-op once the scratch file
@@ -3087,6 +3122,14 @@ void DysektEditor::refreshZoneBuilderPreview()
     // builder matrix leaves deleted/added/edited zones stale in the normal view.
     refreshZoneBuilderMatrix (previewFile);
     sfzPlayerDropdown.reloadZones (previewFile);
+
+    // MULTISAMPLER is becoming the sole owner of "what's currently loaded"
+    // (see syncZoneBuilderFromMultisampler's doc comment) — mirror whatever
+    // ZONES just wrote/loaded into its model too, so it never goes stale
+    // relative to edits made through this editor instead of through
+    // MULTISAMPLER directly. isSaveTarget=false whenever previewFile is
+    // still the staged scratch file, not the real on-disk target.
+    multisamplerEditor.syncFromExternalEdit (previewFile, previewFile == zoneBuilderTargetSfz);
 }
 
 // Right-click "Delete Zone" -> stage removal of one <region> block, via the
@@ -3166,6 +3209,14 @@ void DysektEditor::setZoneBuilderZoneColour (int rowIndex, juce::Colour colour)
     // clearSummary=false — recolouring shouldn't wipe the currently-selected
     // row's readout in the SliceControlBar, matching the field-edit path.
     refreshZoneBuilderMatrix (zoneBuilderScratchFile, false);
+    // No engine reload here (colour is cosmetic, doesn't affect playback —
+    // see this function's lack of an sfzPlayer2.loadFile() call), but
+    // MULTISAMPLER's model still needs the colour so it doesn't fall back
+    // to the deterministic per-index default if MULTISAMPLER becomes the
+    // active view next. isSaveTarget=false: this is always a staged
+    // (scratch-file) edit — recolouring always goes through
+    // ensureZoneBuilderScratchExists() above, never straight to the target.
+    multisamplerEditor.syncFromExternalEdit (zoneBuilderScratchFile, false);
     repaint();
 }
 
@@ -3210,6 +3261,10 @@ void DysektEditor::commitZoneBuilderPendingZones()
                                           juce::Colour (0xFF9060D0));
    #endif
     refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
+    // isSaveTarget=true — zoneBuilderTargetSfz is exactly the real,
+    // user-owned file just written to, so it's safe (and correct) for
+    // MULTISAMPLER to adopt it as its own lastSavedFile too.
+    multisamplerEditor.syncFromExternalEdit (zoneBuilderTargetSfz, true);
     repaint();
 }
 
@@ -3234,6 +3289,10 @@ void DysektEditor::discardZoneBuilderPendingZones()
         pianoRollPanel.addSfzInstrumentTrack (zoneBuilderTargetSfz.getFileNameWithoutExtension(),
                                               juce::Colour (0xFF9060D0));
        #endif
+        // isSaveTarget=true — same rationale as commitZoneBuilderPendingZones:
+        // this is a reload straight from the real on-disk target, discarding
+        // whatever the staged scratch session held.
+        multisamplerEditor.syncFromExternalEdit (zoneBuilderTargetSfz, true);
     }
     refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
     repaint();
