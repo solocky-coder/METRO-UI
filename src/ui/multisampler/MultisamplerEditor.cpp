@@ -490,6 +490,59 @@ void MultisamplerEditor::refreshInspectorFromSelection()
         headerZoneSummary.setText (text, juce::dontSendNotification);
     }
 
+    // Reselect the already-rendered sliceManager2 slice for this zone so the
+    // SCB doesn't sit on "No slice selected" (and the waveform/per-slice knob
+    // rows gated behind idx>=0 in SliceControlBar::paint stay blank) until the
+    // user happens to edit a field. Previously the only path that ever wrote
+    // sliceManager2.selectedSlice for MULTISAMPLER was zoneBuilderReselectNote,
+    // and that's only consumed inside PluginProcessor's zoneBuilderReloadPending
+    // branch — i.e. only after an edit-triggered rebuild, never on a plain
+    // click. A zone that's already been synced to the engine has a live slice
+    // sitting there right now; there's no need to wait for a rebuild to find
+    // it. Reads come from getUiSliceSnapshot2() rather than sliceManager2
+    // directly — the snapshot is the documented UI-thread-safe copy (see
+    // PluginProcessor.h's UiSliceSnapshot comment), whereas sliceManager2's
+    // own vectors are audio-thread-owned. Mirrors the exact-note-then-
+    // stamped-range-fallback algorithm PluginProcessor.cpp's reselect branch
+    // uses, just performed synchronously here instead of deferred to the next
+    // rebuild.
+    if (zone != nullptr)
+    {
+        const auto& snap = processor.getUiSliceSnapshot2();
+        const int wantNote = zone->rootKey >= 0 ? zone->rootKey : zone->lowKey;
+
+        // The snapshot has no midiNoteToSlice()-style direct index, so scan
+        // for an exact-note match first, then fall back to any slice stamped
+        // with this zone's key range (same tie-break: closest note wins).
+        int reselectIdx = -1;
+        for (int i = 0; i < snap.numSlices; ++i)
+        {
+            const auto& s = snap.slices[(size_t) i];
+            if (s.active && s.midiNote == wantNote) { reselectIdx = i; break; }
+        }
+        if (reselectIdx < 0)
+        {
+            int bestIdx = -1, bestDist = -1;
+            for (int i = 0; i < snap.numSlices; ++i)
+            {
+                const auto& s = snap.slices[(size_t) i];
+                if (! s.active) continue;
+                if (wantNote < s.zoneLoKey || wantNote > s.zoneHiKey) continue;
+                const int dist = std::abs (s.midiNote - wantNote);
+                if (bestIdx < 0 || dist < bestDist) { bestDist = dist; bestIdx = i; }
+            }
+            reselectIdx = bestIdx;
+        }
+
+        if (reselectIdx >= 0)
+            processor.sliceManager2.selectedSlice.store (reselectIdx, std::memory_order_relaxed);
+        // No live slice for this zone yet (never synced, or mid-rebuild) —
+        // leave selectedSlice alone rather than forcing it to -1: a rebuild
+        // already in flight will resolve it via zoneBuilderReselectNote once
+        // it lands, and clearing here would just flash "No slice selected"
+        // for a frame if a match was actually about to arrive.
+    }
+
     // Drives the shared SliceControlBar — see this method's declaration
     // comment. PluginEditor reads getSelectedZoneIndex()/getInstrument()
     // right after this fires to build the SCB readout, exactly mirroring
