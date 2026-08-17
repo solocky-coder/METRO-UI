@@ -68,7 +68,7 @@ private:
     bool eqActive         = false;
     int  uiTab            = 0;   // 0=SLICER, 1=SFZ-PLAYER, 2=SF2-PLAYER
     bool seqActive        = false;
-    bool zoneBuilderActive = false;   // mirrors multisamplerEditor.getViewMode() == Table — highlights the ZONES tab-icon
+    bool zoneBuilderActive = false;   // mirrors editor showZoneBuilder — highlights the ZONES tab-icon
 
     // Hit areas (set during paint, used in mouseDown)
     juce::Rectangle<int> filIconArea;

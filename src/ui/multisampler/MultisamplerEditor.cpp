@@ -5,6 +5,7 @@
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
 #include "../../audio/SfzZoneColours.h"
+#include <cmath>
 
 namespace
 {
@@ -55,28 +56,6 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         if (onInstrumentChanged) onInstrumentChanged();
     };
 
-    // ── Table view (ViewMode::Table — what ZONES actually is now) ────────
-    // A KeysPanel in SFZ-editable mode, fed from `instrument` via
-    // refreshZoneTable()/tableRowZoneIds instead of parsed .sfz text. Its
-    // own right-click menu is skipped entirely in favour of reusing
-    // zoneMapView.showZoneContextMenu() (same delete/recolour code either
-    // view's context menu ends up calling), so there's exactly one
-    // implementation of "what happens when you delete/recolour a zone".
-    addChildComponent (zoneTableView);   // hidden until setViewMode(Table)
-    zoneTableView.setEngineSource (KeysPanel::EngineSource::SfzPlayer2);
-    zoneTableView.setSfzEditable (true);
-    zoneTableView.setSlicerHighlightEnabled (false);   // this instance only ever shows SFZ/SF2 zones, never the Slicer
-    zoneTableView.setAddZoneButtonVisible (false);     // the header's own ADD ZONE button covers both view modes
-    zoneTableView.onRowClicked = [this] (int row) { selectZoneAtTableRow (row); };
-    zoneTableView.onZoneEdited = [this] (int row, const KeysPanel::Keyzone& kz) { applyTableRowEdit (row, kz); };
-    zoneTableView.onRowRightClicked = [this] (int row, juce::Point<int> screenPos)
-    {
-        if (row < 0 || row >= (int) tableRowZoneIds.size())
-            return;
-        selectZoneAtTableRow (row);
-        zoneMapView.showZoneContextMenu (tableRowZoneIds[(size_t) row], screenPos);
-    };
-
     configureStaticLabel (titleLabel, "MULTISAMPLER");
     titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     addAndMakeVisible (titleLabel);
@@ -93,10 +72,11 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     addAndMakeVisible (newButton);
     newButton.onClick = [this] { newInstrumentClicked(); };
 
-    // ── Selection status strip ──────────────────────────────────────────
-    configureStaticLabel (inspectorTitle, "NO ZONE SELECTED");
-    inspectorTitle.setFont (juce::FontOptions (11.0f));
-    addAndMakeVisible (inspectorTitle);
+    // ── Header zone-summary readout ─────────────────────────────────────
+    configureStaticLabel (headerZoneSummary, "Select a zone to edit");
+    headerZoneSummary.setFont (juce::FontOptions (11.5f));
+    headerZoneSummary.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (headerZoneSummary);
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
 }
@@ -120,7 +100,6 @@ void MultisamplerEditor::paint (juce::Graphics& g)
 
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH, 4.0f, bounds.getWidth() - 4.0f);
-    g.drawHorizontalLine (getHeight() - kInspectorH, 4.0f, bounds.getWidth() - 4.0f);
 
     if (dirty)
     {
@@ -143,26 +122,12 @@ void MultisamplerEditor::resized()
     importButton.setBounds (header.removeFromRight (90));
     header.removeFromRight (4);
     addZoneButton.setBounds (header.removeFromRight (84));
+    header.removeFromLeft (10);   // gap after titleLabel
+    headerZoneSummary.setBounds (header);   // whatever's left between title and buttons
 
-    inspectorTitle.setBounds (r.removeFromBottom (kInspectorH - 4));
     r.removeFromTop (6);
 
     zoneMapView.setBounds (r);
-    zoneTableView.setBounds (r);   // only one of the two is ever visible — see setViewMode()
-}
-
-void MultisamplerEditor::setViewMode (ViewMode mode)
-{
-    if (viewMode == mode)
-        return;
-    viewMode = mode;
-
-    if (viewMode == ViewMode::Table)
-        refreshZoneTable();   // may already be current (refreshInspectorFromSelection keeps it live) but cheap, and guards a stale table on first switch
-
-    zoneMapView.setVisible   (viewMode == ViewMode::Map);
-    zoneTableView.setVisible (viewMode == ViewMode::Table);
-    repaint();
 }
 
 // ── Instrument lifecycle ────────────────────────────────────────────────
@@ -476,122 +441,41 @@ void MultisamplerEditor::refreshInspectorFromSelection()
 
     if (zone == nullptr)
     {
-        inspectorTitle.setText (selected.empty() ? "NO ZONE SELECTED" : "MULTIPLE ZONES SELECTED", juce::dontSendNotification);
+        // Same wording as SliceControlBar::drawSfzZoneSummary's own empty
+        // state, so this header readout and the SCB's own row agree
+        // exactly when nothing (or more than one zone) is selected.
+        headerZoneSummary.setText (selected.empty() ? "Select a zone to edit" : "Multiple zones selected",
+                                    juce::dontSendNotification);
     }
     else
     {
-        inspectorTitle.setText (zone->sampleFile.getFileName().isNotEmpty()
-                                    ? zone->sampleFile.getFileName() : juce::String ("(no sample)"),
-                                 juce::dontSendNotification);
+        // Mirrors SliceControlBar::drawSfzZoneSummary()'s field set and
+        // formatting exactly (loKey/hiKey/ROOT/PITCH/PAN/VOLUME/RELEASE/
+        // LOOP) so this reads as the same information, not a shorthand
+        // version of it — see this label's declaration comment.
+        const auto note = [] (int n) { return UIHelpers::midiNoteToName (juce::jlimit (0, 127, n)); };
+        const juce::String panStr = zone->pan == 0.0f
+            ? "C" : (zone->pan < 0.0f ? "L" : "R") + juce::String (juce::roundToInt (std::abs (zone->pan) * 100.0f));
+
+        juce::String text = zone->sampleFile.getFileName().isNotEmpty()
+                                ? zone->sampleFile.getFileName() : juce::String ("(no sample)");
+        text << "   loKey " << note (zone->lowKey)
+             << "   hiKey " << note (zone->highKey)
+             << "   ROOT "  << (zone->rootKey >= 0 ? note (zone->rootKey) : juce::String ("--"))
+             << "   PITCH " << juce::roundToInt (zone->tuneCents) << "ct"
+             << "   PAN "   << panStr
+             << "   VOLUME " << juce::String (zone->gainDb, 1) << "dB"
+             << "   RELEASE " << juce::String (zone->releaseSeconds, 3) << "s"
+             << "   LOOP "  << (zone->loopMode != LoopMode::noLoop ? "ON" : "OFF");
+        headerZoneSummary.setText (text, juce::dontSendNotification);
     }
 
     // Drives the shared SliceControlBar — see this method's declaration
     // comment. PluginEditor reads getSelectedZoneIndex()/getInstrument()
     // right after this fires to build the SCB readout, exactly mirroring
-    // ZONES' equivalent push into sliceControlBar.setSfzZoneSummary().
+    // zoneBuilderKeysPanel::onRowClicked's push into
+    // sliceControlBar.setSfzZoneSummary() for ZONES.
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
-
-    // Runs after every model mutation (this method is called at the end of
-    // every one of them — drag edit/commit, delete, Add Zone, SCB field
-    // edit, import/New/discard), regardless of which view is currently
-    // visible, so the table is never showing stale data by the time the
-    // user switches to it.
-    refreshZoneTable();
-}
-
-void MultisamplerEditor::refreshZoneTable()
-{
-    std::vector<KeysPanel::Keyzone> zones;
-    tableRowZoneIds.clear();
-    zones.reserve (instrument.zones.size());
-    tableRowZoneIds.reserve (instrument.zones.size());
-
-    // Mirrors toKeyzones()'s field mapping and disabled-zone skip exactly
-    // (see refreshZoneTable()'s declaration comment for why this isn't
-    // just a call to toKeyzones() with ids bolted on) — same colours, same
-    // names, same row order a keyboard-highlight consumer would see, just
-    // with a parallel id vector so table edits can find their way back to
-    // a real zone.
-    int colIdx = 0;
-    for (const auto& z : instrument.zones)
-    {
-        if (! z.enabled)
-            continue;
-
-        KeysPanel::Keyzone kz;
-        kz.loKey     = z.lowKey;
-        kz.hiKey     = z.highKey;
-        kz.loVel     = z.lowVelocity;
-        kz.hiVel     = z.highVelocity;
-        kz.rootPitch = z.rootKey;
-        kz.isLooped  = (z.loopMode != LoopMode::noLoop);
-        kz.isSfz     = true;
-
-        kz.colour = z.hasCustomColour ? juce::Colour (z.customColourArgb)
-                                       : SfzZoneColours::zoneColour (colIdx);
-        ++colIdx;
-
-        kz.name = z.sampleFile != juce::File()
-                      ? z.sampleFile.getFileNameWithoutExtension()
-                      : ("Zone " + juce::String (colIdx));
-
-        kz.volDb      = z.gainDb;
-        kz.pan        = z.pan;
-        kz.tuneCents  = z.tuneCents;
-        kz.releaseSec = z.releaseSeconds;
-
-        zones.push_back (kz);
-        tableRowZoneIds.push_back (z.id);
-    }
-
-    zoneTableView.setKeyzones (std::move (zones));
-}
-
-void MultisamplerEditor::selectZoneAtTableRow (int row)
-{
-    if (row < 0 || row >= (int) tableRowZoneIds.size())
-        return;
-
-    // zoneMapView's selection state stays the single source of truth for
-    // "what's selected" in both view modes (rather than tracking a second,
-    // parallel selection here) — refreshInspectorFromSelection() already
-    // only ever reads zoneMapView.getSelectedZoneIds(), so routing table
-    // clicks through the same setSelectedZoneIds() means that logic, and
-    // getSelectedZoneIndex()'s inspectedZoneId, don't need to know or care
-    // which view the click actually came from.
-    zoneMapView.setSelectedZoneIds ({ tableRowZoneIds[(size_t) row] });
-    refreshInspectorFromSelection();   // setSelectedZoneIds() doesn't fire onSelectionChanged itself — see its doc comment
-}
-
-void MultisamplerEditor::applyTableRowEdit (int row, const KeysPanel::Keyzone& edited)
-{
-    if (row < 0 || row >= (int) tableRowZoneIds.size())
-        return;
-
-    const auto targetId = tableRowZoneIds[(size_t) row];
-    SampleZone* zone = nullptr;
-    for (auto& z : instrument.zones)
-        if (z.id == targetId) { zone = &z; break; }
-    if (zone == nullptr)
-        return;   // stale row (instrument changed elsewhere since the table was last refreshed)
-
-    // Same fields applySliceControlBarFieldEdit() writes, just all at once
-    // from one table-row edit instead of one SCB field at a time.
-    zone->lowKey        = edited.loKey;
-    zone->highKey        = edited.hiKey;
-    zone->lowVelocity    = edited.loVel;
-    zone->highVelocity   = edited.hiVel;
-    zone->rootKey        = edited.rootPitch;
-    zone->gainDb         = edited.volDb;
-    zone->pan            = edited.pan;
-    zone->tuneCents      = edited.tuneCents;
-    zone->releaseSeconds = edited.releaseSec;
-
-    dirty = true;
-    zoneMapView.refresh();
-    scheduleEngineSync();
-    if (onInstrumentChanged) onInstrumentChanged();
-    refreshInspectorFromSelection();   // also refreshes the table itself, see its trailing call
 }
 
 void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field, float value)

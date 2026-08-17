@@ -3,22 +3,22 @@
 //  MultisamplerEditor.h — Top-level multisampler panel
 //  ─────────────────────────────────────────────────────────────────────────
 //  Implementation-plan §6/§14 "first development slice": owns the native
-//  MultisamplerInstrument, shows it via either a ZoneMapView (2D key/
-//  velocity grid) or a KeysPanel-based table — see ViewMode — lets a single
-//  selected zone's key/velocity/gain/pan be edited via a compact inline
-//  inspector strip, and keeps sfzPlayer2 in sync via the plan's §5
-//  "Playback synchronization" path — debounce edits, export the model to a
-//  cache-directory SFZ on the UI thread, then hand that file to
-//  SfzPlayer::loadFile() on the existing async fileLoadPool path (SfzPlayer
-//  itself performs the safe swap at a block boundary; nothing here touches
-//  the audio thread).
+//  MultisamplerInstrument, shows it on a ZoneMapView, lets a single selected
+//  zone's key/velocity/gain/pan be edited via a compact inline inspector
+//  strip, and keeps sfzPlayer2 in sync via the plan's §5 "Playback
+//  synchronization" path — debounce edits, export the model to a cache-
+//  directory SFZ on the UI thread, then hand that file to SfzPlayer::loadFile()
+//  on the existing async fileLoadPool path (SfzPlayer itself performs the
+//  safe swap at a block boundary; nothing here touches the audio thread).
 //
 //  A dedicated ZoneInspector.h component is the natural next split once this
 //  strip grows past a handful of fields (per the plan's §6 file list) — kept
 //  inline here for now to keep the first slice small.
 //
-//  This component draws its own complete frame in both view modes and does
-//  not rely on PluginEditor's paintOverChildren() bezel.
+//  Like zoneBuilderKeysPanel (the existing raw-SFZ zone builder this panel
+//  is the native-model successor to — see PluginEditor.cpp), this component
+//  draws its own complete frame and does not rely on PluginEditor's
+//  paintOverChildren() bezel.
 // =============================================================================
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -26,6 +26,7 @@
 #include "ZoneMapView.h"
 #include "../AddZoneOverlay.h"
 #include "../KeysPanel.h"
+#include "../UIHelpers.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/SfzImporter.h"
 
@@ -51,19 +52,6 @@ public:
     void setInstrument (MultisamplerInstrument newInstrument, bool syncEngine = true);
 
     const MultisamplerInstrument& getInstrument() const noexcept { return instrument; }
-
-    /** Two presentations of the same MultisamplerInstrument — a 2D key/
-        velocity map (zoneMapView) or a scannable table of zones
-        (zoneTableView, a KeysPanel in SFZ-editable mode). This is what ZONES
-        actually is now: not a separate editor with its own raw-SFZ scratch
-        file, just this panel showing Table instead of Map. Both views read
-        and write the same `instrument`, so switching between them mid-edit
-        never loses anything and never needs its own save/discard prompt —
-        only closing the panel entirely does (see PluginEditor::
-        showMultisamplerPanel). */
-    enum class ViewMode { Map, Table };
-    void setViewMode (ViewMode mode);
-    ViewMode getViewMode() const noexcept { return viewMode; }
 
     /** Consolidation-plan step 3: the same keyboard-highlight data ZONES
         gets from SfzPlayerDropdownPanel::parseSfzZones(), derived instead
@@ -194,40 +182,12 @@ private:
 
     void refreshInspectorFromSelection();
 
-    /** Rebuilds zoneTableView's rows from `instrument`, keeping
-        tableRowZoneIds parallel to it (row i's zone id at index i) so table
-        callbacks (row click/edit/right-click) can resolve back to a real
-        zone. Duplicates toKeyzones()'s field mapping and disabled-zone skip
-        rather than reusing it directly, since toKeyzones() is a static,
-        id-free helper other callers (PluginEditor's read-only keyboard-
-        highlight bridge) depend on keeping that exact signature. Called
-        after every model mutation regardless of which view is currently
-        visible (from refreshInspectorFromSelection(), see its trailing
-        call), so the table is never stale when the user switches to it. */
-    void refreshZoneTable();
-
-    /** KeysPanel row click -> resolves to a zone id via tableRowZoneIds and
-        selects it the same way clicking a zone in the map does (drives
-        zoneMapView's own selection state, which stays the single source of
-        truth for "what's selected" in both view modes — see
-        selectZoneAtTableRow()'s .cpp comment for why). */
-    void selectZoneAtTableRow (int row);
-
-    /** KeysPanel field-edit (drag or type a cell) -> resolves to a zone via
-        tableRowZoneIds and writes the edited fields straight onto that
-        SampleZone, same set of fields applySliceControlBarFieldEdit()
-        writes. */
-    void applyTableRowEdit (int row, const KeysPanel::Keyzone& edited);
-
     DysektProcessor& processor;
     MultisamplerInstrument instrument;
     bool dirty = false;
     juce::File lastSavedFile;   // last file imported from or exported/saved to; File() if none yet
 
-    ViewMode viewMode = ViewMode::Map;
     ZoneMapView zoneMapView;
-    KeysPanel   zoneTableView { processor };   // ViewMode::Table — hidden until that mode is active
-    std::vector<juce::Uuid> tableRowZoneIds;   // row i in zoneTableView <-> instrument.zones entry with this id
 
     // ── Header ───────────────────────────────────────────────────────────
     juce::Label  titleLabel;
@@ -238,19 +198,25 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
     std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;   // modal popup; owned only while open
 
-    // ── Selection status strip ──────────────────────────────────────────
-    // Just a slim "N zones · (selection state)" readout now — actual
-    // per-zone editing lives entirely in the shared SliceControlBar (see
+    // ── Header zone-summary readout ─────────────────────────────────────
+    // Same loKey/hiKey/root/pitch/pan/volume/release/loop info the shared
+    // SliceControlBar already shows for the selected zone (see
+    // SliceControlBar::drawSfzZoneSummary), mirrored here inline in this
+    // panel's own header so it's visible right where zones are being
+    // clicked/played, without needing to look down at the SCB row at the
+    // bottom of the whole plugin window. Replaces the old bottom "selection
+    // status" strip (a single-line filename/placeholder readout) that used
+    // to sit between the zone map and the piano-key ruler — that strip is
+    // gone, and ZoneMapView's own keyboard strip (kKeyboardStripPx) grew to
+    // absorb the vertical space it freed up instead. Read-only; per-zone
+    // *editing* still lives entirely in the SCB (see
     // onZoneSelectionOrEditChanged/applySliceControlBarFieldEdit above),
-    // the exact same component ZONES edits through, rather than this panel
-    // maintaining its own separate lo/hi/root/vel/gain/pan field row that
-    // could drift out of sync with SCB's idea of the same zone.
-    juce::Label inspectorTitle;
+    // this is purely a convenience duplicate of the same data.
+    juce::Label headerZoneSummary;
     juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing/multiple selected
 
     static constexpr int kEngineSyncDebounceMs = 300;
     static constexpr int kHeaderH    = 32;
-    static constexpr int kInspectorH = 20;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultisamplerEditor)
 };

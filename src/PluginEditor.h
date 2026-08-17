@@ -142,18 +142,62 @@ private:
     /// 1 = SFZ Player.
     int  uiMode = 0;
     bool showPadGrid     = false;  ///< true = PadGridView, false = WaveformView (within uiMode 0)
+    bool showZoneBuilder = false;  ///< true = zoneBuilderKeysPanel, false = WaveformView (within uiMode 1 / SFZ-PLAYER)
     bool hasSampleLoaded = false;   // true once a sample with audio is loaded
     bool hasSampleLoaded2 = false;  // true once SFZ-PLAYER (sliceManager2/sampleData2) has a real sample loaded
 
-    /// SFZ-PLAYER MULTISAMPLER/ZONES panel (native MultisamplerInstrument
-    /// model — see METRO-UI_MULTISAMPLER_IMPLEMENTATION.md §6). ZONES and
-    /// MULTISAMPLER are two presentations (MultisamplerEditor::ViewMode) of
-    /// the same instrument now, not two separate editors — this one flag
-    /// tracks whether the panel is open at all; which view mode it's
-    /// showing lives on multisamplerEditor itself.
+    /// SFZ-PLAYER MULTISAMPLER view (native MultisamplerInstrument model —
+    /// see METRO-UI_MULTISAMPLER_IMPLEMENTATION.md §6). Distinct from, and
+    /// mutually exclusive with, showZoneBuilder's raw-SFZ zoneBuilderKeysPanel
+    /// flow: this is the model-first editor, that's the older direct-SFZ-text
+    /// workflow. Both currently coexist inside uiMode == 1; see resized().
     bool showMultisamplerEditor = false;
     bool iconNeedsApplying = true;   // set icon once peer is available
 
+    // ── SFZ-PLAYER zone builder (ZONES toggle in SliceControlBar) ──────────────
+    // Ported from SfzPlayerDropdownPanel's existing (but never-shown) Add Zone /
+    // Save SFZ flow — same target-file bookkeeping, same processor.sfzPlayer2
+    // calls, just driven by the live uiMode==1 layout instead of a hidden panel.
+    juce::File zoneBuilderTargetSfz;   // .sfz currently being built/edited, may be empty
+    int        zoneBuilderPrevHiKey = -1;
+    std::unique_ptr<juce::FileChooser> zoneBuilderSampleChooser;
+    std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;
+    // zoneSaveOverlay (SaveSfzOverlay) removed — openZoneBuilderSaveAsNew()
+    // now uses zoneAddOverlay's own optional name field (showNameField=true)
+    // instead of a separate stacked dialog. See that function's doc comment.
+
+    // ── Staged-but-unsaved zones ─────────────────────────────────────────────
+    // Zones added via AddZoneOverlay are no longer written straight to
+    // zoneBuilderTargetSfz — they're held here and only committed to disk when
+    // the user clicks SAVE (or confirms "Save" on the ZONES toggle-off
+    // prompt). This lets several zones be staged/auditioned in one sitting
+    // before deciding whether to keep them.
+    struct PendingZone
+    {
+        juce::File sampleFile;
+        int loKey    = 0;
+        int hiKey    = 0;
+        int rootKey  = 0;
+    };
+    std::vector<PendingZone> zoneBuilderPendingZones;
+    bool                     zoneBuilderDirty = false;   // true while zoneBuilderPendingZones is non-empty
+
+    // In-memory preview file: original zoneBuilderTargetSfz content plus one
+    // <region> block per staged pending zone, rebuilt on every stage/discard/
+    // commit so the matrix and slice preview always reflect the staged state
+    // without ever touching the real target file until SAVE.
+    juce::File zoneBuilderScratchFile;
+
+    void openZoneBuilderAddZone();               // [+ ZONE] click -> pick sample -> AddZoneOverlay
+    void showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
+                                         const juce::File& sampleFile,
+                                         int prevHiKey);
+    void openZoneBuilderSaveAsNew (const juce::File& sampleFile); // no SFZ loaded yet -> name one first
+    static juce::String buildZoneRegionText (const juce::File& sfzFile, const juce::File& sampleFile,
+                                              int loKey, int hiKey, int rootKey);
+    static bool appendZoneToSfz (const juce::File& sfzFile, const juce::String& regionText);
+    void hideZoneBuilderOverlays();
+    void refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary = true); // re-parse + push into zoneBuilderKeysPanel
     // Classifies an SFZ-PLAYER file's zones (see SfzLayoutClassifier.h) and,
     // if it reads as a drum kit, shows a ConfirmOverlay offering to
     // auto-assign each zone its own output bus. Shared by every load path
@@ -162,16 +206,41 @@ private:
     // the file got loaded.
     void offerDrumKitAutoRouting (const juce::File& sfzFile);
 
-    // Opens/closes the shared MULTISAMPLER/ZONES panel (multisamplerEditor)
-    // in the requested view mode. toggleZoneBuilder() (SliceControlBar's
-    // ZONES toggle + DualLcdControlFrame's ZONES tab-icon) and
-    // toggleMultisamplerEditor() (the K shortcut) are thin wrappers around
-    // it — see showMultisamplerPanel()'s own doc comment for why switching
-    // between the two view modes while the panel is open is just a view
-    // change, never a close.
-    void showMultisamplerPanel (bool on, MultisamplerEditor::ViewMode mode);
+    // Opens/closes the zone builder. Shared by SliceControlBar's ZONES toggle
+    // and DualLcdControlFrame's ZONES tab-icon, so both entry points behave
+    // identically (including the unsaved-zones confirm prompt on close).
+    // Opening this while MULTISAMPLER is showing just switches the visible
+    // panel (via hideMultisamplerViewForSwitch()) — MULTISAMPLER's own edits
+    // and dirty state are left untouched, not discarded.
     void toggleZoneBuilder (bool on);
+
+    // Opens/closes the native-model MULTISAMPLER panel (multisamplerEditor).
+    // ZONES and MULTISAMPLER coexist temporarily while MULTISAMPLER is still
+    // mid-development — ZONES will be removed once it's feature-complete —
+    // so only one is ever visible at a time, but toggling one while the
+    // other is open is treated as a plain view switch (via
+    // hideZoneBuilderView() / hideMultisamplerViewForSwitch()), not a close:
+    // it never discards the other editor's staged/unsaved work and never
+    // pops its unsaved-changes prompt. That prompt still fires on an actual
+    // close (e.g. turning MULTISAMPLER off with no ZONES view opening in its
+    // place) via multisamplerEditor.isDirty().
     void toggleMultisamplerEditor (bool on);
+
+    // Hides the ZONES / MULTISAMPLER panel respectively without running
+    // either's unsaved-changes guard — used only when the OTHER panel is
+    // opening in its place (a same-session view switch), never for a real
+    // close. See toggleZoneBuilder/toggleMultisamplerEditor's doc comments.
+    // Both are temporary: delete along with ZONES once MULTISAMPLER is
+    // feature-complete and fully replaces it.
+    void hideZoneBuilderView();
+    void hideMultisamplerViewForSwitch();
+
+    void ensureZoneBuilderScratchExists();   // rebuild scratch file from pending zones, reload preview + matrix
+    void refreshZoneBuilderPreview();       // re-derive + load whichever file (scratch/target) is current, refresh matrix
+    void deleteZoneBuilderZone (int rowIndex); // remove a zone from the scratch file and refresh
+    void setZoneBuilderZoneColour (int rowIndex, juce::Colour colour); // recolour a zone, persist + refresh
+    void commitZoneBuilderPendingZones();   // SAVE: write pending zones to zoneBuilderTargetSfz, clear staging
+    void discardZoneBuilderPendingZones();  // DISCARD: drop pending zones, restore preview to on-disk state
 
     /// The editor's full local bounds, cached each resized() so paint()/
     /// paintOverChildren()/waveformFrameRect() can read it. See
@@ -234,7 +303,8 @@ private:
     FileBrowserPanel browserPanel;
     MixerPanel       mixerPanel;
     PadGridView      padGridView;
-    MultisamplerEditor multisamplerEditor { processor }; // SFZ-PLAYER MULTISAMPLER/ZONES panel — see above
+    KeysPanel        zoneBuilderKeysPanel { processor }; // SFZ-PLAYER ZONES view — standalone, NOT sfzPlayerDropdown.keysPanel
+    MultisamplerEditor multisamplerEditor { processor }; // SFZ-PLAYER MULTISAMPLER view — native-model successor, see above
     Sf2InstrumentWorkspace sfzDropdown;   // name kept — see all call sites below
     SfzPlayerDropdownPanel sfzPlayerDropdown;
     ShortcutsPanel   shortcutsPanel { processor };

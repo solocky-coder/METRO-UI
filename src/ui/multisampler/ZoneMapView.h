@@ -67,15 +67,6 @@ public:
         deletion apart from a drag when it matters (e.g. status text). */
     std::function<void()> onZoneDeleted;
 
-    /** Right-click context menu: "Delete Zone" + the same 16-colour named
-        palette submenu ZONES' onRowRightClicked shows (see PluginEditor.cpp),
-        kept identical so the picker UX matches everywhere in the app a
-        zone/slice can be recoloured. Public because MultisamplerEditor's
-        table view reuses this same menu for its own right-click path (see
-        MultisamplerEditor.cpp), rather than duplicating the delete/recolour
-        logic. */
-    void showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int> screenPos);
-
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -95,6 +86,14 @@ private:
         juce::Colour colour;             // SfzZoneColours::zoneColour(), same index MultisamplerEditor::toKeyzones() uses
         bool missingSample = false;
         bool overlapping   = false;
+
+        // Cached at rebuildLayout() time (from the matching SampleZone) so
+        // paint() can draw an on-tile label without re-resolving the zone
+        // by id every frame — same "cache the derived layout, don't re-walk
+        // the model in paint" approach the rest of this class already uses.
+        juce::String label;      // sample file name (sans extension), or "(no sample)"
+        int lowKey  = 0, highKey  = 0;
+        int lowVel  = 1, highVel  = 127;
     };
 
     // Grid geometry -----------------------------------------------------
@@ -115,6 +114,12 @@ private:
         onZoneDeleted. No-op if the instrument is null or nothing resolves. */
     void deleteZones (const juce::Uuid& rightClickedId);
 
+    /** Right-click context menu: "Delete Zone" + the same 16-colour named
+        palette submenu ZONES' onRowRightClicked shows (see PluginEditor.cpp),
+        kept identical so the picker UX matches everywhere in the app a
+        zone/slice can be recoloured. */
+    void showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int> screenPos);
+
     MultisamplerInstrument* instrument = nullptr;
     std::vector<ZoneRect> cachedRects;   // one per instrument->zones entry, same order
     std::vector<juce::Uuid> selectedIds;
@@ -130,6 +135,7 @@ private:
     void timerCallback() override;
     uint64_t activeNotesSnap[2] = { 0, 0 };
     bool isNoteActive (int note) const noexcept;
+    void selectZonesForNewNotes (uint64_t newLo, uint64_t newHi);
 
     // Live drag state
     DragMode   dragMode = DragMode::none;
@@ -142,7 +148,14 @@ private:
     juce::Uuid hoverZoneId = juce::Uuid::null();   // for cursor feedback only
 
     static constexpr int kEdgeGrabPx = 5;
-    static constexpr int kKeyboardStripPx = 18;   // piano-key strip along the bottom
+    static constexpr int kKeyCellPx = 34;         // the black/white note cells themselves —
+                                                   // was 18; grown by 16px to absorb the space
+                                                   // freed when MultisamplerEditor's bottom
+                                                   // status strip was removed in favour of the
+                                                   // header zone-summary readout (see
+                                                   // MultisamplerEditor::resized()'s doc comment)
+    static constexpr int kOctaveLabelPx = 15;     // "C1"/"C2"... row underneath the cells
+    static constexpr int kKeyboardStripPx = kKeyCellPx + kOctaveLabelPx;
     static constexpr int kVelocityRulerPx = 28;   // velocity scale along the left
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ZoneMapView)

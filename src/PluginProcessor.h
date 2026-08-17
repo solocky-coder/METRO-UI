@@ -732,6 +732,17 @@ public:
     // 128-bit active-note bitmask for SFZ-Player (sfzPlayer2)
     std::atomic<uint64_t> sfz2ActiveNotes[2] {};
 
+    // Velocity of the most recent note-on per MIDI note, sfzPlayer2's
+    // channel(s) only — written alongside sfz2ActiveNotes in processMidi2().
+    // sfz2ActiveNotes alone only carries key number, and MULTISAMPLER zones
+    // can be velocity-layered (several zones sharing a key range, split by
+    // velocity), so ZoneMapView needs this to pick the *one* zone that would
+    // actually have sounded for a played note, the same way voicePool2's
+    // real playback resolves it — not every zone whose key range merely
+    // overlaps. Display-only, torn/stale reads OK (same contract as
+    // sfz2ActiveNotes).
+    std::atomic<uint8_t> sfz2LastNoteOnVelocity[128] {};
+
     // MIDI channel routing bitmasks (bit N = channel N, 1-based, bits 1–16 used).
     //
     // Channel ownership rules:

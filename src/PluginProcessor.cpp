@@ -2797,6 +2797,10 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
                 const int w = note < 64 ? 0 : 1;
                 const int b = note < 64 ? note : note - 64;
                 sfz2ActiveNotes[w].fetch_or ((uint64_t) 1 << b, std::memory_order_relaxed);
+                // See PluginProcessor.h doc comment — lets MULTISAMPLER's
+                // ZoneMapView resolve the correct velocity-layer zone for
+                // this note instead of every key-range match.
+                sfz2LastNoteOnVelocity[note].store ((uint8_t) msg.getVelocity(), std::memory_order_relaxed);
             }
 
             const int sliceIdx = rebuildInFlight ? -1 : sliceManager2.midiNoteToSlice (note);
