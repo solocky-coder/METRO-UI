@@ -506,8 +506,22 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
 
     switch (field)
     {
-        case SliceControlBar::ZoneLoKey:   z.lowKey       = juce::jmin (z.highKey, juce::roundToInt (value)); break;
-        case SliceControlBar::ZoneHiKey:   z.highKey      = juce::jmax (z.lowKey,  juce::roundToInt (value)); break;
+        // Also clamp rootKey back inside [lowKey, highKey] whenever a
+        // LOKEY/HIKEY drag would otherwise push it outside the zone's own
+        // range. An out-of-range root isn't just cosmetically odd — it's a
+        // note the region can never actually respond to (SFZ region
+        // matching is lokey/hikey-only), so nothing in the rebuilt engine
+        // ever renders it, and performEngineSync()'s reselect (keyed on
+        // rootKey) then has no slice to find. Mirrors the exact same
+        // implicit invariant the loop-point autofill below already assumes.
+        case SliceControlBar::ZoneLoKey:
+            z.lowKey  = juce::jmin (z.highKey, juce::roundToInt (value));
+            if (z.rootKey >= 0) z.rootKey = juce::jmax (z.rootKey, z.lowKey);
+            break;
+        case SliceControlBar::ZoneHiKey:
+            z.highKey = juce::jmax (z.lowKey,  juce::roundToInt (value));
+            if (z.rootKey >= 0) z.rootKey = juce::jmin (z.rootKey, z.highKey);
+            break;
         case SliceControlBar::ZoneRoot:    z.rootKey      = juce::roundToInt (value); break;
         case SliceControlBar::ZonePitch:   z.tuneCents    = value; break;
         case SliceControlBar::ZonePan:     z.pan          = value; break;

@@ -3354,7 +3354,40 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 const int reselectNote = zoneBuilderReselectNote.exchange (-1, std::memory_order_acq_rel);
                 if (reselectNote >= 0)
                 {
-                    const int reselectIdx = sliceManager2.midiNoteToSlice (reselectNote);
+                    int reselectIdx = sliceManager2.midiNoteToSlice (reselectNote);
+
+                    // Fallback — exact-note lookup has no guarantee of success:
+                    // the reselect note is the zone's root (or its low key when
+                    // no root is set), but that's just the note MultisamplerEditor
+                    // *asked* to reselect, not a promise that the render pass
+                    // actually produced a slice sitting on that exact key.
+                    // discoverActiveNotes()/the render step only creates a slice
+                    // for notes it found audible, and a LOOP toggle, a boundary
+                    // LOKEY/HIKEY drag, or plain silence at that exact key can
+                    // all leave nothing pinned to the reselect note specifically
+                    // -- previously that meant selection stayed at -1
+                    // permanently (both LCDs and the SCB knob strip blank) until
+                    // something unrelated (e.g. playing a note, which reselects
+                    // via processMidi2's midiNoteToSlice() below) fixed it.
+                    // Every slice pinned in pass 2 above is stamped with the
+                    // zoneLoKey/zoneHiKey of the zone it came from, so fall back
+                    // to any slice from the SAME zone (reselectNote falling
+                    // inside its stamped range), preferring whichever one's own
+                    // note is closest to the note we actually wanted.
+                    if (reselectIdx < 0)
+                    {
+                        int bestIdx = -1, bestDist = -1;
+                        for (int i = 0; i < sliceManager2.getNumSlices(); ++i)
+                        {
+                            const auto& s = sliceManager2.getSlice (i);
+                            if (! s.active) continue;
+                            if (reselectNote < s.zoneLoKey || reselectNote > s.zoneHiKey) continue;
+                            const int dist = std::abs (s.midiNote - reselectNote);
+                            if (bestIdx < 0 || dist < bestDist) { bestDist = dist; bestIdx = i; }
+                        }
+                        reselectIdx = bestIdx;
+                    }
+
                     if (reselectIdx >= 0)
                         sliceManager2.selectedSlice.store (reselectIdx, std::memory_order_relaxed);
                 }
