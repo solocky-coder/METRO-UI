@@ -3346,6 +3346,18 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // this edit reapplied to the wrong slice.
                 for (auto& snap : zoneBuilderSliceSnapshot)
                     snap.valid = false;
+
+                // See zoneBuilderReselectNote's doc comment — restore the
+                // selection sliceManager2.clearAll() just wiped, so the top
+                // LCDs and the SCB's zone-summary readout don't blank out
+                // on every single field drag.
+                const int reselectNote = zoneBuilderReselectNote.exchange (-1, std::memory_order_acq_rel);
+                if (reselectNote >= 0)
+                {
+                    const int reselectIdx = sliceManager2.midiNoteToSlice (reselectNote);
+                    if (reselectIdx >= 0)
+                        sliceManager2.selectedSlice.store (reselectIdx, std::memory_order_relaxed);
+                }
             }
 
             uiSnapshotDirty.store (true, std::memory_order_release);

@@ -941,6 +941,22 @@ void SliceControlBar::paint (juce::Graphics& g)
  // Toggle buttons (PADS/WAVE or ZONES) are independent of slice selection —
  // draw them even here, or ZONES becomes unreachable on an empty kit.
  drawViewToggleButtons (g);
+
+ // The zone-summary readout is independent of slice selection too — a
+ // staged/pending ZONES row (or a MULTISAMPLER zone) has no
+ // sliceManager2 slice of its own until engine sync catches up (see
+ // setSfzZoneSummary()'s doc comment), and every field edit here
+ // triggers a full sfzPlayer2 hot-reload whose sliceManager2.clearAll()
+ // unconditionally resets selectedSlice to -1 (see
+ // SfzPlayerDropdownPanel::writeSfzZoneChange). Without drawing it here
+ // too, that reload would wipe this readout on every single drag even
+ // though sfzZoneSummary itself was never cleared.
+ if (sfzMode && (zoneViewActive || multisamplerViewActive))
+ {
+ const int zx = si (8) + si (220) + si (16);
+ if (zx < rightEdge)
+ drawSfzZoneSummary (g, zx, row1y, rightEdge - zx, psCellH);
+ }
  return;
  }
 

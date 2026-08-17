@@ -517,6 +517,21 @@ public:
      *  slice afterward. The flag is consumed (reset false) once used, so an
      *  unrelated/fresh load right after still gets the normal clean slate. */
     std::atomic<bool> zoneBuilderReloadPending { false };
+
+    /** Companion to zoneBuilderReloadPending: the MIDI note (root pitch, or
+     *  lokey when root is unset) of the region a Zone Builder field edit
+     *  just touched — set by writeSfzZoneChange() right alongside
+     *  zoneBuilderReloadPending, -1 when nothing is pending a reselect.
+     *  sliceManager2.clearAll() (part of every rebuild, this one included)
+     *  unconditionally resets selectedSlice to -1, which otherwise blanks
+     *  both top LCDs AND the SCB's zone-summary readout (SliceControlBar::
+     *  paint()'s "No slice selected" branch returns before ever reaching
+     *  drawSfzZoneSummary()) on every single field drag — even though a
+     *  staged zone's edit doesn't conceptually change what's selected.
+     *  Consumed the same place zoneBuilderReloadPending is, right after the
+     *  rebuilt slices are pinned back to their MIDI notes, to re-select
+     *  whichever slice now owns this note. */
+    std::atomic<int> zoneBuilderReselectNote { -1 };
     struct SliceOverrideSnapshot
     {
         bool  valid           = false;
