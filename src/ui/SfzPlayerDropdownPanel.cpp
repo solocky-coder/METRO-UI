@@ -1722,14 +1722,6 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
     // rebuilt, however many blocks that takes.
     processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
 
-    // See zoneBuilderReselectNote's doc comment in PluginProcessor.h — lets
-    // processBlock re-select the rebuilt slice for this same region instead
-    // of leaving selectedSlice at the -1 sliceManager2.clearAll() always
-    // resets it to, which otherwise blanks the top LCDs and the SCB's zone
-    // summary on every single field drag.
-    processor.zoneBuilderReselectNote.store (z.rootPitch >= 0 ? z.rootPitch : z.loKey,
-                                              std::memory_order_release);
-
     // The line above only updates sfzPlayer2 — the live sfizz/FluidSynth
     // engine — but sfzPlayer2.process() is never called anywhere in
     // DysektProcessor::processBlock() (see MixerPanel::sfz2TotalH()'s note

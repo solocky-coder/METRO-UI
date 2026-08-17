@@ -3,7 +3,6 @@
 #include "../../audio/SfzZoneColours.h"
 #include "../../PluginProcessor.h"
 #include "../DysektLookAndFeel.h"
-#include "../UIHelpers.h"
 #include <algorithm>
 #include <cmath>
 
@@ -39,62 +38,10 @@ void ZoneMapView::timerCallback()
     const uint64_t hi = processor.sfz2ActiveNotes[1].load (std::memory_order_relaxed);
     if (lo != activeNotesSnap[0] || hi != activeNotesSnap[1])
     {
-        // Newly-triggered notes only (rising edges), so a note-off in this
-        // same poll window doesn't get treated as "new". Playing a note
-        // should select its zone the way a click does — MIDI input into
-        // the multisampler is auditioning a mapping, and the inspector
-        // (SCB) should follow along without requiring a mouse click too.
-        const uint64_t newLo = lo & ~activeNotesSnap[0];
-        const uint64_t newHi = hi & ~activeNotesSnap[1];
-
         activeNotesSnap[0] = lo;
         activeNotesSnap[1] = hi;
-
-        if ((newLo != 0 || newHi != 0) && instrument != nullptr)
-            selectZonesForNewNotes (newLo, newHi);
-
         repaint();
     }
-}
-
-void ZoneMapView::selectZonesForNewNotes (uint64_t newLo, uint64_t newHi)
-{
-    // Mirrors the click-selection path in mouseDown(): replace the
-    // selection with whatever's newly playing, then fire the same
-    // onSelectionChanged callback MultisamplerEditor already wires up to
-    // refreshInspectorFromSelection() — MIDI-driven selection should look
-    // identical downstream to a click, not need a separate code path in
-    // the editor.
-    //
-    // Matching on key range alone (as an earlier version of this did) was
-    // wrong for any velocity-layered instrument — several zones commonly
-    // share the same key range, split only by velocity, so a single note
-    // would hit every layer at once, land on "MULTIPLE ZONES SELECTED",
-    // and never populate the SCB readout (only a click, which picks one
-    // rect via topmostZoneAt, ever did). Use SampleZone::matches(), the
-    // same key+velocity test voicePool2's real playback effectively
-    // resolves, so a played note selects the one zone that actually
-    // sounded for it. A chord across genuinely different key/velocity
-    // zones still multi-selects, same as shift-clicking each would.
-    std::vector<juce::Uuid> hitIds;
-    for (int note = 0; note < 128; ++note)
-    {
-        const uint64_t word = (note < 64) ? newLo : newHi;
-        const int      bit  = (note < 64) ? note : (note - 64);
-        if (((word >> bit) & 1) == 0) continue;
-
-        const int velocity = (int) processor.sfz2LastNoteOnVelocity[note].load (std::memory_order_relaxed);
-
-        for (const auto& z : instrument->zones)
-            if (z.matches (note, velocity)
-                && std::find (hitIds.begin(), hitIds.end(), z.id) == hitIds.end())
-                hitIds.push_back (z.id);
-    }
-
-    if (hitIds.empty()) return;
-
-    selectedIds = std::move (hitIds);
-    if (onSelectionChanged) onSelectionChanged();
 }
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -181,10 +128,6 @@ void ZoneMapView::rebuildLayout()
         ZoneRect r;
         r.id = z.id;
         r.missingSample = z.hasMissingSample();
-        r.label = z.sampleFile != juce::File() ? z.sampleFile.getFileNameWithoutExtension()
-                                                 : juce::String ("(no sample)");
-        r.lowKey = z.lowKey;  r.highKey = z.highKey;
-        r.lowVel = z.lowVelocity; r.highVel = z.highVelocity;
 
         // A user-picked colour (see showZoneContextMenu) always wins over
         // the palette-index default, matching MultisamplerEditor::
@@ -569,56 +512,18 @@ void ZoneMapView::paint (juce::Graphics& g)
     // that lights up processor.sfz2ActiveNotes) light up in the theme accent
     // colour, same as KeysPanel's keyboard does for ZONES.
     static const bool blackKey[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
-    // Cells are centred on xForKey(key) using the same half-cell width the
-    // zone rects and octave gridlines are built around (see rebuildLayout's
-    // halfKeyW), not spanned across [xForKey(key), xForKey(key+1)] — the
-    // latter silently shifts every highlighted key half a cell to the right
-    // of the zone column it's supposed to sit under (and collapses key 127
-    // to zero width, since xForKey(128) clamps to the same x as xForKey(127)).
-    //
-    // Clamped to g_area's left/right edges, same as rebuildLayout() clips
-    // zone bounds to gridArea() via getIntersection() — without this, key 0
-    // and key 127's half-cell overflow spills past the grid on both sides,
-    // making the keyboard visibly wider than the zone tiles above it.
-    const float halfKeyW = std::abs (xForKey (1) - xForKey (0)) * 0.5f;
-    const float gridLeft  = (float) g_area.getX();
-    const float gridRight = (float) g_area.getRight();
     for (int key = 0; key < 128; ++key)
     {
-        const float x0 = juce::jmax (gridLeft,  xForKey (key) - halfKeyW);
-        const float x1 = juce::jmin (gridRight, xForKey (key) + halfKeyW);
+        const float x0 = xForKey (key);
+        const float x1 = xForKey (key + 1);
         const bool active = isNoteActive (key);
-        // Explicit flat black/white rather than theme-derived tones — the
-        // previous theme.darkBar / foreground-at-15%-alpha pairing reads as
-        // two shades of the same dark grey against this app's dark theme,
-        // not a recognisable black/white key strip.
-        static const juce::Colour whiteKey (0xffe8e8e6);
-        static const juce::Colour blackKeyColour (0xff1c1c1f);
-        g.setColour (active ? theme.accent : (blackKey[key % 12] ? blackKeyColour : whiteKey));
-        g.fillRect (juce::Rectangle<float> (x0, (float) g_area.getBottom(), x1 - x0, (float) kKeyCellPx));
+        g.setColour (active
+                        ? theme.accent
+                        : (blackKey[key % 12] ? theme.darkBar : theme.foreground.withAlpha (0.15f)));
+        g.fillRect (juce::Rectangle<float> (x0, (float) g_area.getBottom(), x1 - x0, (float) kKeyboardStripPx));
     }
     g.setColour (theme.separator);
     g.drawHorizontalLine (g_area.getBottom(), (float) g_area.getX(), (float) g_area.getRight());
-
-    // Octave labels ("C1", "C2"...) under the strip, at the same x as the
-    // octave gridlines above — one glance ties a column all the way from
-    // the zone grid down through the keyboard to a note name, instead of
-    // counting keys from the nearest C. Larger and bolder than the first
-    // pass, which was unreadable at 9.5px; and each label rectangle is
-    // clamped inside g_area the same way the key cells are above, so the
-    // row never spills past the grid's left/right edges either.
-    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    for (int key = 0; key <= 127; key += 12)
-    {
-        const float cx = xForKey (key);
-        const bool active = isNoteActive (key);
-        g.setColour (active ? theme.accent : theme.foreground.withAlpha (0.7f));
-        const float labelX = juce::jlimit (gridLeft, gridRight - 30.0f, cx - 15.0f);
-        g.drawText (UIHelpers::midiNoteToName (key),
-                    juce::Rectangle<float> (labelX, (float) g_area.getBottom() + (float) kKeyCellPx,
-                                             30.0f, (float) kOctaveLabelPx),
-                    juce::Justification::centred);
-    }
 
     // Zones.
     for (const auto& r : cachedRects)
@@ -635,40 +540,10 @@ void ZoneMapView::paint (juce::Graphics& g)
             return false;
         }();
 
-        // Flat metro tile: solid colour, not the previous washed-out alpha
-        // wash — a resting zone should read as a real block, not a faint
-        // tint over the grid. Selection/hover/sounding still lift it, but
-        // off the same higher floor rather than starting near-transparent.
         auto fill = r.missingSample ? juce::Colours::red.withAlpha (0.25f)
-                                     : r.colour.withAlpha (sounding ? 1.00f : (selected ? 0.85f : (hovered ? 0.70f : 0.55f)));
+                                     : r.colour.withAlpha (sounding ? 0.80f : (selected ? 0.55f : (hovered ? 0.38f : 0.24f)));
         g.setColour (fill);
         g.fillRect (r.bounds);
-
-        // On-tile label: sample name + key/velocity range, same info the
-        // ZONES list row shows, so a glance at the grid tells you what's
-        // mapped without opening the inspector. Fixed light colour rather
-        // than a darkened version of the zone's own hue — the tile fill is
-        // that hue alpha-blended over a near-black background, so a
-        // same-hue-darkened label ends up close to the same luminance as
-        // the tile itself and disappears. White reads against every
-        // palette colour regardless of fill alpha.
-        if (r.bounds.getWidth() > 24.0f && r.bounds.getHeight() > 16.0f)
-        {
-            auto textArea = r.bounds.toNearestInt().reduced (4, 2);
-
-            g.setColour (juce::Colours::white.withAlpha (0.92f));
-            g.setFont (juce::FontOptions (11.0f, juce::Font::plain));
-            g.drawText (r.label, textArea.removeFromTop (14), juce::Justification::topLeft, true);
-
-            if (textArea.getHeight() > 10)
-            {
-                g.setColour (juce::Colours::white.withAlpha (0.68f));
-                g.setFont (juce::FontOptions (9.5f));
-                const auto rangeText = UIHelpers::midiNoteToName (r.lowKey) + "-" + UIHelpers::midiNoteToName (r.highKey)
-                                        + "  v" + juce::String (r.lowVel) + "-" + juce::String (r.highVel);
-                g.drawText (rangeText, textArea, juce::Justification::topLeft, true);
-            }
-        }
 
         if (r.overlapping)
         {

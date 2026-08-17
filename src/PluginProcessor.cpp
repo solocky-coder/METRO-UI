@@ -2797,10 +2797,6 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
                 const int w = note < 64 ? 0 : 1;
                 const int b = note < 64 ? note : note - 64;
                 sfz2ActiveNotes[w].fetch_or ((uint64_t) 1 << b, std::memory_order_relaxed);
-                // See PluginProcessor.h doc comment — lets MULTISAMPLER's
-                // ZoneMapView resolve the correct velocity-layer zone for
-                // this note instead of every key-range match.
-                sfz2LastNoteOnVelocity[note].store ((uint8_t) msg.getVelocity(), std::memory_order_relaxed);
             }
 
             const int sliceIdx = rebuildInFlight ? -1 : sliceManager2.midiNoteToSlice (note);
@@ -3346,51 +3342,6 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // this edit reapplied to the wrong slice.
                 for (auto& snap : zoneBuilderSliceSnapshot)
                     snap.valid = false;
-
-                // See zoneBuilderReselectNote's doc comment — restore the
-                // selection sliceManager2.clearAll() just wiped, so the top
-                // LCDs and the SCB's zone-summary readout don't blank out
-                // on every single field drag.
-                const int reselectNote = zoneBuilderReselectNote.exchange (-1, std::memory_order_acq_rel);
-                if (reselectNote >= 0)
-                {
-                    int reselectIdx = sliceManager2.midiNoteToSlice (reselectNote);
-
-                    // Fallback — exact-note lookup has no guarantee of success:
-                    // the reselect note is the zone's root (or its low key when
-                    // no root is set), but that's just the note MultisamplerEditor
-                    // *asked* to reselect, not a promise that the render pass
-                    // actually produced a slice sitting on that exact key.
-                    // discoverActiveNotes()/the render step only creates a slice
-                    // for notes it found audible, and a LOOP toggle, a boundary
-                    // LOKEY/HIKEY drag, or plain silence at that exact key can
-                    // all leave nothing pinned to the reselect note specifically
-                    // -- previously that meant selection stayed at -1
-                    // permanently (both LCDs and the SCB knob strip blank) until
-                    // something unrelated (e.g. playing a note, which reselects
-                    // via processMidi2's midiNoteToSlice() below) fixed it.
-                    // Every slice pinned in pass 2 above is stamped with the
-                    // zoneLoKey/zoneHiKey of the zone it came from, so fall back
-                    // to any slice from the SAME zone (reselectNote falling
-                    // inside its stamped range), preferring whichever one's own
-                    // note is closest to the note we actually wanted.
-                    if (reselectIdx < 0)
-                    {
-                        int bestIdx = -1, bestDist = -1;
-                        for (int i = 0; i < sliceManager2.getNumSlices(); ++i)
-                        {
-                            const auto& s = sliceManager2.getSlice (i);
-                            if (! s.active) continue;
-                            if (reselectNote < s.zoneLoKey || reselectNote > s.zoneHiKey) continue;
-                            const int dist = std::abs (s.midiNote - reselectNote);
-                            if (bestIdx < 0 || dist < bestDist) { bestDist = dist; bestIdx = i; }
-                        }
-                        reselectIdx = bestIdx;
-                    }
-
-                    if (reselectIdx >= 0)
-                        sliceManager2.selectedSlice.store (reselectIdx, std::memory_order_relaxed);
-                }
             }
 
             uiSnapshotDirty.store (true, std::memory_order_release);

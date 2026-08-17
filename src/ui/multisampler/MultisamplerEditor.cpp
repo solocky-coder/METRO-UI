@@ -292,52 +292,6 @@ bool MultisamplerEditor::importFromFile (const juce::File& file, bool syncEngine
     return true;
 }
 
-bool MultisamplerEditor::syncFromExternalEdit (const juce::File& previewFile, bool isSaveTarget)
-{
-    auto result = SfzImporter::importFile (previewFile);
-    if (! result.success)
-    {
-        if (onImportWarnings)
-        {
-            SfzImporter::Warning fatal;
-            fatal.kind   = SfzImporter::Warning::Kind::malformedOpcode;
-            fatal.detail = result.errorMessage.isNotEmpty()
-                               ? result.errorMessage : "Import failed.";
-            onImportWarnings (previewFile.getFileName(), false, { fatal });
-        }
-        return false;
-    }
-
-    // syncEngine=false — see this method's doc comment: ZONES already
-    // pointed sfzPlayer2 at previewFile directly before calling here.
-    setInstrument (std::move (result.instrument), false);
-
-    // Only a real, user-owned on-disk file is safe to adopt as the save
-    // target — never an in-progress ZONES scratch file (see doc comment).
-    if (isSaveTarget)
-    {
-        lastSavedFile = previewFile;   // setInstrument() already cleared dirty — this now matches disk
-    }
-    else
-    {
-        // previewFile is a staged ZONES edit that hasn't been committed to
-        // lastSavedFile yet — setInstrument() unconditionally clears dirty,
-        // but this instrument does NOT match what's on disk at
-        // lastSavedFile, so leaving dirty false here would let MULTISAMPLER
-        // think it's clean (e.g. skip its own unsaved-changes prompt) while
-        // silently holding ZONES' uncommitted edits.
-        dirty = true;
-        if (onInstrumentChanged) onInstrumentChanged();
-        repaint();
-    }
-
-
-    if (! result.warnings.empty() && onImportWarnings)
-        onImportWarnings (previewFile.getFileName(), true, result.warnings);
-    return true;
-}
-
-
 void MultisamplerEditor::exportSfzClicked()
 {
     fileChooser = std::make_unique<juce::FileChooser> ("Export SFZ…", juce::File(), "*.sfz");

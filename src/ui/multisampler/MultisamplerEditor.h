@@ -79,28 +79,6 @@ public:
         pointed the live engine at `file` directly — see setInstrument(). */
     bool importFromFile (const juce::File& file, bool syncEngine = true);
 
-    /** ZONES' write-back counterpart to importFromFile(), for the
-        temporary coexistence period (see toKeyzones()'s doc comment).
-        ZONES still owns its own raw-SFZ scratch/target file mutation —
-        this just re-parses whatever it just wrote/loaded into this
-        instrument afterward, so MULTISAMPLER's model never drifts stale
-        relative to edits made through ZONES instead of through this
-        panel. Always syncEngine=false: the caller already pointed
-        sfzPlayer2 at `previewFile` directly before calling here (ZONES'
-        own hot-reload path), so re-exporting to MULTISAMPLER's cache file
-        and reloading that would just load a redundant, lossily
-        round-tripped copy of the same content — see setInstrument()'s
-        syncEngine parameter.
-        Pass isSaveTarget=true only when `previewFile` is ZONES' real,
-        user-owned on-disk target that was just committed to (e.g. after
-        SAVE) — never for an in-progress staged scratch file, which the
-        user never chose as a save target and which may not outlive the
-        edit session. When true, `previewFile` also becomes this
-        instrument's lastSavedFile, same as importFromFile().
-        Same warnings contract as importFromFile(); returns true on
-        success (even with warnings). */
-    bool syncFromExternalEdit (const juce::File& previewFile, bool isSaveTarget);
-
     /** True once at least one committed edit has happened since the last
         save/load — mirrors the zoneBuilderDirty flag PluginEditor already
         tracks for the raw-SFZ zone builder, so an "unsaved changes" prompt
