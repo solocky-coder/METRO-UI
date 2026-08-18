@@ -1,5 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "../audio/multisampler/MultisamplerInstrument.h"
+#include "../audio/SampleData.h"
 
 class DysektProcessor;
 
@@ -32,6 +34,14 @@ public:
 
     /** Call periodically from the UI timer to refresh the display. */
     void repaintLcd();
+
+    /** Called by PluginEditor whenever MULTISAMPLER's open/active state or
+        its selected zone changes — mirrors SliceLcdDisplay::setMultisamplerSource.
+        Shows a real waveform + envelope-shape preview for the selected
+        SampleZone instead of going blank. Read-only: dragging the envelope
+        nodes is disabled in this mode (see mouseDown), since there's no
+        write path from here into SampleZone yet. */
+    void setMultisamplerSource (bool active, const MultisamplerInstrument* instrument, int selectedZoneIndex);
 
     /** Suggested height in pixels (un-scaled) — matches SliceLcdDisplay. */
     static constexpr int kPreferredHeight = 136;
@@ -152,6 +162,20 @@ private:
     static constexpr int   kLeftPad       = 8;
     static constexpr float kNodeR         = 14.0f;
     static constexpr float kHitR          = 26.0f;
+
+    // ── MULTISAMPLER data source state ────────────────────────────────────────
+    bool multisamplerActive = false;
+    const MultisamplerInstrument* multisamplerInstrument = nullptr;
+    int multisamplerZoneIndex = -1;
+
+    // A SampleZone points at a file on disk, not a pre-decoded buffer the
+    // way sliceManager2's sampleData2 is — decode it into a real SampleData
+    // instance so the existing DysektProcessor::getWaveformPeakAtIn() peak
+    // read works unmodified. Only re-decoded when the shown zone's file
+    // path actually changes (cached by path), not on every paint.
+    SampleData  multisamplerZoneSampleData;
+    juce::File  multisamplerDecodedFile;
+    void        decodeMultisamplerZoneFile (const juce::File& f);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SliceWaveformLcd)
 };

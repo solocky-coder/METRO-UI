@@ -91,11 +91,86 @@ void SliceWaveformLcd::repaintLcd()
  repaint();
 }
 
+void SliceWaveformLcd::setMultisamplerSource (bool active, const MultisamplerInstrument* instrument, int selectedZoneIndex)
+{
+    multisamplerActive     = active;
+    multisamplerInstrument = instrument;
+    multisamplerZoneIndex  = selectedZoneIndex;
+    // Force an envelope rebuild against the new zone's ADSR (see repaintLcd's
+    // version/selection check, which doesn't know about MULTISAMPLER zones).
+    lastEnvSnapVer = -1;
+    lastBuiltSliceIndex = -1;
+    repaint();
+}
+
+void SliceWaveformLcd::decodeMultisamplerZoneFile (const juce::File& f)
+{
+    if (f == multisamplerDecodedFile)
+        return;   // already decoded this exact file
+
+    multisamplerDecodedFile = f;
+    multisamplerZoneSampleData.clear();
+
+    if (f.existsAsFile())
+        multisamplerZoneSampleData.loadFromFile (f, processor.getSampleRate() > 0.0
+                                                          ? processor.getSampleRate() : 44100.0);
+}
+
 // ── Data building ─────────────────────────────────────────────────────────────
 
 void SliceWaveformLcd::buildDisplayData()
 {
  data = {};
+
+ // ── MULTISAMPLER branch — read the selected SampleZone + its decoded
+ // sample directly instead of sliceManager2, which knows nothing about
+ // MultisamplerInstrument's zones. Read-only; see mouseDown()'s guard.
+ if (multisamplerActive)
+ {
+     if (multisamplerInstrument == nullptr || multisamplerInstrument->zones.empty())
+         return;   // hasSample/hasSlice stay false — drawNoData() handles it
+
+     data.numSlices = (int) multisamplerInstrument->zones.size();
+     data.hasSample = true;   // instrument is loaded even if nothing's selected
+
+     if (multisamplerZoneIndex < 0 || multisamplerZoneIndex >= data.numSlices)
+         return;   // drawNoData()'s "-- SELECT A SLICE --" branch handles it
+
+     const auto& z = multisamplerInstrument->zones[(size_t) multisamplerZoneIndex];
+     decodeMultisamplerZoneFile (z.sampleFile);
+
+     data.sampleName = z.sampleFile.getFileName();
+     data.isDefault  = z.hasMissingSample();
+     data.totalFrames = multisamplerZoneSampleData.getNumFrames();
+     data.sampleRate  = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 44100.0;
+
+     if (data.isDefault || data.totalFrames <= 0)
+         return;
+
+     data.hasSlice   = true;
+     data.sliceIndex = multisamplerZoneIndex;
+     data.startSample = (int) z.sampleStart;
+     data.endSample    = z.sampleEnd >= 0 ? (int) z.sampleEnd : data.totalFrames;
+     data.midiNote    = z.rootKey;
+     data.volume      = z.gainDb;
+     data.pan         = z.pan;
+     data.pitchSemitones = z.tuneCents / 100.0f;
+
+     const int kPeaks = 256;
+     data.peaks.clearQuick();
+     data.peaks.insertMultiple (-1, 0.0f, kPeaks);
+
+     const int sliceLen = data.endSample - data.startSample;
+     if (sliceLen <= 0) return;
+
+     for (int i = 0; i < kPeaks; i++)
+     {
+         const float t = (float) i / (float) kPeaks;
+         const int pos = data.startSample + (int) (t * (float) sliceLen);
+         data.peaks.set (i, DysektProcessor::getWaveformPeakAtIn (multisamplerZoneSampleData, pos));
+     }
+     return;
+ }
 
  const bool sfzMode = isSfzPlayer2Mode();
  const auto& snap = sfzMode ? processor.getUiSliceSnapshot2() : processor.getUiSliceSnapshot();
@@ -148,6 +223,13 @@ float SliceWaveformLcd::getSliceDurMs() const
 {
  static constexpr float kDefaultMs = 1000.0f; // fallback if no slice loaded
 
+ if (multisamplerActive)
+ {
+     if (data.sampleRate <= 0.0 || data.endSample <= data.startSample)
+         return kDefaultMs;
+     return (float) (data.endSample - data.startSample) / (float) data.sampleRate * 1000.0f;
+ }
+
  const bool sfzMode = isSfzPlayer2Mode();
  const auto& durSnap = sfzMode ? processor.getUiSliceSnapshot2() : processor.getUiSliceSnapshot();
  const int sel = durSnap.selectedSlice;
@@ -188,16 +270,32 @@ void SliceWaveformLcd::buildEnvelopeNodes()
      return p ? p->load() : 100.0f;
  };
 
- const bool sfzMode = isSfzPlayer2Mode();
- auto& sm = sfzMode ? processor.sliceManager2 : processor.sliceManager;
- const int sel = sm.selectedSlice.load (std::memory_order_relaxed);
- if (sel >= 0 && sel < sm.getNumSlices())
+ if (multisamplerActive)
  {
-     const auto& s = sm.getSlice (sel);
-     attackMs  = s.attackSec    * 1000.0f;
-     decayMs   = s.decaySec     * 1000.0f;
-     sustainPc = s.sustainLevel * 100.0f;
-     releaseMs = s.releaseSec   * 1000.0f;
+     if (multisamplerInstrument != nullptr
+         && multisamplerZoneIndex >= 0
+         && multisamplerZoneIndex < (int) multisamplerInstrument->zones.size())
+     {
+         const auto& z = multisamplerInstrument->zones[(size_t) multisamplerZoneIndex];
+         attackMs  = z.attackSeconds  * 1000.0f;
+         decayMs   = z.decaySeconds   * 1000.0f;
+         sustainPc = z.sustainLevel   * 100.0f;
+         releaseMs = z.releaseSeconds * 1000.0f;
+     }
+ }
+ else
+ {
+     const bool sfzMode = isSfzPlayer2Mode();
+     auto& sm = sfzMode ? processor.sliceManager2 : processor.sliceManager;
+     const int sel = sm.selectedSlice.load (std::memory_order_relaxed);
+     if (sel >= 0 && sel < sm.getNumSlices())
+     {
+         const auto& s = sm.getSlice (sel);
+         attackMs  = s.attackSec    * 1000.0f;
+         decayMs   = s.decaySec     * 1000.0f;
+         sustainPc = s.sustainLevel * 100.0f;
+         releaseMs = s.releaseSec   * 1000.0f;
+     }
  }
 
     // Free layout — A, D, R travel the full [0..1] width with only a small
@@ -407,6 +505,14 @@ void SliceWaveformLcd::mouseMove (const juce::MouseEvent& e)
 
 void SliceWaveformLcd::mouseDown (const juce::MouseEvent& e)
 {
+ // MULTISAMPLER zones have no write path from this display yet (see
+ // buildDisplayData()'s MULTISAMPLER branch) — dragging a node or toggling
+ // a lock here would push a Command into sliceManager/sliceManager2, which
+ // would silently edit whichever slice happens to share this index there
+ // instead of the zone actually being shown. Read-only until a real
+ // SampleZone envelope-edit path exists.
+ if (multisamplerActive) return;
+
  const NodeRole hit = hitTest (e.position);
 
  if (e.mods.isRightButtonDown())
@@ -1028,14 +1134,16 @@ void SliceWaveformLcd::drawNoData (juce::Graphics& g)
 
  g.setFont (DysektLookAndFeel::makeFont (7.5f));
  g.setColour (lcd2Dim().brighter (0.5f));
- g.drawText ("drag a sample here or use the browser",
+ g.drawText (multisamplerActive ? "import an sfz or add a zone"
+                                 : "drag a sample here or use the browser",
  b.removeFromBottom (18), juce::Justification::centred);
  }
  else
  {
  g.setFont (DysektLookAndFeel::makeFont (10.0f));
  g.setColour (lcd2Dim().brighter (0.4f));
- g.drawText ("-- SELECT A SLICE --", b, juce::Justification::centred);
+ g.drawText (multisamplerActive ? "-- SELECT A ZONE --" : "-- SELECT A SLICE --",
+             b, juce::Justification::centred);
  }
 }
 
@@ -1043,6 +1151,10 @@ void SliceWaveformLcd::drawNoData (juce::Graphics& g)
 
 void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<float>& area)
 {
+ // MULTISAMPLER zone indices don't correspond to sliceManager2/voicePool2
+ // slice indices, so a voice's sliceIdx could coincidentally match
+ // data.sliceIndex and draw a playhead for the wrong sound entirely.
+ if (multisamplerActive) return;
  if (data.sliceIndex < 0) return;
 
  const int totalRange = data.endSample - data.startSample;
@@ -1105,7 +1217,9 @@ void SliceWaveformLcd::paint (juce::Graphics& g)
  // PluginProcessor.h. drawNoData() below already knows how to show a
  // "LOADING..." state for mainLoadInFlight, which is set true alongside
  // this flag for the same rebuild, so no new visual state is needed here.
- if (isSfzPlayer2Mode() && processor.sfzPlayer2LcdRebuildInFlight.load (std::memory_order_relaxed))
+ if (! multisamplerActive
+     && isSfzPlayer2Mode()
+     && processor.sfzPlayer2LcdRebuildInFlight.load (std::memory_order_relaxed))
  {
   drawNoData (g);
   return;

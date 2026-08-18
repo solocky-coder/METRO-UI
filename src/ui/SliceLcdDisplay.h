@@ -1,5 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_formats/juce_audio_formats.h>
+#include "../audio/multisampler/MultisamplerInstrument.h"
 
 class DysektProcessor;
 
@@ -17,6 +19,16 @@ public:
 
  void repaintLcd();
  void resized() override;
+
+ // ── MULTISAMPLER data source ──────────────────────────────────────────────
+ // Called by PluginEditor whenever MULTISAMPLER's open/active state or its
+ // selected zone changes, so this display can show live zone data instead
+ // of going blank while MULTISAMPLER is open (it has no representation in
+ // sliceManager2 — see PluginEditor's former hide-on-open comment). Pass
+ // active=false (or instrument=nullptr) to fall back to the normal
+ // Slicer/SFZ-PLAYER read path. Read-only: no field on this display can be
+ // edited while showing MULTISAMPLER data — see mouseDown().
+ void setMultisamplerSource (bool active, const MultisamplerInstrument* instrument, int selectedZoneIndex);
 
 private:
  // ── Layout constants ──────────────────────────────────────────────────────
@@ -114,6 +126,22 @@ private:
 
  // ── Inline text editor for NAME editing ──────────────────────────────────
  std::unique_ptr<juce::TextEditor> nameTextEditor;
+
+ // ── MULTISAMPLER data source state ────────────────────────────────────────
+ bool multisamplerActive = false;
+ const MultisamplerInstrument* multisamplerInstrument = nullptr;
+ int multisamplerZoneIndex = -1;
+
+ // SampleZone carries no pre-decoded frame count / sample rate the way
+ // sliceManager2's snapshot does (that's produced by the audio-thread load
+ // pipeline; MULTISAMPLER zones are plain data pointing at a file on disk).
+ // Probe lazily and cache by file, so a paint() at 30-60Hz doesn't re-open
+ // the file every frame — only when the shown zone's file actually changes.
+ juce::AudioFormatManager multisamplerFormatManager;
+ juce::File multisamplerProbedFile;
+ juce::int64 multisamplerProbedFrames = 0;
+ double multisamplerProbedRate = 44100.0;
+ void probeMultisamplerZoneFile (const juce::File& f);
 
  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SliceLcdDisplay)
 };

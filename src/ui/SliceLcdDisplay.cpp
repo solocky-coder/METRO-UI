@@ -87,6 +87,35 @@ SliceLcdDisplay::SliceLcdDisplay (DysektProcessor& p)
     : processor (p)
 {
     setOpaque (true);
+    multisamplerFormatManager.registerBasicFormats();
+}
+
+void SliceLcdDisplay::setMultisamplerSource (bool active, const MultisamplerInstrument* instrument, int selectedZoneIndex)
+{
+    multisamplerActive     = active;
+    multisamplerInstrument = instrument;
+    multisamplerZoneIndex  = selectedZoneIndex;
+    repaint();
+}
+
+void SliceLcdDisplay::probeMultisamplerZoneFile (const juce::File& f)
+{
+    if (f == multisamplerProbedFile)
+        return;   // already probed this exact file — avoid a re-open every paint
+
+    multisamplerProbedFile  = f;
+    multisamplerProbedFrames = 0;
+    multisamplerProbedRate   = 44100.0;
+
+    if (! f.existsAsFile())
+        return;
+
+    if (std::unique_ptr<juce::AudioFormatReader> reader (multisamplerFormatManager.createReaderFor (f));
+        reader != nullptr)
+    {
+        multisamplerProbedFrames = reader->lengthInSamples;
+        multisamplerProbedRate   = reader->sampleRate > 0.0 ? reader->sampleRate : 44100.0;
+    }
 }
 
 bool SliceLcdDisplay::isSfzPlayer2Mode() const noexcept
@@ -101,6 +130,66 @@ bool SliceLcdDisplay::isSfzPlayer2Mode() const noexcept
 void SliceLcdDisplay::buildDisplayData()
 {
     data = {};
+
+    // ── MULTISAMPLER branch — read the selected SampleZone directly instead
+    // of sliceManager2 (which knows nothing about MultisamplerInstrument's
+    // zones). Entirely read-only; see mouseDown() for the write-path guard.
+    if (multisamplerActive)
+    {
+        if (multisamplerInstrument == nullptr || multisamplerInstrument->zones.empty())
+            return;   // hasSample/hasSlice stay false — drawNoSampleScreen() handles it
+
+        data.numSlices = (int) multisamplerInstrument->zones.size();
+
+        if (multisamplerZoneIndex < 0 || multisamplerZoneIndex >= data.numSlices)
+        {
+            data.hasSample = true;   // instrument is loaded, just nothing selected
+            return;                  // drawNoSliceScreen() handles it
+        }
+
+        const auto& z = multisamplerInstrument->zones[(size_t) multisamplerZoneIndex];
+        probeMultisamplerZoneFile (z.sampleFile);
+
+        data.hasSample = ! z.hasMissingSample();
+        data.hasSlice  = true;
+        data.sliceIndex = multisamplerZoneIndex;
+        data.sampleName = z.sampleFile.getFileName();
+        data.sampleNumFrames = (int) multisamplerProbedFrames;
+        data.sampleRate = multisamplerProbedRate;
+
+        data.midiNote  = z.rootKey;
+        data.rootNote  = z.rootKey;
+        data.sliceName = z.sampleFile.getFileNameWithoutExtension();
+
+        data.startSample = (int) z.sampleStart;
+        data.endSample    = z.sampleEnd >= 0 ? (int) z.sampleEnd : data.sampleNumFrames;
+
+        data.volume = z.gainDb;
+        data.pan    = z.pan;
+        // SampleZone has one combined tuneCents field (-1200..+1200) rather
+        // than separate coarse/fine params — split it across the PIT (whole
+        // semitones) and TUNE (remaining cents) rows so both stay meaningful.
+        const int semis = (int) (z.tuneCents / 100.0f);
+        data.pitchSemitones = (float) semis;
+        data.centsDetune    = z.tuneCents - (float) semis * 100.0f;
+
+        data.attackSec    = z.attackSeconds;
+        data.decaySec     = z.decaySeconds;
+        data.sustainLevel = z.sustainLevel;
+        data.releaseSec   = z.releaseSeconds;
+
+        data.loopMode = (z.loopMode == LoopMode::loopContinuous
+                          || z.loopMode == LoopMode::loopSustain) ? 1 : 0;
+        data.oneShot  = (z.loopMode == LoopMode::oneShot);
+        data.muteGroup = z.group;
+
+        data.filterCutoff = z.filterCutoffHz;
+        data.filterRes    = z.filterResonance;
+
+        data.sliceColour = z.hasCustomColour ? juce::Colour (z.customColourArgb)
+                                              : juce::Colour();
+        return;
+    }
 
     const bool sfzMode = isSfzPlayer2Mode();
     const auto& snap = sfzMode ? processor.getUiSliceSnapshot2() : processor.getUiSliceSnapshot();
@@ -399,13 +488,16 @@ void SliceLcdDisplay::drawNoSliceScreen (juce::Graphics& g)
     }
 
     g.setFont (DysektLookAndFeel::makeFont (22.0f * sf));
-    g.drawText ("-- NO SLICE SELECTED --", b, juce::Justification::centred);
+    g.drawText (multisamplerActive ? "-- NO ZONE SELECTED --" : "-- NO SLICE SELECTED --",
+                b, juce::Justification::centred);
 
     if (data.numSlices > 0)
     {
         g.setFont (DysektLookAndFeel::makeFont (18.0f * sf));
         g.setColour (pal.dim);
-        g.drawText (juce::String (data.numSlices) + " SLICES  |  SELECT A PAD",
+        g.drawText (multisamplerActive
+                        ? juce::String (data.numSlices) + " ZONES  |  SELECT ONE IN THE MAP"
+                        : juce::String (data.numSlices) + " SLICES  |  SELECT A PAD",
                     b, juce::Justification::centredBottom);
     }
 }
@@ -417,11 +509,13 @@ void SliceLcdDisplay::drawNoSampleScreen (juce::Graphics& g)
     const float sf = (float) getHeight() / (float) kPreferredHeight;
     g.setFont (DysektLookAndFeel::makeFont (22.0f * sf));
     g.setColour (pal.noDataCol);
-    g.drawText ("-- NO SAMPLE LOADED --", b, juce::Justification::centred);
+    g.drawText (multisamplerActive ? "-- NO ZONES --" : "-- NO SAMPLE LOADED --",
+                b, juce::Justification::centred);
 
     g.setFont (DysektLookAndFeel::makeFont (18.0f * sf));
     g.setColour (pal.dim);
-    g.drawText ("DROP A FILE OR USE THE BROWSER",
+    g.drawText (multisamplerActive ? "IMPORT AN SFZ OR ADD A ZONE"
+                                    : "DROP A FILE OR USE THE BROWSER",
                 b, juce::Justification::centredBottom);
 }
 
@@ -440,6 +534,13 @@ int SliceLcdDisplay::effectiveRowH() const noexcept
 
 void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
 {
+    // MULTISAMPLER zones have no write path from this display yet (they
+    // live in MultisamplerInstrument, not sliceManager2) — every branch
+    // below pushes a Command into the Slicer/SFZ-PLAYER engines, which
+    // would silently corrupt whichever slice happens to share this index
+    // there. Read-only until a real SampleZone edit path exists.
+    if (multisamplerActive) return;
+
     if (! data.hasSlice) return;
 
     const auto pos = e.getPosition();

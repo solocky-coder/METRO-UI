@@ -157,6 +157,15 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
 
      const int idx = multisamplerEditor.getSelectedZoneIndex();
      const auto& zones = multisamplerEditor.getInstrument().zones;
+
+     // Refresh both LCDs immediately on selection AND on every committed
+     // edit to the selected zone (this callback fires for both — see its
+     // doc comment) — the resized()-driven sync a few hundred lines down
+     // only catches a layout pass, not a same-frame ADSR/gain/pan edit
+     // from the zone inspector or an SCB field edit.
+     sliceLcd.setMultisamplerSource (true, &multisamplerEditor.getInstrument(), idx);
+     sliceWaveformLcd.setMultisamplerSource (true, &multisamplerEditor.getInstrument(), idx);
+
      if (idx < 0 || idx >= (int) zones.size())
      {
          sliceControlBar.clearSfzZoneSummary();
@@ -1458,16 +1467,27 @@ void DysektEditor::resized()
  // MULTISAMPLER is a third case: its zones live in MultisamplerInstrument,
  // a model that isn't synced back into sliceManager2/sampleData2 (see
  // SliceControlBar::paint's identical carve-out for the SCB's own zone
- // readout), so these two would just show sliceManager2's actual — and
- // irrelevant — state (whatever sample/slice happens to be loaded there,
- // or "EMPTY"/"NO SLICE SELECTED" if nothing is) instead of anything
- // about the instrument being edited. Hide them rather than have them
- // silently lie by omission while MULTISAMPLER is open.
+ // readout). Both LCDs now read directly from the selected SampleZone via
+ // setMultisamplerSource() (see the sync call below and
+ // onZoneSelectionOrEditChanged's hookup near the constructor) instead of
+ // going blank while MULTISAMPLER is open.
  const bool sf2Mode = (uiMode == 2);
- sliceLcd.setVisible (! sf2Mode && ! showMultisamplerEditor);
- sliceWaveformLcd.setVisible (! sf2Mode && ! showMultisamplerEditor);
+ sliceLcd.setVisible (! sf2Mode);
+ sliceWaveformLcd.setVisible (! sf2Mode);
  sf2Lcd.setVisible (sf2Mode);
  sf2WaveformLcd.setVisible (sf2Mode);
+
+ // Keep both LCDs' MULTISAMPLER read-only view in sync with the panel's
+ // open state and current selection every layout pass — cheap (pointer +
+ // two ints) and catches any path that flips showMultisamplerEditor
+ // without going through toggleMultisamplerEditor (e.g. the unsaved-
+ // changes-guard branch there also calls resized()).
+ {
+     const int selZone = showMultisamplerEditor ? multisamplerEditor.getSelectedZoneIndex() : -1;
+     const MultisamplerInstrument* instr = showMultisamplerEditor ? &multisamplerEditor.getInstrument() : nullptr;
+     sliceLcd.setMultisamplerSource (showMultisamplerEditor, instr, selZone);
+     sliceWaveformLcd.setMultisamplerSource (showMultisamplerEditor, instr, selZone);
+ }
 
  sliceLcd.setBounds (topRow.removeFromLeft (sideW));
  sf2Lcd.setBounds (sliceLcd.getBounds());
