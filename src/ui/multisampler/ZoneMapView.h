@@ -106,6 +106,12 @@ private:
     void rebuildLayout();          // recomputes cachedRects from *instrument
     DragMode hitTestEdges (const ZoneRect&, juce::Point<float>) const;
     const ZoneRect* topmostZoneAt (juce::Point<float>) const;
+    std::vector<const ZoneRect*> zonesAt (juce::Point<float>) const;
+
+    /** Makes a visually-obscured layer the topmost map tile and selects it
+        for the shared zone inspector. This changes display/editing order only;
+        the instrument's SFZ region order and playback behaviour stay intact. */
+    void bringZoneToFrontForEditing (const juce::Uuid& zoneId);
 
     /** Deletes every currently-selected zone (or, if `rightClickedId` isn't
         part of the current selection, just that one — matches how ZONES'
@@ -114,15 +120,18 @@ private:
         onZoneDeleted. No-op if the instrument is null or nothing resolves. */
     void deleteZones (const juce::Uuid& rightClickedId);
 
-    /** Right-click context menu: "Delete Zone" + the same 16-colour named
-        palette submenu ZONES' onRowRightClicked shows (see PluginEditor.cpp),
-        kept identical so the picker UX matches everywhere in the app a
-        zone/slice can be recoloured. */
-    void showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int> screenPos);
+    /** Right-click context menu. When several zones overlap at the click,
+        an "Edit Layer" submenu lets the user bring any one to the visual
+        front and select it for editing. Also includes Delete Zone and the
+        standard 16-colour zone palette. */
+    void showZoneContextMenu (const juce::Uuid& zoneId,
+                              juce::Point<float> localPos,
+                              juce::Point<int> screenPos);
 
     MultisamplerInstrument* instrument = nullptr;
-    std::vector<ZoneRect> cachedRects;   // one per instrument->zones entry, same order
+    std::vector<ZoneRect> cachedRects;   // instrument order, except the promoted edit layer is last/front
     std::vector<juce::Uuid> selectedIds;
+    juce::Uuid frontZoneId = juce::Uuid::null();   // visual z-order override only; never reorders instrument->zones
 
     // ── Live MIDI highlighting ──────────────────────────────────────────
     // MULTISAMPLER always drives sfzPlayer2 (see MultisamplerEditor's engine

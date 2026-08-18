@@ -6,6 +6,7 @@
 #include "../UIHelpers.h"
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 ZoneMapView::ZoneMapView (DysektProcessor& processorToUse)
     : processor (processorToUse)
@@ -103,6 +104,7 @@ void ZoneMapView::setInstrument (MultisamplerInstrument* instrumentToShow)
 {
     instrument = instrumentToShow;
     selectedIds.clear();
+    frontZoneId = juce::Uuid::null();
     dragMode = DragMode::none;
     rebuildLayout();
     repaint();
@@ -214,18 +216,61 @@ void ZoneMapView::rebuildLayout()
         if (pair.first  < cachedRects.size()) cachedRects[pair.first].overlapping  = true;
         if (pair.second < cachedRects.size()) cachedRects[pair.second].overlapping = true;
     }
+
+    // Keep an explicitly chosen layer visually on top without changing the
+    // instrument's region order (which could alter SFZ playback semantics).
+    // paint() draws front-to-back and hit testing searches back-to-front, so
+    // moving only this cached rectangle to the end handles both consistently.
+    if (frontZoneId != juce::Uuid::null())
+    {
+        const auto promoted = std::find_if (cachedRects.begin(), cachedRects.end(),
+                                            [this] (const ZoneRect& r) { return r.id == frontZoneId; });
+        if (promoted != cachedRects.end())
+            std::rotate (promoted, std::next (promoted), cachedRects.end());
+        else
+            frontZoneId = juce::Uuid::null();
+    }
 }
 
 // ── Hit testing ──────────────────────────────────────────────────────────
 
+std::vector<const ZoneMapView::ZoneRect*> ZoneMapView::zonesAt (juce::Point<float> p) const
+{
+    std::vector<const ZoneRect*> hits;
+    hits.reserve (cachedRects.size());
+
+    // Return visual front-to-back order. The promoted edit layer, if any, is
+    // already last in cachedRects (see rebuildLayout()).
+    for (auto it = cachedRects.rbegin(); it != cachedRects.rend(); ++it)
+        if (it->bounds.contains (p))
+            hits.push_back (&(*it));
+
+    return hits;
+}
+
 const ZoneMapView::ZoneRect* ZoneMapView::topmostZoneAt (juce::Point<float> p) const
 {
-    // Later zones are drawn on top (see MultisamplerInstrument::zonesMatching
-    // doc comment), so search back-to-front.
+    // This is called for every mouse move, so keep the common path allocation-free.
     for (auto it = cachedRects.rbegin(); it != cachedRects.rend(); ++it)
         if (it->bounds.contains (p))
             return &(*it);
     return nullptr;
+}
+
+void ZoneMapView::bringZoneToFrontForEditing (const juce::Uuid& zoneId)
+{
+    if (instrument == nullptr || instrument->findZone (zoneId) == nullptr)
+        return;
+
+    frontZoneId = zoneId;
+    selectedIds = { zoneId };
+    dragMode = DragMode::none;
+    rebuildLayout();
+    repaint();
+
+    // This is a selection/display-order change, not an instrument edit, so it
+    // intentionally does not dirty or resync the playback engine.
+    if (onSelectionChanged) onSelectionChanged();
 }
 
 ZoneMapView::DragMode ZoneMapView::hitTestEdges (const ZoneRect& r, juce::Point<float> p) const
@@ -280,7 +325,7 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
             if (onSelectionChanged) onSelectionChanged();
             repaint();
         }
-        showZoneContextMenu (hit->id, e.getScreenPosition());
+        showZoneContextMenu (hit->id, e.position, e.getScreenPosition());
         dragMode = DragMode::none;
         return;
     }
@@ -459,11 +504,33 @@ void ZoneMapView::deleteZones (const juce::Uuid& rightClickedId)
 
 // ── Context menu ─────────────────────────────────────────────────────────
 
-void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int> screenPos)
+void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId,
+                                       juce::Point<float> localPos,
+                                       juce::Point<int> screenPos)
 {
     if (instrument == nullptr) return;
     auto* zone = instrument->findZone (zoneId);
     if (zone == nullptr) return;
+
+    // Copy ids and labels now: PopupMenu is asynchronous, while cachedRects
+    // can be rebuilt by resize, MIDI selection, or another edit before its
+    // callback runs. zonesAt() is front-to-back, matching what the user sees.
+    std::vector<juce::Uuid> layerIds;
+    juce::PopupMenu layerSub;
+    const auto layerHits = zonesAt (localPos);
+    layerIds.reserve (layerHits.size());
+    for (size_t i = 0; i < layerHits.size(); ++i)
+    {
+        const auto& r = *layerHits[i];
+        layerIds.push_back (r.id);
+        const auto label = juce::String ((int) i + 1) + ". " + r.label
+                         + "  [" + UIHelpers::midiNoteToName (r.lowKey)
+                         + "-" + UIHelpers::midiNoteToName (r.highKey)
+                         + ", v" + juce::String (r.lowVel)
+                         + "-" + juce::String (r.highVel) + "]";
+        layerSub.addItem (1000 + (int) i, label, true,
+                          std::find (selectedIds.begin(), selectedIds.end(), r.id) != selectedIds.end());
+    }
 
     // Same 16-colour named palette as ZONES' onRowRightClicked (see
     // PluginEditor.cpp) and the Slicer's "Slice Color" picker (SliceLane.cpp)
@@ -496,6 +563,11 @@ void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int
     juce::PopupMenu menu;
     const bool multi = std::find (selectedIds.begin(), selectedIds.end(), zoneId) != selectedIds.end()
                             && selectedIds.size() > 1;
+    if (layerIds.size() > 1)
+    {
+        menu.addSubMenu ("Edit Layer (" + juce::String ((int) layerIds.size()) + ")", layerSub);
+        menu.addSeparator();
+    }
     menu.addItem (1, multi ? "Delete " + juce::String ((int) selectedIds.size()) + " Zones" : "Delete Zone");
     menu.addSeparator();
     menu.addSubMenu ("Zone Color", colourSub);
@@ -504,11 +576,15 @@ void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId, juce::Point<int
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
             .withParentComponent (topLvl)
             .withStandardItemHeight ((int) (24 * ms)),
-        [this, zoneId] (int result)
+        [this, zoneId, layerIds] (int result)
         {
             if (instrument == nullptr) return;   // view may have been repointed while the menu was open
 
-            if (result == 1)
+            if (result >= 1000 && result < 1000 + (int) layerIds.size())
+            {
+                bringZoneToFrontForEditing (layerIds[(size_t) (result - 1000)]);
+            }
+            else if (result == 1)
             {
                 deleteZones (zoneId);
             }
