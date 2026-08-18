@@ -2486,6 +2486,25 @@ void DysektEditor::restorePreMultisamplerSfzState()
     // re-overwrite sliceManager2/sampleData2 with the preview render again.
     multisamplerEditor.cancelPendingEngineSync();
 
+    // If the user actually saved (or imported) real content into
+    // MULTISAMPLER during this session, that saved file IS the SFZ-PLAYER's
+    // new intended content — load it instead of reverting to whatever was
+    // loaded before MULTISAMPLER was opened. Without this, hitting SAVE and
+    // then closing MULTISAMPLER silently discards the just-saved instrument
+    // and leaves the SFZ-PLAYER empty (or back on the old sample), because
+    // the unconditional pre-open-snapshot restore below ran regardless of
+    // whether anything was saved in between.
+    const juce::File savedFile = multisamplerEditor.getLastSavedFile();
+    if (savedFile.existsAsFile())
+    {
+        processor.sfzPlayer2.loadFile (savedFile, processor.fileLoadPool);
+        processor.loadSoundFontAsync (savedFile, SoundFontLoadTarget::SfzPlayer2);
+
+        preMultisamplerStateCaptured = false;
+        preMultisamplerSfzFile = juce::File();
+        return;
+    }
+
     if (! preMultisamplerStateCaptured)
         return;   // toggled on/off without ever going through a real open — nothing to undo
 

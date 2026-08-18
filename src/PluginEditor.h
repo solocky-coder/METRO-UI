@@ -161,13 +161,16 @@ private:
     juce::File preMultisamplerSfzFile;
     bool       preMultisamplerStateCaptured = false;
 
-    /// Shared close-path helper for toggleMultisamplerEditor(): reloads
-    /// preMultisamplerSfzFile into the SFZ-PLAYER engine (or clears it to
-    /// empty if there wasn't one), and cancels any pending debounced
-    /// MULTISAMPLER engine sync first so it can't land afterwards and
-    /// re-overwrite what was just restored. Called from every path that
-    /// finalises leaving MULTISAMPLER (the immediate close, and the
-    /// unsaved-changes confirm callback).
+    /// Shared close-path helper for toggleMultisamplerEditor(): if the user
+    /// saved/imported real content into MULTISAMPLER during this session
+    /// (multisamplerEditor.getLastSavedFile()), reloads that into the
+    /// SFZ-PLAYER engine, since that's now the intended content. Otherwise
+    /// falls back to reloading preMultisamplerSfzFile (or clearing to empty
+    /// if there wasn't one). Cancels any pending debounced MULTISAMPLER
+    /// engine sync first so it can't land afterwards and re-overwrite what
+    /// was just restored. Called from every path that finalises leaving
+    /// MULTISAMPLER (the immediate close, and the unsaved-changes confirm
+    /// callback).
     void restorePreMultisamplerSfzState();
 
     // Classifies an SFZ-PLAYER file's zones (see SfzLayoutClassifier.h) and,

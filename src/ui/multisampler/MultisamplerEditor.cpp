@@ -310,6 +310,16 @@ void MultisamplerEditor::exportSfzClicked()
                 // operate against, same as an IMPORT SFZ would set it.
                 lastSavedFile = file;
                 clearDirtyFlag();
+
+                // clearDirtyFlag() alone never reaches the SCB — its SAVE
+                // button reads a *cached copy* of isDirty() that only gets
+                // refreshed inside onInstrumentChanged (see PluginEditor's
+                // sliceControlBar.setInstrumentDirty(...) callback). Without
+                // firing it here, the SAVE button silently stays lit and
+                // clickable after a successful export, with zero visible
+                // sign that anything happened — indistinguishable from the
+                // button doing nothing at all.
+                if (onInstrumentChanged) onInstrumentChanged();
             }
         });
 }
@@ -328,7 +338,16 @@ void MultisamplerEditor::saveInPlace()
     SfzExporter::Options opts;
     opts.useRelativeSamplePaths = true;
     if (SfzExporter::exportToFile (instrument, lastSavedFile, opts))
+    {
         clearDirtyFlag();
+
+        // Same reason as exportSfzClicked()'s success path: without this,
+        // the SCB's cached instrumentDirty mirror never learns the save
+        // happened, so its SAVE button stays lit/clickable with no visible
+        // change — the save silently succeeds on disk but looks like the
+        // button did nothing.
+        if (onInstrumentChanged) onInstrumentChanged();
+    }
 }
 
 void MultisamplerEditor::discardPendingEdits()
