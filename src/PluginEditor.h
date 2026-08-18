@@ -150,6 +150,26 @@ private:
     bool showMultisamplerEditor = false;
     bool iconNeedsApplying = true;   // set icon once peer is available
 
+    /// Snapshot of what the SFZ-PLAYER (sliceManager2/sampleData2) had
+    /// loaded right before MULTISAMPLER was opened, so toggleMultisamplerEditor()
+    /// can put it back on close instead of leaving MULTISAMPLER's
+    /// performEngineSync() preview render (multisampler_preview.sfz) stuck
+    /// in place. Captured only on the genuine off->on transition (see
+    /// toggleMultisamplerEditor()); an invalid File() means the SFZ-PLAYER
+    /// had nothing real loaded, so the close path clears it back to empty
+    /// instead of reloading a file.
+    juce::File preMultisamplerSfzFile;
+    bool       preMultisamplerStateCaptured = false;
+
+    /// Shared close-path helper for toggleMultisamplerEditor(): reloads
+    /// preMultisamplerSfzFile into the SFZ-PLAYER engine (or clears it to
+    /// empty if there wasn't one), and cancels any pending debounced
+    /// MULTISAMPLER engine sync first so it can't land afterwards and
+    /// re-overwrite what was just restored. Called from every path that
+    /// finalises leaving MULTISAMPLER (the immediate close, and the
+    /// unsaved-changes confirm callback).
+    void restorePreMultisamplerSfzState();
+
     // Classifies an SFZ-PLAYER file's zones (see SfzLayoutClassifier.h) and,
     // if it reads as a drum kit, shows a ConfirmOverlay offering to
     // auto-assign each zone its own output bus. Shared by every load path

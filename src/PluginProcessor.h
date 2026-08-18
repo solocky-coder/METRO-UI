@@ -207,6 +207,13 @@ public:
         CmdSetSliceLockAll,  // intParam1 = slice index, floatParam1 = 1.0 lock all / 0.0 unlock all
         CmdSetSliceColour,   // intParam1 = slice index, intParam2 = ARGB colour
         CmdSetSliceName,     // intParam1 = slice index, stringParam = new name (empty = clear)
+        /** Clears sliceManager2/sampleData2 (SFZ-PLAYER engine) back to the
+         *  empty state, on the audio thread. No params. See
+         *  clearSfzPlayer2Sample() -- used by toggleMultisamplerEditor() to
+         *  put the SFZ-PLAYER view back the way it was if nothing was loaded
+         *  there before MULTISAMPLER's live-preview writes started
+         *  overwriting sliceManager2/sampleData2. */
+        CmdClearSfzPlayer2Sample,
     };
 
     // ── Load kind ─────────────────────────────────────────────────────────
@@ -376,6 +383,16 @@ public:
                               SoundFontLoadTarget target = SoundFontLoadTarget::Slicer,
                               int presetBank = -1, int presetProgram = -1);
     void relinkFileAsync    (const juce::File& file);
+
+    /** Puts the SFZ-PLAYER engine (sfzPlayer2/sliceManager2/sampleData2)
+     *  back to a genuinely empty state -- unloads the live sfizz/FluidSynth
+     *  instrument (UI-thread call, same as loadFile()) and pushes
+     *  CmdClearSfzPlayer2Sample through the FIFO to clear sliceManager2/
+     *  sampleData2 on the audio thread. Callable from the UI thread only.
+     *  See toggleMultisamplerEditor()'s close path, which uses this when
+     *  MULTISAMPLER's live-preview writes overwrote sliceManager2/
+     *  sampleData2 but nothing was actually loaded there beforehand. */
+    void clearSfzPlayer2Sample();
     void applyTrimToCurrentSample (int trimStart, int trimEnd);
 
     /** Read-only access to the latest published UI snapshot (UI thread only).

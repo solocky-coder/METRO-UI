@@ -544,6 +544,29 @@ void DysektProcessor::relinkFileAsync (const juce::File& file)
     requestSampleLoad (file, LoadKindRelink);
 }
 
+void DysektProcessor::clearSfzPlayer2Sample()
+{
+    // sfzPlayer2.unload() is documented as a UI-thread call (see
+    // SfzPlayer.h), same as sfzPlayer2.loadFile() -- every existing load
+    // call site (browserPanel.onLoadRequest, WaveformView, etc.) already
+    // calls it directly rather than through the Command FIFO. Silences the
+    // live sfizz/FluidSynth instrument immediately; sliceManager2/
+    // sampleData2 (what the SFZ-PLAYER waveform/LCDs actually display) are
+    // reset separately below via the FIFO, same as every other write to
+    // those.
+    sfzPlayer2.unload();
+
+    // Also discard any preview payload already queued/in-flight from a
+    // loadSoundFontAsync(..., SfzPlayer2) call that hasn't landed yet, so a
+    // stale render can't overwrite the clear we're about to apply.
+    exchangeCompletedLoadData2 (nullptr);
+    delete pendingPreviewZones2.exchange (nullptr, std::memory_order_acq_rel);
+
+    Command cmd;
+    cmd.type = CmdClearSfzPlayer2Sample;
+    pushCommand (cmd);
+}
+
 void DysektProcessor::clearVoicesBeforeSampleSwap()
 {
     // Stop lazy chop before killing voices; its preview voice and buffer pointer
@@ -1749,6 +1772,23 @@ void DysektProcessor::handleCommand (const Command& cmd)
             voicePool.killAll();
             lazyChop.stop (voicePool, sliceManager);
             std::fill (std::begin (heldNotes), std::end (heldNotes), false);
+            break;
+
+        case CmdClearSfzPlayer2Sample:
+            // Same shape as the "load completed" consumption a few hundred
+            // lines below in processBlock (clear voices, then swap
+            // sampleData2/sliceManager2) -- just swapping in an empty
+            // buffer instead of a decoded one. sfzPlayer2.unload() is a
+            // UI-thread call (see SfzPlayer.h) so clearSfzPlayer2Sample()
+            // has already handled that half before this command reaches
+            // the audio thread.
+            clearVoicesBeforeSampleSwap2();
+            sampleData2.clear();
+            sliceManager2.clearAll();
+            mainLoadInFlight.store (false, std::memory_order_release);
+            sfzPlayer2RebuildInFlight.store    (false, std::memory_order_release);
+            sfzPlayer2LcdRebuildInFlight.store (false, std::memory_order_release);
+            uiSnapshotDirty.store (true, std::memory_order_release);
             break;
 
         case CmdSelectSlice:

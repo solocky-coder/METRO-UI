@@ -2479,8 +2479,50 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // (see browserPanel.onLoadRequest, uiMode == 0 branch) and isn't a fit for
 // writing SFZ <region> blocks.
 
+void DysektEditor::restorePreMultisamplerSfzState()
+{
+    // Stop any debounced performEngineSync() left pending from the last
+    // edit — otherwise it can fire after this restore and immediately
+    // re-overwrite sliceManager2/sampleData2 with the preview render again.
+    multisamplerEditor.cancelPendingEngineSync();
+
+    if (! preMultisamplerStateCaptured)
+        return;   // toggled on/off without ever going through a real open — nothing to undo
+
+    if (preMultisamplerSfzFile.existsAsFile())
+    {
+        // Put back whatever the SFZ-PLAYER actually had loaded before
+        // MULTISAMPLER started overwriting sliceManager2/sampleData2 for
+        // its live preview — same pairing every other SFZ2 load site uses
+        // (see browserPanel.onLoadRequest).
+        processor.sfzPlayer2.loadFile (preMultisamplerSfzFile, processor.fileLoadPool);
+        processor.loadSoundFontAsync (preMultisamplerSfzFile, SoundFontLoadTarget::SfzPlayer2);
+    }
+    else
+    {
+        // The SFZ-PLAYER genuinely had nothing loaded before — clear the
+        // leftover preview back to empty rather than leaving it stuck.
+        processor.clearSfzPlayer2Sample();
+    }
+
+    preMultisamplerStateCaptured = false;
+    preMultisamplerSfzFile = juce::File();
+}
+
 void DysektEditor::toggleMultisamplerEditor (bool on)
 {
+    // Capture what the SFZ-PLAYER currently has loaded on the genuine
+    // off->on transition only, before the first performEngineSync() call
+    // (fired by MultisamplerEditor as soon as it has anything to preview)
+    // gets a chance to overwrite sliceManager2/sampleData2. An invalid
+    // File() here just means "nothing real was loaded" — restorePreMultisamplerSfzState()
+    // treats that as "clear back to empty" rather than "reload nothing".
+    if (on && ! showMultisamplerEditor)
+    {
+        preMultisamplerSfzFile = juce::File (processor.sampleData2.getFilePath());
+        preMultisamplerStateCaptured = true;
+    }
+
     // Unsaved-changes guard, mirroring the pattern other panels use so the
     // user is protected the same way when the panel closes with
     // uncommitted edits (drag-edit, inspector apply, Add Zone, etc. — see
@@ -2524,6 +2566,7 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
             sliceControlBar.setMultisamplerViewActive (false);   // see the unconditional sync a few lines below — this early-return path needs it too
             headerBar.dualFrame().setMultisamplerActive (false);
             sliceControlBar.clearSfzZoneSummary();   // leaving MULTISAMPLER — don't leave its zone readout stuck in the SCB
+            restorePreMultisamplerSfzState();        // put the SFZ-PLAYER's real content (or empty) back — see toggleMultisamplerEditor()'s capture
             resized();
             repaint();
         };
@@ -2534,7 +2577,10 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
     sliceControlBar.setMultisamplerViewActive (on);
     headerBar.dualFrame().setMultisamplerActive (on);
     if (! on)
+    {
         sliceControlBar.clearSfzZoneSummary();   // same rationale as the dirty-guard branch above
+        restorePreMultisamplerSfzState();        // undo MULTISAMPLER's live-preview writes to sliceManager2/sampleData2
+    }
 
     if (on && initBrowserOpen)
     {

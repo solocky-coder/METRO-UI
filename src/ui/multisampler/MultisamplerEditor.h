@@ -108,6 +108,15 @@ public:
         offering "Save" only when there's somewhere to save to). */
     const juce::File& getLastSavedFile() const noexcept { return lastSavedFile; }
 
+    /** Cancels any pending debounced performEngineSync() (see
+        scheduleEngineSync()/timerCallback()) without firing it. Called by
+        PluginEditor::toggleMultisamplerEditor() right before it restores/
+        clears sliceManager2/sampleData2 on close, so a stale in-flight
+        sync from the last edit can't land afterwards and re-overwrite the
+        SFZ-PLAYER state that was just restored. Safe to call even when no
+        sync is pending (stopTimer() on an inactive Timer is a no-op). */
+    void cancelPendingEngineSync() noexcept { stopTimer(); }
+
     /** -1 if zero or multiple zones are selected in the zone map; otherwise
         the index into getInstrument().zones for the single selected zone.
         Lets PluginEditor drive the shared SliceControlBar (SCB) readout via
