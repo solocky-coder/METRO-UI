@@ -53,8 +53,8 @@ SfzPlayerDropdownPanel::SfzPlayerDropdownPanel (DysektProcessor& p)
 
     // [+ ZONE] on this panel's keysPanel is intentionally left unwired — this
     // whole panel is never made visible (see PluginEditor.cpp setVisible(false)
-    // call sites); the live Add Zone entry point is DysektEditor's own
-    // zoneBuilderKeysPanel, driven from PluginEditor.cpp.
+    // call sites); the live Add Zone entry point is MultisamplerEditor's own,
+    // driven from PluginEditor.cpp.
     keysPanel.setAddZoneButtonVisible (false);
 
     startTimerHz (30);
@@ -1455,9 +1455,9 @@ void SfzPlayerDropdownPanel::reloadZones (const juce::File& f)
         //
         // [+ ZONE] stays hidden/unwired here regardless of file type — this
         // panel is never made visible (see PluginEditor.cpp), so its own Add
-        // Zone entry point was removed; the live one is DysektEditor's
-        // zoneBuilderKeysPanel. keysPanel.setKeyzones() below still needs the
-        // parsed data for whatever internal state tracking depends on it.
+        // Zone entry point was removed; the live one is MultisamplerEditor's.
+        // keysPanel.setKeyzones() below still needs the parsed data for
+        // whatever internal state tracking depends on it.
         keysPanel.setAddZoneButtonVisible (false);
         keysPanel.onAddZoneRequested = nullptr;
 

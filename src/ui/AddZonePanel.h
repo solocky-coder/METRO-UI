@@ -19,7 +19,8 @@
 //  onDismiss()
 //      Fired when the window is closed via [X] or Esc — mirrors
 //      ThemeEditorPanel::onDismiss. The host is responsible for dropping its
-//      unique_ptr in response (see PluginEditor::hideZoneBuilderOverlays).
+//      unique_ptr in response (see MultisamplerEditor's own AddZoneOverlay
+//      handling for the pattern).
 //
 //  v1 scope: title bar + resizing + the three existing spinner rows, laid
 //  out with more room than the 520x300 card had. No waveform preview or

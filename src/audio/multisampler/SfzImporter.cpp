@@ -428,8 +428,7 @@ namespace
         // keeps a normalised 0..1 for its filter UI, so remap here.
         z.filterResonance = juce::jlimit (0.0f, 1.0f, floatOpcode (resolved, "resonance", 0.0f) / 40.0f);
 
-        // Custom colour override — same opcode ZONES round-trips through
-        // (see PluginEditor::setZoneBuilderZoneColour / writeSfzZoneChange).
+        // Custom colour override — see SfzExporter for the write side.
         // Opcode keys are already lowercased by the tokenizer (see the
         // `resolved` build-up above), so "dysekt_zone_color" always matches
         // regardless of the source file's original casing.

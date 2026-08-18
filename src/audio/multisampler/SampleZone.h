@@ -100,9 +100,8 @@ struct SampleZone
     bool enabled = true;   ///< editor-only mute; excluded from SFZ export when false
 
     /** User-picked colour override, round-tripped through the same
-        `dysekt_zone_color` custom opcode ZONES already writes/reads (see
-        PluginEditor::setZoneBuilderZoneColour / SfzImporter's opcode
-        table). When false, the zone's colour is purely derived from its
+        `dysekt_zone_color` custom opcode (see SfzImporter's opcode table
+        and SfzExporter). When false, the zone's colour is purely derived from its
         palette index (SfzZoneColours::zoneColour) — see ZoneMapView::
         rebuildLayout() and MultisamplerEditor::toKeyzones(), which both
         prefer this field over the index-derived colour whenever it's set. */

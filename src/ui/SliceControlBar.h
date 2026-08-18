@@ -28,34 +28,25 @@ public:
     /// Fired when the user clicks the PAD/WAVE toggle button.
     std::function<void (bool padActive)> onPadViewToggle;
 
-    // ZONES toggle — SFZ-PLAYER-only counterpart to the PAD/WAVE toggle above.
-    // Set externally by the editor and reflected in the button.
-    void setZoneViewActive (bool on) { zoneViewActive = on; repaint(); }
-    bool getZoneViewActive() const noexcept { return zoneViewActive; }
-
-    /// Fired when the user clicks the ZONES toggle button (SFZ-PLAYER mode only).
-    std::function<void (bool zoneActive)> onZoneViewToggle;
-
-    // MULTISAMPLER counterpart of setZoneViewActive() above — set externally
-    // by the editor whenever MULTISAMPLER opens/closes. Deliberately a
-    // separate flag rather than reusing zoneViewActive: that flag also
-    // drives the SCB's own "ZONES" button look and its click-to-toggle
-    // handler (see mouseDown's zoneToggleBtnArea check), which belongs to
-    // ZONES specifically. This one exists purely to let the selected-zone
-    // readout strip (loKey/hiKey/root/pitch/pan/volume/release/loop) draw
-    // and accept drag-edits while MULTISAMPLER is the active panel instead,
-    // without touching that button's behaviour.
+    // MULTISAMPLER toggle — SFZ-PLAYER-only counterpart to the PAD/WAVE
+    // toggle above. Set externally by the editor and reflected in the
+    // button; also drives the selected-zone readout strip (loKey/hiKey/
+    // root/pitch/pan/volume/release/loop) so it draws and accepts
+    // drag-edits while MULTISAMPLER is the active panel.
     void setMultisamplerViewActive (bool on) { multisamplerViewActive = on; repaint(); }
     bool getMultisamplerViewActive() const noexcept { return multisamplerViewActive; }
 
-    // SAVE button — appears to the left of ZONES (SFZ-PLAYER mode only) while
-    // there are staged-but-unsaved zone-builder changes. Set externally by the
-    // editor whenever its pending-zone list goes from empty <-> non-empty.
-    void setZoneDirty (bool dirty) { zoneDirty = dirty; repaint(); }
-    bool getZoneDirty() const noexcept { return zoneDirty; }
+    /// Fired when the user clicks the MULTISAMPLER toggle button (SFZ-PLAYER mode only).
+    std::function<void (bool multisamplerActive)> onMultisamplerViewToggle;
+
+    // SAVE button — appears to the left of MULTI (SFZ-PLAYER mode only)
+    // while MULTISAMPLER has staged-but-unsaved edits. Set externally by
+    // the editor whenever its instrument's dirty state changes.
+    void setInstrumentDirty (bool dirty) { instrumentDirty = dirty; repaint(); }
+    bool getInstrumentDirty() const noexcept { return instrumentDirty; }
 
     /// Fired when the user clicks the SAVE button.
-    std::function<void()> onZoneSaveRequested;
+    std::function<void()> onInstrumentSaveRequested;
 
     /// Resolves the theme colour key represented by whatever's under this
     /// point (a knob's accent fill, the lock icon, a toggle badge...), for
@@ -65,10 +56,10 @@ public:
     /// colours by design — so the caller can fall back to a general tag.
     juce::String themeKeyAt (juce::Point<int> p) const;
 
-    // Selected-zone readout — SFZ-PLAYER ZONES view only. Driven externally
-    // by the editor from KeysPanel::onRowClicked / onZoneEdited on the zone
-    // builder matrix, since pending zones aren't slices and have no
-    // selectedSlice/UiSliceSnapshot representation of their own.
+    // Selected-zone readout — SFZ-PLAYER MULTISAMPLER view only. Driven
+    // externally by the editor from MultisamplerEditor's zone selection/edit
+    // callback, since zones aren't slices and have no selectedSlice/
+    // UiSliceSnapshot representation of their own.
     void setSfzZoneSummary (int zoneIndex, const juce::String& name,
                             int loKey, int hiKey, int rootPitch,
                             float tuneCents, float pan, float volDb, float releaseSec, bool isLooped = false);
@@ -90,11 +81,10 @@ private:
     juce::Rectangle<int> padToggleBtnArea;  // hit-tested in mouseDown — PADS button
     juce::Rectangle<int> waveToggleBtnArea; // hit-tested in mouseDown — WAVE button
 
-    bool  zoneViewActive = false;   // mirrors editor showZoneBuilder
     bool  multisamplerViewActive = false;   // mirrors editor showMultisamplerEditor — see setMultisamplerViewActive()
-    juce::Rectangle<int> zoneToggleBtnArea; // hit-tested in mouseDown — ZONES button (SFZ-PLAYER only)
+    juce::Rectangle<int> multisamplerToggleBtnArea; // hit-tested in mouseDown — MULTI button (SFZ-PLAYER only)
 
-    bool  zoneDirty = false;        // mirrors editor zoneBuilderDirty — shows/hides the SAVE button
+    bool  instrumentDirty = false;        // mirrors multisamplerEditor.isDirty() — shows/hides the SAVE button
     juce::Rectangle<int> zoneSaveBtnArea; // hit-tested in mouseDown — SAVE button (SFZ-PLAYER only, when dirty)
 
     // Selected-zone readout state — see setSfzZoneSummary() doc comment above.
@@ -184,12 +174,12 @@ private:
                    juce::Colour tintOverride = {}, bool hovered = false);
 
     void drawLockIcon (juce::Graphics& g, int x, int y, bool locked);
-    // PADS/WAVE (Slicer) or ZONES (SFZ-PLAYER) toggle button(s), top-right corner.
+    // PADS/WAVE (Slicer) or MULTI (SFZ-PLAYER) toggle button(s), top-right corner.
     // Independent of per-slice state — must be drawn even when no slice is
-    // selected, so ZONES stays reachable on an empty/not-yet-populated kit.
+    // selected, so MULTI stays reachable on an empty/not-yet-populated kit.
     void drawViewToggleButtons (juce::Graphics& g);
     // Compact per-zone readout drawn in place of the normal slice-param row
-    // when the SFZ-PLAYER ZONES matrix is active — see setSfzZoneSummary().
+    // when the SFZ-PLAYER MULTISAMPLER view is active — see setSfzZoneSummary().
     void drawSfzZoneSummary (juce::Graphics& g, int x, int y, int width, int height) const;
     void showTextEditor (const ParamCell& cell, float currentValue);
     void showMidiLearnMenu (int fieldId, juce::Point<int> screenPos);

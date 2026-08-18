@@ -15,8 +15,8 @@
 //  strip grows past a handful of fields (per the plan's §6 file list) — kept
 //  inline here for now to keep the first slice small.
 //
-//  Like zoneBuilderKeysPanel (the existing raw-SFZ zone builder this panel
-//  is the native-model successor to — see PluginEditor.cpp), this component
+//  This is the sole SFZ-PLAYER zone editor (the older raw-SFZ ZONES
+//  workflow has been fully retired). Like that former component, this one
 //  draws its own complete frame and does not rely on PluginEditor's
 //  paintOverChildren() bezel.
 // =============================================================================
@@ -53,11 +53,11 @@ public:
 
     const MultisamplerInstrument& getInstrument() const noexcept { return instrument; }
 
-    /** Consolidation-plan step 3: the same keyboard-highlight data ZONES
-        gets from SfzPlayerDropdownPanel::parseSfzZones(), derived instead
-        from a MultisamplerInstrument — so sfzPlayerDropdown.keysPanel can
-        be repointed at whichever .sfz is currently loaded via MULTISAMPLER
-        without depending on ZONES' scratch-file text at all. Static/free of
+    /** The same keyboard-highlight data SfzPlayerDropdownPanel::
+        parseSfzZones() derives from raw SFZ text, derived instead from a
+        MultisamplerInstrument — so sfzPlayerDropdown.keysPanel can be
+        repointed at whichever .sfz is currently loaded via MULTISAMPLER.
+        Static/free of
         `this` so PluginEditor can call it on any instrument snapshot it
         already has (e.g. getInstrument()) without needing a live
         MultisamplerEditor edit in flight. Colour indexing matches
@@ -81,13 +81,12 @@ public:
     bool importFromFile (const juce::File& file, bool syncEngine = true);
 
     /** True once at least one committed edit has happened since the last
-        save/load — mirrors the zoneBuilderDirty flag PluginEditor already
-        tracks for the raw-SFZ zone builder, so an "unsaved changes" prompt
-        can treat both the same way (see toggleMultisamplerEditor). */
+        save/load — drives the "unsaved changes" prompt in
+        toggleMultisamplerEditor(). */
     bool isDirty() const noexcept { return dirty; }
     void clearDirtyFlag() noexcept { dirty = false; }
 
-    /** SAVE half of the zoneBuilder-style save/discard pair. Writes the
+    /** SAVE half of the save/discard pair. Writes the
         current instrument back to whichever file it was last imported from
         or exported to (silent overwrite, no picker) and clears the dirty
         flag on success. If this instrument has never been pointed at a
@@ -111,30 +110,23 @@ public:
 
     /** -1 if zero or multiple zones are selected in the zone map; otherwise
         the index into getInstrument().zones for the single selected zone.
-        Lets PluginEditor drive the shared SliceControlBar (SCB) readout the
-        exact same way it already does for ZONES
-        (zoneBuilderKeysPanel::onRowClicked -> sliceControlBar.
-        setSfzZoneSummary), keyed off this index instead of ZONES' row
-        index — see onZoneSelectionOrEditChanged. */
+        Lets PluginEditor drive the shared SliceControlBar (SCB) readout via
+        sliceControlBar.setSfzZoneSummary(), keyed off this index — see
+        onZoneSelectionOrEditChanged. */
     int getSelectedZoneIndex() const noexcept;
 
     /** Fired whenever the selected zone (per getSelectedZoneIndex()) or its
         data changes — a selection click, a live drag, a drag commit, or a
         SliceControlBar field edit applied via applySliceControlBarFieldEdit().
-        This is MULTISAMPLER's exact counterpart of ZONES'
-        zoneBuilderKeysPanel::onRowClicked/onZoneEdited pair; PluginEditor
-        hooks this the same way to push sliceControlBar.setSfzZoneSummary()/
-        clearSfzZoneSummary(), so the SCB behaves identically regardless of
-        which editor is open. */
+        PluginEditor hooks this to push sliceControlBar.setSfzZoneSummary()/
+        clearSfzZoneSummary(). */
     std::function<void()> onZoneSelectionOrEditChanged;
 
     /** Applies one SliceControlBar field edit (see SliceControlBar::
         SfzZoneField) to the zone at `zoneIndex` (as returned by
-        getSelectedZoneIndex()). PluginEditor's existing
-        sliceControlBar.onSfzZoneParamEdited handler forwards here instead
-        of its ZONES-matrix logic whenever MULTISAMPLER, not ZONES, is the
-        active editor — same trigger, same field enum, different model
-        underneath. No-op if zoneIndex is out of range. */
+        getSelectedZoneIndex()). PluginEditor's
+        sliceControlBar.onSfzZoneParamEdited handler forwards here
+        unconditionally. No-op if zoneIndex is out of range. */
     void applySliceControlBarFieldEdit (int zoneIndex, int field, float value);
 
     /** Fired after every committed model edit (drag-commit, inspector apply,
@@ -155,7 +147,7 @@ public:
         edit that model" — this panel only owns the model and its own inline
         controls), so surfacing these to the user is left to whoever owns the
         surrounding chrome, same as PluginEditor's existing
-        MessageOverlay/ConfirmOverlay pattern for zoneBuilder. */
+        MessageOverlay/ConfirmOverlay pattern elsewhere in the plugin. */
     std::function<void (const juce::String& sourceFileName,
                          bool importSucceeded,
                          const std::vector<SfzImporter::Warning>& warnings)> onImportWarnings;
@@ -176,9 +168,7 @@ private:
     void importSfzClicked();
     void exportSfzClicked();
     void newInstrumentClicked();
-    void addZoneClicked();   // pick a sample, then AddZoneOverlay for lo/hi/root — the
-                              // native-model equivalent of PluginEditor's
-                              // openZoneBuilderAddZone()/showZoneBuilderAddZoneOverlay()
+    void addZoneClicked();   // pick a sample, then AddZoneOverlay for lo/hi/root
 
     void refreshInspectorFromSelection();
 

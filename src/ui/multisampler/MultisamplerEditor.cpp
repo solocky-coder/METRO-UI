@@ -199,9 +199,8 @@ void MultisamplerEditor::newInstrumentClicked()
 
 void MultisamplerEditor::addZoneClicked()
 {
-    // Same convention as PluginEditor's raw-SFZ zone builder
-    // (openZoneBuilderAddZone): pick a sample first, then confirm the key
-    // range in AddZoneOverlay before committing the zone.
+    // Pick a sample first, then confirm the key range in AddZoneOverlay
+    // before committing the zone.
     fileChooser = std::make_unique<juce::FileChooser> ("Add sample as new zone…", juce::File(),
                                                          "*.wav;*.aif;*.aiff;*.flac;*.ogg");
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
@@ -211,8 +210,7 @@ void MultisamplerEditor::addZoneClicked()
             if (! chosen.existsAsFile()) return; // cancelled
 
             // Default: start just above the highest key currently mapped, so a
-            // second Add Zone doesn't silently overlap the first — mirrors
-            // openZoneBuilderAddZone()'s prevHiKey logic exactly.
+            // second Add Zone doesn't silently overlap the first.
             int prevHiKey = -1;
             for (const auto& z : instrument.zones)
                 prevHiKey = juce::jmax (prevHiKey, z.highKey);
@@ -472,9 +470,8 @@ void MultisamplerEditor::refreshInspectorFromSelection()
 
     // Drives the shared SliceControlBar — see this method's declaration
     // comment. PluginEditor reads getSelectedZoneIndex()/getInstrument()
-    // right after this fires to build the SCB readout, exactly mirroring
-    // zoneBuilderKeysPanel::onRowClicked's push into
-    // sliceControlBar.setSfzZoneSummary() for ZONES.
+    // right after this fires to build the SCB readout via
+    // sliceControlBar.setSfzZoneSummary().
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
 }
 

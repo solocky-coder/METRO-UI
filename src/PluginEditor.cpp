@@ -119,162 +119,29 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      resized();
      repaint(); // clear waveform/overview areas vacated by the old view
  };
- sliceControlBar.onZoneViewToggle = [this] (bool on) { toggleZoneBuilder (on); };
- // ZONES tab-icon (DualLcdControlFrame) — same logic, second entry point.
- // See toggleZoneBuilder() for why this needs to exist independently of
- // SliceControlBar's own ZONES toggle.
- headerBar.dualFrame().onZoneBuilderToggle = [this] { toggleZoneBuilder (! showZoneBuilder); };
- sliceControlBar.onZoneSaveRequested = [this] { commitZoneBuilderPendingZones(); };
- // SFZ-PLAYER Zones view previews/highlights sfzPlayer2's notes, not the
- // legacy SF-Player's — must be set before any note requests are made.
- zoneBuilderKeysPanel.setEngineSource (KeysPanel::EngineSource::SfzPlayer2);
- zoneBuilderKeysPanel.setSfzEditable (true);
- zoneBuilderKeysPanel.setAddZoneButtonVisible (true);
- // This instance only ever shows SFZ/SF2 zones (uiMode 1/2), never the
- // Slicer — unlike sfzPlayerDropdown.keysPanel, nothing toggles this per
- // uiMode, so it must default off or it's permanently stuck on the empty
- // Slicer highlight branch and zone key-colouring never renders.
- zoneBuilderKeysPanel.setSlicerHighlightEnabled (false);
- zoneBuilderKeysPanel.onAddZoneRequested = [this] { openZoneBuilderAddZone(); };
-zoneBuilderKeysPanel.onRowClicked = [this] (int rowIndex)
-{
-    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
-    if (rowIndex < 0 || rowIndex >= (int) zones.size())
-    {
-        sliceControlBar.clearSfzZoneSummary();
-        return;
-    }
-    const auto& z = zones[(size_t) rowIndex];
-    sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
-                                       z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
-};
-zoneBuilderKeysPanel.onZoneEdited = [this] (int rowIndex, const KeysPanel::Keyzone& z)
-{
-    // Keep the readout live while the user is drag-editing the currently
-    // selected row's numeric columns in the matrix.
-    sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
-                                       z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
-};
-// Right-click a zone-matrix row -> small "Delete Zone" popup, staged through
-// the same scratch-mutation path as field edits and Add Zone.
-zoneBuilderKeysPanel.onRowRightClicked = [this] (int rowIndex, juce::Point<int> screenPos)
-{
-    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
-    if (rowIndex < 0 || rowIndex >= (int) zones.size())
-        return;
-
-    // Same 16-colour named palette as "Slice Color" in the slicer
-    // (SliceLane.cpp) — kept identical so the picker UX matches everywhere
-    // in the app a zone/slice can be recoloured.
-    static const struct { const char* name; juce::uint32 argb; } kPal[] = {
-        { "Cyan",    0xFF00C8FF }, { "Green",   0xFF00FF87 },
-        { "Yellow",  0xFFFFE800 }, { "Orange",  0xFFFF6B00 },
-        { "Red",     0xFFFF2D55 }, { "Pink",    0xFFFF2D9A },
-        { "Violet",  0xFFB44FFF }, { "Blue",    0xFF4A80FF },
-        { "Sky",     0xFF00BFFF }, { "Mint",    0xFF00FFD0 },
-        { "Lime",    0xFFA8FF3E }, { "Gold",    0xFFFFD700 },
-        { "Coral",   0xFFFF7F50 }, { "Magenta", 0xFFFF00FF },
-        { "White",   0xFFE8E8E8 }, { "Silver",  0xFF888888 },
-    };
-
-    const juce::Colour curCol = zones[(size_t) rowIndex].colour;
-    juce::PopupMenu colourSub;
-    for (int ci = 0; ci < 16; ++ci)
-    {
-        juce::Colour c ((juce::uint32) kPal[ci].argb);
-        colourSub.addColouredItem (20 + ci, kPal[ci].name, c,
-                                   true, c.toDisplayString (false) == curCol.toDisplayString (false));
-    }
-
-    auto* topLvl = getTopLevelComponent();
-    float ms = DysektLookAndFeel::getMenuScale();
-    juce::PopupMenu menu;
-    menu.addItem (1, "Delete Zone");
-    menu.addSeparator();
-    menu.addSubMenu ("Zone Color", colourSub);
-    menu.showMenuAsync (
-        juce::PopupMenu::Options()
-            .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
-            .withParentComponent (topLvl)
-            .withStandardItemHeight ((int) (24 * ms)),
-        [this, rowIndex] (int result)
-        {
-            if (result == 1)
-            {
-                deleteZoneBuilderZone (rowIndex);
-            }
-            else if (result >= 20 && result < 36)
-            {
-                static const juce::uint32 kPalARGB[] = {
-                    0xFF00C8FF, 0xFF00FF87, 0xFFFFE800, 0xFFFF6B00,
-                    0xFFFF2D55, 0xFFFF2D9A, 0xFFB44FFF, 0xFF4A80FF,
-                    0xFF00BFFF, 0xFF00FFD0, 0xFFA8FF3E, 0xFFFFD700,
-                    0xFFFF7F50, 0xFFFF00FF, 0xFFE8E8E8, 0xFF888888,
-                };
-                setZoneBuilderZoneColour (rowIndex, juce::Colour (kPalARGB[result - 20]));
-            }
-        });
-};
+ sliceControlBar.onMultisamplerViewToggle = [this] (bool on) { toggleMultisamplerEditor (on); };
+ // MULTISAMPLER tab-icon (DualLcdControlFrame) — same logic, second entry
+ // point. See toggleMultisamplerEditor() for why this needs to exist
+ // independently of SliceControlBar's own toggle.
+ headerBar.dualFrame().onMultisamplerToggle = [this] { toggleMultisamplerEditor (! showMultisamplerEditor); };
+ sliceControlBar.onInstrumentSaveRequested = [this] { multisamplerEditor.saveInPlace(); };
 sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float value)
 {
-    if (showMultisamplerEditor)
-    {
-        // Same SCB, same field enum, MULTISAMPLER's native model underneath
-        // instead of ZONES' raw-SFZ scratch file — see
-        // MultisamplerEditor::applySliceControlBarFieldEdit's doc comment.
-        multisamplerEditor.applySliceControlBarFieldEdit (rowIndex, field, value);
-        return;
-    }
-
-    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
-    if (rowIndex < 0 || rowIndex >= (int) zones.size()) return;
-    auto z = zones[(size_t) rowIndex];
-    switch (field)
-    {
-        case SliceControlBar::ZoneLoKey:   z.loKey = juce::jmin (z.hiKey, juce::roundToInt (value)); break;
-        case SliceControlBar::ZoneHiKey:   z.hiKey = juce::jmax (z.loKey, juce::roundToInt (value)); break;
-        case SliceControlBar::ZoneRoot:    z.rootPitch = juce::roundToInt (value); break;
-        case SliceControlBar::ZonePitch:   z.tuneCents = value; break;
-        case SliceControlBar::ZonePan:     z.pan = value; break;
-        case SliceControlBar::ZoneVolume:  z.volDb = value; break;
-        case SliceControlBar::ZoneRelease: z.releaseSec = value; break;
-        case SliceControlBar::ZoneLoop:    z.isLooped = value > 0.5f; break;
-        default: return;
-    }
-    // Field edits now stage through the scratch file too (instead of writing
-    // straight to the target on the first edit) -- makes SAVE appear
-    // consistently and gives an undo path via DISCARD, matching Add Zone and
-    // Delete Zone.
-    ensureZoneBuilderScratchExists();
-    sfzPlayerDropdown.writeSfzZoneChange (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz,
-                                    rowIndex, z);
-    sliceControlBar.setSfzZoneSummary (rowIndex, z.name, z.loKey, z.hiKey, z.rootPitch,
-                                       z.tuneCents, z.pan, z.volDb, z.releaseSec, z.isLooped);
-    // clearSummary=false — this is a live edit of the currently-selected row,
-    // not a fresh load/add/discard, so the SCB readout the line above just
-    // wrote should stay on screen instead of being wiped by the refresh.
-    refreshZoneBuilderMatrix (zoneBuilderDirty ? zoneBuilderScratchFile : zoneBuilderTargetSfz, false);
+    // Same SCB, same field enum, MULTISAMPLER's native model underneath —
+    // see MultisamplerEditor::applySliceControlBarFieldEdit's doc comment.
+    multisamplerEditor.applySliceControlBarFieldEdit (rowIndex, field, value);
 };
- addChildComponent (zoneBuilderKeysPanel); // hidden until showZoneBuilder is true
- zoneBuilderKeysPanel.getProperties().set ("dysektThemeKey", "accent");
 
  addChildComponent (multisamplerEditor); // hidden until showMultisamplerEditor is true
  multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
  multisamplerEditor.onInstrumentChanged = [this]
  {
-     // Consolidation-plan step 3: keep BOTH keyboard-highlight displays
-     // (zoneBuilderKeysPanel — ZONES' own matrix — and
-     // sfzPlayerDropdown.keysPanel, the normal SFZ-PLAYER view's live
-     // highlighting) in sync with MULTISAMPLER edits too, not just ZONES
-     // edits (see refreshZoneBuilderPreview()'s identical push for the
-     // ZONES side). Previously only ZONES-driven changes ever reached
-     // these — an edit made purely in MULTISAMPLER left both stale until
-     // some ZONES-side action happened to refresh them. Using
-     // MultisamplerEditor::toKeyzones() directly on the live model means
-     // this no longer depends on re-parsing any file off disk at all.
+     // Keep the normal SFZ-PLAYER view's live keyboard highlighting
+     // (sfzPlayerDropdown.keysPanel) in sync with MULTISAMPLER edits, and
+     // reflect MULTISAMPLER's dirty state on the SCB's SAVE button.
      const auto keyzones = MultisamplerEditor::toKeyzones (multisamplerEditor.getInstrument());
-     zoneBuilderKeysPanel.setKeyzones (keyzones);
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
+     sliceControlBar.setInstrumentDirty (multisamplerEditor.isDirty());
 
      // Nothing to persist yet (Phase 4 / .metrokit isn't wired to plugin
      // state), but repaint so the panel's own dirty-dot indicator and any
@@ -283,12 +150,9 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
  };
  multisamplerEditor.onZoneSelectionOrEditChanged = [this]
  {
-     // MULTISAMPLER's exact counterpart of zoneBuilderKeysPanel::
-     // onRowClicked/onZoneEdited pushing into sliceControlBar
-     // .setSfzZoneSummary() further down this file — same SCB, same
-     // fields, different model underneath. Guarded on showMultisamplerEditor
-     // so a stale callback firing while MULTISAMPLER isn't even the active
-     // editor can't stomp on ZONES' own SCB readout.
+     // Pushes the selected zone's fields into sliceControlBar.setSfzZoneSummary()
+     // further down this file, so the SCB readout stays in sync with
+     // MULTISAMPLER's selection/edits.
      if (! showMultisamplerEditor) return;
 
      const int idx = multisamplerEditor.getSelectedZoneIndex();
@@ -595,13 +459,6 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
             #endif
 
-             // Neither sfzPlayer2 (never .process()'d) nor sampleData2's
-             // DecodedSample (SoundFontLoader only sets ->fileName, never
-             // ->filePath) reliably tracks which .sfz is loaded. The file is
-             // already known right here though, so just remember it directly
-             // rather than querying engine state that doesn't carry it.
-             zoneBuilderTargetSfz = f;
-
              // Keep the native multisampler model in sync with whatever .sfz
              // was just loaded, so opening MULTISAMPLER (K) reflects the file
              // that's actually playing instead of stale/empty content from
@@ -613,19 +470,6 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              // (same MessageOverlay path used elsewhere, e.g. drum-kit
              // auto-detect below already pops up unprompted after a load).
              multisamplerEditor.importFromFile (f, false);
-
-             // A different .sfz just became the target — any zones staged
-             // against the previous target no longer apply. Drop them rather
-             // than silently carrying them (and their scratch file, which was
-             // built against the old file's contents) across the switch.
-             zoneBuilderDirty = false;
-             sliceControlBar.setZoneDirty (false);
-             if (zoneBuilderScratchFile.existsAsFile())
-                 zoneBuilderScratchFile.deleteFile();
-             zoneBuilderScratchFile = juce::File();
-
-             if (showZoneBuilder)
-                 refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
          }
          return;
      }
@@ -890,38 +734,22 @@ void DysektEditor::setUiMode (int mode)
  // from it.
  if (uiMode != 0 && trimSession != nullptr && ! trimSession->active)
      trimSession.reset();
- // Leaving SFZ-PLAYER — reset zone-builder / MULTISAMPLER view so neither
- // can leak into other tabs (e.g. keep the SCB spuriously visible in
- // Slicer, or silently replace the normal waveform view when the user tabs
- // back into SFZ-PLAYER later; see the SCB visibility gate and the
- // uiMode == 1 branch in resized() for why this matters).
+ // Leaving SFZ-PLAYER — reset MULTISAMPLER view so it can't leak into
+ // other tabs (e.g. keep the SCB spuriously visible in Slicer, or silently
+ // replace the normal waveform view when the user tabs back into
+ // SFZ-PLAYER later; see the SCB visibility gate and the uiMode == 1
+ // branch in resized() for why this matters).
  if (uiMode != 1)
  {
-     showZoneBuilder = false;
-     sliceControlBar.setZoneViewActive (false);
-     headerBar.dualFrame().setZoneBuilderActive (false);
      sliceControlBar.clearSfzZoneSummary();
 
-     // Known limitation: unlike the ZONES toggle-off gate (onZoneViewToggle),
-     // switching tabs away from SFZ-PLAYER drops any staged-but-unsaved zones
-     // with no Save/Discard prompt. Tab switches aren't gated the same way
-     // the ZONES button is, so silently discarding here (rather than leaving
-     // stale pending zones pointed at a scratch file the user can no longer
-     // reach) is the safer of the two bad options.
-     zoneBuilderDirty = false;
-     sliceControlBar.setZoneDirty (false);
-     if (zoneBuilderScratchFile.existsAsFile())
-         zoneBuilderScratchFile.deleteFile();
-     zoneBuilderScratchFile = juce::File();
-
-     // MULTISAMPLER's counterpart of the showZoneBuilder reset above — this
-     // was previously missing, so leaving MULTISAMPLER open, tabbing away,
-     // and tabbing back showed the Multisampler panel again instead of the
-     // normal SFZ-PLAYER waveform view. Unlike ZONES, this doesn't discard
-     // anything: multisamplerEditor's in-memory edits and dirty flag are
-     // untouched, only the "which view is visible" flag resets — so the
-     // user's edits are still there if they reopen it with the K shortcut.
+     // Doesn't discard anything: multisamplerEditor's in-memory edits and
+     // dirty flag are untouched, only the "which view is visible" flag
+     // resets — so the user's edits are still there if they reopen it
+     // with the K shortcut.
      showMultisamplerEditor = false;
+     sliceControlBar.setMultisamplerViewActive (false);
+     headerBar.dualFrame().setMultisamplerActive (false);
  }
 
  syncBrowserMode();
@@ -1802,14 +1630,14 @@ void DysektEditor::resized()
  // SCB first (bottommost), then overview row sits immediately above it.
  //
  // Hidden until there's actually something for it to control: either a real
- // sample/kit is loaded (hasRealSample), or the zone builder is open and
- // needs the SCB's SAVE button + selected-zone readout (showZoneBuilder).
- // ZONES itself no longer needs the SCB just to be reachable — the
- // DualLcdControlFrame ZONES tab-icon (SFZ-PLAYER only) opens the zone
- // builder directly, so an empty SFZ-PLAYER tab no longer shows the SCB.
- // showZoneBuilder is always reset to false on leaving uiMode 1 (see
+ // sample/kit is loaded (hasRealSample), or MULTISAMPLER is open and needs
+ // the SCB's SAVE button + selected-zone readout (showMultisamplerEditor).
+ // MULTISAMPLER itself no longer needs the SCB just to be reachable — the
+ // DualLcdControlFrame MULTISAMPLER tab-icon (SFZ-PLAYER only) opens it
+ // directly, so an empty SFZ-PLAYER tab no longer shows the SCB.
+ // showMultisamplerEditor is always reset to false on leaving uiMode 1 (see
  // setUiMode), so it can't leak a stale SCB into the Slicer tab.
- if ((hasRealSample || showZoneBuilder || showMultisamplerEditor) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
+ if ((hasRealSample || showMultisamplerEditor) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);
@@ -1828,7 +1656,7 @@ void DysektEditor::resized()
  // open (that's zoneMapView, a 2D key/velocity grid with no zoom concept of
  // its own yet), so previously it sat there fully unresponsive to anything
  // the user did with it — see the bug report this fixed.
- if ((uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample && !showPadGrid && !showZoneBuilder && !showMultisamplerEditor)
+ if ((uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample && !showPadGrid && !showMultisamplerEditor)
  {
      auto overviewRow = area.removeFromBottom (kOverviewRowH);
      const int overviewY = overviewRow.getY() + kInterGap;
@@ -1879,7 +1707,6 @@ void DysektEditor::resized()
      sfzDropdown.setVisible  (false);       sfzDropdown.setBounds  ({});
      sfzPlayerDropdown.setVisible (false);  sfzPlayerDropdown.setBounds ({});
      padGridView.setVisible  (false);       padGridView.setBounds  ({});
-     zoneBuilderKeysPanel.setVisible (false); zoneBuilderKeysPanel.setBounds ({});
      multisamplerEditor.setVisible (false);  multisamplerEditor.setBounds ({});
  }
  else if (initBrowserOpen)
@@ -1890,7 +1717,6 @@ void DysektEditor::resized()
      sfzDropdown.setVisible  (false);       sfzDropdown.setBounds  ({});
      sfzPlayerDropdown.setVisible (false);  sfzPlayerDropdown.setBounds ({});
      padGridView.setVisible  (false);       padGridView.setBounds  ({});
-     zoneBuilderKeysPanel.setVisible (false); zoneBuilderKeysPanel.setBounds ({});
      multisamplerEditor.setVisible (false);  multisamplerEditor.setBounds ({});
  }
  else if (uiMode == 0 || trimActive)
@@ -1910,43 +1736,31 @@ void DysektEditor::resized()
      sfzDropdown.setBounds ({});
      sfzPlayerDropdown.setVisible (false);
      sfzPlayerDropdown.setBounds ({});
-     zoneBuilderKeysPanel.setVisible (false);
-     zoneBuilderKeysPanel.setBounds ({});
      multisamplerEditor.setVisible (false);
      multisamplerEditor.setBounds ({});
  }
  else if (uiMode == 1)
  {
-    // SFZ-PLAYER: WaveformView / PadGridView / zone-builder KeysPanel,
-    // depending on the SCB toggles. ZONES (showZoneBuilder) takes priority
-    // over PADS since the SCB never shows both toggles at once (see
-    // SliceControlBar::isSfzPlayer2Mode gating), but guard anyway.
-    const bool showZones1  = showZoneBuilder && ! trimActive;
-    const bool showMulti1  = showMultisamplerEditor && ! trimActive && ! showZones1;
-    const bool showPads1   = showPadGrid && ! showZones1 && ! showMulti1;
+    // SFZ-PLAYER: WaveformView / PadGridView / MULTISAMPLER, depending on
+    // the SCB toggles.
+    const bool showMulti1  = showMultisamplerEditor && ! trimActive;
+    const bool showPads1   = showPadGrid && ! showMulti1;
 
-    waveformView.setVisible (! showPads1 && ! showZones1 && ! showMulti1);
-    waveformView.setBounds ((showPads1 || showZones1 || showMulti1) ? juce::Rectangle<int>()
+    waveformView.setVisible (! showPads1 && ! showMulti1);
+    waveformView.setBounds ((showPads1 || showMulti1) ? juce::Rectangle<int>()
                                       : juce::Rectangle<int> (screenX, y, screenW, waveH));
     padGridView.setVisible (showPads1);
     padGridView.setBounds (showPads1 ? juce::Rectangle<int> (screenX, y, screenW, waveH)
                                      : juce::Rectangle<int>());
-    // zoneBuilderKeysPanel draws its own complete LCD-style frame internally
-    // (see KeysPanel::paint()), unlike waveformView/padGridView which rely on
-    // PluginEditor's paintOverChildren() to draw an external bezel that
-    // expands their inset content bounds back out to the full kFrameX/
-    // kFrameW width. Since nothing does that expansion for KeysPanel, giving
-    // it the same bezel-inset screenX/screenW bounds as the other views left
-    // its self-drawn frame visibly narrower than the SCB/LCD row above it —
-    // so it gets the full, un-inset frame bounds directly instead.
+
+    // multisamplerEditor draws its own complete LCD-style frame internally,
+    // unlike waveformView/padGridView which rely on PluginEditor's
+    // paintOverChildren() to draw an external bezel that expands their
+    // inset content bounds back out to the full kFrameX/kFrameW width.
+    // Since nothing does that expansion here, it gets the full, un-inset
+    // frame bounds directly instead.
     const int zbTop    = frameTop;
     const int zbHeight = juce::jmax (si (80), (frameBot - trimH) - frameTop);
-    zoneBuilderKeysPanel.setVisible (showZones1);
-    zoneBuilderKeysPanel.setBounds (showZones1 ? juce::Rectangle<int> (kFrameX, zbTop, kFrameW, zbHeight)
-                                               : juce::Rectangle<int>());
-
-    // multisamplerEditor draws its own complete frame too — same full-width,
-    // un-inset bounds as zoneBuilderKeysPanel above (and for the same reason).
     multisamplerEditor.setVisible (showMulti1);
     multisamplerEditor.setBounds (showMulti1 ? juce::Rectangle<int> (kFrameX, zbTop, kFrameW, zbHeight)
                                               : juce::Rectangle<int>());
@@ -1967,8 +1781,6 @@ void DysektEditor::resized()
      waveformView.setBounds ({});
      padGridView.setVisible (false);
      padGridView.setBounds ({});
-     zoneBuilderKeysPanel.setVisible (false);
-     zoneBuilderKeysPanel.setBounds ({});
      multisamplerEditor.setVisible (false);
      multisamplerEditor.setBounds ({});
  }
@@ -2142,8 +1954,7 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
  if (code == '?') { toggleShortcutsPanel(); return true; }
 
  // MULTISAMPLER panel — SFZ-PLAYER only, same gating as the 'L' PADS
- // shortcut below. Mutually exclusive with ZONES (toggleMultisamplerEditor
- // turns showZoneBuilder off, same as toggleZoneBuilder does the reverse).
+ // shortcut below.
  if (code == 'K' && uiMode == 1) { toggleMultisamplerEditor (! showMultisamplerEditor); return true; }
 
  if (code == 'M')
@@ -2640,107 +2451,19 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // (see browserPanel.onLoadRequest, uiMode == 0 branch) and isn't a fit for
 // writing SFZ <region> blocks.
 
-// Opens/closes the zone builder. Shared by SliceControlBar's ZONES toggle
-// and DualLcdControlFrame's ZONES tab-icon (see wiring in the constructor)
-// so both entry points — including the SCB one that's hidden until a real
-// kit is loaded — behave identically, unsaved-zones prompt included.
-void DysektEditor::toggleZoneBuilder (bool on)
-{
-    // While both editors temporarily coexist (MULTISAMPLER isn't
-    // feature-complete yet — ZONES stays until it is), switching from
-    // MULTISAMPLER to ZONES is just picking a different view of the same
-    // SFZ-PLAYER session, not abandoning MULTISAMPLER's work. Route through
-    // hideMultisamplerViewForSwitch() instead of toggleMultisamplerEditor
-    // (false) so MULTISAMPLER's dirty flag/staged edits survive untouched —
-    // switching back to it later finds everything exactly as it was, and no
-    // "Unsaved Instrument" prompt interrupts a plain view switch. That guard
-    // still fires for a real close (e.g. leaving the SFZ-PLAYER tab).
-    if (on && showMultisamplerEditor)
-        hideMultisamplerViewForSwitch();
-
-    if (! on && zoneBuilderDirty)
-    {
-        // Whichever control fired this (SCB toggle or tab-icon) may already
-        // have flipped its own "active" look before calling us — put both
-        // back to "on" until the user actually resolves the prompt below, so
-        // neither reads as closed while Save/Discard is still pending.
-        sliceControlBar.setZoneViewActive (true);
-        headerBar.dualFrame().setZoneBuilderActive (true);
-
-        confirmOverlay = std::make_unique<ConfirmOverlay> (
-            "Unsaved Zones",
-            "You have zones staged that haven't been saved yet. Save them before leaving?",
-            "Save",
-            "Discard");
-        addAndMakeVisible (*confirmOverlay);
-        confirmOverlay->setBounds (getLocalBounds());
-        confirmOverlay->toFront (true);
-        confirmOverlay->onResult = [this] (bool save)
-        {
-            confirmOverlay.reset();
-            if (save)
-                commitZoneBuilderPendingZones();
-            else
-                discardZoneBuilderPendingZones();
-
-            showZoneBuilder = false;
-            sliceControlBar.setZoneViewActive (false);
-            headerBar.dualFrame().setZoneBuilderActive (false);
-            sliceControlBar.clearSfzZoneSummary();
-            resized();
-            repaint();
-        };
-        return;
-    }
-
-    showZoneBuilder = on;
-    sliceControlBar.setZoneViewActive (on);
-    headerBar.dualFrame().setZoneBuilderActive (on);
-    if (on)
-    {
-        // initBrowserOpen ("no real sample yet, show the picker") is only
-        // ever auto-cleared against the Slicer's own sampleData (see the
-        // hasRealSampleNow check in the timer callback) — it has no idea
-        // sampleData2/the SFZ-Player exists. If the user jumps straight to
-        // the SFZ-Player tab and opens the zone builder without ever having
-        // loaded a Slicer sample, that flag is still true, and resized()
-        // checks it BEFORE the uiMode == 1 branch — so it force-hides
-        // zoneBuilderKeysPanel (along with everything else) regardless of
-        // showZoneBuilder, leaving only the SCB visible. Opening the zone
-        // builder is itself an explicit "I'm working with the SFZ-Player"
-        // action, so treat it the same as the existing auto-close path.
-        if (initBrowserOpen)
-        {
-            initBrowserOpen = false;
-            browserPanel.setVisible (false);
-            headerBar.setBrowserActive (false);
-        }
-
-        // zoneBuilderTargetSfz is set synchronously in onLoadRequest at
-        // load time (see comment there) — just reflect it here, no engine
-        // query needed. refreshZoneBuilderPreview() picks whichever file is
-        // currently authoritative (the scratch file if a staged session
-        // survived a tab switch back in, otherwise the raw on-disk target).
-        refreshZoneBuilderPreview();
-    }
-    resized();
-    repaint(); // clear waveform/overview areas vacated by the old view
-}
-
 void DysektEditor::toggleMultisamplerEditor (bool on)
 {
-    // Consolidation-plan step 2: MULTISAMPLER's own unsaved-changes guard,
-    // mirroring toggleZoneBuilder's zoneBuilderDirty prompt above so both
-    // editors protect the user the same way when the panel closes with
+    // Unsaved-changes guard, mirroring the pattern other panels use so the
+    // user is protected the same way when the panel closes with
     // uncommitted edits (drag-edit, inspector apply, Add Zone, etc. — see
     // MultisamplerEditor::isDirty()).
     if (! on && multisamplerEditor.isDirty())
     {
-        // Unlike ZONES, nothing else (header tab icon, SCB button) tracks
-        // an independent "active" look for this panel to desync from —
-        // the K-shortcut is its only toggle — so there's no extra state to
-        // put back to "on" here; just keep the panel open and showing
-        // until the prompt below is resolved.
+        // Nothing else (header tab icon, SCB button) tracks an independent
+        // "active" look for this panel to desync from — the K-shortcut is
+        // its only other toggle — so there's no extra state to put back to
+        // "on" here; just keep the panel open and showing until the prompt
+        // below is resolved.
         showMultisamplerEditor = true;
 
         const bool haveSaveTarget = multisamplerEditor.getLastSavedFile() != juce::File();
@@ -2763,16 +2486,15 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
                 // outlives this callback — the panel below closes right
                 // away regardless, and the save completes silently in the
                 // background once the user picks a file. Acceptable for
-                // now (matches ZONES' own commitZoneBuilderPendingZones(),
-                // which is synchronous only because it writes to an
-                // already-known scratch file); a "block close until Save-As
-                // resolves" refinement can follow later if it's missed.
+                // now; a "block close until Save-As resolves" refinement
+                // can follow later if it's missed.
                 multisamplerEditor.saveInPlace();
             else
                 multisamplerEditor.discardPendingEdits();
 
             showMultisamplerEditor = false;
             sliceControlBar.setMultisamplerViewActive (false);   // see the unconditional sync a few lines below — this early-return path needs it too
+            headerBar.dualFrame().setMultisamplerActive (false);
             sliceControlBar.clearSfzZoneSummary();   // leaving MULTISAMPLER — don't leave its zone readout stuck in the SCB
             resized();
             repaint();
@@ -2781,28 +2503,14 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
     }
 
     showMultisamplerEditor = on;
-    if (on && showZoneBuilder)
-        hideZoneBuilderView();   // view switch, not a close — see hideZoneBuilderView()'s doc comment
-
-    // The zone-summary strip in the SCB (loKey/hiKey/root/pitch/pan/volume/
-    // release/loop) is shared between ZONES and MULTISAMPLER, but its
-    // paint()/drag-edit code gates on zoneViewActive — which also drives the
-    // SCB's own "ZONES" button look AND that button's click-to-toggle
-    // behaviour (see SliceControlBar::mouseDown's zoneToggleBtnArea check).
-    // Reusing zoneViewActive here would make that button read as "active"
-    // while MULTISAMPLER is open and, worse, make clicking it flip straight
-    // back to inactive instead of switching to ZONES. setMultisamplerViewActive
-    // is the same idea as setZoneViewActive but scoped to just the summary
-    // strip, so MULTISAMPLER gets a working readout without touching ZONES'
-    // own toggle semantics.
     sliceControlBar.setMultisamplerViewActive (on);
+    headerBar.dualFrame().setMultisamplerActive (on);
     if (! on)
         sliceControlBar.clearSfzZoneSummary();   // same rationale as the dirty-guard branch above
 
     if (on && initBrowserOpen)
     {
-        // Same rationale as toggleZoneBuilder's identical guard above:
-        // opening this panel is itself an explicit "I'm working with the
+        // Opening this panel is itself an explicit "I'm working with the
         // SFZ-Player" action, so clear the empty-state browser auto-open.
         initBrowserOpen = false;
         browserPanel.setVisible (false);
@@ -2811,39 +2519,6 @@ void DysektEditor::toggleMultisamplerEditor (bool on)
 
     resized();
     repaint();
-}
-
-// Non-destructive counterparts of toggleZoneBuilder(false) / toggleMultisamplerEditor
-// (false) used ONLY when one editor is switching the visible panel to the
-// other — never for an actual close. Each just hides its own view and syncs
-// the matching toggle look; neither touches the other editor's dirty flag,
-// staged scratch file, or in-memory edits, so flipping back and forth
-// between ZONES and MULTISAMPLER while both exist can't lose work or pop an
-// unsaved-changes prompt. Delete both once ZONES is retired and this
-// temporary coexistence period (see toggleZoneBuilder's doc comment) ends.
-void DysektEditor::hideZoneBuilderView()
-{
-    showZoneBuilder = false;
-    sliceControlBar.setZoneViewActive (false);
-    headerBar.dualFrame().setZoneBuilderActive (false);
-    sliceControlBar.clearSfzZoneSummary();
-}
-
-void DysektEditor::hideMultisamplerViewForSwitch()
-{
-    showMultisamplerEditor = false;
-    sliceControlBar.setMultisamplerViewActive (false);
-    sliceControlBar.clearSfzZoneSummary();
-}
-
-void DysektEditor::refreshZoneBuilderMatrix (const juce::File& sfzFile, bool clearSummary)
-{
-    if (sfzFile.existsAsFile())
-        zoneBuilderKeysPanel.setKeyzones (SfzPlayerDropdownPanel::parseSfzZones (sfzFile));
-    else
-        zoneBuilderKeysPanel.clearKeyzones();
-    if (clearSummary)
-        sliceControlBar.clearSfzZoneSummary();
 }
 
 // Drum-kit detection: offer to auto-assign each zone its own output bus
@@ -2886,438 +2561,3 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
     };
 }
 
-void DysektEditor::openZoneBuilderAddZone()
-{
-    // Resolve the target SFZ (may be empty if nothing is loaded yet).
-    // See onZoneViewToggle's comment: sfzPlayer2 is never actually processed,
-    // so sampleData2's tracked path is the real source of truth here too.
-    // zoneBuilderTargetSfz is already kept current by onLoadRequest/
-    // onZoneViewToggle — reuse it rather than re-querying engine state.
-    const juce::File targetSfz = zoneBuilderTargetSfz;
-
-    // Zones staged-but-not-yet-saved won't appear in targetSfz's on-disk
-    // content yet, but the new zone's default range still needs to start
-    // above them, or a second staged Add Zone would silently overlap the
-    // first (or a staged edit/delete of an existing zone). zoneBuilderKeysPanel
-    // is already kept in sync with whichever file is currently authoritative
-    // (scratch-if-dirty else targetSfz) by refreshZoneBuilderMatrix() after
-    // every mutation — reuse that in-memory list instead of re-parsing from
-    // disk here. Same pattern deleteZoneBuilderZone() already uses below.
-    int prevHiKey = -1;
-    for (const auto& z : zoneBuilderKeysPanel.getKeyzones())
-        prevHiKey = juce::jmax (prevHiKey, z.hiKey);
-
-    zoneBuilderTargetSfz  = targetSfz;
-    zoneBuilderPrevHiKey  = prevHiKey;
-
-    const auto startDir = targetSfz.existsAsFile()
-                         ? targetSfz.getParentDirectory()
-                         : juce::File::getSpecialLocation (juce::File::userMusicDirectory);
-
-    zoneBuilderSampleChooser = std::make_unique<juce::FileChooser> (
-        "Choose a sample for the new zone", startDir,
-        "*.wav;*.aif;*.aiff;*.flac;*.ogg");
-
-    zoneBuilderSampleChooser->launchAsync (
-        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [this] (const juce::FileChooser& fc)
-        {
-            const auto chosen = fc.getResult();
-            if (! chosen.existsAsFile())
-                return; // cancelled
-
-            if (! zoneBuilderTargetSfz.existsAsFile())
-            {
-                // No SFZ loaded yet: name one first, then continue below.
-                openZoneBuilderSaveAsNew (chosen);
-                return;
-            }
-
-            showZoneBuilderAddZoneOverlay (zoneBuilderTargetSfz, chosen, zoneBuilderPrevHiKey);
-        });
-}
-
-void DysektEditor::showZoneBuilderAddZoneOverlay (const juce::File& sfzFile,
-                                                   const juce::File& sampleFile,
-                                                   int prevHiKey)
-{
-    const int defaultLo = (prevHiKey < 0) ? 0 : juce::jmin (prevHiKey + 1, 127);
-
-    zoneAddOverlay = std::make_unique<AddZoneOverlay> (
-        sampleFile.getFileNameWithoutExtension(), defaultLo);
-
-    zoneAddOverlay->onResult = [this, sfzFile, sampleFile] (int lo, int hi, int root, bool confirmed)
-    {
-        // Defer the reset so it runs after onResult has returned and
-        // AddZoneOverlay is no longer on the call stack (use-after-free fix,
-        // matching the pattern in SfzPlayerDropdownPanel).
-        juce::MessageManager::callAsync ([this] { hideZoneBuilderOverlays(); });
-
-        if (! confirmed)
-            return;
-
-        // Stage rather than write straight to sfzFile — appendZoneToSfz now
-        // writes into the scratch file (created on first touch), so several
-        // zones can be added/auditioned, alongside edits and deletes, before
-        // deciding to keep any of it.
-        ensureZoneBuilderScratchExists();
-        if (! zoneBuilderScratchFile.existsAsFile())
-            return;
-
-        // A bad/unresolvable sample= path parses fine in sfizz (regions=1,
-        // load "OK") but renders total silence, which looks identical to a
-        // genuine pipeline failure from the outside — matrix populated, LCD/
-        // waveform/slice-count all stay empty, no error anywhere. Log the
-        // exact path that's about to be written and flag it up front if the
-        // source file doesn't even exist, so that silent case is diagnosable
-        // from the log alone instead of requiring a manual file dump.
-        // buildZoneRegionText() computed once here and reused for the write
-        // below — it was previously called twice (once just to slice out the
-        // sample= line for this log message, once again inside
-        // appendZoneToSfz for the real write).
-        const juce::String regionText = buildZoneRegionText (zoneBuilderScratchFile, sampleFile, lo, hi, root);
-        processor.crashLogger.log ("Zone-builder stage: sampleFile=\"" + sampleFile.getFullPathName()
-            + "\" exists=" + (sampleFile.existsAsFile() ? "YES" : "NO")
-            + "  will write sample=\"" + regionText
-                  .fromFirstOccurrenceOf ("sample=", false, false)
-                  .upToFirstOccurrenceOf ("\n", false, false) + "\"");
-
-        appendZoneToSfz (zoneBuilderScratchFile, regionText);
-
-        // refreshZoneBuilderPreview() drives both the matrix and the
-        // sliceManager2/sampleData2 preview from the already-mutated scratch
-        // file — see its doc comment for why sfzPlayer2.loadFile() alone
-        // isn't enough to reach the slice view.
-        refreshZoneBuilderPreview();
-        zoneBuilderKeysPanel.autoScrollToZones();
-        repaint();
-    };
-
-    addAndMakeVisible (*zoneAddOverlay);
-    zoneAddOverlay->setBounds (getLocalBounds());
-    zoneAddOverlay->toFront (true);
-}
-
-// Builds the raw "<region>...</region>"-style text block for one zone.
-// Used by appendZoneToSfz, which now only ever writes into the scratch file
-// during staging (SAVE itself is a plain scratch->target file copy — see
-// commitZoneBuilderPendingZones).
-juce::String DysektEditor::buildZoneRegionText (const juce::File& sfzFile, const juce::File& sampleFile,
-                                                 int loKey, int hiKey, int rootKey)
-{
-    juce::String samplePath;
-    const auto sfzDir = sfzFile.getParentDirectory();
-    if (sampleFile.isAChildOf (sfzDir))
-        samplePath = sampleFile.getRelativePathFrom (sfzDir).replaceCharacter ('\\', '/');
-    else
-        samplePath = sampleFile.getFullPathName().replaceCharacter ('\\', '/');
-
-    return "\n<region>\n"
-           "sample="          + samplePath              + "\n"
-           "lokey="           + juce::String (loKey)    + "\n"
-           "hikey="           + juce::String (hiKey)    + "\n"
-           "pitch_keycenter=" + juce::String (rootKey)  + "\n"
-           "volume=-7\n"
-           "pan=0\n"
-           "tune=0\n"
-           "ampeg_release=0.664\n";
-}
-
-bool DysektEditor::appendZoneToSfz (const juce::File& sfzFile, const juce::String& regionText)
-{
-    juce::FileOutputStream stream (sfzFile);
-    if (stream.failedToOpen())
-        return false;
-
-    stream.setPosition (sfzFile.getSize());
-    stream.writeText (regionText, false, false, nullptr);
-    stream.flush();
-    return ! stream.getStatus().failed();
-}
-
-// Lazily creates the scratch file — a byte-for-byte copy of the real
-// on-disk target — the first time any change is staged in a zone-builder
-// session, and marks the session dirty. A no-op once the scratch file
-// already exists for the current staged session, so every staged mutation
-// (field edit / Add Zone / Delete Zone) can call this unconditionally
-// before writing.
-void DysektEditor::ensureZoneBuilderScratchExists()
-{
-    if (zoneBuilderDirty && zoneBuilderScratchFile.existsAsFile())
-        return; // already staged this session
-
-    if (! zoneBuilderTargetSfz.existsAsFile())
-        return;
-
-    // Scratch file lives alongside the real target (hidden, dot-prefixed) so
-    // relative sample= paths — computed relative to whichever file is being
-    // loaded — resolve identically whether sfizz opens this file or the real
-    // target.
-    zoneBuilderScratchFile = zoneBuilderTargetSfz.getSiblingFile (
-        "." + zoneBuilderTargetSfz.getFileNameWithoutExtension() + ".zonebuilder_scratch.sfz");
-
-    zoneBuilderTargetSfz.copyFileTo (zoneBuilderScratchFile);
-
-    zoneBuilderDirty = true;
-    sliceControlBar.setZoneDirty (true);
-}
-
-// Points the live engine + zone matrix at whichever file is currently
-// authoritative — the scratch file if a staged session is in progress
-// (already mutated in place by whatever field edit / Add Zone / Delete Zone
-// just ran), otherwise the real on-disk target. Called after every staged
-// operation so the matrix and slice/waveform preview immediately reflect
-// what was just written to disk.
-void DysektEditor::refreshZoneBuilderPreview()
-{
-    const juce::File previewFile = (zoneBuilderDirty && zoneBuilderScratchFile.existsAsFile())
-                                  ? zoneBuilderScratchFile : zoneBuilderTargetSfz;
-    if (! previewFile.existsAsFile())
-        return;
-
-    processor.sfzPlayer2.loadFile (previewFile, processor.fileLoadPool);
-    processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
-    // See writeSfzZoneChange's comment for why this call is required:
-    // sliceManager2/sampleData2 are only populated by the async soundfont
-    // decode, not by sfzPlayer2.loadFile() alone.
-    processor.loadSoundFontAsync (previewFile, SoundFontLoadTarget::SfzPlayer2);
-
-    // Keep both zone displays in sync. The Zone Builder and the normal
-    // SFZ-PLAYER view own separate KeysPanel instances, so refreshing only the
-    // builder matrix leaves deleted/added/edited zones stale in the normal view.
-    refreshZoneBuilderMatrix (previewFile);
-    sfzPlayerDropdown.reloadZones (previewFile);
-}
-
-// Right-click "Delete Zone" -> stage removal of one <region> block, via the
-// same scratch-mutation path as field edits and Add Zone.
-void DysektEditor::deleteZoneBuilderZone (int rowIndex)
-{
-    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
-    if (rowIndex < 0 || rowIndex >= (int) zones.size())
-        return;
-
-    const auto deletedZone = zones[(size_t) rowIndex];
-
-    ensureZoneBuilderScratchExists();
-    if (! zoneBuilderScratchFile.existsAsFile())
-        return;
-
-    SfzPlayerDropdownPanel::deleteSfzZone (zoneBuilderScratchFile, rowIndex);
-
-    // From here down: make the delete take effect immediately on the UI
-    // thread, rather than depending entirely on the refreshZoneBuilderPreview()
-    // round-trip below. That reload re-renders the kit on a background thread
-    // pool and is fire-and-forget with no rollback/error UI (see
-    // SoundFontLoader::LoadJob::postFailure()'s SFZ-PLAYER no-op comment) — if
-    // it's slow or silently fails to parse the mutated scratch file, the old
-    // sliceManager2 state (including the zone just "deleted") is otherwise
-    // left completely untouched: still pinned to its MIDI note, still in the
-    // matrix, with nothing telling the user it didn't take.
-
-    // Hard-kill (5ms forced release) any voice currently sounding anywhere in
-    // the deleted zone's key range, right away — don't wait for the async
-    // reload. releaseNoteForced() is note-indexed (not slice-indexed), so no
-    // sliceManager2 lookup is needed: just walk the zone's key span.
-    // Note: matching releaseNote()/releaseNoteForced()'s existing convention,
-    // one-shot voices are intentionally left alone here (they ignore forced
-    // release and simply play through to their natural end) — same behaviour
-    // as any other note-off in this engine, not something new introduced by
-    // this fix.
-    for (int note = deletedZone.loKey; note <= deletedZone.hiKey; ++note)
-        processor.voicePool2.releaseNoteForced (note);
-
-    // Optimistic UI update: drop this row from the panel's displayed zone
-    // list immediately, instead of waiting for the matrix to be repopulated
-    // by the (possibly slow/failed) reload below.
-    auto remainingZones = zones;
-    remainingZones.erase (remainingZones.begin() + rowIndex);
-    zoneBuilderKeysPanel.setKeyzones (remainingZones);
-
-    // Still kick off the full reload, to bring the engine (sliceManager2 /
-    // sampleData2) and the normal SFZ-PLAYER view fully back in sync. If this
-    // succeeds it will simply re-confirm the state already applied above; if
-    // it's slow, the zone is already gone from the UI and already silenced.
-    refreshZoneBuilderPreview();
-    repaint();
-}
-
-// Right-click "Zone Color" -> recolour one zone (same picker UX as "Slice
-// Color" in the slicer), staged through the same scratch-mutation path as
-// field edits / Add Zone / Delete Zone. The colour is persisted into the
-// .sfz text itself (see writeSfzZoneChange's dysekt_zone_color opcode) so it
-// survives reload instead of falling back to the deterministic per-index
-// default the next time the file is parsed.
-void DysektEditor::setZoneBuilderZoneColour (int rowIndex, juce::Colour colour)
-{
-    const auto& zones = zoneBuilderKeysPanel.getKeyzones();
-    if (rowIndex < 0 || rowIndex >= (int) zones.size())
-        return;
-
-    auto z = zones[(size_t) rowIndex];
-    z.colour = colour;
-
-    ensureZoneBuilderScratchExists();
-    if (! zoneBuilderScratchFile.existsAsFile())
-        return;
-
-    sfzPlayerDropdown.writeSfzZoneChange (zoneBuilderScratchFile, rowIndex, z);
-
-    // clearSummary=false — recolouring shouldn't wipe the currently-selected
-    // row's readout in the SliceControlBar, matching the field-edit path.
-    refreshZoneBuilderMatrix (zoneBuilderScratchFile, false);
-    repaint();
-}
-
-// SAVE — copies the (already-mutated) scratch file straight over the real
-// target, then clears staging state. Correctly commits any mix of staged
-// edits/adds/deletes in one shot, since the scratch file already reflects
-// all of them — no per-operation replay needed.
-void DysektEditor::commitZoneBuilderPendingZones()
-{
-    if (! zoneBuilderDirty)
-        return;
-
-    if (! zoneBuilderScratchFile.existsAsFile() || ! zoneBuilderTargetSfz.existsAsFile())
-        return;
-
-    if (! zoneBuilderScratchFile.copyFileTo (zoneBuilderTargetSfz))
-    {
-        messageOverlay = std::make_unique<MessageOverlay> (
-            "Save Failed",
-            "Could not write to:\n" + zoneBuilderTargetSfz.getFullPathName(),
-            MessageOverlay::Kind::Warning);
-        addAndMakeVisible (*messageOverlay);
-        messageOverlay->setBounds (getLocalBounds());
-        messageOverlay->toFront (true);
-        messageOverlay->onDismiss = [this] { messageOverlay.reset(); };
-        return; // leave everything staged so the user can retry SAVE
-    }
-
-    zoneBuilderDirty = false;
-    sliceControlBar.setZoneDirty (false);
-
-    // The scratch file's job is done now that its contents are for real.
-    if (zoneBuilderScratchFile.existsAsFile())
-        zoneBuilderScratchFile.deleteFile();
-    zoneBuilderScratchFile = juce::File();
-
-    processor.sfzPlayer2.loadFile (zoneBuilderTargetSfz, processor.fileLoadPool);
-    processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed);
-    processor.loadSoundFontAsync (zoneBuilderTargetSfz, SoundFontLoadTarget::SfzPlayer2);
-   #if DYSEKT_STANDALONE
-    pianoRollPanel.addSfzInstrumentTrack (zoneBuilderTargetSfz.getFileNameWithoutExtension(),
-                                          juce::Colour (0xFF9060D0));
-   #endif
-    refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
-    repaint();
-}
-
-// DISCARD — drop the staged scratch file without writing anything, and
-// restore the live preview back to zoneBuilderTargetSfz's actual on-disk
-// state.
-void DysektEditor::discardZoneBuilderPendingZones()
-{
-    zoneBuilderDirty = false;
-    sliceControlBar.setZoneDirty (false);
-
-    if (zoneBuilderScratchFile.existsAsFile())
-        zoneBuilderScratchFile.deleteFile();
-    zoneBuilderScratchFile = juce::File();
-
-    if (zoneBuilderTargetSfz.existsAsFile())
-    {
-        processor.sfzPlayer2.loadFile (zoneBuilderTargetSfz, processor.fileLoadPool);
-        processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed);
-        processor.loadSoundFontAsync (zoneBuilderTargetSfz, SoundFontLoadTarget::SfzPlayer2);
-       #if DYSEKT_STANDALONE
-        pianoRollPanel.addSfzInstrumentTrack (zoneBuilderTargetSfz.getFileNameWithoutExtension(),
-                                              juce::Colour (0xFF9060D0));
-       #endif
-    }
-    refreshZoneBuilderMatrix (zoneBuilderTargetSfz);
-    repaint();
-}
-
-// Called after the user has already picked a sample but no SFZ is loaded yet.
-// Shows ONE AddZoneOverlay with an extra name field on top (instead of a
-// separate SaveSfzOverlay dialog followed by a second AddZoneOverlay) —
-// naming the new kit and setting the first zone's key range happen in a
-// single modal. Folder is fixed to the sample's own folder; the old two-step
-// flow's separate destination-folder picker is dropped in favor of that
-// default to keep this a true one-dialog step. Users who want ".sfz" in a
-// different folder can still relocate the file afterward.
-void DysektEditor::openZoneBuilderSaveAsNew (const juce::File& sampleFile)
-{
-    zoneAddOverlay = std::make_unique<AddZoneOverlay> (
-        sampleFile.getFileNameWithoutExtension(), /*defaultLo*/ 0,
-        /*showNameField*/ true, /*defaultName*/ "Custom");
-
-    auto* overlayPtr = zoneAddOverlay.get();
-    zoneAddOverlay->onResult = [this, sampleFile, overlayPtr] (int lo, int hi, int root, bool confirmed)
-    {
-        // getEnteredName() must be read before the deferred reset below —
-        // overlayPtr is still alive here, on the call stack that triggered
-        // this callback (see the use-after-free note elsewhere in this file).
-        const juce::String enteredName = overlayPtr->getEnteredName();
-
-        juce::MessageManager::callAsync ([this] { hideZoneBuilderOverlays(); });
-
-        if (! confirmed)
-            return;
-
-        const auto dest = sampleFile.getParentDirectory().getChildFile (enteredName);
-
-        // Always create a fresh blank SFZ. Plain ASCII only in this comment —
-        // see the file-level note on why non-ASCII source literals are worth
-        // avoiding here specifically.
-        dest.replaceWithText ("// Custom SFZ - built with SFZ-PLAYER zone builder\n\n");
-
-        zoneBuilderTargetSfz = dest;
-
-        // Brand-new target — nothing can possibly be staged against it yet.
-        zoneBuilderDirty = false;
-        sliceControlBar.setZoneDirty (false);
-        if (zoneBuilderScratchFile.existsAsFile())
-            zoneBuilderScratchFile.deleteFile();
-        zoneBuilderScratchFile = juce::File();
-
-        processor.sfzPlayer2.loadFile (dest, processor.fileLoadPool);
-        processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
-        // See showZoneBuilderAddZoneOverlay's onResult for why this call is
-        // required: sliceManager2/sampleData2 are only populated by the async
-        // soundfont decode, not by sfzPlayer2.loadFile() alone.
-        processor.loadSoundFontAsync (dest, SoundFontLoadTarget::SfzPlayer2);
-       #if DYSEKT_STANDALONE
-        pianoRollPanel.addSfzInstrumentTrack (dest.getFileNameWithoutExtension(),
-                                              juce::Colour (0xFF9060D0));
-       #endif
-        refreshZoneBuilderMatrix (dest);
-
-        // Stage the first zone straight into the scratch file, same as the
-        // normal Add Zone path — see showZoneBuilderAddZoneOverlay's onResult.
-        ensureZoneBuilderScratchExists();
-        if (zoneBuilderScratchFile.existsAsFile())
-        {
-            const juce::String regionText = buildZoneRegionText (zoneBuilderScratchFile, sampleFile, lo, hi, root);
-            appendZoneToSfz (zoneBuilderScratchFile, regionText);
-            refreshZoneBuilderPreview();
-            zoneBuilderKeysPanel.autoScrollToZones();
-        }
-
-        repaint();
-    };
-
-    addAndMakeVisible (*zoneAddOverlay);
-    zoneAddOverlay->setBounds (getLocalBounds());
-    zoneAddOverlay->toFront (true);
-}
-
-void DysektEditor::hideZoneBuilderOverlays()
-{
-    if (zoneAddOverlay)
-    {
-        removeChildComponent (zoneAddOverlay.get());
-        zoneAddOverlay.reset();
-    }
-}

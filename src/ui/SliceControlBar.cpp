@@ -71,10 +71,10 @@ bool SliceControlBar::isSfzPlayer2Mode() const noexcept
 
 juce::String SliceControlBar::themeKeyAt (juce::Point<int> p) const
 {
-    // PADS/WAVE/ZONES/SAVE toggle buttons — drawn from theme.button (see
+    // PADS/WAVE/MULTI/SAVE toggle buttons — drawn from theme.button (see
     // drawViewToggleButtons) — aren't part of the `cells` vector below.
     if (padToggleBtnArea.contains (p) || waveToggleBtnArea.contains (p)
-        || zoneToggleBtnArea.contains (p) || zoneSaveBtnArea.contains (p))
+        || multisamplerToggleBtnArea.contains (p) || zoneSaveBtnArea.contains (p))
         return "button";
 
     for (const auto& c : cells)
@@ -938,8 +938,8 @@ void SliceControlBar::paint (juce::Graphics& g)
  g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
  g.setColour (getTheme().foreground.withAlpha (0.35f));
  g.drawText ("No slice selected", si (8), si (24), si (220), si (18), juce::Justification::centredLeft);
- // Toggle buttons (PADS/WAVE or ZONES) are independent of slice selection —
- // draw them even here, or ZONES becomes unreachable on an empty kit.
+ // Toggle buttons (PADS/WAVE or MULTI) are independent of slice selection —
+ // draw them even here, or MULTI becomes unreachable on an empty kit.
  drawViewToggleButtons (g);
  return;
  }
@@ -1112,10 +1112,10 @@ void SliceControlBar::paint (juce::Graphics& g)
  x += cw + si (4);
  }
 
- // Selected-zone readout — SFZ-PLAYER ZONES/MULTISAMPLER views, appended
- // after OUT MAIN in the same row rather than replacing anything. See
+ // Selected-zone readout — SFZ-PLAYER MULTISAMPLER view, appended after
+ // OUT MAIN in the same row rather than replacing anything. See
  // setSfzZoneSummary() doc comment.
- if (sfzMode && (zoneViewActive || multisamplerViewActive))
+ if (sfzMode && multisamplerViewActive)
  {
  g.setColour (getTheme().separator.withAlpha (0.5f));
  g.drawVerticalLine (x + 2, (float) row1y + 4, (float) row1y + 28);
@@ -1387,13 +1387,13 @@ locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
 // =============================================================================
 // drawSfzZoneSummary
 // =============================================================================
-// Compact single-line, read-only readout of the currently selected row in the
-// SFZ-PLAYER's ZONES matrix (zoneBuilderKeysPanel), drawn inline in row 1 to
-// the right of OUT MAIN — NOT a replacement for the normal per-slice knob
-// row, which stays exactly as-is. Pending zones staged in the matrix aren't
-// slices — they have no selectedSlice/UiSliceSnapshot entry of their own —
-// so this reads from sfzZoneSummary, populated externally by the editor via
-// setSfzZoneSummary() whenever a matrix row is clicked or drag-edited.
+// Compact single-line, read-only readout of the currently selected zone in
+// the SFZ-PLAYER's MULTISAMPLER view, drawn inline in row 1 to the right of
+// OUT MAIN — NOT a replacement for the normal per-slice knob row, which
+// stays exactly as-is. Zones aren't slices — they have no selectedSlice/
+// UiSliceSnapshot entry of their own — so this reads from sfzZoneSummary,
+// populated externally by the editor via setSfzZoneSummary() whenever a
+// zone is selected or edited.
 void SliceControlBar::drawSfzZoneCell (juce::Graphics& g, int x, int y,
                                           const juce::String& label, const juce::String& value,
                                           int field, int& outWidth)
@@ -1476,7 +1476,7 @@ void SliceControlBar::applySfzZoneDrag (int field, float value, bool commit)
 // =============================================================================
 // Extracted so it can be called both from paint()'s normal path AND from the
 // early "No slice selected" branch above — this button row must stay visible
-// regardless of slice selection, otherwise ZONES becomes unreachable on an
+// regardless of slice selection, otherwise MULTI becomes unreachable on an
 // empty/not-yet-populated SFZ-PLAYER kit.
 void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
 {
@@ -1533,15 +1533,15 @@ void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
      drawBtn (padToggleBtnArea,  "PADS",  padViewActive);
      drawBtn (waveToggleBtnArea, "WAVE", !padViewActive);
 
-     // Not SFZ-PLAYER mode — ZONES/SAVE toggles don't apply here.
-     zoneToggleBtnArea = {};
+     // Not SFZ-PLAYER mode — MULTI/SAVE toggles don't apply here.
+     multisamplerToggleBtnArea = {};
      zoneSaveBtnArea   = {};
  }
  else
  {
      // SFZ-PLAYER mode: no PADS/WAVE toggle (no pad grid here — see comment
-     // above), but the ZONES toggle takes the same slot instead, giving
-     // access to the zone-builder view (KeysPanel + Add Zone / Save SFZ).
+     // above), but the MULTI toggle takes the same slot instead, giving
+     // access to the MULTISAMPLER view.
      padToggleBtnArea  = {};
      waveToggleBtnArea = {};
 
@@ -1550,7 +1550,7 @@ void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
      const int gap    = si (4);
      const int rightX = getWidth() - si (8);
 
-     zoneToggleBtnArea = juce::Rectangle<int> (rightX - kToggleBtnW, btnY, kToggleBtnW, btnH);
+     multisamplerToggleBtnArea = juce::Rectangle<int> (rightX - kToggleBtnW, btnY, kToggleBtnW, btnH);
 
      g.setFont (DysektLookAndFeel::makeFont (9.5f * paintSf, true));
 
@@ -1587,13 +1587,13 @@ void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
          g.drawText (label, area, juce::Justification::centred);
      };
 
-     drawZoneBtn (zoneToggleBtnArea, "ZONES", zoneViewActive);
+     drawZoneBtn (multisamplerToggleBtnArea, "MULTI", multisamplerViewActive);
 
      // SAVE sits in the PADS-equivalent slot, but only takes up that space
-     // (and is only drawn/hit-testable) while there are staged, unsaved
-     // zone-builder changes — otherwise the ZONES button is the sole control,
+     // (and is only drawn/hit-testable) while MULTISAMPLER has staged,
+     // unsaved changes — otherwise the MULTI button is the sole control,
      // same as before this feature existed.
-     if (zoneDirty)
+     if (instrumentDirty)
      {
          zoneSaveBtnArea = juce::Rectangle<int> (rightX - kToggleBtnW * 2 - gap, btnY, kToggleBtnW, btnH);
          drawZoneBtn (zoneSaveBtnArea, "SAVE", true); // always drawn "active"/accented — it's a call to action
@@ -1632,22 +1632,22 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
             return; // already active — swallow click, no-op
     }
 
-    // ── SAVE — SFZ-PLAYER-only, only present/hit-testable while zoneDirty ──
-    // Checked before ZONES since the two buttons sit side by side and must
+    // ── SAVE — SFZ-PLAYER-only, only present/hit-testable while instrumentDirty ──
+    // Checked before MULTI since the two buttons sit side by side and must
     // not both react to the same click.
-    if (e.mods.isLeftButtonDown() && isSfzPlayer2Mode() && zoneDirty
+    if (e.mods.isLeftButtonDown() && isSfzPlayer2Mode() && instrumentDirty
         && zoneSaveBtnArea.contains (e.getPosition()))
     {
-        if (onZoneSaveRequested) onZoneSaveRequested();
+        if (onInstrumentSaveRequested) onInstrumentSaveRequested();
         return;
     }
 
-    // ── ZONES — SFZ-PLAYER-only toggle, opposite gate from PADS/WAVE above ──
-    if (e.mods.isLeftButtonDown() && isSfzPlayer2Mode() && zoneToggleBtnArea.contains (e.getPosition()))
+    // ── MULTI — SFZ-PLAYER-only toggle, opposite gate from PADS/WAVE above ──
+    if (e.mods.isLeftButtonDown() && isSfzPlayer2Mode() && multisamplerToggleBtnArea.contains (e.getPosition()))
     {
-        zoneViewActive = ! zoneViewActive;
+        multisamplerViewActive = ! multisamplerViewActive;
         repaint();
-        if (onZoneViewToggle) onZoneViewToggle (zoneViewActive);
+        if (onMultisamplerViewToggle) onMultisamplerViewToggle (multisamplerViewActive);
         return;
     }
 
@@ -1670,7 +1670,7 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
  activeDragCell = -1;
  activeSfzZoneField = 0;
  auto pos = e.getPosition();
- if (isSfzPlayer2Mode() && (zoneViewActive || multisamplerViewActive) && sfzZoneSummary.valid)
+ if (isSfzPlayer2Mode() && multisamplerViewActive && sfzZoneSummary.valid)
  {
      for (const auto& zoneCell : sfzZoneCells)
          if (zoneCell.bounds.contains (pos))
