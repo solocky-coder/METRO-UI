@@ -933,6 +933,21 @@ void SliceControlBar::paint (juce::Graphics& g)
  const int kToggleBtnW = si (52);
  int rightEdge = getWidth() - si (8) - kToggleBtnW * 2 - si (4) - si (6); // two buttons + gap
  int row1y = si (7), row2y = si (38); // centred: (72-59)/2 = 6.5 -> 7px top padding
+ if (sfzMode && multisamplerViewActive)
+ {
+     // MULTISAMPLER zones live in a separate in-memory model
+     // (MultisamplerInstrument) that isn't synced back into
+     // sliceManager2/voicePool2 — see onInstrumentChanged's "Nothing to
+     // persist yet (Phase 4 / .metrokit isn't wired to plugin state)"
+     // comment in PluginEditor.cpp. So ui.selectedSlice/numSlices below
+     // are meaningless here (always -1/0), and the OUT/MIX cells further
+     // down read from a real ui.slices[idx] this mode doesn't have. Skip
+     // straight to the zone summary + toggle/SAVE buttons instead of
+     // falling into the Slicer-slice bailout below.
+     drawSfzZoneSummary (g, si (8), row1y, rightEdge - si (8), psCellH);
+     drawViewToggleButtons (g);
+     return;
+ }
  if (idx < 0 || idx >= numSlices)
  {
  g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
@@ -1110,18 +1125,6 @@ void SliceControlBar::paint (juce::Graphics& g)
  const bool showInMixer = s.showInMixer;  // always read from slice
  drawMixerToggleCell (g, x, row1y, showInMixer, true, cw);
  x += cw + si (4);
- }
-
- // Selected-zone readout — SFZ-PLAYER MULTISAMPLER view, appended after
- // OUT MAIN in the same row rather than replacing anything. See
- // setSfzZoneSummary() doc comment.
- if (sfzMode && multisamplerViewActive)
- {
- g.setColour (getTheme().separator.withAlpha (0.5f));
- g.drawVerticalLine (x + 2, (float) row1y + 4, (float) row1y + 28);
- x += 8;
- drawSfzZoneSummary (g, x, row1y, rightEdge - x, psCellH);
- x = rightEdge;
  }
 
  // ── Chromatic group: hidden in SFZ-player mode ─────────────────────────

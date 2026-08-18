@@ -1455,9 +1455,17 @@ void DysektEditor::resized()
  // sliceLcd/sliceWaveformLcd are mode-aware (see WaveformView's
  // activeSliceManager/activeVoicePool pattern) and cover BOTH the Slicer
  // and SFZ-PLAYER tabs. SF2-PLAYER still uses its own dedicated panels.
+ // MULTISAMPLER is a third case: its zones live in MultisamplerInstrument,
+ // a model that isn't synced back into sliceManager2/sampleData2 (see
+ // SliceControlBar::paint's identical carve-out for the SCB's own zone
+ // readout), so these two would just show sliceManager2's actual — and
+ // irrelevant — state (whatever sample/slice happens to be loaded there,
+ // or "EMPTY"/"NO SLICE SELECTED" if nothing is) instead of anything
+ // about the instrument being edited. Hide them rather than have them
+ // silently lie by omission while MULTISAMPLER is open.
  const bool sf2Mode = (uiMode == 2);
- sliceLcd.setVisible (! sf2Mode);
- sliceWaveformLcd.setVisible (! sf2Mode);
+ sliceLcd.setVisible (! sf2Mode && ! showMultisamplerEditor);
+ sliceWaveformLcd.setVisible (! sf2Mode && ! showMultisamplerEditor);
  sf2Lcd.setVisible (sf2Mode);
  sf2WaveformLcd.setVisible (sf2Mode);
 
