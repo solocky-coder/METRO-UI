@@ -72,7 +72,7 @@ public:
     void showTrimMode   (const juce::File& file);
 
     /// Switch between interface modes.
-    /// 0 = Waveform View (original), 1 = SFZ Player.
+    /// 0 = Waveform View (original), 1 = MULTISAMPLER.
     void setUiMode (int mode);
 
     /** Derive and apply the correct MidiRouteMode from the current uiMode and
@@ -137,41 +137,20 @@ private:
 
     /// Current interface layout mode.
     /// 0 = Waveform View (original UI — never overwritten).
-    /// 1 = SFZ Player.
+    /// 1 = MULTISAMPLER.
     int  uiMode = 0;
     bool showPadGrid     = false;  ///< true = PadGridView, false = WaveformView (within uiMode 0)
     bool hasSampleLoaded = false;   // true once a sample with audio is loaded
     bool hasSampleLoaded2 = false;  // true once SFZ-PLAYER (sliceManager2/sampleData2) has a real sample loaded
 
-    /// SFZ-PLAYER MULTISAMPLER view (native MultisamplerInstrument model —
-    /// see METRO-UI_MULTISAMPLER_IMPLEMENTATION.md §6). The sole SFZ-PLAYER
-    /// zone editor — ZONES (the old raw-SFZ-text KeysPanel workflow) has
-    /// been fully retired; see resized().
-    bool showMultisamplerEditor = false;
+    /// MULTISAMPLER tab (native MultisamplerInstrument model — see
+    /// METRO-UI Multisampler Implementation Plan). MultisamplerEditor is
+    /// the permanent content of this tab (uiMode == 1) — there is no
+    /// separate open/close state any more. isMultisamplerTabActive() exists
+    /// only so call sites read the same way they used to (previously
+    /// checking showMultisamplerEditor); it's a pure function of uiMode.
+    bool isMultisamplerTabActive() const noexcept { return uiMode == 1; }
     bool iconNeedsApplying = true;   // set icon once peer is available
-
-    /// Snapshot of what the SFZ-PLAYER (sliceManager2/sampleData2) had
-    /// loaded right before MULTISAMPLER was opened, so toggleMultisamplerEditor()
-    /// can put it back on close instead of leaving MULTISAMPLER's
-    /// performEngineSync() preview render (multisampler_preview.sfz) stuck
-    /// in place. Captured only on the genuine off->on transition (see
-    /// toggleMultisamplerEditor()); an invalid File() means the SFZ-PLAYER
-    /// had nothing real loaded, so the close path clears it back to empty
-    /// instead of reloading a file.
-    juce::File preMultisamplerSfzFile;
-    bool       preMultisamplerStateCaptured = false;
-
-    /// Shared close-path helper for toggleMultisamplerEditor(): if the user
-    /// saved/imported real content into MULTISAMPLER during this session
-    /// (multisamplerEditor.getLastSavedFile()), reloads that into the
-    /// SFZ-PLAYER engine, since that's now the intended content. Otherwise
-    /// falls back to reloading preMultisamplerSfzFile (or clearing to empty
-    /// if there wasn't one). Cancels any pending debounced MULTISAMPLER
-    /// engine sync first so it can't land afterwards and re-overwrite what
-    /// was just restored. Called from every path that finalises leaving
-    /// MULTISAMPLER (the immediate close, and the unsaved-changes confirm
-    /// callback).
-    void restorePreMultisamplerSfzState();
 
     // Classifies an SFZ-PLAYER file's zones (see SfzLayoutClassifier.h) and,
     // if it reads as a drum kit, shows a ConfirmOverlay offering to
@@ -180,9 +159,6 @@ private:
     // the waveform view) so the prompt behaves identically regardless of how
     // the file got loaded.
     void offerDrumKitAutoRouting (const juce::File& sfzFile);
-
-    // Opens/closes the native-model MULTISAMPLER panel (multisamplerEditor).
-    void toggleMultisamplerEditor (bool on);
 
     /// The editor's full local bounds, cached each resized() so paint()/
     /// paintOverChildren()/waveformFrameRect() can read it. See
@@ -245,7 +221,7 @@ private:
     FileBrowserPanel browserPanel;
     MixerPanel       mixerPanel;
     PadGridView      padGridView;
-    MultisamplerEditor multisamplerEditor { processor }; // SFZ-PLAYER MULTISAMPLER view — sole zone editor, see above
+    MultisamplerEditor multisamplerEditor { processor }; // MULTISAMPLER tab — permanent content, sole zone editor
     Sf2InstrumentWorkspace sfzDropdown;   // name kept — see all call sites below
     SfzPlayerDropdownPanel sfzPlayerDropdown;
     ShortcutsPanel   shortcutsPanel { processor };

@@ -71,10 +71,10 @@ bool SliceControlBar::isSfzPlayer2Mode() const noexcept
 
 juce::String SliceControlBar::themeKeyAt (juce::Point<int> p) const
 {
-    // PADS/WAVE/MULTI/SAVE toggle buttons — drawn from theme.button (see
+    // PADS/WAVE/SAVE toggle buttons — drawn from theme.button (see
     // drawViewToggleButtons) — aren't part of the `cells` vector below.
     if (padToggleBtnArea.contains (p) || waveToggleBtnArea.contains (p)
-        || multisamplerToggleBtnArea.contains (p) || zoneSaveBtnArea.contains (p))
+        || zoneSaveBtnArea.contains (p))
         return "button";
 
     for (const auto& c : cells)
@@ -933,9 +933,12 @@ void SliceControlBar::paint (juce::Graphics& g)
  const int kToggleBtnW = si (52);
  int rightEdge = getWidth() - si (8) - kToggleBtnW * 2 - si (4) - si (6); // two buttons + gap
  int row1y = si (7), row2y = si (38); // centred: (72-59)/2 = 6.5 -> 7px top padding
- if (sfzMode && multisamplerViewActive)
+ if (sfzMode)
  {
-     // MULTISAMPLER zones live in a separate in-memory model
+     // MULTISAMPLER is now the permanent SFZ-PLAYER tab content, so
+     // sfzMode alone (isSfzPlayer2Mode()) is enough to gate this — no
+     // separate "is the editor currently open" flag any more. MULTISAMPLER
+     // zones live in a separate in-memory model
      // (MultisamplerInstrument) that isn't synced back into
      // sliceManager2/voicePool2 — see onInstrumentChanged's "Nothing to
      // persist yet (Phase 4 / .metrokit isn't wired to plugin state)"
@@ -1536,29 +1539,26 @@ void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
      drawBtn (padToggleBtnArea,  "PADS",  padViewActive);
      drawBtn (waveToggleBtnArea, "WAVE", !padViewActive);
 
-     // Not SFZ-PLAYER mode — MULTI/SAVE toggles don't apply here.
-     multisamplerToggleBtnArea = {};
+     // Not SFZ-PLAYER/MULTISAMPLER mode — SAVE doesn't apply here.
      zoneSaveBtnArea   = {};
  }
  else
  {
-     // SFZ-PLAYER mode: no PADS/WAVE toggle (no pad grid here — see comment
-     // above), but the MULTI toggle takes the same slot instead, giving
-     // access to the MULTISAMPLER view.
+     // SFZ-PLAYER/MULTISAMPLER mode: no PADS/WAVE toggle (MultisamplerEditor
+     // is the tab's permanent content — there's nothing left to toggle to;
+     // see METRO-UI Multisampler Implementation Plan §5.2/5.3). SAVE is the
+     // only button this mode ever draws, and only while dirty.
      padToggleBtnArea  = {};
      waveToggleBtnArea = {};
 
      const int btnY   = si (9);
      const int btnH   = si (24);
-     const int gap    = si (4);
      const int rightX = getWidth() - si (8);
-
-     multisamplerToggleBtnArea = juce::Rectangle<int> (rightX - kToggleBtnW, btnY, kToggleBtnW, btnH);
 
      g.setFont (DysektLookAndFeel::makeFont (9.5f * paintSf, true));
 
      // Same chrome formula as the PADS/WAVE drawBtn lambda above, kept local
-     // to this branch since it's only ever drawn one/two buttons at a time here.
+     // to this branch since it's only ever drawn one button at a time here.
      auto drawZoneBtn = [&] (const juce::Rectangle<int>& area, const juce::String& label, bool active)
      {
          juce::Rectangle<float> rf = area.toFloat().reduced (0.5f);
@@ -1590,15 +1590,12 @@ void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
          g.drawText (label, area, juce::Justification::centred);
      };
 
-     drawZoneBtn (multisamplerToggleBtnArea, "MULTI", multisamplerViewActive);
-
-     // SAVE sits in the PADS-equivalent slot, but only takes up that space
-     // (and is only drawn/hit-testable) while MULTISAMPLER has staged,
-     // unsaved changes — otherwise the MULTI button is the sole control,
-     // same as before this feature existed.
+     // SAVE now takes the rightmost slot outright (the MULTI button that
+     // used to sit there is gone — MULTISAMPLER no longer needs a toggle to
+     // be reachable).
      if (instrumentDirty)
      {
-         zoneSaveBtnArea = juce::Rectangle<int> (rightX - kToggleBtnW * 2 - gap, btnY, kToggleBtnW, btnH);
+         zoneSaveBtnArea = juce::Rectangle<int> (rightX - kToggleBtnW, btnY, kToggleBtnW, btnH);
          drawZoneBtn (zoneSaveBtnArea, "SAVE", true); // always drawn "active"/accented — it's a call to action
      }
      else
@@ -1645,15 +1642,6 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // ── MULTI — SFZ-PLAYER-only toggle, opposite gate from PADS/WAVE above ──
-    if (e.mods.isLeftButtonDown() && isSfzPlayer2Mode() && multisamplerToggleBtnArea.contains (e.getPosition()))
-    {
-        multisamplerViewActive = ! multisamplerViewActive;
-        repaint();
-        if (onMultisamplerViewToggle) onMultisamplerViewToggle (multisamplerViewActive);
-        return;
-    }
-
  // ── Lock guard: block all param changes if selected slice is fully locked ─
  const bool sfzMode = isSfzPlayer2Mode();
  {
@@ -1673,7 +1661,7 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
  activeDragCell = -1;
  activeSfzZoneField = 0;
  auto pos = e.getPosition();
- if (isSfzPlayer2Mode() && multisamplerViewActive && sfzZoneSummary.valid)
+ if (isSfzPlayer2Mode() && sfzZoneSummary.valid)
  {
      for (const auto& zoneCell : sfzZoneCells)
          if (zoneCell.bounds.contains (pos))

@@ -29,15 +29,7 @@ public:
     std::function<void()>    onBodeToggle;
     std::function<void()>    onEqToggle;
     std::function<void()>    onSeqToggle;
-    std::function<void(int)> onUiModeChanged;   // 0 = Edit, 1 = SFZ Player
-
-    // MULTISAMPLER entry point — small icon shown only while the SFZ-PLAYER
-    // tab (uiTab == 1) is active. Lives here rather than only on
-    // SliceControlBar so the editor stays reachable even when the SCB
-    // itself is hidden (e.g. no kit loaded yet). See
-    // PluginEditor::toggleMultisamplerEditor.
-    std::function<void()> onMultisamplerToggle;
-    void setMultisamplerActive (bool v) { multisamplerActive = v; repaint(); }
+    std::function<void(int)> onUiModeChanged;   // 0 = Edit, 1 = MULTISAMPLER
 
     void setBrowserActive    (bool v) { browserActive    = v; repaint(); }
 
@@ -50,7 +42,7 @@ public:
     void setMidiFollowActive (bool v) { midiFollowActive = v; repaint(); }
     void setBodeActive       (bool v) { bodeActive       = v; repaint(); }
     void setEqActive         (bool v) { eqActive         = v; repaint(); }
-    /** Set active tab: 0 = SLICER, 1 = SFZ-PLAYER, 2 = SF2-PLAYER */
+    /** Set active tab: 0 = SLICER, 1 = MULTISAMPLER, 2 = SF2-PLAYER */
     void setUiTab            (int t)  { uiTab = juce::jlimit (0, 2, t); repaint(); }
     /** Legacy helper: maps bool to uiTab 0/1. */
     void setPadGridActive    (bool v) { setUiTab (v ? 1 : 0); }
@@ -67,9 +59,8 @@ private:
     bool midiFollowActive = false;
     bool bodeActive       = false;
     bool eqActive         = false;
-    int  uiTab            = 0;   // 0=SLICER, 1=SFZ-PLAYER, 2=SF2-PLAYER
+    int  uiTab            = 0;   // 0=SLICER, 1=MULTISAMPLER, 2=SF2-PLAYER
     bool seqActive        = false;
-    bool multisamplerActive = false;   // mirrors editor showMultisamplerEditor — highlights the MULTISAMPLER tab-icon
 
     // Hit areas (set during paint, used in mouseDown)
     juce::Rectangle<int> filIconArea;
@@ -81,11 +72,7 @@ private:
     juce::Rectangle<int> sfzIconArea;  // kept as unused placeholder for layout math
     juce::Rectangle<int> editTabArea;
     juce::Rectangle<int> padTabArea;
-    juce::Rectangle<int> sfzPlayerTabArea;   // third tab: SFZ-PLAYER
-    // MULTISAMPLER tab-icon — space is always reserved between the
-    // SFZ-PLAYER and SF2-PLAYER tabs (so tab positions don't shift when
-    // switching modes), but it's only drawn/hit-tested while uiTab == 1.
-    juce::Rectangle<int> multisamplerIconArea;
+    juce::Rectangle<int> sfzPlayerTabArea;   // third tab: SF2-PLAYER
     juce::Rectangle<int> pitchKnobArea;
     juce::Rectangle<int> volKnobArea;
 

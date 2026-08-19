@@ -81,8 +81,10 @@ public:
     bool importFromFile (const juce::File& file, bool syncEngine = true);
 
     /** True once at least one committed edit has happened since the last
-        save/load — drives the "unsaved changes" prompt in
-        toggleMultisamplerEditor(). */
+        save/load — drives the SCB's SAVE button and any future
+        unsaved-changes prompts around instrument-replacing actions (New,
+        Import, browser/drop loads — see Phase 2 of the METRO-UI
+        Multisampler Implementation Plan). */
     bool isDirty() const noexcept { return dirty; }
     void clearDirtyFlag() noexcept { dirty = false; }
 
@@ -109,12 +111,12 @@ public:
     const juce::File& getLastSavedFile() const noexcept { return lastSavedFile; }
 
     /** Cancels any pending debounced performEngineSync() (see
-        scheduleEngineSync()/timerCallback()) without firing it. Called by
-        PluginEditor::toggleMultisamplerEditor() right before it restores/
-        clears sliceManager2/sampleData2 on close, so a stale in-flight
-        sync from the last edit can't land afterwards and re-overwrite the
-        SFZ-PLAYER state that was just restored. Safe to call even when no
-        sync is pending (stopTimer() on an inactive Timer is a no-op). */
+        scheduleEngineSync()/timerCallback()) without firing it. Available
+        for instrument-replacing operations (New/Import/discard) that need
+        to stop a stale in-flight sync from landing after a model swap —
+        see setInstrument()'s isFreshLoad path and discardPendingEdits().
+        Safe to call even when no sync is pending (stopTimer() on an
+        inactive Timer is a no-op). */
     void cancelPendingEngineSync() noexcept { stopTimer(); }
 
     /** -1 if zero or multiple zones are selected in the zone map; otherwise

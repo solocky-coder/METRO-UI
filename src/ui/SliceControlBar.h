@@ -28,18 +28,13 @@ public:
     /// Fired when the user clicks the PAD/WAVE toggle button.
     std::function<void (bool padActive)> onPadViewToggle;
 
-    // MULTISAMPLER toggle — SFZ-PLAYER-only counterpart to the PAD/WAVE
-    // toggle above. Set externally by the editor and reflected in the
-    // button; also drives the selected-zone readout strip (loKey/hiKey/
-    // root/pitch/pan/volume/release/loop) so it draws and accepts
-    // drag-edits while MULTISAMPLER is the active panel.
-    void setMultisamplerViewActive (bool on) { multisamplerViewActive = on; repaint(); }
-    bool getMultisamplerViewActive() const noexcept { return multisamplerViewActive; }
+    // MULTISAMPLER is the permanent content of the SFZ-PLAYER/MULTISAMPLER
+    // tab now (see METRO-UI Multisampler Implementation Plan §5.2/5.3) — no
+    // more open/close toggle or button. The selected-zone readout strip
+    // (loKey/hiKey/root/pitch/pan/volume/release/loop) is now gated purely
+    // on isSfzPlayer2Mode(), same as everything else in this class.
 
-    /// Fired when the user clicks the MULTISAMPLER toggle button (SFZ-PLAYER mode only).
-    std::function<void (bool multisamplerActive)> onMultisamplerViewToggle;
-
-    // SAVE button — appears to the left of MULTI (SFZ-PLAYER mode only)
+    // SAVE button — right-aligned (SFZ-PLAYER/MULTISAMPLER mode only)
     // while MULTISAMPLER has staged-but-unsaved edits. Set externally by
     // the editor whenever its instrument's dirty state changes.
     void setInstrumentDirty (bool dirty) { instrumentDirty = dirty; repaint(); }
@@ -80,9 +75,6 @@ private:
     bool  padViewActive = false;   // mirrors editor showPadGrid
     juce::Rectangle<int> padToggleBtnArea;  // hit-tested in mouseDown — PADS button
     juce::Rectangle<int> waveToggleBtnArea; // hit-tested in mouseDown — WAVE button
-
-    bool  multisamplerViewActive = false;   // mirrors editor showMultisamplerEditor — see setMultisamplerViewActive()
-    juce::Rectangle<int> multisamplerToggleBtnArea; // hit-tested in mouseDown — MULTI button (SFZ-PLAYER only)
 
     bool  instrumentDirty = false;        // mirrors multisamplerEditor.isDirty() — shows/hides the SAVE button
     juce::Rectangle<int> zoneSaveBtnArea; // hit-tested in mouseDown — SAVE button (SFZ-PLAYER only, when dirty)

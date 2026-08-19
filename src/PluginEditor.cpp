@@ -119,11 +119,6 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      resized();
      repaint(); // clear waveform/overview areas vacated by the old view
  };
- sliceControlBar.onMultisamplerViewToggle = [this] (bool on) { toggleMultisamplerEditor (on); };
- // MULTISAMPLER tab-icon (DualLcdControlFrame) — same logic, second entry
- // point. See toggleMultisamplerEditor() for why this needs to exist
- // independently of SliceControlBar's own toggle.
- headerBar.dualFrame().onMultisamplerToggle = [this] { toggleMultisamplerEditor (! showMultisamplerEditor); };
  sliceControlBar.onInstrumentSaveRequested = [this] { multisamplerEditor.saveInPlace(); };
 sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float value)
 {
@@ -132,7 +127,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
     multisamplerEditor.applySliceControlBarFieldEdit (rowIndex, field, value);
 };
 
- addChildComponent (multisamplerEditor); // hidden until showMultisamplerEditor is true
+ addChildComponent (multisamplerEditor); // hidden until the MULTISAMPLER tab (uiMode == 1) is active
  multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
  multisamplerEditor.onInstrumentChanged = [this]
  {
@@ -153,7 +148,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      // Pushes the selected zone's fields into sliceControlBar.setSfzZoneSummary()
      // further down this file, so the SCB readout stays in sync with
      // MULTISAMPLER's selection/edits.
-     if (! showMultisamplerEditor) return;
+     if (! isMultisamplerTabActive()) return;
 
      const int idx = multisamplerEditor.getSelectedZoneIndex();
      const auto& zones = multisamplerEditor.getInstrument().zones;
@@ -743,23 +738,15 @@ void DysektEditor::setUiMode (int mode)
  // from it.
  if (uiMode != 0 && trimSession != nullptr && ! trimSession->active)
      trimSession.reset();
- // Leaving SFZ-PLAYER — reset MULTISAMPLER view so it can't leak into
- // other tabs (e.g. keep the SCB spuriously visible in Slicer, or silently
- // replace the normal waveform view when the user tabs back into
- // SFZ-PLAYER later; see the SCB visibility gate and the uiMode == 1
- // branch in resized() for why this matters).
+ // Leaving the MULTISAMPLER tab — clear the SCB's zone readout so it can't
+ // leak into other tabs. This doesn't discard anything: multisamplerEditor's
+ // in-memory edits and dirty flag are untouched (per §5.4 of the Multisampler
+ // Implementation Plan — ordinary tab navigation must not lose edits), only
+ // the readout strip clears. Re-selecting this tab shows MultisamplerEditor
+ // again immediately, with those edits intact — see the uiMode == 1 branch
+ // in resized().
  if (uiMode != 1)
- {
      sliceControlBar.clearSfzZoneSummary();
-
-     // Doesn't discard anything: multisamplerEditor's in-memory edits and
-     // dirty flag are untouched, only the "which view is visible" flag
-     // resets — so the user's edits are still there if they reopen it
-     // with the K shortcut.
-     showMultisamplerEditor = false;
-     sliceControlBar.setMultisamplerViewActive (false);
-     headerBar.dualFrame().setMultisamplerActive (false);
- }
 
  syncBrowserMode();
 
@@ -1477,16 +1464,16 @@ void DysektEditor::resized()
  sf2Lcd.setVisible (sf2Mode);
  sf2WaveformLcd.setVisible (sf2Mode);
 
- // Keep both LCDs' MULTISAMPLER read-only view in sync with the panel's
- // open state and current selection every layout pass — cheap (pointer +
- // two ints) and catches any path that flips showMultisamplerEditor
- // without going through toggleMultisamplerEditor (e.g. the unsaved-
- // changes-guard branch there also calls resized()).
+ // Keep both LCDs' MULTISAMPLER read-only view in sync with the tab's
+ // active state and current selection every layout pass — cheap (pointer +
+ // two ints), and this runs on every resized() so it self-corrects
+ // regardless of what triggered the layout pass.
  {
-     const int selZone = showMultisamplerEditor ? multisamplerEditor.getSelectedZoneIndex() : -1;
-     const MultisamplerInstrument* instr = showMultisamplerEditor ? &multisamplerEditor.getInstrument() : nullptr;
-     sliceLcd.setMultisamplerSource (showMultisamplerEditor, instr, selZone);
-     sliceWaveformLcd.setMultisamplerSource (showMultisamplerEditor, instr, selZone);
+     const bool multiActive = isMultisamplerTabActive();
+     const int selZone = multiActive ? multisamplerEditor.getSelectedZoneIndex() : -1;
+     const MultisamplerInstrument* instr = multiActive ? &multisamplerEditor.getInstrument() : nullptr;
+     sliceLcd.setMultisamplerSource (multiActive, instr, selZone);
+     sliceWaveformLcd.setMultisamplerSource (multiActive, instr, selZone);
  }
 
  sliceLcd.setBounds (topRow.removeFromLeft (sideW));
@@ -1658,14 +1645,11 @@ void DysektEditor::resized()
  // SCB first (bottommost), then overview row sits immediately above it.
  //
  // Hidden until there's actually something for it to control: either a real
- // sample/kit is loaded (hasRealSample), or MULTISAMPLER is open and needs
- // the SCB's SAVE button + selected-zone readout (showMultisamplerEditor).
- // MULTISAMPLER itself no longer needs the SCB just to be reachable — the
- // DualLcdControlFrame MULTISAMPLER tab-icon (SFZ-PLAYER only) opens it
- // directly, so an empty SFZ-PLAYER tab no longer shows the SCB.
- // showMultisamplerEditor is always reset to false on leaving uiMode 1 (see
- // setUiMode), so it can't leak a stale SCB into the Slicer tab.
- if ((hasRealSample || showMultisamplerEditor) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
+ // sample/kit is loaded (hasRealSample) in the Slicer tab, or the
+ // MULTISAMPLER tab is active — MultisamplerEditor is that tab's permanent
+ // content now, so its SCB (SAVE button + selected-zone readout) is always
+ // relevant there, even on an empty/new instrument.
+ if ((hasRealSample || isMultisamplerTabActive()) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);
@@ -1678,13 +1662,12 @@ void DysektEditor::resized()
      sliceControlBar.setBounds ({});
  }
 
- // Overview row: allocate space and show only when waveform view is active.
- // Excludes MULTISAMPLER too — this bar zooms/scrolls sliceManager2's
- // waveform, which isn't even the content on screen while MULTISAMPLER is
- // open (that's zoneMapView, a 2D key/velocity grid with no zoom concept of
- // its own yet), so previously it sat there fully unresponsive to anything
- // the user did with it — see the bug report this fixed.
- if ((uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample && !showPadGrid && !showMultisamplerEditor)
+ // Overview row: allocate space and show only when the Slicer's waveform
+ // view is active. This bar zooms/scrolls sliceManager2's waveform, which
+ // is never the content on screen in the MULTISAMPLER tab any more (that
+ // tab's permanent content is zoneMapView, a 2D key/velocity grid with no
+ // zoom concept of its own yet) — so it's Slicer-only now.
+ if (uiMode == 0 && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample && !showPadGrid)
  {
      auto overviewRow = area.removeFromBottom (kOverviewRowH);
      const int overviewY = overviewRow.getY() + kInterGap;
@@ -1769,17 +1752,18 @@ void DysektEditor::resized()
  }
  else if (uiMode == 1)
  {
-    // SFZ-PLAYER: WaveformView / PadGridView / MULTISAMPLER, depending on
-    // the SCB toggles.
-    const bool showMulti1  = showMultisamplerEditor && ! trimActive;
-    const bool showPads1   = showPadGrid && ! showMulti1;
+    // MULTISAMPLER: MultisamplerEditor is the tab's permanent content —
+    // there is no more WaveformView/PadGridView alternation within this
+    // tab (removed per METRO-UI Multisampler Implementation Plan §5.2).
+    // trimActive is still honoured defensively even though trim is a
+    // Slicer-only flow (see setUiMode()'s trimSession reset when leaving
+    // uiMode 0) — it should never actually be true here.
+    const bool showMulti1 = ! trimActive;
 
-    waveformView.setVisible (! showPads1 && ! showMulti1);
-    waveformView.setBounds ((showPads1 || showMulti1) ? juce::Rectangle<int>()
-                                      : juce::Rectangle<int> (screenX, y, screenW, waveH));
-    padGridView.setVisible (showPads1);
-    padGridView.setBounds (showPads1 ? juce::Rectangle<int> (screenX, y, screenW, waveH)
-                                     : juce::Rectangle<int>());
+    waveformView.setVisible (false);
+    waveformView.setBounds ({});
+    padGridView.setVisible (false);
+    padGridView.setBounds ({});
 
     // multisamplerEditor draws its own complete LCD-style frame internally,
     // unlike waveformView/padGridView which rely on PluginEditor's
@@ -1981,9 +1965,12 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
 
  if (code == '?') { toggleShortcutsPanel(); return true; }
 
- // MULTISAMPLER panel — SFZ-PLAYER only, same gating as the 'L' PADS
- // shortcut below.
- if (code == 'K' && uiMode == 1) { toggleMultisamplerEditor (! showMultisamplerEditor); return true; }
+ // MULTISAMPLER tab shortcut — jumps straight to the MULTISAMPLER tab from
+ // anywhere (SLICER/SF2-PLAYER included), same as clicking the tab itself.
+ // Previously this toggled a temporary overlay open/closed within the tab;
+ // now that MultisamplerEditor is that tab's permanent content, there's
+ // nothing left to toggle — see METRO-UI Multisampler Implementation Plan §5.3.
+ if (code == 'K') { setUiMode (1); return true; }
 
  if (code == 'M')
  {
@@ -2479,140 +2466,17 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // (see browserPanel.onLoadRequest, uiMode == 0 branch) and isn't a fit for
 // writing SFZ <region> blocks.
 
-void DysektEditor::restorePreMultisamplerSfzState()
-{
-    // Stop any debounced performEngineSync() left pending from the last
-    // edit — otherwise it can fire after this restore and immediately
-    // re-overwrite sliceManager2/sampleData2 with the preview render again.
-    multisamplerEditor.cancelPendingEngineSync();
-
-    // If the user actually saved (or imported) real content into
-    // MULTISAMPLER during this session, that saved file IS the SFZ-PLAYER's
-    // new intended content — load it instead of reverting to whatever was
-    // loaded before MULTISAMPLER was opened. Without this, hitting SAVE and
-    // then closing MULTISAMPLER silently discards the just-saved instrument
-    // and leaves the SFZ-PLAYER empty (or back on the old sample), because
-    // the unconditional pre-open-snapshot restore below ran regardless of
-    // whether anything was saved in between.
-    const juce::File savedFile = multisamplerEditor.getLastSavedFile();
-    if (savedFile.existsAsFile())
-    {
-        processor.sfzPlayer2.loadFile (savedFile, processor.fileLoadPool);
-        processor.loadSoundFontAsync (savedFile, SoundFontLoadTarget::SfzPlayer2);
-
-        preMultisamplerStateCaptured = false;
-        preMultisamplerSfzFile = juce::File();
-        return;
-    }
-
-    if (! preMultisamplerStateCaptured)
-        return;   // toggled on/off without ever going through a real open — nothing to undo
-
-    if (preMultisamplerSfzFile.existsAsFile())
-    {
-        // Put back whatever the SFZ-PLAYER actually had loaded before
-        // MULTISAMPLER started overwriting sliceManager2/sampleData2 for
-        // its live preview — same pairing every other SFZ2 load site uses
-        // (see browserPanel.onLoadRequest).
-        processor.sfzPlayer2.loadFile (preMultisamplerSfzFile, processor.fileLoadPool);
-        processor.loadSoundFontAsync (preMultisamplerSfzFile, SoundFontLoadTarget::SfzPlayer2);
-    }
-    else
-    {
-        // The SFZ-PLAYER genuinely had nothing loaded before — clear the
-        // leftover preview back to empty rather than leaving it stuck.
-        processor.clearSfzPlayer2Sample();
-    }
-
-    preMultisamplerStateCaptured = false;
-    preMultisamplerSfzFile = juce::File();
-}
-
-void DysektEditor::toggleMultisamplerEditor (bool on)
-{
-    // Capture what the SFZ-PLAYER currently has loaded on the genuine
-    // off->on transition only, before the first performEngineSync() call
-    // (fired by MultisamplerEditor as soon as it has anything to preview)
-    // gets a chance to overwrite sliceManager2/sampleData2. An invalid
-    // File() here just means "nothing real was loaded" — restorePreMultisamplerSfzState()
-    // treats that as "clear back to empty" rather than "reload nothing".
-    if (on && ! showMultisamplerEditor)
-    {
-        preMultisamplerSfzFile = juce::File (processor.sampleData2.getFilePath());
-        preMultisamplerStateCaptured = true;
-    }
-
-    // Unsaved-changes guard, mirroring the pattern other panels use so the
-    // user is protected the same way when the panel closes with
-    // uncommitted edits (drag-edit, inspector apply, Add Zone, etc. — see
-    // MultisamplerEditor::isDirty()).
-    if (! on && multisamplerEditor.isDirty())
-    {
-        // Nothing else (header tab icon, SCB button) tracks an independent
-        // "active" look for this panel to desync from — the K-shortcut is
-        // its only other toggle — so there's no extra state to put back to
-        // "on" here; just keep the panel open and showing until the prompt
-        // below is resolved.
-        showMultisamplerEditor = true;
-
-        const bool haveSaveTarget = multisamplerEditor.getLastSavedFile() != juce::File();
-        confirmOverlay = std::make_unique<ConfirmOverlay> (
-            "Unsaved Instrument",
-            haveSaveTarget
-                ? "This instrument has edits that haven't been saved yet. Save them before leaving?"
-                : "This instrument has edits that haven't been saved yet. Save them (choose a file) before leaving?",
-            "Save",
-            "Discard");
-        addAndMakeVisible (*confirmOverlay);
-        confirmOverlay->setBounds (getLocalBounds());
-        confirmOverlay->toFront (true);
-        confirmOverlay->onResult = [this] (bool save)
-        {
-            confirmOverlay.reset();
-            if (save)
-                // If there's no existing save target this falls through to
-                // an async Save-As picker (see saveInPlace()) that
-                // outlives this callback — the panel below closes right
-                // away regardless, and the save completes silently in the
-                // background once the user picks a file. Acceptable for
-                // now; a "block close until Save-As resolves" refinement
-                // can follow later if it's missed.
-                multisamplerEditor.saveInPlace();
-            else
-                multisamplerEditor.discardPendingEdits();
-
-            showMultisamplerEditor = false;
-            sliceControlBar.setMultisamplerViewActive (false);   // see the unconditional sync a few lines below — this early-return path needs it too
-            headerBar.dualFrame().setMultisamplerActive (false);
-            sliceControlBar.clearSfzZoneSummary();   // leaving MULTISAMPLER — don't leave its zone readout stuck in the SCB
-            restorePreMultisamplerSfzState();        // put the SFZ-PLAYER's real content (or empty) back — see toggleMultisamplerEditor()'s capture
-            resized();
-            repaint();
-        };
-        return;
-    }
-
-    showMultisamplerEditor = on;
-    sliceControlBar.setMultisamplerViewActive (on);
-    headerBar.dualFrame().setMultisamplerActive (on);
-    if (! on)
-    {
-        sliceControlBar.clearSfzZoneSummary();   // same rationale as the dirty-guard branch above
-        restorePreMultisamplerSfzState();        // undo MULTISAMPLER's live-preview writes to sliceManager2/sampleData2
-    }
-
-    if (on && initBrowserOpen)
-    {
-        // Opening this panel is itself an explicit "I'm working with the
-        // SFZ-Player" action, so clear the empty-state browser auto-open.
-        initBrowserOpen = false;
-        browserPanel.setVisible (false);
-        headerBar.setBrowserActive (false);
-    }
-
-    resized();
-    repaint();
-}
+// restorePreMultisamplerSfzState() and toggleMultisamplerEditor() have been
+// removed. MultisamplerEditor is now the MULTISAMPLER tab's permanent
+// content (uiMode == 1) rather than a temporary overlay opened over a
+// separate SFZ-PLAYER waveform view, so there's no longer a "previous
+// SFZ-PLAYER state" to snapshot and restore on close, and no open/close
+// transition to guard with a dirty-instrument prompt — ordinary tab
+// navigation must not prompt or discard edits (see setUiMode() and METRO-UI
+// Multisampler Implementation Plan §5.4). Dirty-instrument protection now
+// belongs at the points that actually replace the instrument — New,
+// Import, and browser/drop loads that swap the current one — which is
+// Phase 2 work (§5.6–5.8), not something this tab-switch path needs to do.
 
 // Drum-kit detection: offer to auto-assign each zone its own output bus
 // (kick/snare/hats etc. to separate DAW channels) rather than leaving

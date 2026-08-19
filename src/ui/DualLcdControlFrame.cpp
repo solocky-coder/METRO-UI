@@ -430,10 +430,6 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         const int tabH    = si (17);
         const int tabW    = si (50);
         const int tabGap  = si (3);
-        const int iconW   = si (17);   // MULTISAMPLER tab-icon — square, matches tabH
-        // No horizontal slot reserved for the icon any more — it now lives
-        // in its own row below the tabs (see multisamplerIconArea placement
-        // further down), so the tab row is just the three tabs + two gaps.
         const int totalTW = tabW * 3 + tabGap * 2;
         const int tabX    = (w - totalTW) / 2;
         const int tabY    = half - tabH / 2;
@@ -441,22 +437,6 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         editTabArea      = { tabX,                          tabY, tabW, tabH };
         padTabArea       = { tabX + tabW + tabGap,           tabY, tabW, tabH };
         sfzPlayerTabArea = { tabX + (tabW + tabGap) * 2,     tabY, tabW, tabH };
-
-        // MULTISAMPLER tab-icon — centred directly beneath padTabArea (SFZ-PLAYER
-        // tab), sitting in the gap between the tab row and the GLOBAL PITCH/
-        // EQ/VOL knob row below. Mirrors the knob-row geometry computed in
-        // the "Bottom row" block further down so the icon lands centred in
-        // whatever vertical space is actually free between the two rows.
-        const int gapTop      = tabY + tabH;
-        const int knobRowTop  = half + si (4);
-        const int knobRowBot  = h - si (20);
-        const int knobCy      = knobRowTop + (knobRowBot - knobRowTop) / 2;
-        const int knobR       = si (12);
-        const int gapBottom   = knobCy - knobR;
-
-        const int iconY = gapTop + juce::jmax (0, (gapBottom - gapTop - iconW) / 2);
-        const int iconX = padTabArea.getCentreX() - iconW / 2;
-        multisamplerIconArea = { iconX, iconY, iconW, iconW };
 
         // Erase the divider line behind the tabs so they float cleanly
         {
@@ -502,37 +482,14 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             g.drawText (label, r, juce::Justification::centred);
         };
 
-        drawTab (editTabArea,      "SLICER",      uiTab == 0);
-        drawTab (padTabArea,       "SFZ-PLAYER",  uiTab == 1);
-        drawTab (sfzPlayerTabArea, "SF2-PLAYER",  uiTab == 2);
+        drawTab (editTabArea,      "SLICER",       uiTab == 0);
+        drawTab (padTabArea,       "MULTISAMPLER", uiTab == 1);
+        drawTab (sfzPlayerTabArea, "SF2-PLAYER",   uiTab == 2);
 
-        // MULTISAMPLER tab-icon — SFZ-PLAYER only. Lets the editor be opened
-        // even when nothing is loaded yet, since SliceControlBar (the only
-        // other place it lives) is hidden until a real kit is loaded.
-        if (uiTab == 1)
-        {
-            juce::Rectangle<float> rf = multisamplerIconArea.toFloat().reduced (0.5f);
-            auto baseBg  = getTheme().button;
-            auto fillCol = multisamplerActive ? baseBg.interpolatedWith (accent, 0.18f) : baseBg;
-            g.setColour (fillCol);
-            g.fillRoundedRectangle (rf, 0.0f);
-            g.setColour (multisamplerActive ? accent.withAlpha (0.70f) : getTheme().separator.withAlpha (0.60f));
-            g.drawRoundedRectangle (rf, 0.0f, 1.0f);
-
-            g.setColour (multisamplerActive ? accent : fg.withAlpha (0.85f));
-            const float gr = rf.reduced (rf.getWidth() * 0.28f).getWidth() * 0.5f;
-            const auto  c  = rf.getCentre();
-            // Simple 2x2 grid glyph — stands in for the keyzone matrix.
-            for (int gx = 0; gx < 2; ++gx)
-                for (int gy = 0; gy < 2; ++gy)
-                    g.fillRoundedRectangle (c.x + (gx == 0 ? -gr - 1.0f : 1.0f),
-                                            c.y + (gy == 0 ? -gr - 1.0f : 1.0f),
-                                            gr, gr, 0.5f);
-        }
-        else
-        {
-            multisamplerIconArea = {};   // not hit-testable outside SFZ-PLAYER tab
-        }
+        // The MULTISAMPLER entry-point icon that used to live here has been
+        // removed — MultisamplerEditor is now the tab's permanent content,
+        // reachable simply by selecting the tab above. See METRO-UI
+        // Multisampler Implementation Plan §5.3.
     }
 
     // ── Top row: five icons evenly spread across full width ─────────────────
@@ -797,12 +754,6 @@ void DualLcdControlFrame::mouseDown (const juce::MouseEvent& e)
         }
         return;
     }
-    if (uiTab == 1 && ! multisamplerIconArea.isEmpty() && multisamplerIconArea.contains (pos))
-    {
-        if (onMultisamplerToggle) onMultisamplerToggle();
-        return;
-    }
-
     // Knobs + EQ button (bottom row)
     if (eqIconArea.contains (pos))
     {
