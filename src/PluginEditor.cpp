@@ -248,6 +248,45 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              proceed();
      };
  };
+ multisamplerEditor.onSaveValidationIssues = [this] (const std::vector<MultisamplerInstrument::ValidationIssue>& issues,
+                                                      std::function<void()> proceed)
+ {
+     // Plan §5 "save/export lifecycle refinement" — see
+     // MultisamplerEditor::onSaveValidationIssues' declaration comment.
+     // Same capped-line-list shape as onImportWarnings above; severity is
+     // shown per-line rather than gating which lines appear, since even a
+     // warning-only validate() result (e.g. root key outside its own zone's
+     // range) is worth a chance to go back rather than writing silently.
+     static const auto severityLabel = [] (MultisamplerInstrument::ValidationIssue::Severity s) -> juce::String
+     {
+         return s == MultisamplerInstrument::ValidationIssue::Severity::error ? "Error" : "Warning";
+     };
+
+     constexpr int kMaxLines = 8;
+     juce::StringArray lines;
+     for (int i = 0; i < (int) issues.size() && i < kMaxLines; ++i)
+     {
+         const auto& issue = issues[(size_t) i];
+         lines.add (severityLabel (issue.severity) + ": " + issue.message);
+     }
+     if ((int) issues.size() > kMaxLines)
+         lines.add ("… and " + juce::String ((int) issues.size() - kMaxLines) + " more");
+
+     confirmOverlay = std::make_unique<ConfirmOverlay> (
+         "Validation Issues Found",
+         lines.joinIntoString ("\n"),
+         "Save Anyway",
+         "Cancel");
+     addAndMakeVisible (*confirmOverlay);
+     confirmOverlay->setBounds (getLocalBounds());
+     confirmOverlay->toFront (true);
+     confirmOverlay->onResult = [this, proceed] (bool saveAnyway)
+     {
+         confirmOverlay.reset();
+         if (saveAnyway)
+             proceed();
+     };
+ };
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
  // so the timer re-populates the zone matrix on the next completed load.
  sfzDropdown.onFileLoaded = [this] (const juce::File&)
@@ -2487,10 +2526,7 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // heuristic isn't airtight either way. Called from every load path that
 // can put a .sfz into sfzPlayer2: browserPanel.onLoadRequest (file
 // browser) and waveformView.onSfzPlayerFileDropped (drag-and-drop onto
-// the waveform view). Note: ui/SFZWaveformView.cpp has its own
-// filesDropped() -> loadSoundFontAsync(SfzPlayer2) call, but that
-// component isn't instantiated anywhere in the editor, so it's dead code
-// and not a live drop path -- nothing to wire there.
+// the waveform view).
 void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
 {
     const auto zones = SfzPlayerDropdownPanel::parseSfzZones (sfzFile);

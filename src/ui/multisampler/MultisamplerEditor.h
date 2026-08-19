@@ -182,6 +182,23 @@ public:
         see loadSfzIntoMultisampler() in PluginEditor.cpp (plan §5.5/§5.8). */
     std::function<void (std::function<void()> proceed)> onConfirmDiscardIfDirty;
 
+    /** Fired from exportSfzClicked()/saveInPlace(), after the target file is
+        known but before anything is written, whenever getInstrument().
+        validate() (see MultisamplerInstrument.h) returns at least one issue
+        — missing samples, inverted key/velocity ranges, a loop enabled with
+        unset/inverted points, an out-of-range round-robin position, etc.
+        MultisamplerEditor has no overlay/dialog machinery of its own (see
+        onImportWarnings' comment above) so, same as that callback, deciding
+        whether to proceed is left to whoever owns the surrounding chrome.
+        The receiver must call `proceed()` to actually go ahead with the
+        write — synchronously, or later once an async ConfirmOverlay
+        resolves — and must not call it more than once per firing; declining
+        simply means never calling it. If unset, any issues are ignored and
+        the write proceeds exactly as it did before this callback existed —
+        same disconnected-handler fallback shape as onConfirmDiscardIfDirty. */
+    std::function<void (const std::vector<MultisamplerInstrument::ValidationIssue>& issues,
+                         std::function<void()> proceed)> onSaveValidationIssues;
+
 private:
     void timerCallback() override;   // fires once, kEngineSyncDebounceMs after the last edit
 
@@ -209,6 +226,14 @@ private:
     void exportSfzClicked();
     void newInstrumentClicked();
     void addZoneClicked();   // pick a sample, then AddZoneOverlay for lo/hi/root
+
+    // Shared body behind exportSfzClicked()'s success path and saveInPlace()
+    // — see onSaveValidationIssues' declaration comment (plan Phase 5,
+    // "save/export lifecycle refinement"). Runs instrument.validate() first;
+    // if it comes back clean, or onSaveValidationIssues isn't wired, writes
+    // immediately. Otherwise hands the issues to onSaveValidationIssues and
+    // only writes if/when its proceed() is called.
+    void writeToFileWithValidation (const juce::File& file, std::function<void()> onSuccess);
 
     void refreshInspectorFromSelection();
 

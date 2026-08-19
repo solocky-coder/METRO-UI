@@ -332,9 +332,7 @@ void MultisamplerEditor::exportSfzClicked()
             if (file == juce::File()) return;
             if (! file.hasFileExtension ("sfz")) file = file.withFileExtension ("sfz");
 
-            SfzExporter::Options opts;
-            opts.useRelativeSamplePaths = true;
-            if (SfzExporter::exportToFile (instrument, file, opts))
+            writeToFileWithValidation (file, [this, file]
             {
                 // The file just picked is now the thing SAVE / discard-revert
                 // operate against, same as an IMPORT SFZ would set it.
@@ -350,7 +348,7 @@ void MultisamplerEditor::exportSfzClicked()
                 // sign that anything happened — indistinguishable from the
                 // button doing nothing at all.
                 if (onInstrumentChanged) onInstrumentChanged();
-            }
+            });
         });
 }
 
@@ -365,9 +363,7 @@ void MultisamplerEditor::saveInPlace()
         return;
     }
 
-    SfzExporter::Options opts;
-    opts.useRelativeSamplePaths = true;
-    if (SfzExporter::exportToFile (instrument, lastSavedFile, opts))
+    writeToFileWithValidation (lastSavedFile, [this]
     {
         clearDirtyFlag();
 
@@ -377,7 +373,39 @@ void MultisamplerEditor::saveInPlace()
         // change — the save silently succeeds on disk but looks like the
         // button did nothing.
         if (onInstrumentChanged) onInstrumentChanged();
+    });
+}
+
+void MultisamplerEditor::writeToFileWithValidation (const juce::File& file, std::function<void()> onSuccess)
+{
+    // Plan §5 "save/export lifecycle refinement": validate() (see
+    // MultisamplerInstrument.h) existed and was unit-tested but was never
+    // actually called from either write path before this — both
+    // exportSfzClicked() and saveInPlace() wrote whatever was in `instrument`
+    // unconditionally, silently including e.g. a loop enabled with unset
+    // points or an inverted key range. This is the single choke point both
+    // now go through instead.
+    const auto issues = instrument.validate();
+
+    auto doWrite = [this, file, onSuccess]
+    {
+        SfzExporter::Options opts;
+        opts.useRelativeSamplePaths = true;
+        if (SfzExporter::exportToFile (instrument, file, opts))
+            onSuccess();
+    };
+
+    // Same disconnected-handler fallback shape as onConfirmDiscardIfDirty:
+    // an unwired callback means issues are silently ignored and the write
+    // proceeds exactly as it did before onSaveValidationIssues existed,
+    // rather than the feature blocking every save until someone wires it.
+    if (issues.empty() || ! onSaveValidationIssues)
+    {
+        doWrite();
+        return;
     }
+
+    onSaveValidationIssues (issues, doWrite);
 }
 
 void MultisamplerEditor::discardPendingEdits()
