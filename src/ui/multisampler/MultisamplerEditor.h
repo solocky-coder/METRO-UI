@@ -195,6 +195,16 @@ private:
     // declaration in PluginProcessor.h and performEngineSync()'s own comment.
     void performEngineSync (bool isFreshLoad);
 
+    // Bumped once per performEngineSync() call, UI-thread-only (written and
+    // read only from the UI thread — the background export job that reads
+    // it does so only after hopping back via MessageManager::callAsync, see
+    // performEngineSync()'s definition). Lets a stale background export
+    // that finishes after a newer one was already dispatched discard
+    // itself instead of overwriting sfzPlayer2 with outdated data — same
+    // defensive shape as PluginProcessor.h's nextPreviewToken2/
+    // latestPreviewToken2 pair, scoped to this class (plan §5.12).
+    int engineSyncGeneration = 0;
+
     void importSfzClicked();
     void exportSfzClicked();
     void newInstrumentClicked();

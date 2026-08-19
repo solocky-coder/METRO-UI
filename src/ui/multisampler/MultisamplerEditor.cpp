@@ -181,6 +181,16 @@ std::vector<KeysPanel::Keyzone> MultisamplerEditor::toKeyzones (const Multisampl
 
 void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bool syncEngine)
 {
+    // A wholesale swap must not let a still-pending debounced sync from
+    // *this* (about-to-be-replaced) instrument's edits land afterward and
+    // misread as an in-place edit against the new one — see
+    // cancelPendingEngineSync()'s declaration comment, which already
+    // documented this call site as the intended caller. (The background
+    // export job dispatched by an already-fired performEngineSync() is a
+    // separate race, handled instead by engineSyncGeneration — see that
+    // method.)
+    cancelPendingEngineSync();
+
     instrument = std::move (newInstrument);
     dirty = false;
     zoneMapView.setInstrument (&instrument);
@@ -405,6 +415,28 @@ void MultisamplerEditor::timerCallback()
 
 void MultisamplerEditor::performEngineSync (bool isFreshLoad)
 {
+    // Plan §5.12: SfzExporter::exportToFile() re-renders every zone to SFZ
+    // text and writes it to disk, synchronously — for a large instrument
+    // that's real work, and this used to all run on the message thread.
+    // The render+write now happens on processor.fileLoadPool (the same
+    // single-thread pool every other background file load in this plugin
+    // already shares) instead. SfzExporter::render()/exportToFile() are
+    // pure functions of their arguments, so a snapshot copy of `instrument`
+    // taken here (still on the UI thread) is safe for the background job
+    // to read — the live `instrument` member keeps changing underneath it
+    // on the UI thread, but the copy doesn't.
+    //
+    // engineSyncGeneration (see its declaration) guards against a stale
+    // background export finishing after a newer one was already
+    // dispatched — e.g. two edits close enough together to both survive
+    // the debounce, or a fresh setInstrument() landing while an older
+    // edit's export is still in flight — and overwriting sfzPlayer2 with
+    // outdated data. Only the *disk I/O* crosses threads; the counter
+    // itself is written/read only on the UI thread (the background job's
+    // completion touches it only after hopping back via
+    // MessageManager::callAsync below).
+    const int myGen = ++engineSyncGeneration;
+
     // Cache-directory file, not a user-visible path — same convention as
     // other generated-preview files elsewhere in the codebase. Fixed name is
     // fine: only one multisampler instrument is being edited at a time, and
@@ -416,38 +448,60 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     cacheFile.getParentDirectory().createDirectory();
 
     SfzExporter::Options opts;   // absolute sample paths — this file's location is an implementation detail
-    if (! SfzExporter::exportToFile (instrument, cacheFile, opts))
-        return;
 
-    // UI thread only; SfzPlayer posts the load atomically and swaps at the
-    // next audio block boundary (see SfzPlayer.h threading comment) — no
-    // audio-thread file access happens here or inside loadFile() itself.
-    processor.sfzPlayer2.loadFile (cacheFile, processor.fileLoadPool);
+    // SafePointer, not a raw `this` — the sfzPlayer2/loadSoundFontAsync
+    // calls below only happen after a genuine thread hop (fileLoadPool ->
+    // MessageManager::callAsync), and this panel can be destroyed in the
+    // meantime (tab switch, plugin teardown). The background lambda itself
+    // never touches `this`/`processor` — exportToFile() is static and
+    // takes everything it needs by value through its own arguments — so
+    // only the message-thread continuation needs the guard.
+    juce::Component::SafePointer<MultisamplerEditor> safeThis (this);
 
-    // The line above only updates sfzPlayer2 — the live sfizz/FluidSynth
-    // engine — but sfzPlayer2.process() is never actually called; what
-    // voicePool2 plays back is the pre-rendered slice data in
-    // sliceManager2/sampleData2 (and, in turn, whatever the SFZ-PLAYER's
-    // Slice/waveform view is showing), populated only by SoundFontLoader
-    // via loadSoundFontAsync(..., SoundFontLoadTarget::SfzPlayer2). Without
-    // re-running that here, every MULTISAMPLER edit reaches playback but
-    // never the Slice view or the samples voicePool2 actually renders —
-    // same gap SfzPlayerDropdownPanel::writeSfzZoneChange's identical
-    // comment describes for the ZONES editor, fixed there the same way.
-    //
-    // Only mark this a "zone edit" rebuild (preserve each slice's
-    // DYSEKT-only fields — custom ADSR, per-slice EQ/filter, chromatic
-    // channel, mute group, etc. — across the rebuild) when it genuinely is
-    // one, i.e. the debounced-timer path following a real in-place edit.
-    // setInstrument()'s immediate isFreshLoad=true call is a wholesale
-    // model swap (import/New/discard) and must behave like any other fresh
-    // file load: wipe every slice clean rather than carrying over
-    // per-slice customisation that belonged to whatever was loaded before.
-    // See zoneBuilderReloadPending's declaration in PluginProcessor.h and
-    // writeSfzZoneChange's identical distinction for the ZONES editor.
-    if (! isFreshLoad)
-        processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
-    processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
+    processor.fileLoadPool.addJob (
+        [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = instrument]
+        {
+            if (! SfzExporter::exportToFile (snapshot, cacheFile, opts))
+                return;   // nothing to load — same as the old synchronous early-return
+
+            juce::MessageManager::callAsync ([safeThis, myGen, cacheFile, isFreshLoad]
+            {
+                if (safeThis == nullptr)
+                    return;   // panel destroyed while the export was in flight
+                if (myGen != safeThis->engineSyncGeneration)
+                    return;   // superseded by a newer edit/load before this one finished
+
+                // UI thread only; SfzPlayer posts the load atomically and swaps at
+                // the next audio block boundary (see SfzPlayer.h threading comment) —
+                // no audio-thread file access happens here or inside loadFile() itself.
+                safeThis->processor.sfzPlayer2.loadFile (cacheFile, safeThis->processor.fileLoadPool);
+
+                // The line above only updates sfzPlayer2 — the live sfizz/FluidSynth
+                // engine — but sfzPlayer2.process() is never actually called; what
+                // voicePool2 plays back is the pre-rendered slice data in
+                // sliceManager2/sampleData2 (and, in turn, whatever the SFZ-PLAYER's
+                // Slice/waveform view is showing), populated only by SoundFontLoader
+                // via loadSoundFontAsync(..., SoundFontLoadTarget::SfzPlayer2). Without
+                // re-running that here, every MULTISAMPLER edit reaches playback but
+                // never the Slice view or the samples voicePool2 actually renders —
+                // same gap SfzPlayerDropdownPanel::writeSfzZoneChange's identical
+                // comment describes for the ZONES editor, fixed there the same way.
+                //
+                // Only mark this a "zone edit" rebuild (preserve each slice's
+                // DYSEKT-only fields — custom ADSR, per-slice EQ/filter, chromatic
+                // channel, mute group, etc. — across the rebuild) when it genuinely is
+                // one, i.e. the debounced-timer path following a real in-place edit.
+                // setInstrument()'s immediate isFreshLoad=true call is a wholesale
+                // model swap (import/New/discard) and must behave like any other fresh
+                // file load: wipe every slice clean rather than carrying over
+                // per-slice customisation that belonged to whatever was loaded before.
+                // See zoneBuilderReloadPending's declaration in PluginProcessor.h and
+                // writeSfzZoneChange's identical distinction for the ZONES editor.
+                if (! isFreshLoad)
+                    safeThis->processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
+                safeThis->processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
+            });
+        });
 }
 
 // ── Inspector ────────────────────────────────────────────────────────────
