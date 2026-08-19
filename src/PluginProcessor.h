@@ -350,6 +350,19 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    /** Last-known JSON serialisation (InstrumentSerializer::toJson) of the
+     *  MULTISAMPLER instrument, kept here so it survives project save/reload
+     *  and plugin-editor close/reopen even though the live
+     *  MultisamplerInstrument model itself lives on the UI thread inside
+     *  MultisamplerEditor. MultisamplerEditor's onInstrumentChanged handler
+     *  (PluginEditor.cpp) pushes the latest snapshot in here on every
+     *  committed edit; getStateInformation()/setStateInformation() persist
+     *  it verbatim, and PluginEditor's constructor restores it into a fresh
+     *  MultisamplerEditor via InstrumentSerializer::fromJson() +
+     *  setInstrument(). Empty string means "no instrument yet". */
+    const juce::String& getSavedMultisamplerInstrumentJson() const noexcept { return savedMultisamplerInstrumentJson; }
+    void setSavedMultisamplerInstrumentJson (juce::String json) { savedMultisamplerInstrumentJson = std::move (json); }
+
     // =========================================================================
     // Public API
     // =========================================================================
@@ -794,6 +807,13 @@ public:
     // SFZ-Player (sfzPlayer2) channel ownership — default ch2 (bit 2)
     std::atomic<uint32_t> sfzPlayer2ChannelMask      { 1u << 2 }; // ch 2 default
     std::atomic<uint32_t> savedSfzPlayer2ChannelMask { 1u << 2 };
+
+    // MULTISAMPLER instrument snapshot — see getSavedMultisamplerInstrumentJson()
+    // above. UI-thread-written, but only ever read back on the UI thread too
+    // (PluginEditor's constructor / getStateInformation(), which JUCE also
+    // calls from the message thread in every host this plugin targets), so
+    // this plain juce::String (not atomic) is safe without extra locking.
+    juce::String savedMultisamplerInstrumentJson;
 
     /** Rebuild chromaticSliceChannelMask from current slice data.
      *  Must be called on the audio thread (or before first audio callback). */

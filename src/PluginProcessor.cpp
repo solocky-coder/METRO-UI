@@ -4533,7 +4533,7 @@ void DysektProcessor::getStateInformation (juce::MemoryBlock& destData)
     juce::MemoryOutputStream stream (destData, false);
 
     // Version
-    stream.writeInt (26);
+    stream.writeInt (27);
 
     // APVTS state
     auto state = apvts.copyState();
@@ -4665,6 +4665,14 @@ void DysektProcessor::getStateInformation (juce::MemoryBlock& destData)
 #if DYSEKT_STANDALONE
     sequencer.writeToStream (stream);
 #endif
+
+    // v27: MULTISAMPLER instrument (InstrumentSerializer JSON). Previously
+    // never written at all -- MultisamplerEditor's model lived purely on the
+    // UI thread with no path into plugin state, so every save/reload (or
+    // even just closing/reopening the editor) silently dropped it back to a
+    // blank "New Instrument" with zero zones. See
+    // getSavedMultisamplerInstrumentJson()'s declaration comment.
+    stream.writeString (savedMultisamplerInstrumentJson);
 }
 
 void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -4672,7 +4680,13 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
     juce::MemoryInputStream stream (data, (size_t) sizeInBytes, false);
 
     int version = stream.readInt();
-    if (version < 16 || version > 25)
+    // NOTE: this cap was left at 25 while getStateInformation() had already
+    // moved on to writing version 26 (SCB showInMixer field) and then 27
+    // (MULTISAMPLER instrument JSON, see below). Any state saved by a build
+    // in between silently failed this check and bailed out of restoring
+    // *anything* -- slices, sample, SFZ/SF2 player state, sequencer, all of
+    // it -- on the very next load. Cap now tracks the current write version.
+    if (version < 16 || version > 27)
         return;
 
     // APVTS state
@@ -4905,6 +4919,13 @@ void DysektProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (! stream.isExhausted())
         sequencer.readFromStream (stream);
 #endif
+
+    // v27: MULTISAMPLER instrument JSON (graceful — older saves won't have
+    // this block, and simply leave savedMultisamplerInstrumentJson empty,
+    // which PluginEditor treats the same as "no instrument yet").
+    savedMultisamplerInstrumentJson = (version >= 27 && ! stream.isExhausted())
+                                           ? stream.readString()
+                                           : juce::String();
 
     // Mirror the restored sfPlayerChannelMask into savedSfPlayerChannelMask so
     // that switching to Slicer mode and back preserves the loaded channel range.

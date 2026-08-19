@@ -3,6 +3,7 @@
 #include "ui/PluginEditorConstants.h"
 #include "ui/LogoIcon.h"
 #include "ui/UIHelpers.h"
+#include "audio/multisampler/InstrumentSerializer.h"
 
 #if JUCE_WINDOWS && ! DYSEKT_STANDALONE
  #ifndef NOMINMAX
@@ -138,9 +139,15 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
      sliceControlBar.setInstrumentDirty (multisamplerEditor.isDirty());
 
-     // Nothing to persist yet (Phase 4 / .metrokit isn't wired to plugin
-     // state), but repaint so the panel's own dirty-dot indicator and any
-     // future window-title "*" affordance stay current.
+     // Push the latest snapshot into plugin state so it survives project
+     // save/reload and editor close/reopen — see
+     // DysektProcessor::getSavedMultisamplerInstrumentJson()'s declaration
+     // comment. This fires on every committed edit (drag-commit, inspector
+     // apply, import, New, restore-on-open below), so processor state is
+     // always at most one edit stale even without an explicit host save.
+     processor.setSavedMultisamplerInstrumentJson (
+         InstrumentSerializer::toJson (multisamplerEditor.getInstrument()));
+
      repaint();
  };
  multisamplerEditor.onZoneSelectionOrEditChanged = [this]
@@ -172,11 +179,7 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
                                        : juce::String ("Zone " + juce::String (idx + 1)),
          z.lowKey, z.highKey, z.rootKey,
          z.tuneCents, z.pan, z.gainDb, z.releaseSeconds,
-         z.loopMode != LoopMode::noLoop,
-         // Phase 4: ATTACK/DECAY/SUSTAIN/CUTOFF/RESONANCE/GROUP now round-trip
-         // through the SCB zone-summary row the same as the original 8 fields.
-         z.attackSeconds, z.decaySeconds, z.sustainLevel,
-         z.filterCutoffHz, z.filterResonance, z.group);
+         z.loopMode != LoopMode::noLoop);
  };
  multisamplerEditor.onImportWarnings = [this] (const juce::String& sourceFileName,
                                                 bool importSucceeded,
@@ -248,45 +251,27 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              proceed();
      };
  };
- multisamplerEditor.onSaveValidationIssues = [this] (const std::vector<MultisamplerInstrument::ValidationIssue>& issues,
-                                                      std::function<void()> proceed)
+ // Restore the MULTISAMPLER instrument saved into plugin state (project
+ // reload, or simply the editor being closed and reopened by the host) —
+ // see DysektProcessor::getSavedMultisamplerInstrumentJson()'s declaration
+ // comment. Every PluginEditor is constructed with a fresh, empty
+ // MultisamplerEditor (instrument{} default ctor), so without this the
+ // MULTISAMPLER engine (sfzPlayer2/sliceManager2) stays silently empty —
+ // sfizz_load_file(...) -> OK, regions=0 — even though the processor still
+ // has a perfectly good saved instrument. setInstrument()'s default
+ // syncEngine=true immediately resyncs the live playback engine, same as a
+ // fresh Import SFZ, so sound comes back without any further user action.
+ // Must run after every multisamplerEditor.on*= handler above is wired,
+ // since setInstrument() fires onInstrumentChanged synchronously.
  {
-     // Plan §5 "save/export lifecycle refinement" — see
-     // MultisamplerEditor::onSaveValidationIssues' declaration comment.
-     // Same capped-line-list shape as onImportWarnings above; severity is
-     // shown per-line rather than gating which lines appear, since even a
-     // warning-only validate() result (e.g. root key outside its own zone's
-     // range) is worth a chance to go back rather than writing silently.
-     static const auto severityLabel = [] (MultisamplerInstrument::ValidationIssue::Severity s) -> juce::String
+     const auto& savedJson = processor.getSavedMultisamplerInstrumentJson();
+     if (savedJson.isNotEmpty())
      {
-         return s == MultisamplerInstrument::ValidationIssue::Severity::error ? "Error" : "Warning";
-     };
-
-     constexpr int kMaxLines = 8;
-     juce::StringArray lines;
-     for (int i = 0; i < (int) issues.size() && i < kMaxLines; ++i)
-     {
-         const auto& issue = issues[(size_t) i];
-         lines.add (severityLabel (issue.severity) + ": " + issue.message);
+         auto result = InstrumentSerializer::fromJson (savedJson);
+         if (result.success)
+             multisamplerEditor.setInstrument (std::move (result.instrument), true);
      }
-     if ((int) issues.size() > kMaxLines)
-         lines.add ("… and " + juce::String ((int) issues.size() - kMaxLines) + " more");
-
-     confirmOverlay = std::make_unique<ConfirmOverlay> (
-         "Validation Issues Found",
-         lines.joinIntoString ("\n"),
-         "Save Anyway",
-         "Cancel");
-     addAndMakeVisible (*confirmOverlay);
-     confirmOverlay->setBounds (getLocalBounds());
-     confirmOverlay->toFront (true);
-     confirmOverlay->onResult = [this, proceed] (bool saveAnyway)
-     {
-         confirmOverlay.reset();
-         if (saveAnyway)
-             proceed();
-     };
- };
+ }
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
  // so the timer re-populates the zone matrix on the next completed load.
  sfzDropdown.onFileLoaded = [this] (const juce::File&)
@@ -2526,7 +2511,10 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // heuristic isn't airtight either way. Called from every load path that
 // can put a .sfz into sfzPlayer2: browserPanel.onLoadRequest (file
 // browser) and waveformView.onSfzPlayerFileDropped (drag-and-drop onto
-// the waveform view).
+// the waveform view). Note: ui/SFZWaveformView.cpp has its own
+// filesDropped() -> loadSoundFontAsync(SfzPlayer2) call, but that
+// component isn't instantiated anywhere in the editor, so it's dead code
+// and not a live drop path -- nothing to wire there.
 void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
 {
     const auto zones = SfzPlayerDropdownPanel::parseSfzZones (sfzFile);
