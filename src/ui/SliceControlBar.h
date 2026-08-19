@@ -57,15 +57,22 @@ public:
     // UiSliceSnapshot representation of their own.
     void setSfzZoneSummary (int zoneIndex, const juce::String& name,
                             int loKey, int hiKey, int rootPitch,
-                            float tuneCents, float pan, float volDb, float releaseSec, bool isLooped = false);
+                            float tuneCents, float pan, float volDb, float releaseSec, bool isLooped = false,
+                            float attackSec = 0.005f, float decaySec = 0.1f, float sustainLevel = 1.0f,
+                            float filterCutoffHz = 20000.0f, float filterResonance = 0.0f, int group = 0);
     void clearSfzZoneSummary();
 
     /// Fired after a zone parameter is changed in the SFZ-PLAYER control bar.
     std::function<void (int zoneIndex, int field, float value)> onSfzZoneParamEdited;
 
 public:
+    // Phase 4 (SCB ↔ zone wiring coverage pass): ATTACK/DECAY/SUSTAIN/CUTOFF/
+    // RESONANCE/GROUP appended after the original 8 fields so existing values
+    // (referenced by MultisamplerEditor::applySliceControlBarFieldEdit and any
+    // saved layouts) don't shift.
     enum SfzZoneField { ZoneLoKey = -100, ZoneHiKey, ZoneRoot, ZonePitch,
-                        ZonePan, ZoneVolume, ZoneRelease, ZoneLoop };
+                        ZonePan, ZoneVolume, ZoneRelease, ZoneLoop,
+                        ZoneAttack, ZoneDecay, ZoneSustain, ZoneCutoff, ZoneResonance, ZoneGroup };
     struct SfzZoneCell { juce::Rectangle<int> bounds; int field; };
 private:
     void timerCallback() override;
@@ -86,6 +93,9 @@ private:
         int index = -1, loKey = 0, hiKey = 127, rootPitch = -1;
         float tuneCents = 0.0f, pan = 0.0f, volDb = -7.0f, releaseSec = 0.664f;
         bool isLooped = false;
+        float attackSec = 0.005f, decaySec = 0.1f, sustainLevel = 1.0f;
+        float filterCutoffHz = 20000.0f, filterResonance = 0.0f;
+        int group = 0;
         juce::String name;
     } sfzZoneSummary;
 
@@ -174,6 +184,11 @@ private:
     // when the SFZ-PLAYER MULTISAMPLER view is active — see setSfzZoneSummary().
     void drawSfzZoneSummary (juce::Graphics& g, int x, int y, int width, int height) const;
     void showTextEditor (const ParamCell& cell, float currentValue);
+    // Zone-field counterpart of showTextEditor() — SfzZoneCell has no lock
+    // bit / APVTS default concept (zones aren't Slicer slices), so the
+    // commit path is just applySfzZoneDrag(field, value, /*commit=*/true)
+    // rather than showTextEditor()'s lock/APVTS-aware branch.
+    void showSfzZoneTextEditor (const SfzZoneCell& cell, float currentValue);
     void showMidiLearnMenu (int fieldId, juce::Point<int> screenPos);
 
     // Per-field helpers

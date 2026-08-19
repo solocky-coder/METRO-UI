@@ -104,7 +104,9 @@ juce::String SliceControlBar::themeKeyAt (juce::Point<int> p) const
 
 void SliceControlBar::setSfzZoneSummary (int zoneIndex, const juce::String& name,
                                          int loKey, int hiKey, int rootPitch,
-                                         float tuneCents, float pan, float volDb, float releaseSec, bool isLooped)
+                                         float tuneCents, float pan, float volDb, float releaseSec, bool isLooped,
+                                         float attackSec, float decaySec, float sustainLevel,
+                                         float filterCutoffHz, float filterResonance, int group)
 {
     sfzZoneSummary.valid      = true;
     sfzZoneSummary.index      = zoneIndex;
@@ -117,6 +119,12 @@ void SliceControlBar::setSfzZoneSummary (int zoneIndex, const juce::String& name
     sfzZoneSummary.volDb      = volDb;
     sfzZoneSummary.releaseSec = releaseSec;
     sfzZoneSummary.isLooped   = isLooped;
+    sfzZoneSummary.attackSec       = attackSec;
+    sfzZoneSummary.decaySec        = decaySec;
+    sfzZoneSummary.sustainLevel    = sustainLevel;
+    sfzZoneSummary.filterCutoffHz  = filterCutoffHz;
+    sfzZoneSummary.filterResonance = filterResonance;
+    sfzZoneSummary.group           = group;
     repaint();
 }
 
@@ -1446,11 +1454,26 @@ void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int w
         z.rootPitch >= 0 ? note (z.rootPitch) : "--",
         juce::String (juce::roundToInt (z.tuneCents)) + "ct", pan,
         juce::String (z.volDb, 1) + "dB", juce::String (z.releaseSec, 3) + "s",
-        z.isLooped ? "ON" : "OFF" };
-    const char* labels[] = { "loKey", "hiKey", "ROOT", "PITCH", "PAN", "VOLUME", "RELEASE", "LOOP" };
-    const int fields[] = { ZoneLoKey, ZoneHiKey, ZoneRoot, ZonePitch, ZonePan, ZoneVolume, ZoneRelease, ZoneLoop };
+        z.isLooped ? "ON" : "OFF",
+        // Phase 4: ATTACK/DECAY/SUSTAIN/CUTOFF/RESONANCE/GROUP appended after
+        // the original 8 read-only-until-now fields — see SliceLcdDisplay's/
+        // SliceWaveformLcd's "no write path from here into SampleZone yet"
+        // comments, which this closes for these six.
+        juce::String (z.attackSec, 3) + "s", juce::String (z.decaySec, 3) + "s",
+        juce::String (juce::roundToInt (z.sustainLevel * 100.0f)) + "%",
+        (z.filterCutoffHz >= 1000.0f ? juce::String (z.filterCutoffHz / 1000.0f, 1) + "k"
+                                      : juce::String (juce::roundToInt (z.filterCutoffHz)) + "Hz"),
+        juce::String (juce::roundToInt (z.filterResonance * 100.0f)) + "%",
+        z.group > 0 ? juce::String (z.group) : "--" };
+    const char* labels[] = { "loKey", "hiKey", "ROOT", "PITCH", "PAN", "VOLUME", "RELEASE", "LOOP",
+                             "ATTACK", "DECAY", "SUSTAIN", "CUTOFF", "RESO", "GROUP" };
+    const int fields[] = { ZoneLoKey, ZoneHiKey, ZoneRoot, ZonePitch, ZonePan, ZoneVolume, ZoneRelease, ZoneLoop,
+                           ZoneAttack, ZoneDecay, ZoneSustain, ZoneCutoff, ZoneResonance, ZoneGroup };
+    static_assert (sizeof (values) / sizeof (values[0]) == sizeof (fields) / sizeof (fields[0]),
+                  "values/labels/fields must stay in lockstep");
+    const int numFields = (int) (sizeof (fields) / sizeof (fields[0]));
     int cx = x, cw = 0;
-    for (int i = 0; i < 8 && cx + psCellW <= x + width; ++i)
+    for (int i = 0; i < numFields && cx + psCellW <= x + width; ++i)
     {
         self->drawSfzZoneCell (g, cx, y, labels[i], values[i], fields[i], cw);
         cx += cw + juce::roundToInt (4.0f * paintSf);
@@ -1471,6 +1494,17 @@ void SliceControlBar::applySfzZoneDrag (int field, float value, bool commit)
         case ZoneVolume:  z.volDb = juce::jlimit (-60.f, 12.f, value); break;
         case ZoneRelease: z.releaseSec = juce::jlimit (0.f, 60.f, value); break;
         case ZoneLoop:    z.isLooped = value > 0.5f; break;
+        // Phase 4 additions — ranges match the Slicer's own knob ranges for
+        // the same concepts (FieldAttack 0..1s, FieldDecay 0..5s, FieldSustain
+        // 0..1) where a Slicer equivalent exists; CUTOFF/RESONANCE/GROUP
+        // mirror SampleZone.h's own field-range comments (20..20000 Hz,
+        // 0..1, arbitrary non-negative sfz `group` id respectively).
+        case ZoneAttack:    z.attackSec       = juce::jlimit (0.f, 1.f, value); break;
+        case ZoneDecay:     z.decaySec        = juce::jlimit (0.f, 5.f, value); break;
+        case ZoneSustain:   z.sustainLevel    = juce::jlimit (0.f, 1.f, value); break;
+        case ZoneCutoff:    z.filterCutoffHz  = juce::jlimit (20.f, 20000.f, value); break;
+        case ZoneResonance: z.filterResonance = juce::jlimit (0.f, 1.f, value); break;
+        case ZoneGroup:     z.group           = juce::jlimit (0, 999, juce::roundToInt (value)); break;
         default: return;
     }
     if (commit && onSfzZoneParamEdited) onSfzZoneParamEdited (z.index, field, value);
@@ -1678,6 +1712,12 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
                  case ZonePan: dragStartValue = sfzZoneSummary.pan; break;
                  case ZoneVolume: dragStartValue = sfzZoneSummary.volDb; break;
                  case ZoneRelease: dragStartValue = sfzZoneSummary.releaseSec; break;
+                 case ZoneAttack: dragStartValue = sfzZoneSummary.attackSec; break;
+                 case ZoneDecay: dragStartValue = sfzZoneSummary.decaySec; break;
+                 case ZoneSustain: dragStartValue = sfzZoneSummary.sustainLevel; break;
+                 case ZoneCutoff: dragStartValue = sfzZoneSummary.filterCutoffHz; break;
+                 case ZoneResonance: dragStartValue = sfzZoneSummary.filterResonance; break;
+                 case ZoneGroup: dragStartValue = (float) sfzZoneSummary.group; break;
              }
              sfzZoneEditPending = true;
              return;
@@ -2071,6 +2111,15 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
      if (activeSfzZoneField == ZonePan) scale *= 0.01f;
      else if (activeSfzZoneField == ZoneVolume) scale *= 0.5f;
      else if (activeSfzZoneField == ZoneRelease) scale *= 0.01f;
+     // Phase 4 additions — scale each drag pixel to a sensible fraction of
+     // the field's own range, same convention as the cases above (a coarse
+     // range like CUTOFF's 20..20000 needs a much bigger per-pixel step
+     // than a 0..1 field like SUSTAIN/RESONANCE).
+     else if (activeSfzZoneField == ZoneAttack) scale *= 0.01f;
+     else if (activeSfzZoneField == ZoneDecay) scale *= 0.05f;
+     else if (activeSfzZoneField == ZoneSustain) scale *= 0.01f;
+     else if (activeSfzZoneField == ZoneCutoff) scale *= 50.0f;
+     else if (activeSfzZoneField == ZoneResonance) scale *= 0.01f;
      applySfzZoneDrag (activeSfzZoneField, dragStartValue + delta * scale, false);
      return;
  }
@@ -2264,6 +2313,12 @@ void SliceControlBar::mouseUp (const juce::MouseEvent& /*e*/)
              case ZoneRoot: value = (float) sfzZoneSummary.rootPitch; break; case ZonePitch: value = sfzZoneSummary.tuneCents; break;
              case ZonePan: value = sfzZoneSummary.pan; break; case ZoneVolume: value = sfzZoneSummary.volDb; break;
              case ZoneRelease: value = sfzZoneSummary.releaseSec; break;
+             case ZoneAttack: value = sfzZoneSummary.attackSec; break;
+             case ZoneDecay: value = sfzZoneSummary.decaySec; break;
+             case ZoneSustain: value = sfzZoneSummary.sustainLevel; break;
+             case ZoneCutoff: value = sfzZoneSummary.filterCutoffHz; break;
+             case ZoneResonance: value = sfzZoneSummary.filterResonance; break;
+             case ZoneGroup: value = (float) sfzZoneSummary.group; break;
          }
          onSfzZoneParamEdited (sfzZoneSummary.index, field, value);
      }
@@ -2312,6 +2367,42 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
  auto pos = e.getPosition();
  const bool sfzMode = isSfzPlayer2Mode();
  const auto& ui = sfzMode ? processor.getUiSliceSnapshot2() : processor.getUiSliceSnapshot();
+
+ // Phase 4 (SCB ↔ zone wiring coverage pass): the SFZ-PLAYER MULTISAMPLER
+ // zone-summary cells (sfzZoneCells) previously had no double-click text
+ // entry at all — only the drag path in mouseDown/mouseDrag/mouseUp — so
+ // every zone field could only be nudged by dragging, never typed exactly,
+ // unlike every ParamCell below. Checked first, same order as mouseDown's
+ // own zone-cell-before-ParamCell-cell precedence.
+ if (sfzMode && sfzZoneSummary.valid)
+ {
+     for (const auto& zoneCell : sfzZoneCells)
+     {
+         if (! zoneCell.bounds.contains (pos)) continue;
+         if (zoneCell.field == ZoneLoop) return;   // toggle-only — click (not double-click) already flips it
+
+         float currentValue = 0.f;
+         switch (zoneCell.field)
+         {
+             case ZoneLoKey:     currentValue = (float) sfzZoneSummary.loKey; break;
+             case ZoneHiKey:     currentValue = (float) sfzZoneSummary.hiKey; break;
+             case ZoneRoot:      currentValue = (float) sfzZoneSummary.rootPitch; break;
+             case ZonePitch:     currentValue = sfzZoneSummary.tuneCents; break;
+             case ZonePan:       currentValue = sfzZoneSummary.pan; break;
+             case ZoneVolume:    currentValue = sfzZoneSummary.volDb; break;
+             case ZoneRelease:   currentValue = sfzZoneSummary.releaseSec; break;
+             case ZoneAttack:    currentValue = sfzZoneSummary.attackSec; break;
+             case ZoneDecay:     currentValue = sfzZoneSummary.decaySec; break;
+             case ZoneSustain:   currentValue = sfzZoneSummary.sustainLevel; break;
+             case ZoneCutoff:    currentValue = sfzZoneSummary.filterCutoffHz; break;
+             case ZoneResonance: currentValue = sfzZoneSummary.filterResonance; break;
+             case ZoneGroup:     currentValue = (float) sfzZoneSummary.group; break;
+             default: return;
+         }
+         showSfzZoneTextEditor (zoneCell, currentValue);
+         return;
+     }
+ }
 
  for (int i = 0; i < (int) cells.size(); ++i)
  {
@@ -2625,6 +2716,68 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
  };
  textEditor->onEscapeKey = [this] { textEditor.reset(); repaint(); };
  textEditor->onFocusLost = [this] { textEditor.reset(); repaint(); };
+}
+
+// =============================================================================
+// showSfzZoneTextEditor
+// =============================================================================
+// Zone-field counterpart of showTextEditor() above. Simpler than that one:
+// SfzZoneCell has no lock bit and no APVTS-default fallback (zones aren't
+// Slicer slices), so committing is just a single applySfzZoneDrag(field,
+// value, /*commit=*/true) call — that function already owns both the native
+// clamp range for each field and firing onSfzZoneParamEdited on commit, so
+// this method doesn't duplicate either.
+void SliceControlBar::showSfzZoneTextEditor (const SfzZoneCell& cell, float currentValue)
+{
+    textEditor = std::make_unique<juce::TextEditor>();
+    addAndMakeVisible (*textEditor);
+    const int textX = juce::roundToInt (14.0f * paintSf);
+    textEditor->setBounds (cell.bounds.getX() + textX, cell.bounds.getY() + 14,
+                           cell.bounds.getWidth() - textX - 2, 16);
+    textEditor->setFont (DysektLookAndFeel::makeFont (14.0f));
+    textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.brighter (0.15f));
+    textEditor->setColour (juce::TextEditor::textColourId,    getTheme().foreground);
+    textEditor->setColour (juce::TextEditor::outlineColourId, getTheme().accent);
+
+    // Display precision mirrors drawSfzZoneSummary()'s own formatting for
+    // each field so what the user sees typed in matches what they saw
+    // printed in the cell just before double-clicking it.
+    juce::String displayVal;
+    switch (cell.field)
+    {
+        case ZoneLoKey:     displayVal = juce::String (sfzZoneSummary.loKey); break;
+        case ZoneHiKey:     displayVal = juce::String (sfzZoneSummary.hiKey); break;
+        case ZoneRoot:      displayVal = juce::String (sfzZoneSummary.rootPitch); break;
+        case ZonePitch:     displayVal = juce::String (juce::roundToInt (currentValue)); break;
+        case ZonePan:       displayVal = juce::String (currentValue, 2); break;
+        case ZoneVolume:    displayVal = juce::String (currentValue, 1); break;
+        case ZoneRelease:   displayVal = juce::String (currentValue, 3); break;
+        case ZoneAttack:    displayVal = juce::String (currentValue, 3); break;
+        case ZoneDecay:     displayVal = juce::String (currentValue, 3); break;
+        case ZoneSustain:   displayVal = juce::String (juce::roundToInt (currentValue * 100.0f)); break;
+        case ZoneCutoff:    displayVal = juce::String (juce::roundToInt (currentValue)); break;
+        case ZoneResonance: displayVal = juce::String (juce::roundToInt (currentValue * 100.0f)); break;
+        case ZoneGroup:     displayVal = juce::String (juce::roundToInt (currentValue)); break;
+        default:            displayVal = juce::String (currentValue, 2); break;
+    }
+    textEditor->setText (displayVal, false);
+    textEditor->selectAll(); textEditor->grabKeyboardFocus();
+
+    const int fieldId = cell.field;
+    // SUSTAIN/RESONANCE are typed as 0..100 (%) matching what's printed in
+    // the cell, then rescaled to applySfzZoneDrag()'s native 0..1 range —
+    // same percent-vs-native split showTextEditor() uses for FieldSustain.
+    textEditor->onReturnKey = [this, fieldId]
+    {
+        if (! textEditor) return;
+        float val = textEditor->getText().getFloatValue();
+        if (fieldId == ZoneSustain || fieldId == ZoneResonance)
+            val /= 100.0f;
+        applySfzZoneDrag (fieldId, val, /*commit=*/true);
+        textEditor.reset(); repaint();
+    };
+    textEditor->onEscapeKey = [this] { textEditor.reset(); repaint(); };
+    textEditor->onFocusLost = [this] { textEditor.reset(); repaint(); };
 }
 
 // =============================================================================

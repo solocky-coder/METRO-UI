@@ -172,7 +172,11 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
                                        : juce::String ("Zone " + juce::String (idx + 1)),
          z.lowKey, z.highKey, z.rootKey,
          z.tuneCents, z.pan, z.gainDb, z.releaseSeconds,
-         z.loopMode != LoopMode::noLoop);
+         z.loopMode != LoopMode::noLoop,
+         // Phase 4: ATTACK/DECAY/SUSTAIN/CUTOFF/RESONANCE/GROUP now round-trip
+         // through the SCB zone-summary row the same as the original 8 fields.
+         z.attackSeconds, z.decaySeconds, z.sustainLevel,
+         z.filterCutoffHz, z.filterResonance, z.group);
  };
  multisamplerEditor.onImportWarnings = [this] (const juce::String& sourceFileName,
                                                 bool importSucceeded,

@@ -583,6 +583,17 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
         case SliceControlBar::ZonePan:     z.pan          = value; break;
         case SliceControlBar::ZoneVolume:  z.gainDb       = value; break;
         case SliceControlBar::ZoneRelease: z.releaseSeconds = value; break;
+        // Phase 4 (SCB ↔ zone wiring coverage pass): these six previously had
+        // no write path into SampleZone at all — see SliceLcdDisplay's/
+        // SliceWaveformLcd's setMultisamplerSource() doc comments, which this
+        // closes for these fields (loop points and round-robin/velocity are
+        // intentionally still out of scope — no editor UI targets them yet).
+        case SliceControlBar::ZoneAttack:    z.attackSeconds  = value; break;
+        case SliceControlBar::ZoneDecay:     z.decaySeconds   = value; break;
+        case SliceControlBar::ZoneSustain:   z.sustainLevel   = value; break;
+        case SliceControlBar::ZoneCutoff:    z.filterCutoffHz  = value; break;
+        case SliceControlBar::ZoneResonance: z.filterResonance = value; break;
+        case SliceControlBar::ZoneGroup:     z.group           = juce::roundToInt (value); break;
         case SliceControlBar::ZoneLoop:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 
