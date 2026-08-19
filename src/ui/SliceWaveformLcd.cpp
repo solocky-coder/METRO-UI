@@ -1151,10 +1151,6 @@ void SliceWaveformLcd::drawNoData (juce::Graphics& g)
 
 void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<float>& area)
 {
- // MULTISAMPLER zone indices don't correspond to sliceManager2/voicePool2
- // slice indices, so a voice's sliceIdx could coincidentally match
- // data.sliceIndex and draw a playhead for the wrong sound entirely.
- if (multisamplerActive) return;
  if (data.sliceIndex < 0) return;
 
  const int totalRange = data.endSample - data.startSample;
@@ -1162,10 +1158,43 @@ void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<fl
 
  auto& vp = isSfzPlayer2Mode() ? processor.voicePool2 : processor.voicePool;
 
+ // MULTISAMPLER zone indices don't correspond to sliceManager2/voicePool2
+ // slice indices (loop-split zones can shift that numbering), so a voice's
+ // sliceIdx can't be matched against data.sliceIndex the way Slicer/
+ // SFZ-PLAYER do below. Instead, match the active voice against the
+ // currently selected zone's own key/velocity range — every Voice already
+ // carries the real midiNote/velocity that triggered it, and SampleZone
+ // already carries lowKey/highKey/lowVelocity/highVelocity, so this needs
+ // no new state.
+ const SampleZone* selectedZone = nullptr;
+ if (multisamplerActive)
+ {
+     if (multisamplerInstrument == nullptr
+         || multisamplerZoneIndex < 0
+         || multisamplerZoneIndex >= (int) multisamplerInstrument->zones.size())
+         return;
+
+     selectedZone = &multisamplerInstrument->zones[(size_t) multisamplerZoneIndex];
+ }
+
  for (int i = 0; i < VoicePool::kMaxVoices; ++i)
  {
  const auto& v = vp.getVoice (i);
- if (! v.active || v.sliceIdx != data.sliceIndex) continue;
+ if (! v.active) continue;
+
+ if (multisamplerActive)
+ {
+     // Voice::velocity is normalised 0..1 (see VoicePool::startVoice);
+     // SampleZone's range is stored in the original 1..127 MIDI scale.
+     const int vel127 = juce::roundToInt (v.velocity * 127.0f);
+     if (v.midiNote < selectedZone->lowKey || v.midiNote > selectedZone->highKey
+         || vel127 < selectedZone->lowVelocity || vel127 > selectedZone->highVelocity)
+         continue;
+ }
+ else if (v.sliceIdx != data.sliceIndex)
+ {
+     continue;
+ }
 
  const float rawPos = vp.voicePositions[i].load (std::memory_order_relaxed);
  float xn = (rawPos - (float) data.startSample) / (float) totalRange;
