@@ -193,8 +193,20 @@ void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bo
 
 void MultisamplerEditor::newInstrumentClicked()
 {
-    setInstrument (MultisamplerInstrument{});
-    instrument.name = "New Instrument";
+    auto doNew = [this]
+    {
+        setInstrument (MultisamplerInstrument{});
+        instrument.name = "New Instrument";
+    };
+
+    // Plan §5.6: NEW is an instrument-replacing action and must not
+    // silently discard unsaved edits. See onConfirmDiscardIfDirty's
+    // declaration comment — a dirty instrument with no handler wired
+    // blocks the action rather than discarding un-prompted.
+    if (! dirty)
+        doNew();
+    else if (onConfirmDiscardIfDirty)
+        onConfirmDiscardIfDirty (doNew);
 }
 
 void MultisamplerEditor::addZoneClicked()
@@ -265,7 +277,15 @@ void MultisamplerEditor::importSfzClicked()
         {
             const auto file = fc.getResult();
             if (! file.existsAsFile()) return;
-            importFromFile (file);
+
+            // Plan §5.7: IMPORT SFZ replaces the whole instrument the same
+            // way NEW does — same dirty guard, see newInstrumentClicked()
+            // and onConfirmDiscardIfDirty's declaration comment.
+            auto doImport = [this, file] { importFromFile (file); };
+            if (! dirty)
+                doImport();
+            else if (onConfirmDiscardIfDirty)
+                onConfirmDiscardIfDirty (doImport);
         });
 }
 

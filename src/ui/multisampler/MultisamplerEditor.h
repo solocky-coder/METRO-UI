@@ -163,6 +163,25 @@ public:
                          bool importSucceeded,
                          const std::vector<SfzImporter::Warning>& warnings)> onImportWarnings;
 
+    /** Fired when the NEW or IMPORT SFZ button is clicked (a file already
+        chosen, in IMPORT's case) while isDirty() is true — about to discard
+        unsaved edits. MultisamplerEditor has no overlay/dialog machinery of
+        its own (see onImportWarnings' comment above) so, same as that
+        callback, confirming is left to whoever owns the surrounding chrome.
+        The receiver must call `proceed()` to actually go ahead with the
+        replacement — synchronously, or later once an async ConfirmOverlay
+        resolves — and must not call it more than once per firing; declining
+        simply means never calling it. Only fires when isDirty() is true: a
+        clean NEW/IMPORT proceeds immediately without going through this
+        callback at all, so a disconnected handler only blocks the dirty
+        case (see METRO-UI Multisampler Implementation Plan §5.6–5.7) rather
+        than breaking the feature outright — same fallback shape as
+        onImportWarnings being optional. Not used for browser/drag-drop
+        loads, which PluginEditor already knows about directly and guards
+        with its own ConfirmOverlay before ever calling importFromFile() —
+        see loadSfzIntoMultisampler() in PluginEditor.cpp (plan §5.5/§5.8). */
+    std::function<void (std::function<void()> proceed)> onConfirmDiscardIfDirty;
+
 private:
     void timerCallback() override;   // fires once, kEngineSyncDebounceMs after the last edit
 

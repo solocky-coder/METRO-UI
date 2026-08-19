@@ -220,6 +220,30 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      messageOverlay->toFront (true);
      messageOverlay->onDismiss = [this] { messageOverlay.reset(); };
  };
+ multisamplerEditor.onConfirmDiscardIfDirty = [this] (std::function<void()> proceed)
+ {
+     // NEW / IMPORT SFZ clicked (inside MultisamplerEditor's own UI) while
+     // the current instrument has unsaved edits — see that callback's
+     // declaration comment and plan §5.6/§5.7. Same ConfirmOverlay pattern
+     // as loadSfzIntoMultisampler() below uses for the browser/drop paths
+     // (plan §5.8), just triggered from inside the panel instead of from a
+     // load PluginEditor already knew about.
+     confirmOverlay = std::make_unique<ConfirmOverlay> (
+         "Unsaved Multisampler Changes",
+         "This will replace the current MULTISAMPLER instrument. Unsaved "
+         "changes will be lost.",
+         "Replace",
+         "Cancel");
+     addAndMakeVisible (*confirmOverlay);
+     confirmOverlay->setBounds (getLocalBounds());
+     confirmOverlay->toFront (true);
+     confirmOverlay->onResult = [this, proceed] (bool replace)
+     {
+         confirmOverlay.reset();
+         if (replace)
+             proceed();
+     };
+ };
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
  // so the timer re-populates the zone matrix on the next completed load.
  sfzDropdown.onFileLoaded = [this] (const juce::File&)
@@ -446,35 +470,11 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      }
      if (uiMode == 1)
      {
-         // SFZ-PLAYER: .sfz only, routed to sfzPlayer2 (ch2)
+         // SFZ-PLAYER: .sfz only. MULTISAMPLER is now the one authoritative
+         // load path for this — see loadSfzIntoMultisampler()'s declaration
+         // comment (plan §5.5/§5.8).
          if (ext == ".sfz")
-         {
-             processor.sfzPlayer2.loadFile (f, processor.fileLoadPool);
-             processor.loadSoundFontAsync (f, SoundFontLoadTarget::SfzPlayer2);   // waveform preview -> sampleData2
-
-             offerDrumKitAutoRouting (f);
-
-            #if DYSEKT_STANDALONE
-             // Auto-create/update the SFZ-Player's Arranger sequencer track the
-             // moment a file is loaded — mirrors the wiring already present on
-             // the legacy sfzPlayerDropdown.onSfzFileLoaded path (this is the
-             // active BrowserPanel load path and was previously missing it).
-             static const juce::Colour kSfzTrackColour (0xFF9060D0);
-             pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
-            #endif
-
-             // Keep the native multisampler model in sync with whatever .sfz
-             // was just loaded, so opening MULTISAMPLER (K) reflects the file
-             // that's actually playing instead of stale/empty content from
-             // whatever was last explicitly imported via its own button.
-             // syncEngine=false: sfzPlayer2.loadFile() above already points
-             // playback at the original file directly — resyncing here would
-             // just reload a redundant, lossily round-tripped copy of it.
-             // Silent on a clean import; onImportWarnings surfaces the rest
-             // (same MessageOverlay path used elsewhere, e.g. drum-kit
-             // auto-detect below already pops up unprompted after a load).
-             multisamplerEditor.importFromFile (f, false);
-         }
+             loadSfzIntoMultisampler (f, true);
          return;
      }
      if (uiMode == 2)
@@ -495,16 +495,11 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
  };
  waveformView.onSfzPlayerFileDropped = [this] (const juce::File& f)
  {
-     offerDrumKitAutoRouting (f);
-     // Same rationale as browserPanel.onLoadRequest's uiMode==1 branch —
-     // this is the drag-and-drop equivalent load path, so it needs the same
-     // multisampler sync to avoid MULTISAMPLER only reflecting whichever
-     // path was used most recently. Unlike that path, this one never calls
-     // sfzPlayer2.loadFile() directly (see WaveformView::filesDropped's
-     // comment — sliceManager2 renders playback here, not the live sfzPlayer2
-     // engine), so leave syncEngine at its default true: this resync may be
-     // the only thing pointing sfzPlayer2 at real content for this load path.
-     multisamplerEditor.importFromFile (f);
+     // Drag-and-drop equivalent of browserPanel.onLoadRequest's uiMode==1
+     // branch — same loadSfzIntoMultisampler() authoritative path (plan
+     // §5.5/§5.8), just never creates an Arranger track (see that method's
+     // createArrangerTrack parameter comment — this path never did).
+     loadSfzIntoMultisampler (f, false);
  };
  waveformView.onShortcutsToggle = [this] { toggleShortcutsPanel(); };
  waveformView.onRenameRequest = [this] (int sliceIdx, const juce::String& currentName)
@@ -2473,10 +2468,11 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // SFZ-PLAYER state" to snapshot and restore on close, and no open/close
 // transition to guard with a dirty-instrument prompt — ordinary tab
 // navigation must not prompt or discard edits (see setUiMode() and METRO-UI
-// Multisampler Implementation Plan §5.4). Dirty-instrument protection now
-// belongs at the points that actually replace the instrument — New,
-// Import, and browser/drop loads that swap the current one — which is
-// Phase 2 work (§5.6–5.8), not something this tab-switch path needs to do.
+// Multisampler Implementation Plan §5.4). Dirty-instrument protection lives
+// instead at the points that actually replace the instrument — NEW/IMPORT
+// SFZ (MultisamplerEditor::onConfirmDiscardIfDirty, plan §5.6–5.7) and
+// browser/drop loads that swap the current one (loadSfzIntoMultisampler(),
+// plan §5.8) — this tab-switch path never needs to do it.
 
 // Drum-kit detection: offer to auto-assign each zone its own output bus
 // (kick/snare/hats etc. to separate DAW channels) rather than leaving
@@ -2515,6 +2511,57 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
         confirmOverlay.reset();
         if (assign)
             new SfzDrumKitBusApplier (processor, numZones);   // self-deleting, see header
+    };
+}
+
+// See declaration comment (PluginEditor.h) — plan §5.5/§5.8.
+void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArrangerTrack)
+{
+    auto doImport = [this, f, createArrangerTrack]
+    {
+       #if DYSEKT_STANDALONE
+        if (createArrangerTrack)
+        {
+            static const juce::Colour kSfzTrackColour (0xFF9060D0);
+            pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
+        }
+       #else
+        juce::ignoreUnused (createArrangerTrack);
+       #endif
+
+        // syncEngine defaults true — MultisamplerEditor's own
+        // export-to-cache-SFZ/reload pipeline (performEngineSync()) is now
+        // the only thing that points sfzPlayer2 at this load. There used
+        // to also be a direct processor.sfzPlayer2.loadFile()/
+        // loadSoundFontAsync() call right here on the original file, to
+        // avoid this round-trip — removed on purpose: keeping both meant
+        // two competing sources of truth for what's actually loaded, the
+        // exact desync class this plan exists to close (see plan §5.5).
+        multisamplerEditor.importFromFile (f);
+
+        offerDrumKitAutoRouting (f);
+    };
+
+    if (! multisamplerEditor.isDirty())
+    {
+        doImport();
+        return;
+    }
+
+    confirmOverlay = std::make_unique<ConfirmOverlay> (
+        "Unsaved Multisampler Changes",
+        "Loading " + f.getFileName() + " will replace the current MULTISAMPLER "
+        "instrument. Unsaved changes will be lost.",
+        "Replace",
+        "Cancel");
+    addAndMakeVisible (*confirmOverlay);
+    confirmOverlay->setBounds (getLocalBounds());
+    confirmOverlay->toFront (true);
+    confirmOverlay->onResult = [this, doImport] (bool replace)
+    {
+        confirmOverlay.reset();
+        if (replace)
+            doImport();
     };
 }
 

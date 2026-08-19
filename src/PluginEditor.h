@@ -160,6 +160,20 @@ private:
     // the file got loaded.
     void offerDrumKitAutoRouting (const juce::File& sfzFile);
 
+    // The one authoritative ".sfz replaces the MULTISAMPLER instrument"
+    // load path (METRO-UI Multisampler Implementation Plan §5.5) — shared
+    // by browserPanel.onLoadRequest's uiMode==1 branch and
+    // waveformView.onSfzPlayerFileDropped. Guards against silently
+    // discarding unsaved MULTISAMPLER edits (plan §5.8) via the same
+    // ConfirmOverlay pattern offerDrumKitAutoRouting uses; proceeds
+    // immediately when there's nothing to lose. offerDrumKitAutoRouting()
+    // only fires after the import actually happens (never before a discard
+    // the user might still cancel). createArrangerTrack: browser loads
+    // create/update the SFZ-Player's Arranger track on load (standalone
+    // only); the drag-and-drop path never had this wiring and this stays
+    // that way — pass false to preserve that.
+    void loadSfzIntoMultisampler (const juce::File& f, bool createArrangerTrack);
+
     /// The editor's full local bounds, cached each resized() so paint()/
     /// paintOverChildren()/waveformFrameRect() can read it. See
     /// getDesignArea() above.
