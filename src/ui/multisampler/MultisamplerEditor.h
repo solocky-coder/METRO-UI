@@ -29,6 +29,7 @@
 #include "../UIHelpers.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/SfzImporter.h"
+#include "../../audio/multisampler/MultisamplerPreviewSnapshot.h"
 
 class DysektProcessor;
 
@@ -237,12 +238,40 @@ private:
 
     void refreshInspectorFromSelection();
 
+    /** Routes every ZoneMapView::onSelectionChanged firing. Picking a layer
+        via the right-click "Edit Layer" submenu (SelectionOrigin::
+        editLayerMenu) starts auditioning that one layer in isolation (see
+        layerAuditionZoneId); any other origin — a plain click, an incoming
+        MIDI note, a right-click's own preselect, or a deletion — ends
+        whatever audition was in progress, since the user has moved on to
+        something else. Always calls refreshInspectorFromSelection() so the
+        header readout/SCB stay current regardless of origin. */
+    void handleZoneSelectionChanged (ZoneMapView::SelectionOrigin origin);
+
+    /** Ends layer audition (see layerAuditionZoneId) if one is in progress
+        and resyncs the engine immediately so playback goes back to normal.
+        No-op, including no resync, if nothing was being audited — so this
+        is safe to call unconditionally from handleZoneSelectionChanged()
+        and onZoneDeleted without adding a redundant resync to the common
+        case where the user was never auditioning anything. */
+    void clearLayerAudition();
+
     DysektProcessor& processor;
     MultisamplerInstrument instrument;
     bool dirty = false;
     juce::File lastSavedFile;   // last file imported from or exported/saved to; File() if none yet
 
     ZoneMapView zoneMapView;
+
+    /** The zone currently being auditioned in isolation, or juce::Uuid::null()
+        when playback should sound normally (the common case). Set by
+        handleZoneSelectionChanged() on SelectionOrigin::editLayerMenu,
+        cleared by clearLayerAudition(). Consumed by performEngineSync() via
+        MultisamplerPreviewSnapshot::build() — the *actual* instrument member
+        is never touched by audition state, only what gets exported to the
+        playback engine, so entering/leaving audition never dirties the
+        instrument or touches undo/save. */
+    juce::Uuid layerAuditionZoneId = juce::Uuid::null();
 
     // ── Header ───────────────────────────────────────────────────────────
     juce::Label  titleLabel;

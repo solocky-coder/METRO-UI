@@ -95,7 +95,7 @@ void ZoneMapView::selectZonesForNewNotes (uint64_t newLo, uint64_t newHi)
     if (hitIds.empty()) return;
 
     selectedIds = std::move (hitIds);
-    if (onSelectionChanged) onSelectionChanged();
+    if (onSelectionChanged) onSelectionChanged (SelectionOrigin::midi);
 }
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -269,8 +269,12 @@ void ZoneMapView::bringZoneToFrontForEditing (const juce::Uuid& zoneId)
     repaint();
 
     // This is a selection/display-order change, not an instrument edit, so it
-    // intentionally does not dirty or resync the playback engine.
-    if (onSelectionChanged) onSelectionChanged();
+    // intentionally does not dirty the instrument. It does still notify
+    // onSelectionChanged with SelectionOrigin::editLayerMenu, which is what
+    // tells MultisamplerEditor to start auditioning this layer in isolation
+    // (see that class's handleZoneSelectionChanged()) — that does resync the
+    // engine, just not through the dirty/undo path a real edit would.
+    if (onSelectionChanged) onSelectionChanged (SelectionOrigin::editLayerMenu);
 }
 
 ZoneMapView::DragMode ZoneMapView::hitTestEdges (const ZoneRect& r, juce::Point<float> p) const
@@ -306,7 +310,7 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
         if (! e.mods.isShiftDown() && ! selectedIds.empty())
         {
             selectedIds.clear();
-            if (onSelectionChanged) onSelectionChanged();
+            if (onSelectionChanged) onSelectionChanged (SelectionOrigin::mouse);
             repaint();
         }
         dragMode = DragMode::none;
@@ -322,7 +326,7 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
         if (std::find (selectedIds.begin(), selectedIds.end(), hit->id) == selectedIds.end())
         {
             selectedIds = { hit->id };
-            if (onSelectionChanged) onSelectionChanged();
+            if (onSelectionChanged) onSelectionChanged (SelectionOrigin::contextMenuPreselect);
             repaint();
         }
         showZoneContextMenu (hit->id, e.position, e.getScreenPosition());
@@ -340,7 +344,7 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
     {
         selectedIds = { hit->id };
     }
-    if (onSelectionChanged) onSelectionChanged();
+    if (onSelectionChanged) onSelectionChanged (SelectionOrigin::mouse);
 
     auto* zone = instrument->findZone (hit->id);
     if (zone == nullptr) { repaint(); return; }
@@ -498,7 +502,7 @@ void ZoneMapView::deleteZones (const juce::Uuid& rightClickedId)
     rebuildLayout();
     repaint();
 
-    if (onSelectionChanged)  onSelectionChanged();
+    if (onSelectionChanged)  onSelectionChanged (SelectionOrigin::deletion);
     if (onZoneDeleted)       onZoneDeleted();
 }
 

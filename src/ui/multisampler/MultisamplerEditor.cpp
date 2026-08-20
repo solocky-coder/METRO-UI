@@ -28,7 +28,10 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
 
     addAndMakeVisible (zoneMapView);
     zoneMapView.setInstrument (&instrument);
-    zoneMapView.onSelectionChanged = [this] { refreshInspectorFromSelection(); };
+    zoneMapView.onSelectionChanged = [this] (ZoneMapView::SelectionOrigin origin)
+    {
+        handleZoneSelectionChanged (origin);
+    };
     zoneMapView.onZoneEditing      = [this]
     {
         dirty = true;
@@ -47,6 +50,18 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     };
     zoneMapView.onZoneDeleted = [this]
     {
+        // ZoneMapView::deleteZones() already fires onSelectionChanged with
+        // SelectionOrigin::deletion *before* this callback, and that path
+        // through handleZoneSelectionChanged() already calls
+        // clearLayerAudition() unconditionally — so by the time onZoneDeleted
+        // runs, layerAuditionZoneId can only still be set if the zone that
+        // got deleted wasn't the one being audited (e.g. auditioning zone A
+        // while a stray right-click deletes zone B). clearLayerAudition() is
+        // a no-op when nothing's set, so calling it again here is cheap
+        // belt-and-braces against a stale id ever surviving a deletion,
+        // rather than something expected to actually fire most of the time.
+        clearLayerAudition();
+
         // Same downstream effects as a committed drag edit (dirty flag,
         // debounced resync, chrome notification) — a deletion is just
         // another committed model edit, it just didn't come from a drag.
@@ -190,6 +205,17 @@ void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bo
     // separate race, handled instead by engineSyncGeneration — see that
     // method.)
     cancelPendingEngineSync();
+
+    // A wholesale swap invalidates any zone id currently being audited —
+    // ZoneMapView::setInstrument() (below) already clears its own selection
+    // for the same reason, and an audition left pointed at an id from the
+    // *previous* instrument would either resolve to nothing (harmless, but
+    // stale) or, worse, collide with an unrelated zone that happens to reuse
+    // the id space of some future instrument type. Reset directly rather
+    // than via clearLayerAudition() — that method's immediate resync would
+    // be redundant with (and race) the performEngineSync() this function
+    // itself calls a few lines down.
+    layerAuditionZoneId = juce::Uuid::null();
 
     instrument = std::move (newInstrument);
     dirty = false;
@@ -458,8 +484,16 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     // only the message-thread continuation needs the guard.
     juce::Component::SafePointer<MultisamplerEditor> safeThis (this);
 
+    // MultisamplerPreviewSnapshot::build() is a no-op copy when nothing's
+    // being layer-audited (the common case) — see its own header comment —
+    // so this costs nothing extra over the plain `instrument` copy it
+    // replaces except when the user is actually mid-audition, in which case
+    // it's the whole point: solo the audited layer in what gets exported
+    // without touching the real `instrument` member at all.
+    auto snapshot = MultisamplerPreviewSnapshot::build (instrument, layerAuditionZoneId);
+
     processor.fileLoadPool.addJob (
-        [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = instrument]
+        [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = std::move (snapshot)]
         {
             if (! SfzExporter::exportToFile (snapshot, cacheFile, opts))
                 return;   // nothing to load — same as the old synchronous early-return
@@ -504,6 +538,42 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
                 safeThis->processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
             });
         });
+}
+
+// ── Layer audition ───────────────────────────────────────────────────────
+
+void MultisamplerEditor::handleZoneSelectionChanged (ZoneMapView::SelectionOrigin origin)
+{
+    if (origin == ZoneMapView::SelectionOrigin::editLayerMenu)
+    {
+        // bringZoneToFrontForEditing() (the only caller of this origin)
+        // always sets the selection to exactly the one promoted zone, so
+        // getSelectedZoneIds().front() is always the right target here —
+        // no need to re-check size() == 1 the way refreshInspectorFromSelection()
+        // does for the general case.
+        const auto& selected = zoneMapView.getSelectedZoneIds();
+        jassert (selected.size() == 1);
+        if (! selected.empty() && selected.front() != layerAuditionZoneId)
+        {
+            layerAuditionZoneId = selected.front();
+            performEngineSync (false);   // immediate: this is what the user is waiting to hear
+        }
+    }
+    else
+    {
+        clearLayerAudition();
+    }
+
+    refreshInspectorFromSelection();
+}
+
+void MultisamplerEditor::clearLayerAudition()
+{
+    if (layerAuditionZoneId == juce::Uuid::null())
+        return;   // nothing to do — don't force a redundant resync on every ordinary click
+
+    layerAuditionZoneId = juce::Uuid::null();
+    performEngineSync (false);   // immediate: audition ending should be heard right away, same as starting one
 }
 
 // ── Inspector ────────────────────────────────────────────────────────────
@@ -560,6 +630,14 @@ void MultisamplerEditor::refreshInspectorFromSelection()
              << "   VOLUME " << juce::String (zone->gainDb, 1) << "dB"
              << "   RELEASE " << juce::String (zone->releaseSeconds, 3) << "s"
              << "   LOOP "  << (zone->loopMode != LoopMode::noLoop ? "ON" : "OFF");
+
+        // Only reachable when a single zone is selected (see `single`
+        // above), so comparing straight against inspectedZoneId is enough —
+        // no need to also check layerAuditionZoneId's own null-ness, since
+        // inspectedZoneId is itself never null on this branch.
+        if (zone->id == layerAuditionZoneId)
+            text << "   •  AUDITIONING LAYER";
+
         headerZoneSummary.setText (text, juce::dontSendNotification);
     }
 

@@ -46,9 +46,24 @@ public:
     const std::vector<juce::Uuid>& getSelectedZoneIds() const noexcept { return selectedIds; }
     void setSelectedZoneIds (std::vector<juce::Uuid> ids);
 
-    /** Fired whenever the selection set changes as a result of a click
-        (not when set programmatically via setSelectedZoneIds). */
-    std::function<void()> onSelectionChanged;
+    /** How a selection change came about. MultisamplerEditor uses this to
+        decide whether to enter/leave "layer audition" (see its
+        handleZoneSelectionChanged()): explicitly picking a layer via the
+        right-click "Edit Layer" submenu (editLayerMenu) starts auditioning
+        that one layer in isolation, since that's the whole point of the
+        submenu — hearing an overlapped layer you otherwise couldn't pick
+        out. Every other origin ends any audition in progress, on the
+        theory that the user has moved on to something else (a fresh click,
+        playing a different note, a right-click about to delete/recolour,
+        or the selected zone itself having just been deleted). */
+    enum class SelectionOrigin { mouse, midi, editLayerMenu, contextMenuPreselect, deletion };
+
+    /** Fired whenever the selection set changes as a result of a click or
+        incoming MIDI note (not when set programmatically via
+        setSelectedZoneIds — bringZoneToFrontForEditing() is the one
+        exception, since from the caller's point of view that *is* a user
+        selection, just entered via the context menu instead of a click). */
+    std::function<void (SelectionOrigin)> onSelectionChanged;
 
     /** Fired continuously while a drag is in progress (move or resize), once
         per mouseDrag callback, so a live audition/preview can follow along.
