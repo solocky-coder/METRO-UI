@@ -332,7 +332,9 @@ void MultisamplerEditor::exportSfzClicked()
             if (file == juce::File()) return;
             if (! file.hasFileExtension ("sfz")) file = file.withFileExtension ("sfz");
 
-            writeToFileWithValidation (file, [this, file]
+            SfzExporter::Options opts;
+            opts.useRelativeSamplePaths = true;
+            if (SfzExporter::exportToFile (instrument, file, opts))
             {
                 // The file just picked is now the thing SAVE / discard-revert
                 // operate against, same as an IMPORT SFZ would set it.
@@ -348,7 +350,7 @@ void MultisamplerEditor::exportSfzClicked()
                 // sign that anything happened — indistinguishable from the
                 // button doing nothing at all.
                 if (onInstrumentChanged) onInstrumentChanged();
-            });
+            }
         });
 }
 
@@ -363,7 +365,9 @@ void MultisamplerEditor::saveInPlace()
         return;
     }
 
-    writeToFileWithValidation (lastSavedFile, [this]
+    SfzExporter::Options opts;
+    opts.useRelativeSamplePaths = true;
+    if (SfzExporter::exportToFile (instrument, lastSavedFile, opts))
     {
         clearDirtyFlag();
 
@@ -373,39 +377,7 @@ void MultisamplerEditor::saveInPlace()
         // change — the save silently succeeds on disk but looks like the
         // button did nothing.
         if (onInstrumentChanged) onInstrumentChanged();
-    });
-}
-
-void MultisamplerEditor::writeToFileWithValidation (const juce::File& file, std::function<void()> onSuccess)
-{
-    // Plan §5 "save/export lifecycle refinement": validate() (see
-    // MultisamplerInstrument.h) existed and was unit-tested but was never
-    // actually called from either write path before this — both
-    // exportSfzClicked() and saveInPlace() wrote whatever was in `instrument`
-    // unconditionally, silently including e.g. a loop enabled with unset
-    // points or an inverted key range. This is the single choke point both
-    // now go through instead.
-    const auto issues = instrument.validate();
-
-    auto doWrite = [this, file, onSuccess]
-    {
-        SfzExporter::Options opts;
-        opts.useRelativeSamplePaths = true;
-        if (SfzExporter::exportToFile (instrument, file, opts))
-            onSuccess();
-    };
-
-    // Same disconnected-handler fallback shape as onConfirmDiscardIfDirty:
-    // an unwired callback means issues are silently ignored and the write
-    // proceeds exactly as it did before onSaveValidationIssues existed,
-    // rather than the feature blocking every save until someone wires it.
-    if (issues.empty() || ! onSaveValidationIssues)
-    {
-        doWrite();
-        return;
     }
-
-    onSaveValidationIssues (issues, doWrite);
 }
 
 void MultisamplerEditor::discardPendingEdits()
@@ -489,8 +461,41 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     processor.fileLoadPool.addJob (
         [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = instrument]
         {
-            if (! SfzExporter::exportToFile (snapshot, cacheFile, opts))
+            // DIAGNOSTIC (temporary — remove once the regions=0 mystery is
+            // solved): render separately from exportToFile() so we can log
+            // exactly what this job believes it's about to write, before any
+            // disk I/O or thread-hop has a chance to lose it.
+            const auto renderedText = SfzExporter::render (snapshot, cacheFile, opts);
+
+            int renderedRegionCount = 0;
+            for (int from = 0; (from = renderedText.indexOf (from, "<region>")) >= 0; from += 8)
+                ++renderedRegionCount;
+
+            juce::Logger::writeToLog ("[MULTISAMPLER DIAG] performEngineSync job: snapshot.zones.size()="
+                + juce::String ((int) snapshot.zones.size())
+                + " renderedText.length()=" + juce::String (renderedText.length())
+                + " renderedRegionCount=" + juce::String (renderedRegionCount)
+                + " isFreshLoad=" + juce::String ((int) isFreshLoad)
+                + " gen=" + juce::String (myGen)
+                + " cacheFile=" + cacheFile.getFullPathName());
+
+            if (! cacheFile.replaceWithText (renderedText))
+            {
+                juce::Logger::writeToLog ("[MULTISAMPLER DIAG] performEngineSync job: replaceWithText FAILED for "
+                    + cacheFile.getFullPathName());
                 return;   // nothing to load — same as the old synchronous early-return
+            }
+
+            // Re-read immediately, still on this same pool thread, to rule out
+            // any write/flush-visibility gap before sfizz's own read further down.
+            const auto verifyText = cacheFile.loadFileAsString();
+            int verifyRegionCount = 0;
+            for (int from = 0; (from = verifyText.indexOf (from, "<region>")) >= 0; from += 8)
+                ++verifyRegionCount;
+
+            juce::Logger::writeToLog ("[MULTISAMPLER DIAG] performEngineSync job: post-write re-read length="
+                + juce::String (verifyText.length())
+                + " verifyRegionCount=" + juce::String (verifyRegionCount));
 
             juce::MessageManager::callAsync ([safeThis, myGen, cacheFile, isFreshLoad]
             {
@@ -611,17 +616,6 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
         case SliceControlBar::ZonePan:     z.pan          = value; break;
         case SliceControlBar::ZoneVolume:  z.gainDb       = value; break;
         case SliceControlBar::ZoneRelease: z.releaseSeconds = value; break;
-        // Phase 4 (SCB ↔ zone wiring coverage pass): these six previously had
-        // no write path into SampleZone at all — see SliceLcdDisplay's/
-        // SliceWaveformLcd's setMultisamplerSource() doc comments, which this
-        // closes for these fields (loop points and round-robin/velocity are
-        // intentionally still out of scope — no editor UI targets them yet).
-        case SliceControlBar::ZoneAttack:    z.attackSeconds  = value; break;
-        case SliceControlBar::ZoneDecay:     z.decaySeconds   = value; break;
-        case SliceControlBar::ZoneSustain:   z.sustainLevel   = value; break;
-        case SliceControlBar::ZoneCutoff:    z.filterCutoffHz  = value; break;
-        case SliceControlBar::ZoneResonance: z.filterResonance = value; break;
-        case SliceControlBar::ZoneGroup:     z.group           = juce::roundToInt (value); break;
         case SliceControlBar::ZoneLoop:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 
