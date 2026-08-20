@@ -461,41 +461,8 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     processor.fileLoadPool.addJob (
         [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = instrument]
         {
-            // DIAGNOSTIC (temporary — remove once the regions=0 mystery is
-            // solved): render separately from exportToFile() so we can log
-            // exactly what this job believes it's about to write, before any
-            // disk I/O or thread-hop has a chance to lose it.
-            const auto renderedText = SfzExporter::render (snapshot, cacheFile, opts);
-
-            int renderedRegionCount = 0;
-            for (int from = 0; (from = renderedText.indexOf (from, "<region>")) >= 0; from += 8)
-                ++renderedRegionCount;
-
-            juce::Logger::writeToLog ("[MULTISAMPLER DIAG] performEngineSync job: snapshot.zones.size()="
-                + juce::String ((int) snapshot.zones.size())
-                + " renderedText.length()=" + juce::String (renderedText.length())
-                + " renderedRegionCount=" + juce::String (renderedRegionCount)
-                + " isFreshLoad=" + juce::String ((int) isFreshLoad)
-                + " gen=" + juce::String (myGen)
-                + " cacheFile=" + cacheFile.getFullPathName());
-
-            if (! cacheFile.replaceWithText (renderedText))
-            {
-                juce::Logger::writeToLog ("[MULTISAMPLER DIAG] performEngineSync job: replaceWithText FAILED for "
-                    + cacheFile.getFullPathName());
+            if (! SfzExporter::exportToFile (snapshot, cacheFile, opts))
                 return;   // nothing to load — same as the old synchronous early-return
-            }
-
-            // Re-read immediately, still on this same pool thread, to rule out
-            // any write/flush-visibility gap before sfizz's own read further down.
-            const auto verifyText = cacheFile.loadFileAsString();
-            int verifyRegionCount = 0;
-            for (int from = 0; (from = verifyText.indexOf (from, "<region>")) >= 0; from += 8)
-                ++verifyRegionCount;
-
-            juce::Logger::writeToLog ("[MULTISAMPLER DIAG] performEngineSync job: post-write re-read length="
-                + juce::String (verifyText.length())
-                + " verifyRegionCount=" + juce::String (verifyRegionCount));
 
             juce::MessageManager::callAsync ([safeThis, myGen, cacheFile, isFreshLoad]
             {

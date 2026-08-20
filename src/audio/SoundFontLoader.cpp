@@ -511,23 +511,6 @@ private:
 
         const bool ok = sfizz_load_file (sfz, file.getFullPathName().toRawUTF8());
 
-        if (target == SoundFontLoadTarget::SfzPlayer2)
-        {
-            // DIAGNOSTIC (temporary — remove once the regions=0 mystery is
-            // solved): read the exact bytes sfizz just parsed, on this same
-            // background thread, immediately after the sfizz_load_file() call
-            // above — rules out any further write racing in between the
-            // exporter's post-write re-read (MultisamplerEditor.cpp) and this.
-            const auto diagText = file.loadFileAsString();
-            int diagRegionCount = 0;
-            for (int from = 0; (from = diagText.indexOf (from, "<region>")) >= 0; from += 8)
-                ++diagRegionCount;
-            processor.crashLogger.log ("[MULTISAMPLER DIAG] runJobSfizz: file.loadFileAsString().length()="
-                + juce::String (diagText.length())
-                + " diagRegionCount=" + juce::String (diagRegionCount)
-                + " sfizz_get_num_regions=" + juce::String (ok ? sfizz_get_num_regions (sfz) : -1));
-        }
-
         if (target == SoundFontLoadTarget::SfPlayer)
             processor.crashLogger.log ("SF2 preview: sfizz_load_file(\"" + file.getFullPathName()
                 + "\") -> " + (ok ? "OK" : "FAILED")

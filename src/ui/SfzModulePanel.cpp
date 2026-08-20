@@ -978,7 +978,7 @@ void SfzModulePanel::openSaveAsOverlay (bool thenOpenAddZone)
         else
         {
             // No existing file — write a minimal placeholder so sfizz can load it
-            dest.replaceWithText ("// Custom SFZ — built with SF-Player\n\n");
+            dest.replaceWithText ("// Custom SFZ -- built with SF-Player\n\n");
         }
 
         // Switch sfzPlayer and zone matrix to the new file
@@ -1041,7 +1041,7 @@ void SfzModulePanel::initEmptySfz()
                    .getChildFile ("Custom.sfz");
 
     if (! sfz.existsAsFile())
-        sfz.replaceWithText ("// Custom SFZ — built with SF-Player\n\n");
+        sfz.replaceWithText ("// Custom SFZ -- built with SF-Player\n\n");
 
     processor.sfzPlayer.loadFile (sfz, processor.fileLoadPool);   // sfizz handles empty file gracefully (silence)
     processor.loadSoundFontAsync (sfz, SoundFontLoadTarget::SfPlayer);   // waveform preview -> sampleData3

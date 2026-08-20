@@ -1035,7 +1035,7 @@ void SfzPlayerDropdownPanel::initEmptySfz()
                    .getChildFile ("Custom.sfz");
 
     if (! sfz.existsAsFile())
-        sfz.replaceWithText ("// Custom SFZ — built with SF-Player\n\n");
+        sfz.replaceWithText ("// Custom SFZ -- built with SF-Player\n\n");
 
     processor.sfzPlayer2.loadFile (sfz, processor.fileLoadPool);   // sfizz handles empty file gracefully (silence)
     processor.sfzPlayer2ChannelMask.store (1u << 2, std::memory_order_relaxed); // ch2 default
