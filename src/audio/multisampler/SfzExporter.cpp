@@ -2,11 +2,6 @@
 
 namespace
 {
-    juce::String quoteIfNeeded (const juce::String& path)
-    {
-        return path.containsChar (' ') ? "\"" + path + "\"" : path;
-    }
-
     juce::String samplePathFor (const SampleZone& z, const juce::File& destinationFile, bool relative)
     {
         if (z.sampleFile == juce::File())
@@ -28,7 +23,18 @@ namespace
 
         const auto samplePath = samplePathFor (z, destinationFile, opts.useRelativeSamplePaths);
         if (samplePath.isNotEmpty())
-            out << "sample=" << quoteIfNeeded (samplePath) << "\n";
+            // NOTE: intentionally unquoted. The SFZ format has no quoting
+            // syntax for opcode values — sfizz's real parser does not strip
+            // surrounding quote characters, it takes the value literally.
+            // sample= is always emitted alone on its own line (see below),
+            // so a path containing spaces is unambiguous without quoting.
+            // Previously this wrapped paths containing a space in `"..."`,
+            // which DYSEKT's own importer (SfzImporter.cpp) happily parses
+            // back out — masking the bug in-app — but which sfizz treated
+            // as a literal filename that includes the quote characters,
+            // failing to resolve the sample and dropping the region
+            // entirely (sfizz_get_num_regions() == 0 for the whole file).
+            out << "sample=" << samplePath << "\n";
 
         out << "lokey=" << z.lowKey << " hikey=" << z.highKey
             << " pitch_keycenter=" << z.rootKey << "\n";

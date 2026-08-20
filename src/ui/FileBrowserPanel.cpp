@@ -107,20 +107,31 @@ void FileBrowserPanel::ArchiveListModel::listBoxItemDoubleClicked (int row, cons
 
         owner->showLoadProgress ("Downloading: " + R.name, 0.0f);
 
+        // ArchiveIntegration's ThreadPool is independent of this panel's
+        // lifetime — a download can still be in flight when the plugin
+        // window closes or the instance is unloaded. Capture a SafePointer
+        // rather than the raw `owner`, and bail out first thing if the
+        // panel is already gone (see MultisamplerEditor.cpp's safeThis for
+        // the same pattern). streamGeneration alone only guards against a
+        // stale-but-still-alive callback; it doesn't protect a destroyed
+        // panel.
+        juce::Component::SafePointer<FileBrowserPanel> safeOwner (owner);
+
         ArchiveIntegration::downloadFile (R.downloadUrl,
-            [this, myGeneration, name = R.name] (bool ok, juce::File localFile)
+            [safeOwner, myGeneration, name = R.name] (bool ok, juce::File localFile)
             {
-                if (owner->streamGeneration.load() != myGeneration) return;   // superseded
+                if (safeOwner == nullptr) return;                              // panel is gone
+                if (safeOwner->streamGeneration.load() != myGeneration) return; // superseded
 
                 if (! ok)
                 {
-                    owner->hideLoadProgress();
-                    owner->showArchiveMessage ("Download Failed",
+                    safeOwner->hideLoadProgress();
+                    safeOwner->showArchiveMessage ("Download Failed",
                         "Could not download \"" + name + "\". Check your connection and try again.");
                     return;
                 }
 
-                owner->stopPreview();   // stop streaming preview on load; also bumps streamGeneration
+                safeOwner->stopPreview();   // stop streaming preview on load; also bumps streamGeneration
 
                 auto ext = localFile.getFileExtension().toLowerCase();
                 const bool willDecodeInstrument = (ext == ".sf2" || ext == ".sfz");
@@ -133,44 +144,45 @@ void FileBrowserPanel::ArchiveListModel::listBoxItemDoubleClicked (int row, cons
                     // for a large kit. Claim a fresh generation (stopPreview() just
                     // bumped it) and keep the popup up, now in an indeterminate
                     // "loading instrument" state, instead of hiding it here.
-                    const int loadGeneration = ++owner->streamGeneration;
-                    owner->beginInstrumentLoadPoll (loadGeneration, name);
+                    const int loadGeneration = ++safeOwner->streamGeneration;
+                    safeOwner->beginInstrumentLoadPoll (loadGeneration, name);
                 }
                 else
                 {
-                    owner->hideLoadProgress();   // plain audio decodes locally/quickly
+                    safeOwner->hideLoadProgress();   // plain audio decodes locally/quickly
                 }
 
                 // Prefer the owner-supplied callback so it can route by uiMode; only
                 // fall back to the hardcoded sf2/sfz routing when nobody has wired
                 // up onLoadRequest.
-                if (owner->onLoadRequest)
+                if (safeOwner->onLoadRequest)
                 {
-                    owner->onLoadRequest (localFile);
+                    safeOwner->onLoadRequest (localFile);
                 }
                 else if (willDecodeInstrument)
                 {
-                    const bool sfzPlayer2Mode = (owner->processor.activeUiTab.load (std::memory_order_relaxed) == 1);
+                    const bool sfzPlayer2Mode = (safeOwner->processor.activeUiTab.load (std::memory_order_relaxed) == 1);
                     if (sfzPlayer2Mode)
-                        owner->processor.sfzPlayer2.loadFile (localFile, owner->processor.fileLoadPool);  // live MIDI engine
-                    owner->processor.loadSoundFontAsync (localFile,
+                        safeOwner->processor.sfzPlayer2.loadFile (localFile, safeOwner->processor.fileLoadPool);  // live MIDI engine
+                    safeOwner->processor.loadSoundFontAsync (localFile,
                         sfzPlayer2Mode ? SoundFontLoadTarget::SfzPlayer2 : SoundFontLoadTarget::Slicer);
                 }
                 else
                 {
-                    owner->processor.loadFileAsync (localFile);
+                    safeOwner->processor.loadFileAsync (localFile);
                 }
 
-                if (owner->onFileLoaded) owner->onFileLoaded();
+                if (safeOwner->onFileLoaded) safeOwner->onFileLoaded();
             },
-            [this, myGeneration, name = R.name] (juce::int64 bytesSoFar, juce::int64 totalBytes)
+            [safeOwner, myGeneration, name = R.name] (juce::int64 bytesSoFar, juce::int64 totalBytes)
             {
-                if (owner->streamGeneration.load() != myGeneration) return;   // superseded
+                if (safeOwner == nullptr) return;                              // panel is gone
+                if (safeOwner->streamGeneration.load() != myGeneration) return; // superseded
 
                 const bool totalKnown = (totalBytes > 0);
                 const float fraction  = totalKnown ? (float) ((double) bytesSoFar / (double) totalBytes) : -1.0f;
 
-                owner->showLoadProgress (
+                safeOwner->showLoadProgress (
                     totalKnown
                         ? "Downloading: " + name + "  (" + juce::String (juce::roundToInt (fraction * 100.0f)) + "%)"
                         : "Downloading: " + name + "  (" + juce::String (bytesSoFar / 1024) + " KB)",
@@ -227,10 +239,20 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
             auto url = streamPreviewUrl;
             const int replayGen = ++streamGeneration;
 
+            // Network stream resolution can outlive this panel (window closed
+            // mid-buffer, plugin unloaded, etc.) — capture a SafePointer
+            // rather than `this` directly.
+            juce::Component::SafePointer<FileBrowserPanel> safeThis (this);
+
             ArchiveIntegration::streamPreview (url, formatManager,
-                [this, url, replayGen] (juce::AudioFormatReader* reader)
+                [safeThis, url, replayGen] (juce::AudioFormatReader* reader)
                 {
-                    if (streamGeneration.load() != replayGen)
+                    if (safeThis == nullptr)
+                    {
+                        delete reader;
+                        return;
+                    }
+                    if (safeThis->streamGeneration.load() != replayGen)
                     {
                         delete reader;
                         return;
@@ -238,20 +260,20 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
 
                     if (reader != nullptr)
                     {
-                        streamPreviewUrl = url;
-                        fileNameLabel.setText (url.fromLastOccurrenceOf ("/", false, false),
+                        safeThis->streamPreviewUrl = url;
+                        safeThis->fileNameLabel.setText (url.fromLastOccurrenceOf ("/", false, false),
                                                juce::dontSendNotification);
-                        playStopBtn.setVisible  (true);
-                        volumeSlider.setVisible (true);
-                        startPreviewFromReader (reader);
+                        safeThis->playStopBtn.setVisible  (true);
+                        safeThis->volumeSlider.setVisible (true);
+                        safeThis->startPreviewFromReader (reader);
                     }
                     else
                     {
-                        fileNameLabel.setText (u8"Stream failed \u2014 check connection",
+                        safeThis->fileNameLabel.setText (u8"Stream failed \u2014 check connection",
                                                juce::dontSendNotification);
-                        streamPreviewUrl = {};
+                        safeThis->streamPreviewUrl = {};
                     }
-                    repaint();
+                    safeThis->repaint();
                 });
         }
     };
@@ -1197,12 +1219,16 @@ void FileBrowserPanel::loadArchiveBookmarks()
         bm.pending = true;
         archiveBookmarks.add (bm);
 
-        // Fire resolve (captures index)
+        // Fire resolve (captures index). SafePointer guards against the
+        // panel being torn down before this resolves — bookmark resolution
+        // is fire-and-forget at startup and can easily still be in flight.
         int idx = archiveBookmarks.size() - 1;
-        ArchiveIntegration::fetchItem (url, [this, idx] (bool ok, ArchiveIntegration::Item item)
+        juce::Component::SafePointer<FileBrowserPanel> safeThis (this);
+        ArchiveIntegration::fetchItem (url, [safeThis, idx] (bool ok, ArchiveIntegration::Item item)
         {
-            if (idx >= archiveBookmarks.size()) return;
-            auto& bm = archiveBookmarks.getReference (idx);
+            if (safeThis == nullptr) return;
+            if (idx >= safeThis->archiveBookmarks.size()) return;
+            auto& bm = safeThis->archiveBookmarks.getReference (idx);
             bm.pending      = false;
             bm.isCollection = item.isCollection;
             if (ok && item.title.isNotEmpty())
@@ -1210,13 +1236,13 @@ void FileBrowserPanel::loadArchiveBookmarks()
 
             // Stop spinner if no more pending
             bool anyPending = false;
-            for (auto& b : archiveBookmarks)
+            for (auto& b : safeThis->archiveBookmarks)
                 if (b.pending) { anyPending = true; break; }
-            if (! anyPending) stopTimer();
+            if (! anyPending) safeThis->stopTimer();
 
-            rebuildArchiveButtons();
-            resized();
-            repaint();
+            safeThis->rebuildArchiveButtons();
+            safeThis->resized();
+            safeThis->repaint();
         });
     }
 
@@ -1419,21 +1445,23 @@ void FileBrowserPanel::resolveAndAddArchiveBookmark (const juce::String& url)
     if (! isTimerRunning())
         startTimer (400);
 
-    ArchiveIntegration::fetchItem (url, [this, idx, url] (bool ok, ArchiveIntegration::Item item)
+    juce::Component::SafePointer<FileBrowserPanel> safeThis (this);
+    ArchiveIntegration::fetchItem (url, [safeThis, idx, url] (bool ok, ArchiveIntegration::Item item)
     {
-        if (idx >= archiveBookmarks.size()) return;
-        auto& bm = archiveBookmarks.getReference (idx);
+        if (safeThis == nullptr) return;
+        if (idx >= safeThis->archiveBookmarks.size()) return;
+        auto& bm = safeThis->archiveBookmarks.getReference (idx);
         bm.pending      = false;
         bm.isCollection = item.isCollection;
 
         if (! ok || (item.audioFiles.isEmpty() && ! item.isCollection))
         {
             // No usable content
-            archiveBookmarks.remove (idx);
-            rebuildArchiveButtons();
-            resized();
+            safeThis->archiveBookmarks.remove (idx);
+            safeThis->rebuildArchiveButtons();
+            safeThis->resized();
 
-            showArchiveMessage ("No Audio Found",
+            safeThis->showArchiveMessage ("No Audio Found",
                 "No supported audio or SoundFont files were found at that URL.\n\n"
                 "Supported: WAV, FLAC, MP3, OGG, AIFF, SF2, and SFZ.");
         }
@@ -1442,17 +1470,17 @@ void FileBrowserPanel::resolveAndAddArchiveBookmark (const juce::String& url)
             if (ok && item.title.isNotEmpty())
                 bm.title = item.title;
 
-            saveArchiveBookmarks();
-            rebuildArchiveButtons();
-            resized();
+            safeThis->saveArchiveBookmarks();
+            safeThis->rebuildArchiveButtons();
+            safeThis->resized();
         }
 
         bool anyPending = false;
-        for (auto& b : archiveBookmarks)
+        for (auto& b : safeThis->archiveBookmarks)
             if (b.pending) { anyPending = true; break; }
-        if (! anyPending) stopTimer();
+        if (! anyPending) safeThis->stopTimer();
 
-        repaint();
+        safeThis->repaint();
     });
 }
 
@@ -1508,32 +1536,34 @@ void FileBrowserPanel::showArchiveItem (int bookmarkIndex)
         resized();
         repaint();
 
+        juce::Component::SafePointer<FileBrowserPanel> safeThis (this);
         ArchiveIntegration::fetchCollection (
             ArchiveIntegration::identifierFromUrl (bm.url),
-            [this] (bool ok, juce::Array<ArchiveIntegration::CollectionEntry> entries)
+            [safeThis] (bool ok, juce::Array<ArchiveIntegration::CollectionEntry> entries)
             {
-                archiveRows.clear();
-                archiveShowingFileList = false;   // folder/collection entries aren't extension-filtered
-                lastArchiveAudioFiles.clear();
+                if (safeThis == nullptr) return;
+                safeThis->archiveRows.clear();
+                safeThis->archiveShowingFileList = false;   // folder/collection entries aren't extension-filtered
+                safeThis->lastArchiveAudioFiles.clear();
                 if (ok)
                 {
-                    archiveListTitle = juce::String (entries.size()) + " items";
+                    safeThis->archiveListTitle = juce::String (entries.size()) + " items";
                     for (auto& e : entries)
                     {
                         ArchiveRow r;
                         r.name     = e.title.isNotEmpty() ? e.title : e.identifier;
                         r.isFolder = true;
                         r.folderId = e.identifier;
-                        archiveRows.add (r);
+                        safeThis->archiveRows.add (r);
                     }
                 }
                 else
                 {
-                    archiveListTitle = "Failed to load collection";
+                    safeThis->archiveListTitle = "Failed to load collection";
                 }
-                archiveList.updateContent();
-                resized();
-                repaint();
+                safeThis->archiveList.updateContent();
+                safeThis->resized();
+                safeThis->repaint();
             });
     }
     else
@@ -1545,33 +1575,35 @@ void FileBrowserPanel::showArchiveItem (int bookmarkIndex)
         resized();
         repaint();
 
+        juce::Component::SafePointer<FileBrowserPanel> safeThis (this);
         ArchiveIntegration::fetchItem (bm.url,
-            [this] (bool ok, ArchiveIntegration::Item item)
+            [safeThis] (bool ok, ArchiveIntegration::Item item)
             {
-                archiveRows.clear();
+                if (safeThis == nullptr) return;
+                safeThis->archiveRows.clear();
                 if (ok)
                 {
-                    archiveListTitle = item.title;
+                    safeThis->archiveListTitle = item.title;
 
                     // Cache the unfiltered list and apply the local browser's
                     // active mode (Slicer/kAddZone -> audio only, kSf2 -> .sf2
                     // only, SFZ-Player -> .sfz only) — same rule the local
                     // filesystem tree already enforces, and re-appliable later
                     // if the mode changes without re-fetching.
-                    lastArchiveAudioFiles = item.audioFiles;
-                    archiveShowingFileList = true;
-                    refilterArchiveRows();
+                    safeThis->lastArchiveAudioFiles = item.audioFiles;
+                    safeThis->archiveShowingFileList = true;
+                    safeThis->refilterArchiveRows();
                     return;   // refilterArchiveRows() already updates/resizes/repaints
                 }
                 else
                 {
-                    lastArchiveAudioFiles.clear();
-                    archiveShowingFileList = false;
-                    archiveListTitle = "Failed to load";
+                    safeThis->lastArchiveAudioFiles.clear();
+                    safeThis->archiveShowingFileList = false;
+                    safeThis->archiveListTitle = "Failed to load";
                 }
-                archiveList.updateContent();
-                resized();
-                repaint();
+                safeThis->archiveList.updateContent();
+                safeThis->resized();
+                safeThis->repaint();
             });
     }
 }
@@ -1585,30 +1617,32 @@ void FileBrowserPanel::showCollectionItem (const juce::String& collectionId)
     resized();
     repaint();
 
+    juce::Component::SafePointer<FileBrowserPanel> safeThis (this);
     ArchiveIntegration::fetchItem (collectionId,
-        [this] (bool ok, ArchiveIntegration::Item item)
+        [safeThis] (bool ok, ArchiveIntegration::Item item)
         {
-            archiveRows.clear();
+            if (safeThis == nullptr) return;
+            safeThis->archiveRows.clear();
             if (ok)
             {
-                archiveListTitle = item.title;
+                safeThis->archiveListTitle = item.title;
 
                 // Same cache-and-filter approach as showArchiveItem() above —
                 // keeps collection drill-in consistent with the top-level view.
-                lastArchiveAudioFiles = item.audioFiles;
-                archiveShowingFileList = true;
-                refilterArchiveRows();
+                safeThis->lastArchiveAudioFiles = item.audioFiles;
+                safeThis->archiveShowingFileList = true;
+                safeThis->refilterArchiveRows();
                 return;   // refilterArchiveRows() already updates/resizes/repaints
             }
             else
             {
-                lastArchiveAudioFiles.clear();
-                archiveShowingFileList = false;
-                archiveListTitle = "Failed to load";
+                safeThis->lastArchiveAudioFiles.clear();
+                safeThis->archiveShowingFileList = false;
+                safeThis->archiveListTitle = "Failed to load";
             }
-            archiveList.updateContent();
-            resized();
-            repaint();
+            safeThis->archiveList.updateContent();
+            safeThis->resized();
+            safeThis->repaint();
         });
 }
 
@@ -1629,11 +1663,18 @@ void FileBrowserPanel::loadArchiveFile (const ArchiveRow& row)
 
     const int myGeneration = ++streamGeneration;
 
+    juce::Component::SafePointer<FileBrowserPanel> safeThis (this);
     ArchiveIntegration::streamPreview (row.downloadUrl, formatManager,
-        [this, name = row.name, url = row.downloadUrl, myGeneration] (juce::AudioFormatReader* reader)
+        [safeThis, name = row.name, url = row.downloadUrl, myGeneration] (juce::AudioFormatReader* reader)
         {
+            if (safeThis == nullptr)
+            {
+                delete reader;
+                return;
+            }
+
             // If stopPreview() or a newer stream was started, discard this result
-            if (streamGeneration.load() != myGeneration)
+            if (safeThis->streamGeneration.load() != myGeneration)
             {
                 delete reader;
                 return;
@@ -1641,27 +1682,27 @@ void FileBrowserPanel::loadArchiveFile (const ArchiveRow& row)
 
             if (reader != nullptr)
             {
-                previewFile      = {};    // no local file for a streaming preview
-                streamPreviewUrl = url;
-                previewVisible   = true;
+                safeThis->previewFile      = {};    // no local file for a streaming preview
+                safeThis->streamPreviewUrl = url;
+                safeThis->previewVisible   = true;
 
-                fileNameLabel.setText    (name, juce::dontSendNotification);
-                fileNameLabel.setVisible (true);
-                playStopBtn.setVisible   (true);
-                volumeSlider.setVisible  (true);
+                safeThis->fileNameLabel.setText    (name, juce::dontSendNotification);
+                safeThis->fileNameLabel.setVisible (true);
+                safeThis->playStopBtn.setVisible   (true);
+                safeThis->volumeSlider.setVisible  (true);
 
-                startPreviewFromReader (reader);   // takes ownership
+                safeThis->startPreviewFromReader (reader);   // takes ownership
             }
             else
             {
-                streamPreviewUrl = {};
-                fileNameLabel.setText (u8"Stream failed \u2014 check connection",
+                safeThis->streamPreviewUrl = {};
+                safeThis->fileNameLabel.setText (u8"Stream failed \u2014 check connection",
                                        juce::dontSendNotification);
-                playStopBtn.setVisible  (false);
-                volumeSlider.setVisible (false);
+                safeThis->playStopBtn.setVisible  (false);
+                safeThis->volumeSlider.setVisible (false);
             }
-            resized();
-            repaint();
+            safeThis->resized();
+            safeThis->repaint();
         });
 }
 
