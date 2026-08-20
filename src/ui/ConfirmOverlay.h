@@ -21,8 +21,35 @@ public:
         UIHelpers::stylePrimaryPopupButton   (yesBtn, T);
         UIHelpers::styleSecondaryPopupButton (noBtn,  T);
 
-        yesBtn.onClick = [this] { if (onResult) onResult (true);  };
-        noBtn .onClick = [this] { if (onResult) onResult (false); };
+        // yesBtn/noBtn.onClick fire synchronously from inside juce::Button's
+        // own click-handling code (its mouseUp()), which is a member
+        // function running on yesBtn/noBtn themselves. Every caller's
+        // onResult handler destroys `this` ConfirmOverlay immediately
+        // (confirmOverlay.reset()) — which also destroys yesBtn/noBtn — so
+        // calling onResult() directly here would free the button out from
+        // under its own still-running click handler (crashes on either
+        // button, since both go through this). Deferring via callAsync runs
+        // onResult() as a fresh top-level callback after that call stack has
+        // fully unwound, so it's safe for the receiver to destroy us then.
+        // SafePointer guards the (unlikely, but possible with a fast
+        // double-click) case where we're already gone by the time it fires.
+        juce::Component::SafePointer<ConfirmOverlay> safeThis (this);
+        yesBtn.onClick = [safeThis]
+        {
+            juce::MessageManager::callAsync ([safeThis]
+            {
+                if (safeThis != nullptr && safeThis->onResult)
+                    safeThis->onResult (true);
+            });
+        };
+        noBtn.onClick = [safeThis]
+        {
+            juce::MessageManager::callAsync ([safeThis]
+            {
+                if (safeThis != nullptr && safeThis->onResult)
+                    safeThis->onResult (false);
+            });
+        };
 
         addAndMakeVisible (yesBtn);
         addAndMakeVisible (noBtn);
@@ -74,7 +101,18 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (! dialogBox().contains (e.getPosition()))
-            if (onResult) onResult (false);
+        {
+            // Same reasoning as the constructor's yesBtn/noBtn.onClick fix —
+            // this runs from inside our own mouseDown(), so onResult()
+            // (which the caller uses to destroy us) must be deferred past
+            // this call stack, not invoked directly from here.
+            juce::Component::SafePointer<ConfirmOverlay> safeThis (this);
+            juce::MessageManager::callAsync ([safeThis]
+            {
+                if (safeThis != nullptr && safeThis->onResult)
+                    safeThis->onResult (false);
+            });
+        }
     }
 
 private:

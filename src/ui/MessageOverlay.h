@@ -25,7 +25,7 @@ public:
     {
         okBtn.setButtonText (buttonText);
         UIHelpers::stylePrimaryPopupButton (okBtn, getTheme());
-        okBtn.onClick = [this] { if (onDismiss) onDismiss(); };
+        okBtn.onClick = [this] { fireDismiss(); };
         addAndMakeVisible (okBtn);
 
         setInterceptsMouseClicks (true, true);
@@ -83,14 +83,14 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (! dialogBox().contains (e.getPosition()))
-            if (onDismiss) onDismiss();
+            fireDismiss();
     }
 
     bool keyPressed (const juce::KeyPress& k) override
     {
         if (k == juce::KeyPress::returnKey || k == juce::KeyPress::escapeKey)
         {
-            if (onDismiss) onDismiss();
+            fireDismiss();
             return true;
         }
         return false;
@@ -100,6 +100,23 @@ private:
     juce::String titleText, messageText;
     Kind messageKind;
     juce::TextButton okBtn;
+
+    // okBtn.onClick/mouseDown/keyPressed all fire from inside our own or a
+    // child component's click/key-handling code, and every caller's
+    // onDismiss handler destroys `this` (messageOverlay.reset()) — see
+    // ConfirmOverlay.h's constructor comment for the full explanation of why
+    // that can't happen synchronously from in here. Deferring via callAsync
+    // runs onDismiss() after that call stack has fully unwound, so it's
+    // safe for the receiver to destroy us then.
+    void fireDismiss()
+    {
+        juce::Component::SafePointer<MessageOverlay> safeThis (this);
+        juce::MessageManager::callAsync ([safeThis]
+        {
+            if (safeThis != nullptr && safeThis->onDismiss)
+                safeThis->onDismiss();
+        });
+    }
 
     static juce::Font bodyFont() { return DysektLookAndFeel::makeFont (12.5f); }
 

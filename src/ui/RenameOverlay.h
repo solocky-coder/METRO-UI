@@ -120,13 +120,31 @@ private:
 
     void commit (bool useEditorText)
     {
-        if (onResult)
-            onResult (useEditorText ? editor.getText().trim() : juce::String(), false);
+        const juce::String text = useEditorText ? editor.getText().trim() : juce::String();
+        // commit()/cancel() are called from editor.onReturnKey/onEscapeKey and
+        // from okBtn/clearBtn/cancelBtn.onClick — all of which run from inside
+        // our own or a child component's own key/click-handling code, and
+        // every caller's onResult handler destroys `this`
+        // (renameOverlay.reset()). See ConfirmOverlay.h's constructor comment
+        // for why that can't happen synchronously from in here; deferring via
+        // callAsync runs onResult() only after that call stack has fully
+        // unwound.
+        juce::Component::SafePointer<RenameOverlay> safeThis (this);
+        juce::MessageManager::callAsync ([safeThis, text]
+        {
+            if (safeThis != nullptr && safeThis->onResult)
+                safeThis->onResult (text, false);
+        });
     }
 
     void cancel()
     {
-        if (onResult) onResult ({}, true);
+        juce::Component::SafePointer<RenameOverlay> safeThis (this);
+        juce::MessageManager::callAsync ([safeThis]
+        {
+            if (safeThis != nullptr && safeThis->onResult)
+                safeThis->onResult ({}, true);
+        });
     }
 
     juce::Rectangle<int> dialogBox() const
