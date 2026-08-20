@@ -3,7 +3,6 @@
 #include "ui/PluginEditorConstants.h"
 #include "ui/LogoIcon.h"
 #include "ui/UIHelpers.h"
-#include "audio/multisampler/InstrumentSerializer.h"
 
 #if JUCE_WINDOWS && ! DYSEKT_STANDALONE
  #ifndef NOMINMAX
@@ -139,36 +138,9 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
      sliceControlBar.setInstrumentDirty (multisamplerEditor.isDirty());
 
-#if DYSEKT_STANDALONE
-     // Committed MULTISAMPLER edits (add/import a zone, drag-commit, New)
-     // reach the live engine via performEngineSync()'s own
-     // sfzPlayer2.loadFile()/loadSoundFontAsync() calls, entirely separate
-     // from loadSfzIntoMultisampler()/addSfzInstrumentTrack() above — so
-     // adding the very first zone to a fresh instrument never created an
-     // Arranger track; there was no call anywhere on that path that did.
-     // onInstrumentChanged already fires after every one of those commits,
-     // so create/update the track from here too. addSfzInstrumentTrack()
-     // (SequencerEngine::addSfzTrack()) updates the existing track in place
-     // if one's already there, so calling this on every edit is safe.
-     if (! multisamplerEditor.getInstrument().zones.empty())
-     {
-         static const juce::Colour kSfzTrackColour (0xFF9060D0);
-         const auto& instrumentName = multisamplerEditor.getInstrument().name;
-         pianoRollPanel.addSfzInstrumentTrack (
-             instrumentName.isNotEmpty() ? instrumentName : juce::String ("MULTISAMPLER"),
-             kSfzTrackColour);
-     }
-#endif
-
-     // Push the latest snapshot into plugin state so it survives project
-     // save/reload and editor close/reopen — see
-     // DysektProcessor::getSavedMultisamplerInstrumentJson()'s declaration
-     // comment. This fires on every committed edit (drag-commit, inspector
-     // apply, import, New, restore-on-open below), so processor state is
-     // always at most one edit stale even without an explicit host save.
-     processor.setSavedMultisamplerInstrumentJson (
-         InstrumentSerializer::toJson (multisamplerEditor.getInstrument()));
-
+     // Nothing to persist yet (Phase 4 / .metrokit isn't wired to plugin
+     // state), but repaint so the panel's own dirty-dot indicator and any
+     // future window-title "*" affordance stay current.
      repaint();
  };
  multisamplerEditor.onZoneSelectionOrEditChanged = [this]
@@ -272,27 +244,6 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
              proceed();
      };
  };
- // Restore the MULTISAMPLER instrument saved into plugin state (project
- // reload, or simply the editor being closed and reopened by the host) —
- // see DysektProcessor::getSavedMultisamplerInstrumentJson()'s declaration
- // comment. Every PluginEditor is constructed with a fresh, empty
- // MultisamplerEditor (instrument{} default ctor), so without this the
- // MULTISAMPLER engine (sfzPlayer2/sliceManager2) stays silently empty —
- // sfizz_load_file(...) -> OK, regions=0 — even though the processor still
- // has a perfectly good saved instrument. setInstrument()'s default
- // syncEngine=true immediately resyncs the live playback engine, same as a
- // fresh Import SFZ, so sound comes back without any further user action.
- // Must run after every multisamplerEditor.on*= handler above is wired,
- // since setInstrument() fires onInstrumentChanged synchronously.
- {
-     const auto& savedJson = processor.getSavedMultisamplerInstrumentJson();
-     if (savedJson.isNotEmpty())
-     {
-         auto result = InstrumentSerializer::fromJson (savedJson);
-         if (result.success)
-             multisamplerEditor.setInstrument (std::move (result.instrument), true);
-     }
- }
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
  // so the timer re-populates the zone matrix on the next completed load.
  sfzDropdown.onFileLoaded = [this] (const juce::File&)
@@ -546,12 +497,9 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
  {
      // Drag-and-drop equivalent of browserPanel.onLoadRequest's uiMode==1
      // branch — same loadSfzIntoMultisampler() authoritative path (plan
-     // §5.5/§5.8). Used to hardcode createArrangerTrack=false, so a
-     // drag-and-dropped .sfz never got an Arranger track even though the
-     // exact same load via the browser panel did — no reason for the two
-     // entry points to behave differently, so this now matches uiMode==1's
-     // browserPanel.onLoadRequest branch above.
-     loadSfzIntoMultisampler (f, true);
+     // §5.5/§5.8), just never creates an Arranger track (see that method's
+     // createArrangerTrack parameter comment — this path never did).
+     loadSfzIntoMultisampler (f, false);
  };
  waveformView.onShortcutsToggle = [this] { toggleShortcutsPanel(); };
  waveformView.onRenameRequest = [this] (int sliceIdx, const juce::String& currentName)
@@ -1696,7 +1644,7 @@ void DysektEditor::resized()
  // MULTISAMPLER tab is active — MultisamplerEditor is that tab's permanent
  // content now, so its SCB (SAVE button + selected-zone readout) is always
  // relevant there, even on an empty/new instrument.
- if ((hasRealSample || isMultisamplerTabActive()) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
+ if ((hasRealSample || isMultisamplerTabActive()) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen && !initBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);
