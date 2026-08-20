@@ -139,6 +139,27 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
      sliceControlBar.setInstrumentDirty (multisamplerEditor.isDirty());
 
+#if DYSEKT_STANDALONE
+     // Committed MULTISAMPLER edits (add/import a zone, drag-commit, New)
+     // reach the live engine via performEngineSync()'s own
+     // sfzPlayer2.loadFile()/loadSoundFontAsync() calls, entirely separate
+     // from loadSfzIntoMultisampler()/addSfzInstrumentTrack() above — so
+     // adding the very first zone to a fresh instrument never created an
+     // Arranger track; there was no call anywhere on that path that did.
+     // onInstrumentChanged already fires after every one of those commits,
+     // so create/update the track from here too. addSfzInstrumentTrack()
+     // (SequencerEngine::addSfzTrack()) updates the existing track in place
+     // if one's already there, so calling this on every edit is safe.
+     if (! multisamplerEditor.getInstrument().zones.empty())
+     {
+         static const juce::Colour kSfzTrackColour (0xFF9060D0);
+         const auto& instrumentName = multisamplerEditor.getInstrument().name;
+         pianoRollPanel.addSfzInstrumentTrack (
+             instrumentName.isNotEmpty() ? instrumentName : juce::String ("MULTISAMPLER"),
+             kSfzTrackColour);
+     }
+#endif
+
      // Push the latest snapshot into plugin state so it survives project
      // save/reload and editor close/reopen — see
      // DysektProcessor::getSavedMultisamplerInstrumentJson()'s declaration
@@ -525,9 +546,12 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
  {
      // Drag-and-drop equivalent of browserPanel.onLoadRequest's uiMode==1
      // branch — same loadSfzIntoMultisampler() authoritative path (plan
-     // §5.5/§5.8), just never creates an Arranger track (see that method's
-     // createArrangerTrack parameter comment — this path never did).
-     loadSfzIntoMultisampler (f, false);
+     // §5.5/§5.8). Used to hardcode createArrangerTrack=false, so a
+     // drag-and-dropped .sfz never got an Arranger track even though the
+     // exact same load via the browser panel did — no reason for the two
+     // entry points to behave differently, so this now matches uiMode==1's
+     // browserPanel.onLoadRequest branch above.
+     loadSfzIntoMultisampler (f, true);
  };
  waveformView.onShortcutsToggle = [this] { toggleShortcutsPanel(); };
  waveformView.onRenameRequest = [this] (int sliceIdx, const juce::String& currentName)

@@ -101,12 +101,47 @@ SfzPlayer::~SfzPlayer()
 
 void SfzPlayer::loadFile (const juce::File& f, juce::ThreadPool& pool)
 {
-    juce::ignoreUnused (pool);
-    pendingFilePath  = f.getFullPathName();   // record immediately for UI queries
-    auto* pkg        = new PendingLoad();
-    pkg->file        = f;
-    pkg->shouldUnload = false;
-    delete pendingLoad.exchange (pkg, std::memory_order_acq_rel);
+    pendingFilePath = f.getFullPathName();   // record immediately for UI queries
+    loadPool        = &pool;
+
+    // Snapshot `f` to a private temp copy on the background pool before
+    // publishing a PendingLoad, instead of handing applyPendingLoad() (audio
+    // thread) the caller's own path directly. This closes the race behind
+    // the SFZ-PLAYER crash-on-replace bug: applyPendingLoad() calls
+    // sfizz_load_file()/fluid_synth_sfload() straight off disk at the top of
+    // process(), and callers such as MultisamplerEditor::performEngineSync()
+    // rewrite that exact same on-disk file from a background thread on every
+    // debounced edit. A fast edit/replace could previously land the audio
+    // thread's read in the middle of that rewrite, handing sfizz a torn
+    // file — matching the crash log's "OK regions=1" immediately followed by
+    // "FAILED regions=-1" right before the unhandled-exception crash. Once
+    // this copy has been made, nothing else ever touches it, so the later
+    // read on the audio thread is guaranteed to see a complete, stable file
+    // no matter how fast subsequent edits arrive.
+    pool.addJob ([this, f]
+    {
+        auto* pkg = new PendingLoad();
+        pkg->shouldUnload  = false;
+        pkg->originalFile  = f;   // always the real, user-facing path
+
+        const auto tempCopy = juce::File::createTempFile (f.getFileExtension());
+        if (f.existsAsFile() && f.copyFileTo (tempCopy))
+        {
+            pkg->file       = tempCopy;
+            pkg->isTempCopy = true;
+        }
+        else
+        {
+            // Snapshot failed (source vanished, disk full, permissions...) —
+            // fall back to the original path so this degrades to exactly
+            // the pre-fix behaviour rather than silently dropping the load.
+            tempCopy.deleteFile();
+            pkg->file       = f;
+            pkg->isTempCopy = false;
+        }
+
+        delete pendingLoad.exchange (pkg, std::memory_order_acq_rel);
+    });
 }
 
 void SfzPlayer::unload()
@@ -1378,6 +1413,24 @@ void SfzPlayer::applyPendingLoad()
 
     std::unique_ptr<PendingLoad> owner (pkg);
 
+    // owner->file may be a private temp snapshot loadFile() made just for
+    // this load (see PendingLoad::isTempCopy / loadFile()'s doc comment) —
+    // schedule its deletion on the background pool once this function is
+    // done with it, however it returns below. Deleting on loadPool rather
+    // than right here keeps file-system I/O for the throwaway copy off the
+    // audio thread, same reasoning as the snapshot copy itself.
+    struct TempCopyCleanup
+    {
+        juce::ThreadPool* pool;
+        juce::File        file;
+        bool              active;
+        ~TempCopyCleanup()
+        {
+            if (active && pool != nullptr)
+                pool->addJob ([toDelete = file] { toDelete.deleteFile(); });
+        }
+    } tempCopyCleanup { loadPool, owner->file, owner->isTempCopy };
+
     // ── Tear down whatever is currently loaded ────────────────────────────────
     loaded.store (false, std::memory_order_release);
     activeFile = juce::File();
@@ -1438,7 +1491,7 @@ void SfzPlayer::applyPendingLoad()
             return;
         }
 
-        activeFile = owner->file;
+        activeFile = owner->originalFile;
         loaded.store (true, std::memory_order_release);
 
         // Re-apply pan (sfizz responds to CC10)
@@ -1446,7 +1499,7 @@ void SfzPlayer::applyPendingLoad()
 
         // Post a single dummy preset entry so the UI shows "loaded"
         auto* list = new std::vector<Sf2PresetInfo>();
-        list->push_back ({ 0, 0, owner->file.getFileNameWithoutExtension() });
+        list->push_back ({ 0, 0, owner->originalFile.getFileNameWithoutExtension() });
         delete freshPresets.exchange (list, std::memory_order_acq_rel);
 
         return;
@@ -1546,7 +1599,7 @@ void SfzPlayer::applyPendingLoad()
         }
     }
 
-    activeFile = owner->file;
+    activeFile = owner->originalFile;
     loaded.store (true, std::memory_order_release);
 
     // Re-apply user params that FluidSynth loses when synth is recreated.

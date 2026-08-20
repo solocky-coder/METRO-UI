@@ -8,12 +8,26 @@
 //  called from the audio thread (processBlock) or UI thread (load/param set).
 //
 //  Thread safety:
-//    loadFile()           — UI thread; PendingLoad posted via atomic
+//    loadFile()           — UI thread; hands the file off to the given
+//                           juce::ThreadPool, which snapshot-copies it to a
+//                           private temp file before a PendingLoad (pointing
+//                           at that copy) is posted via atomic. This is what
+//                           keeps applyPendingLoad()'s read (below) from ever
+//                           racing a caller that keeps rewriting the same
+//                           source path (e.g. MultisamplerEditor's debounced
+//                           re-export) — see PendingLoad::isTempCopy.
 //    setVolume/Trans()    — UI thread; stored as std::atomic<float>
 //    setPresetByIndex()   — UI thread; sets atomics + programChangePending flag
 //    prepare()            — audio thread (prepareToPlay)
 //    process()            — audio thread (processBlock); applies pending loads
-//                           and program changes at the top of each block
+//                           and program changes at the top of each block.
+//                           NOTE: applyPendingLoad() still calls
+//                           sfizz_load_file()/fluid_synth_sfload() (parsing,
+//                           not just the now-race-free disk read) directly on
+//                           this thread — moving that off the audio thread
+//                           too is a larger change than this fix; the private
+//                           snapshot at least guarantees it never parses a
+//                           file that's being overwritten out from under it.
 //
 //  Preset list handoff (audio → UI):
 //    After a successful sfont load the audio thread allocates a new
@@ -353,10 +367,41 @@ private:
     // ── Pending load (UI → audio thread handoff) ──────────────────────────────
     struct PendingLoad
     {
+        // Path actually handed to sfizz_load_file()/fluid_synth_sfload() —
+        // either a private snapshot copy loadFile() made on the background
+        // pool, or (if that copy failed) the caller's original path
+        // unchanged. See loadFile()'s doc comment.
         juce::File file;
+
+        // The caller's real, user-facing path — always the original file
+        // loadFile() was given, regardless of whether `file` above ended up
+        // being a temp copy. activeFile/getLoadedFile() must be set to
+        // *this*, not `file`, or every caller that displays or re-reads
+        // "the loaded file" (filenames in the LCD, reloadZones(), the
+        // browser's default directory, etc.) would end up pointing at a
+        // throwaway temp path that applyPendingLoad() deletes right after
+        // using it.
+        juce::File originalFile;
+
         bool       shouldUnload { false };
+
+        // True when `file` is a private snapshot copy that loadFile() made
+        // on the background pool, rather than `originalFile` itself.
+        // applyPendingLoad() schedules its deletion (via loadPool, off the
+        // audio thread) once it's done reading it.
+        bool       isTempCopy   { false };
     };
     std::atomic<PendingLoad*> pendingLoad { nullptr };
+
+    // Background pool passed to the most recent loadFile() call — used both
+    // to make the snapshot copy in loadFile() and, later, to delete it again
+    // from applyPendingLoad(). Written on the UI thread immediately before
+    // each pendingLoad publish; safely visible on the audio thread via the
+    // same release/acquire pair that publishes pendingLoad itself (the same
+    // guarantee owner->file/owner->shouldUnload already rely on). Raw,
+    // non-owning: SfzPlayer never outlives the DysektProcessor that owns
+    // both it and fileLoadPool.
+    juce::ThreadPool* loadPool { nullptr };
 
     // Stores the path of the most recently queued file (set by loadFile() on
     // the UI thread; safe to read via getPendingFilePath() at any time).

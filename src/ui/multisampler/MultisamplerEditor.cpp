@@ -471,9 +471,11 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
                 if (myGen != safeThis->engineSyncGeneration)
                     return;   // superseded by a newer edit/load before this one finished
 
-                // UI thread only; SfzPlayer posts the load atomically and swaps at
-                // the next audio block boundary (see SfzPlayer.h threading comment) —
-                // no audio-thread file access happens here or inside loadFile() itself.
+                // UI thread only; SfzPlayer::loadFile() snapshot-copies cacheFile on
+                // the background pool before publishing a load for the audio thread
+                // to apply (see SfzPlayer.h threading comment), so this file being
+                // rewritten again on the next debounced edit can never race the
+                // audio thread's read of it, however fast edits arrive back-to-back.
                 safeThis->processor.sfzPlayer2.loadFile (cacheFile, safeThis->processor.fileLoadPool);
 
                 // The line above only updates sfzPlayer2 — the live sfizz/FluidSynth
