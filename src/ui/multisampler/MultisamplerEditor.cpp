@@ -561,7 +561,22 @@ void MultisamplerEditor::handleZoneSelectionChanged (ZoneMapView::SelectionOrigi
     }
     else
     {
-        clearLayerAudition();
+        // Only mouse/contextMenuPreselect/deletion count as the user
+        // explicitly moving on to something else. A MIDI note is exactly
+        // the thing an audition is *for* — the whole point of picking a
+        // layer via the Edit Layer submenu is to then play notes and hear
+        // it in isolation, so a MIDI-driven selection must NOT cancel the
+        // audition (previously it did, via this same else-branch, which
+        // meant the engine got resynced back to the unmuted full mix the
+        // instant a note under the audition zone came in — defeating the
+        // whole feature). See refreshInspectorFromSelection() for the other
+        // half of this: it also has to stop treating a MIDI-driven
+        // multi-zone hit as "nothing usefully selected" while an audition
+        // is in progress, or the header/SCB readout would still say
+        // "Multiple zones selected" even though the engine is correctly
+        // isolating one of them.
+        if (origin != ZoneMapView::SelectionOrigin::midi)
+            clearLayerAudition();
     }
 
     refreshInspectorFromSelection();
@@ -593,11 +608,22 @@ void MultisamplerEditor::refreshInspectorFromSelection()
     const auto& selected = zoneMapView.getSelectedZoneIds();
     const bool single = selected.size() == 1;
 
+    // While a layer audition is in progress, the inspector/SCB readout
+    // should keep tracking the audited zone even if ZoneMapView's own
+    // selection has since become a multi-zone MIDI-note highlight (see
+    // handleZoneSelectionChanged() — a MIDI note deliberately no longer
+    // cancels the audition, since playing notes to hear the isolated layer
+    // is the whole point). Falls back to the ordinary single-selected-zone
+    // rule whenever nothing's being audited, exactly as before.
+    const juce::Uuid idToInspect = (layerAuditionZoneId != juce::Uuid::null())
+                                        ? layerAuditionZoneId
+                                        : (single ? selected.front() : juce::Uuid::null());
+
     const SampleZone* zone = nullptr;
-    if (single)
+    if (idToInspect != juce::Uuid::null())
     {
         for (auto& z : instrument.zones)
-            if (z.id == selected.front()) { zone = &z; break; }
+            if (z.id == idToInspect) { zone = &z; break; }
     }
 
     inspectedZoneId = (zone != nullptr) ? zone->id : juce::Uuid::null();
@@ -631,10 +657,12 @@ void MultisamplerEditor::refreshInspectorFromSelection()
              << "   RELEASE " << juce::String (zone->releaseSeconds, 3) << "s"
              << "   LOOP "  << (zone->loopMode != LoopMode::noLoop ? "ON" : "OFF");
 
-        // Only reachable when a single zone is selected (see `single`
-        // above), so comparing straight against inspectedZoneId is enough —
-        // no need to also check layerAuditionZoneId's own null-ness, since
-        // inspectedZoneId is itself never null on this branch.
+        // zone is only ever non-null here because idToInspect resolved to
+        // either the audition zone or a genuine single ZoneMapView
+        // selection (see idToInspect above), so this comparison is really
+        // just "are we currently auditioning at all" — but written this way
+        // rather than a bare layerAuditionZoneId-not-null check so it stays
+        // correct even if idToInspect's fallback logic changes later.
         if (zone->id == layerAuditionZoneId)
             text << "   •  AUDITIONING LAYER";
 
