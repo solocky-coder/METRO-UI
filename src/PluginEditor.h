@@ -150,6 +150,24 @@ private:
     /// only so call sites read the same way they used to (previously
     /// checking showMultisamplerEditor); it's a pure function of uiMode.
     bool isMultisamplerTabActive() const noexcept { return uiMode == 1; }
+
+    /// Pushes the right zone into both LCDs AND the SliceControlBar's zone
+    /// summary/readout for MULTISAMPLER: the hovered zone
+    /// (multisamplerEditor.getHoveredZoneIndex()) takes priority whenever
+    /// the cursor is over the zone map — including mid-cycle through a
+    /// stacked overlap via the wheel — falling back to the click-selected
+    /// zone (getSelectedZoneIndex()) once hover goes back to -1. Safe to let
+    /// the SCB summary follow hover too, even though that same readout
+    /// doubles as the field-edit target: dragging an SCB zone field requires
+    /// the mouse to be down on that cell, which is only reachable after the
+    /// cursor has left the zone map (firing mouseExit -> hover back to -1 ->
+    /// this resync back to the real selection) — see ZoneMapView::mouseExit
+    /// and MultisamplerEditor::onZoneHoverChanged's doc comment. So an edit
+    /// can never land while a hover preview from a different zone is still
+    /// showing. Called from resized() (every layout pass, self-correcting),
+    /// onZoneSelectionOrEditChanged, and onZoneHoverChanged.
+    void syncMultisamplerDisplay();
+
     bool iconNeedsApplying = true;   // set icon once peer is available
 
     // Classifies an SFZ-PLAYER file's zones (see SfzLayoutClassifier.h) and,

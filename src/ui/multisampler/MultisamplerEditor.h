@@ -29,7 +29,6 @@
 #include "../UIHelpers.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/SfzImporter.h"
-#include "../../audio/multisampler/MultisamplerPreviewSnapshot.h"
 
 class DysektProcessor;
 
@@ -127,28 +126,34 @@ public:
         onZoneSelectionOrEditChanged. */
     int getSelectedZoneIndex() const noexcept;
 
-    /** True when the single selected zone (per getSelectedZoneIndex()) is
-        also the one currently being layer-audited (see layerAuditionZoneId).
-        Always false when zero or multiple zones are selected, same as
-        getSelectedZoneIndex() returning -1 in those cases. PluginEditor
-        passes this straight through to sliceControlBar.setSfzZoneSummary()'s
-        isAuditioning param alongside getSelectedZoneIndex(), so the SCB
-        readout's "AUDITIONING" badge — the actually-visible one; see this
-        panel's own headerZoneSummary label for a second, smaller copy of
-        the same indicator — stays in sync without SliceControlBar needing
-        to know anything about zone ids or selection origins itself. */
-    bool isSelectedZoneAuditioned() const noexcept
-    {
-        const int idx = getSelectedZoneIndex();
-        return idx >= 0 && instrument.zones[(size_t) idx].id == layerAuditionZoneId;
-    }
-
     /** Fired whenever the selected zone (per getSelectedZoneIndex()) or its
         data changes — a selection click, a live drag, a drag commit, or a
         SliceControlBar field edit applied via applySliceControlBarFieldEdit().
         PluginEditor hooks this to push sliceControlBar.setSfzZoneSummary()/
         clearSfzZoneSummary(). */
     std::function<void()> onZoneSelectionOrEditChanged;
+
+    /** -1 if nothing is currently hovered in the zone map (cursor off the
+        map, or over empty grid space); otherwise the index into
+        getInstrument().zones for whichever zone the cursor is currently
+        showing — see ZoneMapView::onZoneHovered's doc comment. This is a
+        display-priority index, not a separate edit target: PluginEditor's
+        syncMultisamplerDisplay() lets it drive the LCDs AND the
+        SliceControlBar summary while non-null, which is safe because a
+        field edit requires the mouse to be down on an SCB cell — reachable
+        only once the cursor has left the zone map, which already resets
+        this back to -1 first (see ZoneMapView::mouseExit). See
+        syncMultisamplerDisplay()'s doc comment for the full reasoning. */
+    int getHoveredZoneIndex() const noexcept;
+
+    /** Fired whenever the hovered zone (per getHoveredZoneIndex()) changes —
+        cursor moved to a different zone, off the map, or the wheel was used
+        to cycle a stacked overlap. PluginEditor hooks this to push a
+        read-only preview into the LCDs and the SliceControlBar summary,
+        taking priority over the normal selection-driven display while
+        non-null — see getHoveredZoneIndex()'s doc comment for why this is
+        safe even though the SCB summary doubles as the field-edit target. */
+    std::function<void()> onZoneHoverChanged;
 
     /** Applies one SliceControlBar field edit (see SliceControlBar::
         SfzZoneField) to the zone at `zoneIndex` (as returned by
@@ -199,23 +204,6 @@ public:
         see loadSfzIntoMultisampler() in PluginEditor.cpp (plan §5.5/§5.8). */
     std::function<void (std::function<void()> proceed)> onConfirmDiscardIfDirty;
 
-    /** Fired from exportSfzClicked()/saveInPlace(), after the target file is
-        known but before anything is written, whenever getInstrument().
-        validate() (see MultisamplerInstrument.h) returns at least one issue
-        — missing samples, inverted key/velocity ranges, a loop enabled with
-        unset/inverted points, an out-of-range round-robin position, etc.
-        MultisamplerEditor has no overlay/dialog machinery of its own (see
-        onImportWarnings' comment above) so, same as that callback, deciding
-        whether to proceed is left to whoever owns the surrounding chrome.
-        The receiver must call `proceed()` to actually go ahead with the
-        write — synchronously, or later once an async ConfirmOverlay
-        resolves — and must not call it more than once per firing; declining
-        simply means never calling it. If unset, any issues are ignored and
-        the write proceeds exactly as it did before this callback existed —
-        same disconnected-handler fallback shape as onConfirmDiscardIfDirty. */
-    std::function<void (const std::vector<MultisamplerInstrument::ValidationIssue>& issues,
-                         std::function<void()> proceed)> onSaveValidationIssues;
-
 private:
     void timerCallback() override;   // fires once, kEngineSyncDebounceMs after the last edit
 
@@ -244,33 +232,7 @@ private:
     void newInstrumentClicked();
     void addZoneClicked();   // pick a sample, then AddZoneOverlay for lo/hi/root
 
-    // Shared body behind exportSfzClicked()'s success path and saveInPlace()
-    // — see onSaveValidationIssues' declaration comment (plan Phase 5,
-    // "save/export lifecycle refinement"). Runs instrument.validate() first;
-    // if it comes back clean, or onSaveValidationIssues isn't wired, writes
-    // immediately. Otherwise hands the issues to onSaveValidationIssues and
-    // only writes if/when its proceed() is called.
-    void writeToFileWithValidation (const juce::File& file, std::function<void()> onSuccess);
-
     void refreshInspectorFromSelection();
-
-    /** Routes every ZoneMapView::onSelectionChanged firing. Picking a layer
-        via the right-click "Edit Layer" submenu (SelectionOrigin::
-        editLayerMenu) starts auditioning that one layer in isolation (see
-        layerAuditionZoneId); any other origin — a plain click, an incoming
-        MIDI note, a right-click's own preselect, or a deletion — ends
-        whatever audition was in progress, since the user has moved on to
-        something else. Always calls refreshInspectorFromSelection() so the
-        header readout/SCB stay current regardless of origin. */
-    void handleZoneSelectionChanged (ZoneMapView::SelectionOrigin origin);
-
-    /** Ends layer audition (see layerAuditionZoneId) if one is in progress
-        and resyncs the engine immediately so playback goes back to normal.
-        No-op, including no resync, if nothing was being audited — so this
-        is safe to call unconditionally from handleZoneSelectionChanged()
-        and onZoneDeleted without adding a redundant resync to the common
-        case where the user was never auditioning anything. */
-    void clearLayerAudition();
 
     DysektProcessor& processor;
     MultisamplerInstrument instrument;
@@ -278,16 +240,6 @@ private:
     juce::File lastSavedFile;   // last file imported from or exported/saved to; File() if none yet
 
     ZoneMapView zoneMapView;
-
-    /** The zone currently being auditioned in isolation, or juce::Uuid::null()
-        when playback should sound normally (the common case). Set by
-        handleZoneSelectionChanged() on SelectionOrigin::editLayerMenu,
-        cleared by clearLayerAudition(). Consumed by performEngineSync() via
-        MultisamplerPreviewSnapshot::build() — the *actual* instrument member
-        is never touched by audition state, only what gets exported to the
-        playback engine, so entering/leaving audition never dirties the
-        instrument or touches undo/save. */
-    juce::Uuid layerAuditionZoneId = juce::Uuid::null();
 
     // ── Header ───────────────────────────────────────────────────────────
     juce::Label  titleLabel;
@@ -314,6 +266,7 @@ private:
     // this is purely a convenience duplicate of the same data.
     juce::Label headerZoneSummary;
     juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing/multiple selected
+    juce::Uuid  hoveredZoneId   = juce::Uuid::null();   // display-only, see getHoveredZoneIndex()
 
     static constexpr int kEngineSyncDebounceMs = 300;
     static constexpr int kHeaderH    = 32;

@@ -28,10 +28,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
 
     addAndMakeVisible (zoneMapView);
     zoneMapView.setInstrument (&instrument);
-    zoneMapView.onSelectionChanged = [this] (ZoneMapView::SelectionOrigin origin)
-    {
-        handleZoneSelectionChanged (origin);
-    };
+    zoneMapView.onSelectionChanged = [this] { refreshInspectorFromSelection(); };
     zoneMapView.onZoneEditing      = [this]
     {
         dirty = true;
@@ -48,20 +45,20 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         scheduleEngineSync();
         if (onInstrumentChanged) onInstrumentChanged();
     };
+    zoneMapView.onZoneHovered = [this] (juce::Uuid id)
+    {
+        // Deliberately does NOT touch inspectedZoneId or fire
+        // onZoneSelectionOrEditChanged — the actual selection (and thus the
+        // eventual field-edit target once the cursor reaches an SCB cell)
+        // never moves just because the cursor passed over a different zone.
+        // PluginEditor's syncMultisamplerDisplay() is still free to use this
+        // for display priority (LCDs + SCB summary) — see
+        // getHoveredZoneIndex()'s doc comment for why that's safe.
+        hoveredZoneId = id;
+        if (onZoneHoverChanged) onZoneHoverChanged();
+    };
     zoneMapView.onZoneDeleted = [this]
     {
-        // ZoneMapView::deleteZones() already fires onSelectionChanged with
-        // SelectionOrigin::deletion *before* this callback, and that path
-        // through handleZoneSelectionChanged() already calls
-        // clearLayerAudition() unconditionally — so by the time onZoneDeleted
-        // runs, layerAuditionZoneId can only still be set if the zone that
-        // got deleted wasn't the one being audited (e.g. auditioning zone A
-        // while a stray right-click deletes zone B). clearLayerAudition() is
-        // a no-op when nothing's set, so calling it again here is cheap
-        // belt-and-braces against a stale id ever surviving a deletion,
-        // rather than something expected to actually fire most of the time.
-        clearLayerAudition();
-
         // Same downstream effects as a committed drag edit (dirty flag,
         // debounced resync, chrome notification) — a deletion is just
         // another committed model edit, it just didn't come from a drag.
@@ -205,17 +202,6 @@ void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bo
     // separate race, handled instead by engineSyncGeneration — see that
     // method.)
     cancelPendingEngineSync();
-
-    // A wholesale swap invalidates any zone id currently being audited —
-    // ZoneMapView::setInstrument() (below) already clears its own selection
-    // for the same reason, and an audition left pointed at an id from the
-    // *previous* instrument would either resolve to nothing (harmless, but
-    // stale) or, worse, collide with an unrelated zone that happens to reuse
-    // the id space of some future instrument type. Reset directly rather
-    // than via clearLayerAudition() — that method's immediate resync would
-    // be redundant with (and race) the performEngineSync() this function
-    // itself calls a few lines down.
-    layerAuditionZoneId = juce::Uuid::null();
 
     instrument = std::move (newInstrument);
     dirty = false;
@@ -484,16 +470,8 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     // only the message-thread continuation needs the guard.
     juce::Component::SafePointer<MultisamplerEditor> safeThis (this);
 
-    // MultisamplerPreviewSnapshot::build() is a no-op copy when nothing's
-    // being layer-audited (the common case) — see its own header comment —
-    // so this costs nothing extra over the plain `instrument` copy it
-    // replaces except when the user is actually mid-audition, in which case
-    // it's the whole point: solo the audited layer in what gets exported
-    // without touching the real `instrument` member at all.
-    auto snapshot = MultisamplerPreviewSnapshot::build (instrument, layerAuditionZoneId);
-
     processor.fileLoadPool.addJob (
-        [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = std::move (snapshot)]
+        [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = instrument]
         {
             if (! SfzExporter::exportToFile (snapshot, cacheFile, opts))
                 return;   // nothing to load — same as the old synchronous early-return
@@ -505,11 +483,9 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
                 if (myGen != safeThis->engineSyncGeneration)
                     return;   // superseded by a newer edit/load before this one finished
 
-                // UI thread only; SfzPlayer::loadFile() snapshot-copies cacheFile on
-                // the background pool before publishing a load for the audio thread
-                // to apply (see SfzPlayer.h threading comment), so this file being
-                // rewritten again on the next debounced edit can never race the
-                // audio thread's read of it, however fast edits arrive back-to-back.
+                // UI thread only; SfzPlayer posts the load atomically and swaps at
+                // the next audio block boundary (see SfzPlayer.h threading comment) —
+                // no audio-thread file access happens here or inside loadFile() itself.
                 safeThis->processor.sfzPlayer2.loadFile (cacheFile, safeThis->processor.fileLoadPool);
 
                 // The line above only updates sfzPlayer2 — the live sfizz/FluidSynth
@@ -540,57 +516,6 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
         });
 }
 
-// ── Layer audition ───────────────────────────────────────────────────────
-
-void MultisamplerEditor::handleZoneSelectionChanged (ZoneMapView::SelectionOrigin origin)
-{
-    if (origin == ZoneMapView::SelectionOrigin::editLayerMenu)
-    {
-        // bringZoneToFrontForEditing() (the only caller of this origin)
-        // always sets the selection to exactly the one promoted zone, so
-        // getSelectedZoneIds().front() is always the right target here —
-        // no need to re-check size() == 1 the way refreshInspectorFromSelection()
-        // does for the general case.
-        const auto& selected = zoneMapView.getSelectedZoneIds();
-        jassert (selected.size() == 1);
-        if (! selected.empty() && selected.front() != layerAuditionZoneId)
-        {
-            layerAuditionZoneId = selected.front();
-            performEngineSync (false);   // immediate: this is what the user is waiting to hear
-        }
-    }
-    else
-    {
-        // Only mouse/contextMenuPreselect/deletion count as the user
-        // explicitly moving on to something else. A MIDI note is exactly
-        // the thing an audition is *for* — the whole point of picking a
-        // layer via the Edit Layer submenu is to then play notes and hear
-        // it in isolation, so a MIDI-driven selection must NOT cancel the
-        // audition (previously it did, via this same else-branch, which
-        // meant the engine got resynced back to the unmuted full mix the
-        // instant a note under the audition zone came in — defeating the
-        // whole feature). See refreshInspectorFromSelection() for the other
-        // half of this: it also has to stop treating a MIDI-driven
-        // multi-zone hit as "nothing usefully selected" while an audition
-        // is in progress, or the header/SCB readout would still say
-        // "Multiple zones selected" even though the engine is correctly
-        // isolating one of them.
-        if (origin != ZoneMapView::SelectionOrigin::midi)
-            clearLayerAudition();
-    }
-
-    refreshInspectorFromSelection();
-}
-
-void MultisamplerEditor::clearLayerAudition()
-{
-    if (layerAuditionZoneId == juce::Uuid::null())
-        return;   // nothing to do — don't force a redundant resync on every ordinary click
-
-    layerAuditionZoneId = juce::Uuid::null();
-    performEngineSync (false);   // immediate: audition ending should be heard right away, same as starting one
-}
-
 // ── Inspector ────────────────────────────────────────────────────────────
 
 int MultisamplerEditor::getSelectedZoneIndex() const noexcept
@@ -603,27 +528,26 @@ int MultisamplerEditor::getSelectedZoneIndex() const noexcept
     return -1;
 }
 
+int MultisamplerEditor::getHoveredZoneIndex() const noexcept
+{
+    if (hoveredZoneId == juce::Uuid::null())
+        return -1;
+    for (size_t i = 0; i < instrument.zones.size(); ++i)
+        if (instrument.zones[i].id == hoveredZoneId)
+            return (int) i;
+    return -1;
+}
+
 void MultisamplerEditor::refreshInspectorFromSelection()
 {
     const auto& selected = zoneMapView.getSelectedZoneIds();
     const bool single = selected.size() == 1;
 
-    // While a layer audition is in progress, the inspector/SCB readout
-    // should keep tracking the audited zone even if ZoneMapView's own
-    // selection has since become a multi-zone MIDI-note highlight (see
-    // handleZoneSelectionChanged() — a MIDI note deliberately no longer
-    // cancels the audition, since playing notes to hear the isolated layer
-    // is the whole point). Falls back to the ordinary single-selected-zone
-    // rule whenever nothing's being audited, exactly as before.
-    const juce::Uuid idToInspect = (layerAuditionZoneId != juce::Uuid::null())
-                                        ? layerAuditionZoneId
-                                        : (single ? selected.front() : juce::Uuid::null());
-
     const SampleZone* zone = nullptr;
-    if (idToInspect != juce::Uuid::null())
+    if (single)
     {
         for (auto& z : instrument.zones)
-            if (z.id == idToInspect) { zone = &z; break; }
+            if (z.id == selected.front()) { zone = &z; break; }
     }
 
     inspectedZoneId = (zone != nullptr) ? zone->id : juce::Uuid::null();
@@ -656,16 +580,6 @@ void MultisamplerEditor::refreshInspectorFromSelection()
              << "   VOLUME " << juce::String (zone->gainDb, 1) << "dB"
              << "   RELEASE " << juce::String (zone->releaseSeconds, 3) << "s"
              << "   LOOP "  << (zone->loopMode != LoopMode::noLoop ? "ON" : "OFF");
-
-        // zone is only ever non-null here because idToInspect resolved to
-        // either the audition zone or a genuine single ZoneMapView
-        // selection (see idToInspect above), so this comparison is really
-        // just "are we currently auditioning at all" — but written this way
-        // rather than a bare layerAuditionZoneId-not-null check so it stays
-        // correct even if idToInspect's fallback logic changes later.
-        if (zone->id == layerAuditionZoneId)
-            text << "   •  AUDITIONING LAYER";
-
         headerZoneSummary.setText (text, juce::dontSendNotification);
     }
 
@@ -691,23 +605,6 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
         case SliceControlBar::ZonePan:     z.pan          = value; break;
         case SliceControlBar::ZoneVolume:  z.gainDb       = value; break;
         case SliceControlBar::ZoneRelease: z.releaseSeconds = value; break;
-        // Phase 4 fields (ATTACK/DECAY/SUSTAIN/CUTOFF/RESONANCE/GROUP) were
-        // already being read out into the SCB row and its draggable cells
-        // (see PluginEditor.cpp's onZoneSelectionOrEditChanged and
-        // SliceControlBar::applySfzZoneDrag's own switch), but this switch
-        // never grew matching cases — so every drag on those six SCB cells,
-        // and now every drag on a SliceWaveformLcd ADSR node too (see
-        // commitNodes()'s multisamplerActive branch, which reuses these
-        // same SfzZoneField ids), silently hit `default: return;` below and
-        // never reached the actual SampleZone. Ranges match
-        // SliceControlBar::applySfzZoneDrag's own clamps for the same
-        // fields, so a value that was valid there is valid here too.
-        case SliceControlBar::ZoneAttack:    z.attackSeconds  = juce::jlimit (0.0f, 1.0f, value); break;
-        case SliceControlBar::ZoneDecay:     z.decaySeconds   = juce::jlimit (0.0f, 5.0f, value); break;
-        case SliceControlBar::ZoneSustain:   z.sustainLevel   = juce::jlimit (0.0f, 1.0f, value); break;
-        case SliceControlBar::ZoneCutoff:    z.filterCutoffHz = juce::jlimit (20.0f, 20000.0f, value); break;
-        case SliceControlBar::ZoneResonance: z.filterResonance = juce::jlimit (0.0f, 1.0f, value); break;
-        case SliceControlBar::ZoneGroup:     z.group           = juce::jlimit (0, 999, juce::roundToInt (value)); break;
         case SliceControlBar::ZoneLoop:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 

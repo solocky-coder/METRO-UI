@@ -46,24 +46,9 @@ public:
     const std::vector<juce::Uuid>& getSelectedZoneIds() const noexcept { return selectedIds; }
     void setSelectedZoneIds (std::vector<juce::Uuid> ids);
 
-    /** How a selection change came about. MultisamplerEditor uses this to
-        decide whether to enter/leave "layer audition" (see its
-        handleZoneSelectionChanged()): explicitly picking a layer via the
-        right-click "Edit Layer" submenu (editLayerMenu) starts auditioning
-        that one layer in isolation, since that's the whole point of the
-        submenu — hearing an overlapped layer you otherwise couldn't pick
-        out. Every other origin ends any audition in progress, on the
-        theory that the user has moved on to something else (a fresh click,
-        playing a different note, a right-click about to delete/recolour,
-        or the selected zone itself having just been deleted). */
-    enum class SelectionOrigin { mouse, midi, editLayerMenu, contextMenuPreselect, deletion };
-
-    /** Fired whenever the selection set changes as a result of a click or
-        incoming MIDI note (not when set programmatically via
-        setSelectedZoneIds — bringZoneToFrontForEditing() is the one
-        exception, since from the caller's point of view that *is* a user
-        selection, just entered via the context menu instead of a click). */
-    std::function<void (SelectionOrigin)> onSelectionChanged;
+    /** Fired whenever the selection set changes as a result of a click
+        (not when set programmatically via setSelectedZoneIds). */
+    std::function<void()> onSelectionChanged;
 
     /** Fired continuously while a drag is in progress (move or resize), once
         per mouseDrag callback, so a live audition/preview can follow along.
@@ -82,6 +67,17 @@ public:
         deletion apart from a drag when it matters (e.g. status text). */
     std::function<void()> onZoneDeleted;
 
+    /** Fired whenever the zone being shown for read-only hover/inspection
+        purposes changes — either because the cursor moved to a new zone (or
+        off the map entirely, passing juce::Uuid::null()) or because the
+        wheel was used to cycle through a stack of overlapping zones under a
+        stationary cursor (see mouseWheelMove()). Display/inspection only:
+        never changes selectedIds, never touches playback. The owning panel
+        should treat this as taking priority over the click-selection display
+        while non-null, and fall back to its normal selection-based display
+        when it goes back to null (cursor left the map). */
+    std::function<void (juce::Uuid)> onZoneHovered;
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -89,6 +85,7 @@ public:
     void mouseUp   (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     bool keyPressed (const juce::KeyPress&) override;
 
 private:
@@ -169,7 +166,13 @@ private:
     int dragStartLowVel = 0, dragStartHighVel = 0;
     bool dragChangedAnything = false;
 
-    juce::Uuid hoverZoneId = juce::Uuid::null();   // for cursor feedback only
+    // The zone currently shown for hover/inspection purposes (drives the
+    // paint() highlight, cursor shape, and onZoneHovered). Usually the
+    // topmost zone under the cursor, but can differ from that when the user
+    // has scrolled to cycle deeper into a stack — see mouseMove()'s
+    // "stillInsideDisplayed" check and mouseWheelMove(). Display only; never
+    // affects selectedIds or playback.
+    juce::Uuid hoverZoneId = juce::Uuid::null();
 
     static constexpr int kEdgeGrabPx = 5;
     static constexpr int kKeyCellPx = 34;         // the black/white note cells themselves —

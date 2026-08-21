@@ -126,14 +126,6 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
     // see MultisamplerEditor::applySliceControlBarFieldEdit's doc comment.
     multisamplerEditor.applySliceControlBarFieldEdit (rowIndex, field, value);
 };
-sliceWaveformLcd.onMultisamplerZoneParamEdited = [this] (int zoneIndex, int field, float value)
-{
-    // ADSR-node drag on the waveform display's envelope overlay, routed
-    // through the exact same write path as sliceControlBar.onSfzZoneParamEdited
-    // just above — see SliceWaveformLcd::commitNodes()'s multisamplerActive
-    // branch for where this fires from.
-    multisamplerEditor.applySliceControlBarFieldEdit (zoneIndex, field, value);
-};
 
  addChildComponent (multisamplerEditor); // hidden until the MULTISAMPLER tab (uiMode == 1) is active
  multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
@@ -153,37 +145,25 @@ sliceWaveformLcd.onMultisamplerZoneParamEdited = [this] (int zoneIndex, int fiel
  };
  multisamplerEditor.onZoneSelectionOrEditChanged = [this]
  {
-     // Pushes the selected zone's fields into sliceControlBar.setSfzZoneSummary()
-     // further down this file, so the SCB readout stays in sync with
-     // MULTISAMPLER's selection/edits.
+     // Pushes the selected zone's fields into both LCDs and
+     // sliceControlBar.setSfzZoneSummary() via syncMultisamplerDisplay() —
+     // fires on a selection click, a live drag, a drag commit, and an SCB
+     // field edit (see this callback's doc comment), so all three stay in
+     // sync with MULTISAMPLER's selection/edits.
      if (! isMultisamplerTabActive()) return;
-
-     const int idx = multisamplerEditor.getSelectedZoneIndex();
-     const auto& zones = multisamplerEditor.getInstrument().zones;
-
-     // Refresh both LCDs immediately on selection AND on every committed
-     // edit to the selected zone (this callback fires for both — see its
-     // doc comment) — the resized()-driven sync a few hundred lines down
-     // only catches a layout pass, not a same-frame ADSR/gain/pan edit
-     // from the zone inspector or an SCB field edit.
-     sliceLcd.setMultisamplerSource (true, &multisamplerEditor.getInstrument(), idx);
-     sliceWaveformLcd.setMultisamplerSource (true, &multisamplerEditor.getInstrument(), idx);
-
-     if (idx < 0 || idx >= (int) zones.size())
-     {
-         sliceControlBar.clearSfzZoneSummary();
-         return;
-     }
-     const auto& z = zones[(size_t) idx];
-     sliceControlBar.setSfzZoneSummary (idx,
-         z.sampleFile != juce::File() ? z.sampleFile.getFileNameWithoutExtension()
-                                       : juce::String ("Zone " + juce::String (idx + 1)),
-         z.lowKey, z.highKey, z.rootKey,
-         z.tuneCents, z.pan, z.gainDb, z.releaseSeconds,
-         z.loopMode != LoopMode::noLoop,
-         z.attackSeconds, z.decaySeconds, z.sustainLevel,
-         z.filterCutoffHz, z.filterResonance, z.group,
-         multisamplerEditor.isSelectedZoneAuditioned());
+     syncMultisamplerDisplay();
+ };
+ multisamplerEditor.onZoneHoverChanged = [this]
+ {
+     // Read-only preview: takes priority over the selection-driven display
+     // (LCDs + SCB summary) while the cursor is over a zone, or cycling a
+     // stack via the wheel — falls back to the normal selection display the
+     // moment it goes back to -1 (cursor left the map). Safe to let this
+     // reach the SCB summary too, even though that readout doubles as the
+     // field-edit target — see syncMultisamplerDisplay()'s doc comment for
+     // why an edit can never land on a stale hover preview.
+     if (! isMultisamplerTabActive()) return;
+     syncMultisamplerDisplay();
  };
  multisamplerEditor.onImportWarnings = [this] (const juce::String& sourceFileName,
                                                 bool importSucceeded,
@@ -702,6 +682,46 @@ void DysektEditor::visibilityChanged()
 }
 
 // ── MIDI route mode helper ────────────────────────────────────────────────────
+void DysektEditor::syncMultisamplerDisplay()
+{
+    const bool multiActive = isMultisamplerTabActive();
+    const MultisamplerInstrument* instr = multiActive ? &multisamplerEditor.getInstrument() : nullptr;
+
+    // Hover takes priority whenever the cursor is actually over the zone
+    // map — including mid-cycle through a stacked overlap via the wheel
+    // (see ZoneMapView::mouseWheelMove) — and falls back to the real
+    // click-selection the instant hover goes back to -1 (cursor left the
+    // map). See this method's header doc comment for why it's safe to let
+    // this reach the SCB summary even though that's also the field-edit
+    // target.
+    int zone = -1;
+    if (multiActive)
+    {
+        const int hovered = multisamplerEditor.getHoveredZoneIndex();
+        zone = (hovered >= 0) ? hovered : multisamplerEditor.getSelectedZoneIndex();
+    }
+
+    sliceLcd.setMultisamplerSource (multiActive, instr, zone);
+    sliceWaveformLcd.setMultisamplerSource (multiActive, instr, zone);
+
+    if (! multiActive)
+        return;
+
+    const auto& zones = multisamplerEditor.getInstrument().zones;
+    if (zone < 0 || zone >= (int) zones.size())
+    {
+        sliceControlBar.clearSfzZoneSummary();
+        return;
+    }
+    const auto& z = zones[(size_t) zone];
+    sliceControlBar.setSfzZoneSummary (zone,
+        z.sampleFile != juce::File() ? z.sampleFile.getFileNameWithoutExtension()
+                                      : juce::String ("Zone " + juce::String (zone + 1)),
+        z.lowKey, z.highKey, z.rootKey,
+        z.tuneCents, z.pan, z.gainDb, z.releaseSeconds,
+        z.loopMode != LoopMode::noLoop);
+}
+
 void DysektEditor::syncMidiRouteMode()
 {
     using Mode = DysektProcessor::MidiRouteMode;
@@ -1470,17 +1490,11 @@ void DysektEditor::resized()
  sf2Lcd.setVisible (sf2Mode);
  sf2WaveformLcd.setVisible (sf2Mode);
 
- // Keep both LCDs' MULTISAMPLER read-only view in sync with the tab's
- // active state and current selection every layout pass — cheap (pointer +
- // two ints), and this runs on every resized() so it self-corrects
- // regardless of what triggered the layout pass.
- {
-     const bool multiActive = isMultisamplerTabActive();
-     const int selZone = multiActive ? multisamplerEditor.getSelectedZoneIndex() : -1;
-     const MultisamplerInstrument* instr = multiActive ? &multisamplerEditor.getInstrument() : nullptr;
-     sliceLcd.setMultisamplerSource (multiActive, instr, selZone);
-     sliceWaveformLcd.setMultisamplerSource (multiActive, instr, selZone);
- }
+ // Keep both LCDs' and the SCB summary's MULTISAMPLER read-only view in
+ // sync with the tab's active state and current selection/hover every
+ // layout pass — cheap, and this runs on every resized() so it
+ // self-corrects regardless of what triggered the layout pass.
+ syncMultisamplerDisplay();
 
  sliceLcd.setBounds (topRow.removeFromLeft (sideW));
  sf2Lcd.setBounds (sliceLcd.getBounds());
@@ -1655,7 +1669,7 @@ void DysektEditor::resized()
  // MULTISAMPLER tab is active — MultisamplerEditor is that tab's permanent
  // content now, so its SCB (SAVE button + selected-zone readout) is always
  // relevant there, even on an empty/new instrument.
- if ((hasRealSample || isMultisamplerTabActive()) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen && !initBrowserOpen)
+ if ((hasRealSample || isMultisamplerTabActive()) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);

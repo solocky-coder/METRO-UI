@@ -95,7 +95,7 @@ void ZoneMapView::selectZonesForNewNotes (uint64_t newLo, uint64_t newHi)
     if (hitIds.empty()) return;
 
     selectedIds = std::move (hitIds);
-    if (onSelectionChanged) onSelectionChanged (SelectionOrigin::midi);
+    if (onSelectionChanged) onSelectionChanged();
 }
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -269,12 +269,8 @@ void ZoneMapView::bringZoneToFrontForEditing (const juce::Uuid& zoneId)
     repaint();
 
     // This is a selection/display-order change, not an instrument edit, so it
-    // intentionally does not dirty the instrument. It does still notify
-    // onSelectionChanged with SelectionOrigin::editLayerMenu, which is what
-    // tells MultisamplerEditor to start auditioning this layer in isolation
-    // (see that class's handleZoneSelectionChanged()) — that does resync the
-    // engine, just not through the dirty/undo path a real edit would.
-    if (onSelectionChanged) onSelectionChanged (SelectionOrigin::editLayerMenu);
+    // intentionally does not dirty or resync the playback engine.
+    if (onSelectionChanged) onSelectionChanged();
 }
 
 ZoneMapView::DragMode ZoneMapView::hitTestEdges (const ZoneRect& r, juce::Point<float> p) const
@@ -310,7 +306,7 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
         if (! e.mods.isShiftDown() && ! selectedIds.empty())
         {
             selectedIds.clear();
-            if (onSelectionChanged) onSelectionChanged (SelectionOrigin::mouse);
+            if (onSelectionChanged) onSelectionChanged();
             repaint();
         }
         dragMode = DragMode::none;
@@ -326,7 +322,7 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
         if (std::find (selectedIds.begin(), selectedIds.end(), hit->id) == selectedIds.end())
         {
             selectedIds = { hit->id };
-            if (onSelectionChanged) onSelectionChanged (SelectionOrigin::contextMenuPreselect);
+            if (onSelectionChanged) onSelectionChanged();
             repaint();
         }
         showZoneContextMenu (hit->id, e.position, e.getScreenPosition());
@@ -344,7 +340,7 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
     {
         selectedIds = { hit->id };
     }
-    if (onSelectionChanged) onSelectionChanged (SelectionOrigin::mouse);
+    if (onSelectionChanged) onSelectionChanged();
 
     auto* zone = instrument->findZone (hit->id);
     if (zone == nullptr) { repaint(); return; }
@@ -419,11 +415,29 @@ void ZoneMapView::mouseUp (const juce::MouseEvent&)
 void ZoneMapView::mouseMove (const juce::MouseEvent& e)
 {
     const auto* hit = topmostZoneAt (e.position);
-    const auto newHover = hit != nullptr ? hit->id : juce::Uuid::null();
-    if (newHover != hoverZoneId)
+
+    // If the cursor is still physically inside whatever zone is currently
+    // being displayed, leave the display alone — that zone might not be the
+    // topmost one any more if the user scrolled to cycle deeper into an
+    // overlapping stack (see mouseWheelMove()), and jitter within the same
+    // spot shouldn't snap back to the topmost layer and undo that. Only
+    // reset to the topmost hit once the cursor genuinely leaves that zone's
+    // bounds.
+    const bool stillInsideDisplayed =
+        hoverZoneId != juce::Uuid::null()
+        && std::any_of (cachedRects.begin(), cachedRects.end(),
+                         [this, &e] (const ZoneRect& r)
+                         { return r.id == hoverZoneId && r.bounds.contains (e.position); });
+
+    if (! stillInsideDisplayed)
     {
-        hoverZoneId = newHover;
-        repaint();
+        const auto newHover = hit != nullptr ? hit->id : juce::Uuid::null();
+        if (newHover != hoverZoneId)
+        {
+            hoverZoneId = newHover;
+            repaint();
+            if (onZoneHovered) onZoneHovered (hoverZoneId);
+        }
     }
 
     if (hit != nullptr)
@@ -449,8 +463,42 @@ void ZoneMapView::mouseExit (const juce::MouseEvent&)
     {
         hoverZoneId = juce::Uuid::null();
         repaint();
+        if (onZoneHovered) onZoneHovered (juce::Uuid::null());
     }
     setMouseCursor (juce::MouseCursor::NormalCursor);
+}
+
+// Lets the user reach a buried layer in a stack of overlapping zones without
+// opening the right-click "Edit Layer" menu: with the cursor held over the
+// stack, each wheel notch steps the hover display to the next zone under
+// that point (front-to-back, wrapping), same list order as the "Edit Layer"
+// submenu already uses (zonesAt()). Read-only — doesn't touch selectedIds,
+// doesn't touch playback, only changes what's shown via onZoneHovered.
+// Deliberately does nothing (and doesn't consume the event) when fewer than
+// two zones are under the cursor, since there's nothing to cycle through.
+void ZoneMapView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    const auto stack = zonesAt (e.position);
+    if (stack.size() < 2)
+        return;
+
+    // Find where the currently-displayed zone sits in this stack — it may
+    // already be mid-cycle rather than the topmost entry. Default to the
+    // topmost (index 0) if the current display isn't part of this stack.
+    const auto it = std::find_if (stack.begin(), stack.end(),
+                                   [this] (const ZoneRect* r) { return r->id == hoverZoneId; });
+    size_t index = (it != stack.end()) ? (size_t) std::distance (stack.begin(), it) : 0;
+
+    if (wheel.deltaY > 0.0f) index = (index + 1) % stack.size();
+    else                     index = (index + stack.size() - 1) % stack.size();
+
+    const auto newId = stack[index]->id;
+    if (newId != hoverZoneId)
+    {
+        hoverZoneId = newId;
+        repaint();
+        if (onZoneHovered) onZoneHovered (hoverZoneId);
+    }
 }
 
 void ZoneMapView::resized()
@@ -502,7 +550,7 @@ void ZoneMapView::deleteZones (const juce::Uuid& rightClickedId)
     rebuildLayout();
     repaint();
 
-    if (onSelectionChanged)  onSelectionChanged (SelectionOrigin::deletion);
+    if (onSelectionChanged)  onSelectionChanged();
     if (onZoneDeleted)       onZoneDeleted();
 }
 
