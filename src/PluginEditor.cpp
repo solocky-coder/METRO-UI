@@ -138,6 +138,13 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
      sliceControlBar.setInstrumentDirty (multisamplerEditor.isDirty());
 
+     // resized()'s SCB-visibility gate depends on whether the instrument
+     // currently has any zones at all (see resized()'s multisamplerHasZones
+     // comment) — an edit here can be exactly the add/import/delete that
+     // flips that from zero to nonzero or back, so re-run layout rather than
+     // waiting for the next window resize to pick it up.
+     resized();
+
      // Nothing to persist yet (Phase 4 / .metrokit isn't wired to plugin
      // state), but repaint so the panel's own dirty-dot indicator and any
      // future window-title "*" affordance stay current.
@@ -1694,10 +1701,17 @@ void DysektEditor::resized()
  //
  // Hidden until there's actually something for it to control: either a real
  // sample/kit is loaded (hasRealSample) in the Slicer tab, or the
- // MULTISAMPLER tab is active — MultisamplerEditor is that tab's permanent
- // content now, so its SCB (SAVE button + selected-zone readout) is always
- // relevant there, even on an empty/new instrument.
- if ((hasRealSample || isMultisamplerTabActive()) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
+ // MULTISAMPLER tab is active AND its instrument actually has a zone —
+ // an empty/new instrument (zero zones, "NO ZONES" shown in the map) has
+ // nothing for the SCB to read out, so it stays hidden rather than showing
+ // its "Select a zone to edit" placeholder row. It reappears the moment a
+ // zone exists (Add Zone / import), independent of whether one is currently
+ // selected/hovered — see syncMultisamplerDisplay() for the separate
+ // selected/hovered-vs-blank logic that governs the readout's *content*
+ // once the bar itself is visible.
+ const bool multisamplerHasZones = isMultisamplerTabActive()
+                                     && ! multisamplerEditor.getInstrument().zones.empty();
+ if ((hasRealSample || multisamplerHasZones) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);
