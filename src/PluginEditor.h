@@ -140,6 +140,16 @@ private:
     /// 1 = MULTISAMPLER.
     int  uiMode = 0;
     bool showPadGrid     = false;  ///< true = PadGridView, false = WaveformView (within uiMode 0)
+
+    /// Sticky "last shown" zone for syncMultisamplerDisplay()'s fallback tier —
+    /// tracked by id (not index) so it survives zone reordering/insertion, and
+    /// resolved back to an index by scanning the current zone list each time.
+    /// Deliberately starts (and is reset back to) juce::Uuid::null() so the SCB/
+    /// LCDs stay genuinely blank on init and on every fresh entry into the
+    /// MULTISAMPLER tab, only picking up a default once the user has actually
+    /// hovered or selected a zone at least once this tab-visit — see
+    /// syncMultisamplerDisplay()'s doc comment.
+    juce::Uuid lastMultisamplerZoneId = juce::Uuid::null();
     bool hasSampleLoaded = false;   // true once a sample with audio is loaded
     bool hasSampleLoaded2 = false;  // true once SFZ-PLAYER (sliceManager2/sampleData2) has a real sample loaded
 
@@ -164,11 +174,15 @@ private:
     /// this resync back to the real selection) — see ZoneMapView::mouseExit
     /// and MultisamplerEditor::onZoneHoverChanged's doc comment. So an edit
     /// can never land while a hover preview from a different zone is still
-    /// showing. If neither hover nor selection resolves to a zone (nothing
-    /// hovered, nothing selected), falls back to the last zone in the
-    /// instrument's zone list — same z-order convention as "topmost" in
-    /// ZoneMapView's cachedRects — so the LCDs/SCB only go blank once the
-    /// instrument truly has zero zones. Called from resized() (every layout
+    /// showing. If neither hover nor selection resolves to a zone (mouse off
+    /// the map, nothing clicked), falls back to whichever zone was last
+    /// legitimately shown this tab-visit (lastMultisamplerZoneId) rather than
+    /// going blank — so moving the cursor off a zone you were just looking at
+    /// keeps showing it instead of flashing empty. That sticky id is only
+    /// ever set from a real hover/selection, and is reset to null on init and
+    /// on every fresh entry into the tab, so the SCB/LCDs stay genuinely
+    /// blank until the user actually hovers or clicks a zone — they never
+    /// pop up a default on their own. Called from resized() (every layout
     /// pass, self-correcting), onZoneSelectionOrEditChanged, and
     /// onZoneHoverChanged.
     void syncMultisamplerDisplay();

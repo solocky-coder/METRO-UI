@@ -695,28 +695,38 @@ void DysektEditor::syncMultisamplerDisplay()
     // this reach the SCB summary even though that's also the field-edit
     // target.
     //
-    // If neither applies (nothing hovered, nothing selected — e.g. right
-    // after opening MULTISAMPLER, or after the selection was cleared) fall
-    // back to a sensible default zone instead of going blank: the last zone
-    // in the instrument's zone list, matching the same z-order convention
-    // ZoneMapView's cachedRects already uses (instrument order, last = front
-    // = "topmost"). The LCDs/SCB should only go genuinely blank once the
-    // instrument has zero zones at all.
+    // If neither applies (mouse off the map, nothing clicked), fall back to
+    // whichever zone was last legitimately shown this tab-visit rather than
+    // going blank — tracked by id (lastMultisamplerZoneId), not index, so it
+    // survives inserts/reordering, and re-resolved against the current zone
+    // list every call so a deleted/replaced zone correctly drops back out.
+    // That id is ONLY ever written from an actual hover/selection below —
+    // never from this fallback branch — and is reset to null the instant the
+    // tab isn't active, so a fresh entry into MULTISAMPLER (or the very first
+    // paint on plugin load) always starts genuinely blank instead of popping
+    // up a default zone nobody asked to see.
     int zone = -1;
     if (multiActive)
     {
+        const auto& zonesNow = multisamplerEditor.getInstrument().zones;
         const int hovered  = multisamplerEditor.getHoveredZoneIndex();
         const int selected = multisamplerEditor.getSelectedZoneIndex();
         if (hovered >= 0)
             zone = hovered;
         else if (selected >= 0)
             zone = selected;
-        else
+        else if (lastMultisamplerZoneId != juce::Uuid::null())
         {
-            const auto& zonesForDefault = multisamplerEditor.getInstrument().zones;
-            if (! zonesForDefault.empty())
-                zone = (int) zonesForDefault.size() - 1;
+            for (size_t i = 0; i < zonesNow.size(); ++i)
+                if (zonesNow[i].id == lastMultisamplerZoneId) { zone = (int) i; break; }
         }
+
+        if (zone >= 0)
+            lastMultisamplerZoneId = zonesNow[(size_t) zone].id;
+    }
+    else
+    {
+        lastMultisamplerZoneId = juce::Uuid::null();
     }
 
     sliceLcd.setMultisamplerSource (multiActive, instr, zone);
