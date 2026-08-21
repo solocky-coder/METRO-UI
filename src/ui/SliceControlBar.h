@@ -59,7 +59,15 @@ public:
                             int loKey, int hiKey, int rootPitch,
                             float tuneCents, float pan, float volDb, float releaseSec, bool isLooped = false,
                             float attackSec = 0.005f, float decaySec = 0.1f, float sustainLevel = 1.0f,
-                            float filterCutoffHz = 20000.0f, float filterResonance = 0.0f, int group = 0);
+                            float filterCutoffHz = 20000.0f, float filterResonance = 0.0f, int group = 0,
+                            // True while this zone is being "layer-auditioned" (right-click
+                            // → Edit Layer submenu) — see MultisamplerEditor::layerAuditionZoneId.
+                            // Purely cosmetic here: draws an "AUDITIONING" badge next to the
+                            // rest of the readout, no different from the loKey/hiKey/etc. fields
+                            // it's passed alongside except that it isn't a draggable/editable
+                            // SfzZoneField, so it has no entry in that enum and isn't part of
+                            // drawSfzZoneSummary()'s drawSfzZoneCell() hit-test loop.
+                            bool isAuditioning = false);
     void clearSfzZoneSummary();
 
     /// Fired after a zone parameter is changed in the SFZ-PLAYER control bar.
@@ -97,6 +105,12 @@ private:
         float filterCutoffHz = 20000.0f, filterResonance = 0.0f;
         int group = 0;
         juce::String name;
+
+        // Set from MultisamplerEditor::isZoneBeingAuditioned() via
+        // setSfzZoneSummary()'s isAuditioning param — see that param's doc
+        // comment. Purely a display flag: drawSfzZoneSummary() paints an
+        // "AUDITIONING" badge when true, nothing here drives playback.
+        bool isAuditioning = false;
     } sfzZoneSummary;
 
     // True when the SFZ-PLAYER tab (sliceManager2/voicePool2 — a full second

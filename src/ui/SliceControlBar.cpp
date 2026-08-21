@@ -106,7 +106,8 @@ void SliceControlBar::setSfzZoneSummary (int zoneIndex, const juce::String& name
                                          int loKey, int hiKey, int rootPitch,
                                          float tuneCents, float pan, float volDb, float releaseSec, bool isLooped,
                                          float attackSec, float decaySec, float sustainLevel,
-                                         float filterCutoffHz, float filterResonance, int group)
+                                         float filterCutoffHz, float filterResonance, int group,
+                                         bool isAuditioning)
 {
     sfzZoneSummary.valid      = true;
     sfzZoneSummary.index      = zoneIndex;
@@ -125,6 +126,7 @@ void SliceControlBar::setSfzZoneSummary (int zoneIndex, const juce::String& name
     sfzZoneSummary.filterCutoffHz  = filterCutoffHz;
     sfzZoneSummary.filterResonance = filterResonance;
     sfzZoneSummary.group           = group;
+    sfzZoneSummary.isAuditioning   = isAuditioning;
     repaint();
 }
 
@@ -1477,6 +1479,23 @@ void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int w
     {
         self->drawSfzZoneCell (g, cx, y, labels[i], values[i], fields[i], cw);
         cx += cw + juce::roundToInt (4.0f * paintSf);
+    }
+
+    // Layer-audition badge — see MultisamplerEditor::layerAuditionZoneId and
+    // its handleZoneSelectionChanged()/clearLayerAudition(). Deliberately
+    // NOT a drawSfzZoneCell() cell like the fields above: it isn't a
+    // draggable/editable SfzZoneField (no enum entry, nothing in
+    // applySfzZoneDrag's switch), so it's painted directly here and never
+    // added to sfzZoneCells — no accidental drag/hit-test target. Only takes
+    // horizontal space while actually auditioning, so it can't crowd out the
+    // real fields above on a narrow window in the common (not auditioning)
+    // case, the same width-budgeting the field loop above already does.
+    if (z.isAuditioning && cx + juce::roundToInt (86.0f * paintSf) <= x + width)
+    {
+        g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf, true));
+        g.setColour (getTheme().lockActive);
+        g.drawText ("\xe2\x80\xa2 AUDITIONING", cx, y, juce::roundToInt (86.0f * paintSf), height,
+                    juce::Justification::centredLeft);
     }
 }
 

@@ -127,6 +127,22 @@ public:
         onZoneSelectionOrEditChanged. */
     int getSelectedZoneIndex() const noexcept;
 
+    /** True when the single selected zone (per getSelectedZoneIndex()) is
+        also the one currently being layer-audited (see layerAuditionZoneId).
+        Always false when zero or multiple zones are selected, same as
+        getSelectedZoneIndex() returning -1 in those cases. PluginEditor
+        passes this straight through to sliceControlBar.setSfzZoneSummary()'s
+        isAuditioning param alongside getSelectedZoneIndex(), so the SCB
+        readout's "AUDITIONING" badge — the actually-visible one; see this
+        panel's own headerZoneSummary label for a second, smaller copy of
+        the same indicator — stays in sync without SliceControlBar needing
+        to know anything about zone ids or selection origins itself. */
+    bool isSelectedZoneAuditioned() const noexcept
+    {
+        const int idx = getSelectedZoneIndex();
+        return idx >= 0 && instrument.zones[(size_t) idx].id == layerAuditionZoneId;
+    }
+
     /** Fired whenever the selected zone (per getSelectedZoneIndex()) or its
         data changes — a selection click, a live drag, a drag commit, or a
         SliceControlBar field edit applied via applySliceControlBarFieldEdit().
