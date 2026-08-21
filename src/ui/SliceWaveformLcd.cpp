@@ -1230,6 +1230,8 @@ void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<fl
  const auto& v = vp.getVoice (i);
  if (! v.active) continue;
 
+ float xn;
+
  if (multisamplerActive)
  {
      // Voice::velocity is normalised 0..1 (see VoicePool::startVoice);
@@ -1238,15 +1240,46 @@ void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<fl
      if (v.midiNote < selectedZone->lowKey || v.midiNote > selectedZone->highKey
          || vel127 < selectedZone->lowVelocity || vel127 > selectedZone->highVelocity)
          continue;
- }
- else if (v.sliceIdx != data.sliceIndex)
- {
-     continue;
- }
 
- const float rawPos = vp.voicePositions[i].load (std::memory_order_relaxed);
- float xn = (rawPos - (float) data.startSample) / (float) totalRange;
- xn = juce::jlimit (0.0f, 1.0f, xn);
+     // rawPos below is an absolute sample index into processor.sampleData2 —
+     // the pre-rendered, per-note capture buffer SoundFontLoader.cpp builds
+     // for MULTISAMPLER (runJobSfizz(): one freshly-rendered, silence-trimmed
+     // segment per note, concatenated into one buffer). That has NO
+     // relationship to data.startSample/data.endSample, which describe
+     // positions in the *original* zone sample file (decoded separately, into
+     // multisamplerZoneSampleData, purely so this display has a waveform/
+     // peaks to draw) — dividing rawPos by that range compared two
+     // completely different timelines and left the line pinned to whichever
+     // edge the clamp below landed on instead of ever visibly tracking.
+     // v.sliceIdx (set from sliceManager2.midiNoteToSlice() at voice start —
+     // see PluginProcessor.cpp's processMidi2 note-on handling) identifies
+     // which rendered segment this voice is actually playing, in
+     // sampleData2's own coordinate space — the same one rawPos is in — even
+     // though that index has no relationship to multisamplerZoneIndex (see
+     // this function's own comment above on why key/velocity matching is
+     // used instead of index matching in the first place).
+     auto& sm2 = processor.sliceManager2;
+     if (v.sliceIdx < 0 || v.sliceIdx >= sm2.getNumSlices())
+         continue;
+
+     const int segStart = sm2.getSlice (v.sliceIdx).startSample;
+     const int segEnd   = (v.sliceIdx + 1 < sm2.getNumSlices())
+                               ? sm2.getSlice (v.sliceIdx + 1).startSample
+                               : processor.sampleData2.getNumFrames();
+     const int segRange = segEnd - segStart;
+     if (segRange <= 0) continue;
+
+     const float rawPos = vp.voicePositions[i].load (std::memory_order_relaxed);
+     xn = juce::jlimit (0.0f, 1.0f, (rawPos - (float) segStart) / (float) segRange);
+ }
+ else
+ {
+     if (v.sliceIdx != data.sliceIndex)
+         continue;
+
+     const float rawPos = vp.voicePositions[i].load (std::memory_order_relaxed);
+     xn = juce::jlimit (0.0f, 1.0f, (rawPos - (float) data.startSample) / (float) totalRange);
+ }
 
  const float x = area.getX() + xn * area.getWidth();
 
