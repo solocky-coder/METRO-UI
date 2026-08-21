@@ -7,7 +7,10 @@ class DysektProcessor;
 
 /** Second LCD panel: renders the selected slice waveform with an interactive
  * ADSR envelope overlay. Each envelope node is a draggable handle; moving
- * it updates the corresponding parameter via apvts in real time.
+ * it updates the corresponding parameter — via apvts/sliceManager Commands
+ * in Slicer/SFZ-PLAYER mode, or via onMultisamplerZoneParamEdited straight
+ * into the selected SampleZone in MULTISAMPLER mode (see setMultisamplerSource
+ * and commitNodes()'s multisamplerActive branch).
  *
  * Node layout:
  * P0 (fixed) — silence at slice start
@@ -38,10 +41,24 @@ public:
     /** Called by PluginEditor whenever MULTISAMPLER's open/active state or
         its selected zone changes — mirrors SliceLcdDisplay::setMultisamplerSource.
         Shows a real waveform + envelope-shape preview for the selected
-        SampleZone instead of going blank. Read-only: dragging the envelope
-        nodes is disabled in this mode (see mouseDown), since there's no
-        write path from here into SampleZone yet. */
+        SampleZone. Dragging the envelope nodes writes back through
+        onMultisamplerZoneParamEdited (see below) — same field ids and same
+        MultisamplerEditor::applySliceControlBarFieldEdit() write path the
+        SCB's own numeric ADSR cells use, just driven by node drags here
+        instead of typed/dragged cell values there. */
     void setMultisamplerSource (bool active, const MultisamplerInstrument* instrument, int selectedZoneIndex);
+
+    /** Fired on every ADSR node drag frame while multisamplerActive (see
+        commitNodes()), same cadence as the non-MULTISAMPLER path's live
+        per-slice Command push. `field` is one of SliceControlBar::
+        ZoneAttack/ZoneDecay/ZoneSustain/ZoneRelease (SfzZoneField); `value`
+        is in that field's native units (seconds for Attack/Decay/Release,
+        0..1 for Sustain) — same convention applySliceControlBarFieldEdit
+        already expects from the SCB's own onSfzZoneParamEdited. Left
+        unbound (no-op) outside MULTISAMPLER — the sliceManager/
+        sliceManager2 Command path handles Slicer/SFZ-PLAYER itself and
+        never touches this callback. */
+    std::function<void (int zoneIndex, int field, float value)> onMultisamplerZoneParamEdited;
 
     /** Suggested height in pixels (un-scaled) — matches SliceLcdDisplay. */
     static constexpr int kPreferredHeight = 136;

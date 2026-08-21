@@ -691,6 +691,23 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
         case SliceControlBar::ZonePan:     z.pan          = value; break;
         case SliceControlBar::ZoneVolume:  z.gainDb       = value; break;
         case SliceControlBar::ZoneRelease: z.releaseSeconds = value; break;
+        // Phase 4 fields (ATTACK/DECAY/SUSTAIN/CUTOFF/RESONANCE/GROUP) were
+        // already being read out into the SCB row and its draggable cells
+        // (see PluginEditor.cpp's onZoneSelectionOrEditChanged and
+        // SliceControlBar::applySfzZoneDrag's own switch), but this switch
+        // never grew matching cases — so every drag on those six SCB cells,
+        // and now every drag on a SliceWaveformLcd ADSR node too (see
+        // commitNodes()'s multisamplerActive branch, which reuses these
+        // same SfzZoneField ids), silently hit `default: return;` below and
+        // never reached the actual SampleZone. Ranges match
+        // SliceControlBar::applySfzZoneDrag's own clamps for the same
+        // fields, so a value that was valid there is valid here too.
+        case SliceControlBar::ZoneAttack:    z.attackSeconds  = juce::jlimit (0.0f, 1.0f, value); break;
+        case SliceControlBar::ZoneDecay:     z.decaySeconds   = juce::jlimit (0.0f, 5.0f, value); break;
+        case SliceControlBar::ZoneSustain:   z.sustainLevel   = juce::jlimit (0.0f, 1.0f, value); break;
+        case SliceControlBar::ZoneCutoff:    z.filterCutoffHz = juce::jlimit (20.0f, 20000.0f, value); break;
+        case SliceControlBar::ZoneResonance: z.filterResonance = juce::jlimit (0.0f, 1.0f, value); break;
+        case SliceControlBar::ZoneGroup:     z.group           = juce::jlimit (0, 999, juce::roundToInt (value)); break;
         case SliceControlBar::ZoneLoop:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 

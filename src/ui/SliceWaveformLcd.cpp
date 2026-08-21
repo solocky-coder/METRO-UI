@@ -1,5 +1,6 @@
 #include "SliceWaveformLcd.h"
 #include "DysektLookAndFeel.h"
+#include "SliceControlBar.h"
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 #include "../audio/Slice.h"
@@ -380,6 +381,52 @@ void SliceWaveformLcd::commitNodes()
     const float sustainPc = juce::jlimit (0.0f, 100.0f, (1.0f - env.sy) * 100.0f);
     const float releaseMs = juce::jlimit (0.0f, kViewMs, rRatio * rRatio * kViewMs);
 
+    if (multisamplerActive)
+    {
+        // MULTISAMPLER has no sliceManager/sliceManager2 slice behind the
+        // selected zone to push a Command at (see this file's header
+        // comment) — write straight into the SampleZone instead, through
+        // the same onSfzZoneParamEdited -> applySliceControlBarFieldEdit
+        // path the SCB's own numeric ADSR cells use. Field ids and native
+        // units (seconds for A/D/R, 0..1 for S) match that path exactly, so
+        // MultisamplerEditor doesn't need to know these values came from a
+        // node drag instead of a typed/dragged cell.
+        if (onMultisamplerZoneParamEdited && multisamplerZoneIndex >= 0)
+        {
+            switch (dragRole)
+            {
+                case NodeRole::Attack:
+                    onMultisamplerZoneParamEdited (multisamplerZoneIndex, SliceControlBar::ZoneAttack,  attackMs  / 1000.0f);
+                    break;
+                case NodeRole::Decay:
+                    onMultisamplerZoneParamEdited (multisamplerZoneIndex, SliceControlBar::ZoneDecay,   decayMs   / 1000.0f);
+                    break;
+                case NodeRole::Sustain:
+                    onMultisamplerZoneParamEdited (multisamplerZoneIndex, SliceControlBar::ZoneSustain, sustainPc / 100.0f);
+                    break;
+                case NodeRole::Release:
+                    onMultisamplerZoneParamEdited (multisamplerZoneIndex, SliceControlBar::ZoneRelease, releaseMs / 1000.0f);
+                    break;
+                default: break;
+            }
+        }
+
+        // Same guard/rebuild-deferral convention as the sliceManager path
+        // below — applySliceControlBarFieldEdit() calls
+        // refreshInspectorFromSelection() synchronously, which re-enters via
+        // PluginEditor's onZoneSelectionOrEditChanged straight back into
+        // setMultisamplerSource() (harmless — see that method; it only
+        // touches multisamplerInstrument/multisamplerZoneIndex/the rebuild
+        // flags, never dragRole/env/envNodes, so it can't disturb the drag
+        // in progress). That reentrant call already resets lastEnvSnapVer,
+        // so setting it again here is just making the "next repaintLcd()
+        // rebuilds from the model" contract explicit rather than relying on
+        // the reentrancy to have happened.
+        postCommitGuard = 6;
+        lastEnvSnapVer = -1;
+        return;
+    }
+
     // Read the lock state for the selected slice so we can decide whether to
     // write per-slice or global APVTS — mirroring SliceControlBar::mouseDrag
     // exactly.  Unlocked ADSR fields only update the global APVTS default
@@ -505,19 +552,17 @@ void SliceWaveformLcd::mouseMove (const juce::MouseEvent& e)
 
 void SliceWaveformLcd::mouseDown (const juce::MouseEvent& e)
 {
- // MULTISAMPLER zones have no write path from this display yet (see
- // buildDisplayData()'s MULTISAMPLER branch) — dragging a node or toggling
- // a lock here would push a Command into sliceManager/sliceManager2, which
- // would silently edit whichever slice happens to share this index there
- // instead of the zone actually being shown. Read-only until a real
- // SampleZone envelope-edit path exists.
- if (multisamplerActive) return;
-
  const NodeRole hit = hitTest (e.position);
 
  if (e.mods.isRightButtonDown())
  {
-  // Right-click on a node: toggle that ADSR field's lock for the selected slice
+  // Right-click on a node: toggle that ADSR field's lock for the selected slice.
+  // Per-field locking (lockMask) is a sliceManager/sliceManager2 concept —
+  // SampleZone has no lock bits of its own, so there's nothing for a
+  // MULTISAMPLER zone to toggle here. Left-click-drag (below) is the only
+  // interaction MULTISAMPLER supports on this display.
+  if (multisamplerActive) return;
+
  uint32_t bit = 0;
  if      (hit == NodeRole::Attack)  bit = kLockAttack;
  else if (hit == NodeRole::Decay)   bit = kLockDecay;
@@ -613,6 +658,9 @@ void SliceWaveformLcd::mouseDrag (const juce::MouseEvent& e)
  // ═══════════════════════════════════════════════════════════════════════════
  // BUG FIX: Block dragging locked ADSR nodes — check slice's lockMask
  // ═══════════════════════════════════════════════════════════════════════════
+ // No lockMask equivalent exists on SampleZone — MULTISAMPLER zones are
+ // never lock-blocked here, matching mouseDown's right-click guard above.
+ if (! multisamplerActive)
  {
      auto& sm3 = isSfzPlayer2Mode() ? processor.sliceManager2 : processor.sliceManager;
      const int sel = sm3.selectedSlice.load (std::memory_order_relaxed);

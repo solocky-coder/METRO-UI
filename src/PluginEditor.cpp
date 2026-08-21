@@ -126,6 +126,14 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
     // see MultisamplerEditor::applySliceControlBarFieldEdit's doc comment.
     multisamplerEditor.applySliceControlBarFieldEdit (rowIndex, field, value);
 };
+sliceWaveformLcd.onMultisamplerZoneParamEdited = [this] (int zoneIndex, int field, float value)
+{
+    // ADSR-node drag on the waveform display's envelope overlay, routed
+    // through the exact same write path as sliceControlBar.onSfzZoneParamEdited
+    // just above — see SliceWaveformLcd::commitNodes()'s multisamplerActive
+    // branch for where this fires from.
+    multisamplerEditor.applySliceControlBarFieldEdit (zoneIndex, field, value);
+};
 
  addChildComponent (multisamplerEditor); // hidden until the MULTISAMPLER tab (uiMode == 1) is active
  multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
