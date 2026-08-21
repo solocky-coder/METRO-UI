@@ -694,11 +694,29 @@ void DysektEditor::syncMultisamplerDisplay()
     // map). See this method's header doc comment for why it's safe to let
     // this reach the SCB summary even though that's also the field-edit
     // target.
+    //
+    // If neither applies (nothing hovered, nothing selected — e.g. right
+    // after opening MULTISAMPLER, or after the selection was cleared) fall
+    // back to a sensible default zone instead of going blank: the last zone
+    // in the instrument's zone list, matching the same z-order convention
+    // ZoneMapView's cachedRects already uses (instrument order, last = front
+    // = "topmost"). The LCDs/SCB should only go genuinely blank once the
+    // instrument has zero zones at all.
     int zone = -1;
     if (multiActive)
     {
-        const int hovered = multisamplerEditor.getHoveredZoneIndex();
-        zone = (hovered >= 0) ? hovered : multisamplerEditor.getSelectedZoneIndex();
+        const int hovered  = multisamplerEditor.getHoveredZoneIndex();
+        const int selected = multisamplerEditor.getSelectedZoneIndex();
+        if (hovered >= 0)
+            zone = hovered;
+        else if (selected >= 0)
+            zone = selected;
+        else
+        {
+            const auto& zonesForDefault = multisamplerEditor.getInstrument().zones;
+            if (! zonesForDefault.empty())
+                zone = (int) zonesForDefault.size() - 1;
+        }
     }
 
     sliceLcd.setMultisamplerSource (multiActive, instr, zone);

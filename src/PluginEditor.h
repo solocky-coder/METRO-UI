@@ -164,8 +164,13 @@ private:
     /// this resync back to the real selection) — see ZoneMapView::mouseExit
     /// and MultisamplerEditor::onZoneHoverChanged's doc comment. So an edit
     /// can never land while a hover preview from a different zone is still
-    /// showing. Called from resized() (every layout pass, self-correcting),
-    /// onZoneSelectionOrEditChanged, and onZoneHoverChanged.
+    /// showing. If neither hover nor selection resolves to a zone (nothing
+    /// hovered, nothing selected), falls back to the last zone in the
+    /// instrument's zone list — same z-order convention as "topmost" in
+    /// ZoneMapView's cachedRects — so the LCDs/SCB only go blank once the
+    /// instrument truly has zero zones. Called from resized() (every layout
+    /// pass, self-correcting), onZoneSelectionOrEditChanged, and
+    /// onZoneHoverChanged.
     void syncMultisamplerDisplay();
 
     bool iconNeedsApplying = true;   // set icon once peer is available
