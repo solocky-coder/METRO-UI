@@ -352,13 +352,16 @@ void AddZoneTrimOverlay::paint (juce::Graphics& g)
     g.drawVerticalLine (x1, (float) wave.getY(), (float) wave.getBottom());
     g.drawVerticalLine (x2, (float) wave.getY(), (float) wave.getBottom());
 
-    juce::Path inTri;
-    inTri.addTriangle ((float) x1, (float) wave.getY(), (float) x1 + 10.0f, (float) wave.getY(), (float) x1, (float) wave.getY() + 10.0f);
-    g.fillPath (inTri);
-
-    juce::Path outTri;
-    outTri.addTriangle ((float) x2, (float) wave.getY(), (float) x2 - 10.0f, (float) wave.getY(), (float) x2, (float) wave.getY() + 10.0f);
-    g.fillPath (outTri);
+    // Flat metro tab handles — square accent tile with a two-bar grip cut
+    // out in the waveform background colour, rather than the previous
+    // pointed triangle flags (the only skeuomorphic shape in this overlay;
+    // every other draggable/interactive element in the app — zone tiles,
+    // transport buttons, LCD sliders — is a flat square-cornered tile).
+    // IN's tab sits to the right of its line (grabbing rightward, toward
+    // the kept audio); OUT's sits to the left, mirroring that same
+    // "toward the kept region" orientation.
+    drawTrimHandleTab (g, x1, wave.getY(), true);
+    drawTrimHandleTab (g, x2, wave.getY(), false);
 
     // ── Readout ────────────────────────────────────────────────────────
     const auto duration = trimEnd - trimStart;
@@ -367,6 +370,26 @@ void AddZoneTrimOverlay::paint (juce::Graphics& g)
         + "   OUT " + juce::String (trimEnd) + " (" + formatTime (trimEnd) + ")"
         + "   LENGTH " + juce::String (duration) + " frames",
         juce::dontSendNotification);
+}
+
+void AddZoneTrimOverlay::drawTrimHandleTab (juce::Graphics& g, int lineX, int topY, bool tabOnRight)
+{
+    const auto& T = getTheme();
+
+    constexpr int tabW = 16;
+    constexpr int tabH = 14;
+    const int tabX = tabOnRight ? lineX : lineX - tabW;
+
+    g.setColour (T.accent);
+    g.fillRect (tabX, topY, tabW, tabH);
+
+    // Two-bar grip, cut out in the waveform's own background colour so it
+    // reads as a notch in the tab rather than a separate drawn element.
+    g.setColour (T.waveformBg);
+    const int gripY = topY + 4;
+    const int gripH = tabH - 8;
+    g.fillRect (tabX + tabW / 2 - 3, gripY, 2, gripH);
+    g.fillRect (tabX + tabW / 2 + 1, gripY, 2, gripH);
 }
 
 // ── Mouse handling ───────────────────────────────────────────────────────

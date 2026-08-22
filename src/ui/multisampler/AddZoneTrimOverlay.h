@@ -87,6 +87,10 @@ private:
 
     void fire (bool confirmed);
     void resetTrim();
+    /** Flat metro-style drag handle: a square accent tab at the top of the
+        IN/OUT line with a two-bar grip cut out in the waveform background
+        colour — see paint()'s call site for why this replaced a triangle. */
+    void drawTrimHandleTab (juce::Graphics& g, int lineX, int topY, bool tabOnRight);
     juce::Rectangle<int> dialogBox() const;
     juce::Rectangle<int> waveformArea() const;
     int64_t pixelToFrame (int px) const;

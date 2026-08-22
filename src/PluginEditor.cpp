@@ -2191,8 +2191,12 @@ void DysektEditor::timerCallback()
  auto snap = processor.sampleData.getSnapshot();
  if (snap != nullptr && snap->filePath == trimSession->file.getFullPathName())
  {
- // Trim mode requires the waveform view — auto-switch if in Pad Grid mode.
- if (uiMode != 0 && uiMode != 1)
+ // Trim mode requires the Slicer's waveform view specifically — uiMode 1 is
+ // MULTISAMPLER now (zoneMapView, no waveform/trim of its own), not the old
+ // second-Slicer SFZ-PLAYER instance this check used to also allow through.
+ // Auto-switch away from *any* other tab, including Pad Grid, so the trim
+ // bar can never surface over MULTISAMPLER (or SF2-PLAYER).
+ if (uiMode != 0)
  setUiMode (0);
 
  trimSession->active = true;
