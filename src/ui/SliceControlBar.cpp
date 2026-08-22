@@ -954,10 +954,14 @@ void SliceControlBar::paint (juce::Graphics& g)
      // persist yet (Phase 4 / .metrokit isn't wired to plugin state)"
      // comment in PluginEditor.cpp. So ui.selectedSlice/numSlices below
      // are meaningless here (always -1/0), and the OUT/MIX cells further
-     // down read from a real ui.slices[idx] this mode doesn't have. Skip
-     // straight to the zone summary + toggle/SAVE buttons instead of
-     // falling into the Slicer-slice bailout below.
-     drawSfzZoneSummary (g, si (8), row1y, rightEdge - si (8), psCellH);
+     // down read from a real ui.slices[idx] this mode doesn't have.
+     //
+     // The zone summary readout itself now lives entirely in
+     // MultisamplerEditor's zoneLcd (MultisamplerZoneLcd) — see METRO-UI
+     // Multisampler Implementation Plan §8 step 7 — so the SCB has no
+     // MULTISAMPLER-facing display role left. Skip straight to the
+     // toggle/SAVE buttons instead of falling into the Slicer-slice
+     // bailout below.
      drawViewToggleButtons (g);
      return;
  }

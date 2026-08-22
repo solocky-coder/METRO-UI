@@ -24,6 +24,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ZoneMapView.h"
+#include "MultisamplerZoneLcd.h"
+#include "MultisamplerZoneField.h"
 #include "../AddZoneOverlay.h"
 #include "AddZoneTrimOverlay.h"
 #include "../KeysPanel.h"
@@ -122,16 +124,29 @@ public:
 
     /** -1 if zero or multiple zones are selected in the zone map; otherwise
         the index into getInstrument().zones for the single selected zone.
-        Lets PluginEditor drive the shared SliceControlBar (SCB) readout via
-        sliceControlBar.setSfzZoneSummary(), keyed off this index — see
-        onZoneSelectionOrEditChanged. */
+        Lets PluginEditor drive sliceLcd's and multisamplerWaveformLcd's
+        waveform displays, keyed off this index — see
+        onZoneSelectionOrEditChanged. The zone LCD's own readout (zoneLcd)
+        no longer goes through this index at all — see
+        getSelectedZoneCount()'s doc comment for why. */
     int getSelectedZoneIndex() const noexcept;
+
+    /** Number of zones currently selected in the zone map — 0, 1, or 2+.
+        Exists specifically so callers with their own "nothing selected" vs.
+        "multiple selected" fallback logic (PluginEditor::
+        syncMultisamplerDisplay, for its sliceLcd/multisamplerWaveformLcd
+        waveform displays) can tell those two states apart, since
+        getSelectedZoneIndex() collapses both to -1 by design — this was
+        the root cause of the old LCD/SCB desync during a multi-select. */
+    int getSelectedZoneCount() const noexcept;
 
     /** Fired whenever the selected zone (per getSelectedZoneIndex()) or its
         data changes — a selection click, a live drag, a drag commit, or a
-        SliceControlBar field edit applied via applySliceControlBarFieldEdit().
-        PluginEditor hooks this to push sliceControlBar.setSfzZoneSummary()/
-        clearSfzZoneSummary(). */
+        zoneLcd field edit applied via applyZoneFieldEdit(). PluginEditor
+        hooks this to keep sliceLcd's and multisamplerWaveformLcd's waveform
+        displays in sync (via getSelectedZoneIndex()/getSelectedZoneCount()/
+        getInstrument()); zoneLcd's own readout refreshes itself internally
+        via refreshZoneLcdDisplay() and doesn't need this callback at all. */
     std::function<void()> onZoneSelectionOrEditChanged;
 
     /** -1 if the cursor isn't currently over a zone in the zone map (or has
@@ -152,10 +167,26 @@ public:
 
     /** Applies one SliceControlBar field edit (see SliceControlBar::
         SfzZoneField) to the zone at `zoneIndex` (as returned by
-        getSelectedZoneIndex()). PluginEditor's
-        sliceControlBar.onSfzZoneParamEdited handler forwards here
-        unconditionally. No-op if zoneIndex is out of range. */
+        getSelectedZoneIndex()). The SCB itself no longer has any
+        MULTISAMPLER-facing role (zoneLcd replaced it — see
+        applyZoneFieldEdit() below), but multisamplerWaveformLcd's envelope-
+        node dragging still speaks this same SliceControlBar::SfzZoneField
+        vocabulary (Attack/Decay/Sustain/Release only) and still forwards
+        here unconditionally — see its onZoneParamEdited wiring in
+        PluginEditor.cpp. No-op if zoneIndex is out of range. */
     void applySliceControlBarFieldEdit (int zoneIndex, int field, float value);
+
+    /** Applies one zoneLcd field edit (see MultisamplerZoneField) to the
+        currently-editable zone (resolved by inspectedZoneId, not index —
+        see MultisamplerZoneLcd.h's onFieldEdited doc comment for why: the
+        LCD reports edits by field identity, not a vector index, so this is
+        the one place both the id resolution and the value clamping happen).
+        `isCommit` is false on every intermediate drag frame and true
+        exactly once at gesture end; only a commit marks dirty, schedules
+        the debounced engine sync, and fires onInstrumentChanged — matching
+        ZoneMapView's own onZoneEditing (live) vs. onZoneEditCommitted
+        (commit) split. No-op if nothing is currently selected/editable. */
+    void applyZoneFieldEdit (MultisamplerZoneField field, float value, bool isCommit);
 
     /** Fired after every committed model edit (drag-commit, inspector apply,
         import, New) — after the debounced resync has been scheduled, not
@@ -245,6 +276,18 @@ private:
 
     void refreshInspectorFromSelection();
 
+    /** Resolves what zoneLcd should currently show — hover preview, the
+        single selection, "multiple selected", or empty — directly from
+        zoneMapView.getSelectedZoneIds() and hoveredZoneId. This is the
+        replacement for the old headerZoneSummary text-building logic, and
+        the reason zoneLcd never has the -1-ambiguity bug the SCB fallback
+        used to have: getSelectedZoneIds().size() can distinguish "0
+        selected" from "2+ selected" directly, with no sentinel collapsing
+        them together. Called from refreshInspectorFromSelection() (selection
+        changed), the onZoneHovered lambda (hover changed), and
+        applyZoneFieldEdit() (the displayed zone's own data changed). */
+    void refreshZoneLcdDisplay();
+
     DysektProcessor& processor;
     MultisamplerInstrument instrument;
     bool dirty = false;
@@ -262,21 +305,18 @@ private:
     std::unique_ptr<AddZoneTrimOverlay>     zoneTrimOverlay;   // Add Zone step 1; owned only while open
     std::unique_ptr<AddZoneOverlay>         zoneAddOverlay;    // Add Zone step 2; owned only while open
 
-    // ── Header zone-summary readout ─────────────────────────────────────
-    // Same loKey/hiKey/root/pitch/pan/volume/release/loop info the shared
-    // SliceControlBar already shows for the selected zone (see
-    // SliceControlBar::drawSfzZoneSummary), mirrored here inline in this
-    // panel's own header so it's visible right where zones are being
-    // clicked/played, without needing to look down at the SCB row at the
-    // bottom of the whole plugin window. Replaces the old bottom "selection
-    // status" strip (a single-line filename/placeholder readout) that used
-    // to sit between the zone map and the piano-key ruler — that strip is
-    // gone, and ZoneMapView's own keyboard strip (kKeyboardStripPx) grew to
-    // absorb the vertical space it freed up instead. Read-only; per-zone
-    // *editing* still lives entirely in the SCB (see
-    // onZoneSelectionOrEditChanged/applySliceControlBarFieldEdit above),
-    // this is purely a convenience duplicate of the same data.
-    juce::Label headerZoneSummary;
+    // ── Zone LCD ─────────────────────────────────────────────────────────
+    // Replaces the old route where MULTISAMPLER zone data was mirrored
+    // read-only into the shared SliceControlBar (SCB) and edited through
+    // SliceControlBar::SfzZoneField. zoneLcd is both the display AND the
+    // edit surface for the selected zone's fields — live and editable in
+    // its own strip above the zone map — so the SCB has no MULTISAMPLER-
+    // facing role left at all (see METRO-UI Multisampler Implementation
+    // Plan §8 step 7). See MultisamplerZoneLcd.h for why it never retains
+    // a raw SampleZone pointer, and applyZoneFieldEdit()/
+    // refreshZoneLcdDisplay() above for how edits and display resolution
+    // are handled on this side.
+    MultisamplerZoneLcd zoneLcd;
     juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing/multiple selected
     juce::Uuid  hoveredZoneId = juce::Uuid::null();     // mirrors ZoneMapView::hoverZoneId; juce::Uuid::null() when the cursor isn't over a zone
 

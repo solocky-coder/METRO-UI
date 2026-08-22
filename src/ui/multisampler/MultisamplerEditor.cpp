@@ -35,6 +35,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         // bookkeeping but never touches inspectedZoneId/selection state,
         // matching ZoneMapView::onZoneHovered's own contract.
         hoveredZoneId = hoveredId;
+        refreshZoneLcdDisplay();   // hover takes priority in zoneLcd too
         if (onZoneHoverChanged) onZoneHoverChanged();
     };
     zoneMapView.onZoneEditing      = [this]
@@ -80,11 +81,13 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     addAndMakeVisible (newButton);
     newButton.onClick = [this] { newInstrumentClicked(); };
 
-    // ── Header zone-summary readout ─────────────────────────────────────
-    configureStaticLabel (headerZoneSummary, "Select a zone to edit");
-    headerZoneSummary.setFont (juce::FontOptions (11.5f));
-    headerZoneSummary.setJustificationType (juce::Justification::centred);
-    addAndMakeVisible (headerZoneSummary);
+    // ── Zone LCD ─────────────────────────────────────────────────────────
+    addAndMakeVisible (zoneLcd);
+    zoneLcd.onFieldEdited = [this] (MultisamplerZoneField field, float value, bool isCommit)
+    {
+        applyZoneFieldEdit (field, value, isCommit);
+    };
+    refreshZoneLcdDisplay();   // starts empty — nothing selected/hovered yet
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
 }
@@ -130,11 +133,11 @@ void MultisamplerEditor::resized()
     importButton.setBounds (header.removeFromRight (90));
     header.removeFromRight (4);
     addZoneButton.setBounds (header.removeFromRight (84));
-    header.removeFromLeft (10);   // gap after titleLabel
-    headerZoneSummary.setBounds (header);   // whatever's left between title and buttons
 
     r.removeFromTop (6);
+    zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
 
+    r.removeFromTop (6);
     zoneMapView.setBounds (r);
 }
 
@@ -588,6 +591,11 @@ int MultisamplerEditor::getHoveredZoneIndex() const noexcept
     return -1;
 }
 
+int MultisamplerEditor::getSelectedZoneCount() const noexcept
+{
+    return (int) zoneMapView.getSelectedZoneIds().size();
+}
+
 void MultisamplerEditor::refreshInspectorFromSelection()
 {
     const auto& selected = zoneMapView.getSelectedZoneIds();
@@ -602,42 +610,75 @@ void MultisamplerEditor::refreshInspectorFromSelection()
 
     inspectedZoneId = (zone != nullptr) ? zone->id : juce::Uuid::null();
 
+    // zoneLcd is now the sole display AND the sole edit surface for this
+    // data (see MultisamplerZoneLcd.h) — it renders its own "NO ZONE
+    // SELECTED" / "MULTIPLE ZONES SELECTED" / full-field-readout states
+    // directly from setZoneForDisplay()/clearZone()/setMultipleSelection(),
+    // so there is no separate text to build here any more.
+    refreshZoneLcdDisplay();
+
+    // PluginEditor reads getSelectedZoneIndex()/getSelectedZoneCount()/
+    // getInstrument() right after this fires to keep sliceLcd's and
+    // multisamplerWaveformLcd's waveform displays in sync — see this
+    // method's declaration comment and syncMultisamplerDisplay().
+    if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
+}
+
+void MultisamplerEditor::refreshZoneLcdDisplay()
+{
+    const auto& selectedIds = zoneMapView.getSelectedZoneIds();
+
+    // Hover takes priority over selection — same convention this used to
+    // follow indirectly via PluginEditor::syncMultisamplerDisplay's
+    // getHoveredZoneIndex()-before-getSelectedZoneIndex() fallback chain,
+    // now resolved directly here since this panel already owns both
+    // hoveredZoneId and the selection (zoneMapView.getSelectedZoneIds()).
+    const bool isPreview = hoveredZoneId != juce::Uuid::null();
+    juce::Uuid showId = hoveredZoneId;
+
+    if (! isPreview)
+    {
+        if (selectedIds.size() == 1)
+        {
+            showId = selectedIds.front();
+        }
+        else if (selectedIds.size() >= 2)
+        {
+            // Multiple zones selected, nothing hovered — show the
+            // "Multiple zones selected" state rather than freezing on
+            // whatever single zone was selected right before (the root
+            // cause of the old LCD/SCB desync: getSelectedZoneIndex()
+            // collapsed "0 selected" and "2+ selected" to the same -1
+            // sentinel, so a sticky-last-zone fallback couldn't tell them
+            // apart). getSelectedZoneIds().size() can't make that mistake.
+            zoneLcd.setMultipleSelection (true);
+            zoneLcd.setEditable (false);
+            return;
+        }
+        // else: selectedIds.empty() — showId stays juce::Uuid::null(),
+        // falls through to the clearZone() branch below.
+    }
+
+    const SampleZone* zone = nullptr;
+    int displayIndex = -1;
+    if (showId != juce::Uuid::null())
+    {
+        for (size_t i = 0; i < instrument.zones.size(); ++i)
+            if (instrument.zones[i].id == showId) { zone = &instrument.zones[i]; displayIndex = (int) i; break; }
+    }
+
     if (zone == nullptr)
     {
-        // Same wording as SliceControlBar::drawSfzZoneSummary's own empty
-        // state, so this header readout and the SCB's own row agree
-        // exactly when nothing (or more than one zone) is selected.
-        headerZoneSummary.setText (selected.empty() ? "Select a zone to edit" : "Multiple zones selected",
-                                    juce::dontSendNotification);
-    }
-    else
-    {
-        // Mirrors SliceControlBar::drawSfzZoneSummary()'s field set and
-        // formatting exactly (loKey/hiKey/ROOT/PITCH/PAN/VOLUME/RELEASE/
-        // LOOP) so this reads as the same information, not a shorthand
-        // version of it — see this label's declaration comment.
-        const auto note = [] (int n) { return UIHelpers::midiNoteToName (juce::jlimit (0, 127, n)); };
-        const juce::String panStr = zone->pan == 0.0f
-            ? "C" : (zone->pan < 0.0f ? "L" : "R") + juce::String (juce::roundToInt (std::abs (zone->pan) * 100.0f));
-
-        juce::String text = zone->sampleFile.getFileName().isNotEmpty()
-                                ? zone->sampleFile.getFileName() : juce::String ("(no sample)");
-        text << "   loKey " << note (zone->lowKey)
-             << "   hiKey " << note (zone->highKey)
-             << "   ROOT "  << (zone->rootKey >= 0 ? note (zone->rootKey) : juce::String ("--"))
-             << "   PITCH " << juce::roundToInt (zone->tuneCents) << "ct"
-             << "   PAN "   << panStr
-             << "   VOLUME " << juce::String (zone->gainDb, 1) << "dB"
-             << "   RELEASE " << juce::String (zone->releaseSeconds, 3) << "s"
-             << "   LOOP "  << (zone->loopMode != LoopMode::noLoop ? "ON" : "OFF");
-        headerZoneSummary.setText (text, juce::dontSendNotification);
+        zoneLcd.clearZone();
+        zoneLcd.setEditable (false);
+        return;
     }
 
-    // Drives the shared SliceControlBar — see this method's declaration
-    // comment. PluginEditor reads getSelectedZoneIndex()/getInstrument()
-    // right after this fires to build the SCB readout via
-    // sliceControlBar.setSfzZoneSummary().
-    if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
+    zoneLcd.setZoneForDisplay (zone, displayIndex, isPreview, /*isAuditioning*/ false);
+    // Editable only when the zone being shown IS the true single
+    // selection — never a hover preview, never part of a multi-selection
+    // (matches MultisamplerZoneLcd::setEditable's doc comment contract).
+    zoneLcd.setEditable (! isPreview && selectedIds.size() == 1);
 }
 
 void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field, float value)
@@ -690,4 +731,106 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
     scheduleEngineSync();
     if (onInstrumentChanged) onInstrumentChanged();
     refreshInspectorFromSelection();   // pushes the just-applied value back into SCB's own readout
+}
+
+void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float value, bool isCommit)
+{
+    // Resolved by id, not index — see this method's declaration comment.
+    // The only zone this can ever be editing is the true single selection
+    // (refreshZoneLcdDisplay() only ever calls zoneLcd.setEditable(true)
+    // for that case), and inspectedZoneId tracks exactly that zone.
+    if (inspectedZoneId == juce::Uuid::null())
+        return;
+
+    SampleZone* zonePtr = nullptr;
+    for (auto& z : instrument.zones)
+        if (z.id == inspectedZoneId) { zonePtr = &z; break; }
+    if (zonePtr == nullptr)
+        return;
+    auto& z = *zonePtr;
+
+    switch (field)
+    {
+        case MultisamplerZoneField::lowKey:
+            z.lowKey  = juce::jmin (z.highKey, juce::jlimit (0, 127, juce::roundToInt (value)));
+            break;
+        case MultisamplerZoneField::highKey:
+            z.highKey = juce::jmax (z.lowKey,  juce::jlimit (0, 127, juce::roundToInt (value)));
+            break;
+        case MultisamplerZoneField::rootKey:
+            z.rootKey = juce::jlimit (0, 127, juce::roundToInt (value));
+            break;
+        case MultisamplerZoneField::group:
+            z.group = juce::jmax (0, juce::roundToInt (value));
+            break;
+        case MultisamplerZoneField::tune:
+            // Matches SampleZone::tuneCents' own documented range.
+            z.tuneCents = juce::jlimit (-1200.0f, 1200.0f, value);
+            break;
+        case MultisamplerZoneField::pan:
+            // Matches SampleZone::pan's own documented range.
+            z.pan = juce::jlimit (-1.0f, 1.0f, value);
+            break;
+        case MultisamplerZoneField::gain:
+            z.gainDb = value;
+            break;
+        case MultisamplerZoneField::attack:
+            z.attackSeconds = juce::jmax (0.0f, value);
+            break;
+        case MultisamplerZoneField::decay:
+            z.decaySeconds = juce::jmax (0.0f, value);
+            break;
+        case MultisamplerZoneField::sustain:
+            // Matches SampleZone::sustainLevel's own documented 0..1 range.
+            z.sustainLevel = juce::jlimit (0.0f, 1.0f, value);
+            break;
+        case MultisamplerZoneField::release:
+            z.releaseSeconds = juce::jmax (0.0f, value);
+            break;
+        case MultisamplerZoneField::cutoff:
+            z.filterCutoffHz = juce::jlimit (20.0f, 20000.0f, value);
+            break;
+        case MultisamplerZoneField::resonance:
+            // Matches SampleZone::filterResonance's own documented 0..1 range.
+            z.filterResonance = juce::jlimit (0.0f, 1.0f, value);
+            break;
+        case MultisamplerZoneField::loopEnabled:
+            z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
+
+            // Root cause 2 fix (MULTISAMPLER), same as
+            // applySliceControlBarFieldEdit's identical branch above — see
+            // that comment for the full explanation. Kept in both places
+            // rather than factored out since the two callers resolve the
+            // target zone through different keys (id here, index there).
+            if (z.loopMode == LoopMode::loopContinuous && (z.loopStart < 0 || z.loopEnd < 0))
+            {
+                juce::AudioFormatManager fm;
+                fm.registerBasicFormats();
+                std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (z.sampleFile));
+                if (reader != nullptr && reader->lengthInSamples > 1)
+                {
+                    z.loopStart = 0;
+                    z.loopEnd   = reader->lengthInSamples;
+                }
+            }
+            break;
+    }
+
+    // Live-drag frames (isCommit == false) update the model so the zone map
+    // and LCD repaint with the live value, matching MultisamplerZoneLcd::
+    // applyDrag's own doc comment ("the next setZoneForDisplay() call...
+    // overwrites [the live snapshot] with the true value, so there's no
+    // lasting drift") — but must NOT mark a dirty engine-sync cycle for
+    // every intermediate frame. Same live-vs-commit split ZoneMapView's own
+    // onZoneEditing/onZoneEditCommitted pair already uses.
+    dirty = true;
+    zoneMapView.refresh();
+    if (isCommit)
+    {
+        scheduleEngineSync();
+        if (onInstrumentChanged) onInstrumentChanged();
+    }
+
+    refreshZoneLcdDisplay();
+    if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
 }
