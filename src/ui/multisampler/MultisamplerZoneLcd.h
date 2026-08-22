@@ -66,6 +66,13 @@ public:
         those and setEditable(false) alongside it. */
     void setEditable (bool shouldEdit);
 
+    /** Scales every font size this component draws with, so its text keeps
+        pace with the rest of the app's host-window-driven scaling (see
+        DysektEditor::resized()'s `sf`/`si()`). 1.0 = the design-time sizes
+        this file was authored with. MultisamplerEditor forwards its own
+        scale here — see MultisamplerEditor::setUiScale(). */
+    void setUiScale (float newScale) { uiScale = newScale; repaint(); }
+
     /** field/value/isCommit — isCommit is false on every intermediate drag
         frame and true exactly once at gesture end (mouse-up, double-click
         reset, or loop toggle). MultisamplerEditor owns clamping, dirty
@@ -78,6 +85,8 @@ public:
     static constexpr int kPreferredHeight = 76;
 
 private:
+    float uiScale = 1.0f;
+
     struct Snapshot
     {
         bool valid = false;

@@ -88,7 +88,20 @@ public:
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     bool keyPressed (const juce::KeyPress&) override;
 
+    /** Scales every font size this component draws with, so zone labels and
+        the velocity ruler keep pace with the rest of the app's host-window-
+        driven scaling (see DysektEditor::resized()'s `sf`/`si()`) instead of
+        staying pinned at design-time pixel sizes on a much larger window.
+        1.0 = the design-time sizes this file was authored with.
+        MultisamplerEditor forwards its own scale here — see
+        MultisamplerEditor::setUiScale(). Geometry (grid/keyboard layout) is
+        untouched — that already stretches proportionally via gridArea(); only
+        text sizing needed this. */
+    void setUiScale (float newScale) { uiScale = newScale; repaint(); }
+
 private:
+    float uiScale = 1.0f;
+
     enum class DragMode { none, move, resizeLeft, resizeRight, resizeTop, resizeBottom };
 
     struct ZoneRect

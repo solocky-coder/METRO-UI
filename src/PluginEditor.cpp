@@ -1736,7 +1736,14 @@ void DysektEditor::resized()
  if ((hasRealSample || multisamplerHasZones) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
-         const int scbH = si (kSliceCtrlH);
+         // MULTISAMPLER only ever shows a single SAVE button in this strip
+         // (no per-slice param cells — see SliceControlBar::
+         // drawViewToggleButtons' sfzMode branch), so give it a slim
+         // button-sized strip instead of the Slicer's full kSliceCtrlH —
+         // otherwise most of that height renders as unexplained dead space
+         // directly above ZoneMapView's keyboard, shortening it for no
+         // visual benefit.
+         const int scbH = (uiMode == 1) ? si (kMultisamplerScbH) : si (kSliceCtrlH);
          auto scbStrip = area.removeFromBottom (scbH);
          sliceControlBar.setBounds (kFX, scbStrip.getY(), kFW, scbH);
      }
@@ -1860,6 +1867,10 @@ void DysektEditor::resized()
     multisamplerEditor.setVisible (showMulti1);
     multisamplerEditor.setBounds (showMulti1 ? juce::Rectangle<int> (kFrameX, zbTop, kFrameW, zbHeight)
                                               : juce::Rectangle<int>());
+    // Keep ZoneMapView/MultisamplerZoneLcd's text sized in step with the
+    // rest of the app's host-window scaling — see MultisamplerEditor::
+    // setUiScale()'s doc comment.
+    multisamplerEditor.setUiScale (sf);
 
     sfzDropdown.setVisible (false);
     sfzDropdown.setBounds ({});

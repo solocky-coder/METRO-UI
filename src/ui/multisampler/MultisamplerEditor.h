@@ -45,6 +45,18 @@ public:
     void paint   (juce::Graphics&) override;
     void resized() override;
 
+    /** Forwards the app's current host-window scale factor (DysektEditor::
+        resized()'s `sf`) down to zoneLcd and zoneMapView, so their text
+        keeps pace with the rest of the UI instead of staying pinned at
+        design-time pixel sizes — see ZoneMapView::setUiScale() and
+        MultisamplerZoneLcd::setUiScale() for why they needed this. Cheap
+        to call every resized() — only repaints, no layout change. */
+    void setUiScale (float newScale)
+    {
+        zoneMapView.setUiScale (newScale);
+        zoneLcd.setUiScale (newScale);
+    }
+
     /** Replaces the instrument outright (e.g. loading a .metrokit — Phase 4).
         Triggers an immediate (non-debounced) engine resync by default. Pass
         syncEngine=false when the caller already knows the live engine is

@@ -685,7 +685,7 @@ void ZoneMapView::paint (juce::Graphics& g)
 
     // Velocity ruler.
     g.setColour (theme.foreground.withAlpha (0.5f));
-    g.setFont (juce::FontOptions (10.0f));
+    g.setFont (juce::FontOptions (10.0f * uiScale));
     for (int v = 127; v >= 1; v -= 32)
         g.drawText (juce::String (v), 0, (int) yForVelocity (v) - 7, kVelocityRulerPx - 3, 14,
                     juce::Justification::centredRight);
@@ -735,7 +735,7 @@ void ZoneMapView::paint (juce::Graphics& g)
     // pass, which was unreadable at 9.5px; and each label rectangle is
     // clamped inside g_area the same way the key cells are above, so the
     // row never spills past the grid's left/right edges either.
-    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    g.setFont (juce::FontOptions (11.0f * uiScale, juce::Font::bold));
     for (int key = 0; key <= 127; key += 12)
     {
         const float cx = xForKey (key);
@@ -785,13 +785,13 @@ void ZoneMapView::paint (juce::Graphics& g)
             auto textArea = r.bounds.toNearestInt().reduced (4, 2);
 
             g.setColour (juce::Colours::white.withAlpha (0.92f));
-            g.setFont (juce::FontOptions (11.0f, juce::Font::plain));
+            g.setFont (juce::FontOptions (11.0f * uiScale, juce::Font::plain));
             g.drawText (r.label, textArea.removeFromTop (14), juce::Justification::topLeft, true);
 
             if (textArea.getHeight() > 10)
             {
                 g.setColour (juce::Colours::white.withAlpha (0.68f));
-                g.setFont (juce::FontOptions (9.5f));
+                g.setFont (juce::FontOptions (9.5f * uiScale));
                 const auto rangeText = UIHelpers::midiNoteToName (r.lowKey) + "-" + UIHelpers::midiNoteToName (r.highKey)
                                         + "  v" + juce::String (r.lowVel) + "-" + juce::String (r.highVel);
                 g.drawText (rangeText, textArea, juce::Justification::topLeft, true);
@@ -816,7 +816,7 @@ void ZoneMapView::paint (juce::Graphics& g)
         if (r.missingSample)
         {
             g.setColour (juce::Colours::red.withAlpha (0.85f));
-            g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+            g.setFont (juce::FontOptions (10.0f * uiScale, juce::Font::bold));
             g.drawText ("!", r.bounds.toNearestInt(), juce::Justification::topLeft);
         }
     }
@@ -824,7 +824,7 @@ void ZoneMapView::paint (juce::Graphics& g)
     if (instrument == nullptr || instrument->zones.empty())
     {
         g.setColour (theme.foreground.withAlpha (0.4f));
-        g.setFont (juce::FontOptions (13.0f));
+        g.setFont (juce::FontOptions (13.0f * uiScale));
         g.drawText ("Drop samples here or import an SFZ to start mapping",
                     g_area, juce::Justification::centred);
     }

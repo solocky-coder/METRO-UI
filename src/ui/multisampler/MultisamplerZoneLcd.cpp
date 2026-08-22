@@ -234,7 +234,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     if (multipleSelected)
     {
         g.setColour (theme.foreground.withAlpha (0.55f));
-        g.setFont (DysektLookAndFeel::makeFont (12.0f, false));
+        g.setFont (DysektLookAndFeel::makeFont (12.0f * uiScale, false));
         g.drawText ("MULTIPLE ZONES SELECTED", bounds, juce::Justification::centred);
         return;
     }
@@ -242,7 +242,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     if (! snapshot.valid)
     {
         g.setColour (theme.foreground.withAlpha (0.55f));
-        g.setFont (DysektLookAndFeel::makeFont (12.0f, false));
+        g.setFont (DysektLookAndFeel::makeFont (12.0f * uiScale, false));
         g.drawText ("NO ZONE SELECTED", bounds, juce::Justification::centred);
         return;
     }
@@ -252,20 +252,20 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     // Title row — name, index, preview/auditioning badges.
     auto titleRow = content.removeFromTop (18);
     g.setColour (theme.foreground);
-    g.setFont (DysektLookAndFeel::makeFont (11.5f, true));
+    g.setFont (DysektLookAndFeel::makeFont (11.5f * uiScale, true));
     juce::String title = "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
     g.drawText (title, titleRow, juce::Justification::centredLeft);
 
     if (snapshot.isPreview)
     {
         g.setColour (theme.accent.withAlpha (0.8f));
-        g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
+        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
         g.drawText ("PREVIEW", titleRow, juce::Justification::centredRight);
     }
     else if (snapshot.isAuditioning)
     {
         g.setColour (theme.accent);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
+        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
         g.drawText ("AUDITIONING", titleRow, juce::Justification::centredRight);
     }
 
@@ -320,12 +320,12 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
     }
 
     g.setColour (theme.foreground.withAlpha (editable ? 0.55f : 0.32f));
-    g.setFont (DysektLookAndFeel::makeFont (8.5f, false));
+    g.setFont (DysektLookAndFeel::makeFont (8.5f * uiScale, false));
     auto labelRow = r.removeFromTop (r.getHeight() / 2);
     g.drawText (labelFor (field), labelRow, juce::Justification::centredLeft);
 
     g.setColour (editable ? theme.foreground : theme.foreground.withAlpha (0.6f));
-    g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
+    g.setFont (DysektLookAndFeel::makeFont (11.0f * uiScale, true));
     g.drawText (formatFieldValue (field), r, juce::Justification::centredLeft);
 }
 
