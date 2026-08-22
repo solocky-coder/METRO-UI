@@ -204,6 +204,7 @@ target_sources(Dysekt PRIVATE
     src/ui/ArchiveIntegration.cpp
     src/ui/GlobalEqPanel.cpp
     src/ui/multisampler/MultisamplerEditor.cpp
+    src/ui/multisampler/MultisamplerZoneLcd.cpp
     src/ui/multisampler/AddZoneTrimOverlay.cpp
     src/ui/multisampler/ZoneMapView.cpp
     src/audio/multisampler/MultisamplerInstrument.cpp
@@ -314,6 +315,7 @@ target_sources(DysektStandalone PRIVATE
     src/ui/ArchiveIntegration.cpp
     src/ui/GlobalEqPanel.cpp
     src/ui/multisampler/MultisamplerEditor.cpp
+    src/ui/multisampler/MultisamplerZoneLcd.cpp
     src/ui/multisampler/AddZoneTrimOverlay.cpp
     src/ui/multisampler/ZoneMapView.cpp
     src/audio/multisampler/MultisamplerInstrument.cpp
