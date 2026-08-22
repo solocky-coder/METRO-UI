@@ -33,6 +33,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  sliceWaveformLcd (p),
  sf2Lcd (p),
  sf2WaveformLcd (p),
+ multisamplerWaveformLcd (p),
  sliceLane (p),
  waveformView (p),
  waveformOverview (p),
@@ -59,8 +60,14 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  addAndMakeVisible (sliceWaveformLcd);
  addAndMakeVisible (sf2Lcd);
  addAndMakeVisible (sf2WaveformLcd);
+ addAndMakeVisible (multisamplerWaveformLcd);
  sf2Lcd.setVisible (false);
  sf2WaveformLcd.setVisible (false);
+ multisamplerWaveformLcd.setVisible (false);   // shown only while uiMode == 1 (MULTISAMPLER)
+ multisamplerWaveformLcd.onZoneParamEdited = [this] (int zoneIndex, int field, float value)
+ {
+     multisamplerEditor.applySliceControlBarFieldEdit (zoneIndex, field, value);
+ };
  if (auto* cf = headerBar.getControlFrame())
  addAndMakeVisible (*cf);
 
@@ -737,7 +744,10 @@ void DysektEditor::syncMultisamplerDisplay()
     }
 
     sliceLcd.setMultisamplerSource (multiActive, instr, zone);
-    sliceWaveformLcd.setMultisamplerSource (multiActive, instr, zone);
+    if (multiActive)
+        multisamplerWaveformLcd.setSource (instr, zone);
+    else
+        multisamplerWaveformLcd.clearSource();
 
     if (! multiActive)
         return;
@@ -1520,10 +1530,12 @@ void DysektEditor::resized()
  // onZoneSelectionOrEditChanged's hookup near the constructor) instead of
  // going blank while MULTISAMPLER is open.
  const bool sf2Mode = (uiMode == 2);
+ const bool multiMode = isMultisamplerTabActive();
  sliceLcd.setVisible (! sf2Mode);
- sliceWaveformLcd.setVisible (! sf2Mode);
+ sliceWaveformLcd.setVisible (! sf2Mode && ! multiMode);
  sf2Lcd.setVisible (sf2Mode);
  sf2WaveformLcd.setVisible (sf2Mode);
+ multisamplerWaveformLcd.setVisible (multiMode);
 
  // Keep both LCDs' and the SCB summary's MULTISAMPLER read-only view in
  // sync with the tab's active state and current selection/hover every
@@ -1558,6 +1570,7 @@ void DysektEditor::resized()
  topRow.removeFromLeft (si (kMargin));
  sliceWaveformLcd.setBounds (topRow);
  sf2WaveformLcd.setBounds (topRow);
+ multisamplerWaveformLcd.setBounds (topRow);
 
  auto actionArea = area.removeFromTop (si (kActionH));
  const int kFX = area.getX() + si (kMargin);
@@ -2244,6 +2257,7 @@ void DysektEditor::timerCallback()
  sliceWaveformLcd.repaintLcd();
  sf2Lcd.repaintLcd();
  sf2WaveformLcd.repaintLcd();
+ multisamplerWaveformLcd.repaintLcd();
  {
  auto timerSnap = processor.sampleData.getSnapshot();
  const bool hasSample = (timerSnap != nullptr
@@ -2490,6 +2504,7 @@ void DysektEditor::loadUserSettings()
  waveformOverview.setWaveformMode (waveformMode);
  sf2WaveformLcd.setWaveformMode (waveformMode);
  sliceWaveformLcd.setWaveformMode (waveformMode);
+ multisamplerWaveformLcd.setWaveformMode (waveformMode);
  padGridView.setWaveformMode (waveformMode);
  headerBar.dualFrame().setPadGridActive (false);
  headerBar.setWaveMode (waveformMode);

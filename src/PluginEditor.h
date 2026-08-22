@@ -28,6 +28,7 @@
 #include "ui/SliceWaveformLcd.h"
 #include "ui/Sf2LcdDisplay.h"
 #include "ui/Sf2WaveformLcd.h"
+#include "ui/MultisamplerWaveformLcd.h"
 #include "ui/WaveformOverview.h"
 #include "ui/Sf2InstrumentWorkspace.h"
 #include "ui/SfzPlayerDropdownPanel.h"
@@ -263,6 +264,7 @@ private:
     SliceWaveformLcd sliceWaveformLcd;
     Sf2LcdDisplay    sf2Lcd;
     Sf2WaveformLcd   sf2WaveformLcd;
+    MultisamplerWaveformLcd multisamplerWaveformLcd; // MULTISAMPLER's own dedicated right LCD (uiMode == 1)
 
     SliceLane        sliceLane;
     WaveformView     waveformView;

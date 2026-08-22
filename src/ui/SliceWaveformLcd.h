@@ -1,16 +1,14 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "../audio/multisampler/MultisamplerInstrument.h"
-#include "../audio/SampleData.h"
 
 class DysektProcessor;
 
 /** Second LCD panel: renders the selected slice waveform with an interactive
  * ADSR envelope overlay. Each envelope node is a draggable handle; moving
- * it updates the corresponding parameter — via apvts/sliceManager Commands
- * in Slicer/SFZ-PLAYER mode, or via onMultisamplerZoneParamEdited straight
- * into the selected SampleZone in MULTISAMPLER mode (see setMultisamplerSource
- * and commitNodes()'s multisamplerActive branch).
+ * it updates the corresponding parameter via apvts/sliceManager Commands.
+ * Covers the Slicer and SFZ-PLAYER tabs only — MULTISAMPLER has its own
+ * dedicated MultisamplerWaveformLcd component (see that class's header
+ * comment for why the two were split apart).
  *
  * Node layout:
  * P0 (fixed) — silence at slice start
@@ -37,28 +35,6 @@ public:
 
     /** Call periodically from the UI timer to refresh the display. */
     void repaintLcd();
-
-    /** Called by PluginEditor whenever MULTISAMPLER's open/active state or
-        its selected zone changes — mirrors SliceLcdDisplay::setMultisamplerSource.
-        Shows a real waveform + envelope-shape preview for the selected
-        SampleZone. Dragging the envelope nodes writes back through
-        onMultisamplerZoneParamEdited (see below) — same field ids and same
-        MultisamplerEditor::applySliceControlBarFieldEdit() write path the
-        SCB's own numeric ADSR cells use, just driven by node drags here
-        instead of typed/dragged cell values there. */
-    void setMultisamplerSource (bool active, const MultisamplerInstrument* instrument, int selectedZoneIndex);
-
-    /** Fired on every ADSR node drag frame while multisamplerActive (see
-        commitNodes()), same cadence as the non-MULTISAMPLER path's live
-        per-slice Command push. `field` is one of SliceControlBar::
-        ZoneAttack/ZoneDecay/ZoneSustain/ZoneRelease (SfzZoneField); `value`
-        is in that field's native units (seconds for Attack/Decay/Release,
-        0..1 for Sustain) — same convention applySliceControlBarFieldEdit
-        already expects from the SCB's own onSfzZoneParamEdited. Left
-        unbound (no-op) outside MULTISAMPLER — the sliceManager/
-        sliceManager2 Command path handles Slicer/SFZ-PLAYER itself and
-        never touches this callback. */
-    std::function<void (int zoneIndex, int field, float value)> onMultisamplerZoneParamEdited;
 
     /** Suggested height in pixels (un-scaled) — matches SliceLcdDisplay. */
     static constexpr int kPreferredHeight = 136;
@@ -179,20 +155,6 @@ private:
     static constexpr int   kLeftPad       = 8;
     static constexpr float kNodeR         = 14.0f;
     static constexpr float kHitR          = 26.0f;
-
-    // ── MULTISAMPLER data source state ────────────────────────────────────────
-    bool multisamplerActive = false;
-    const MultisamplerInstrument* multisamplerInstrument = nullptr;
-    int multisamplerZoneIndex = -1;
-
-    // A SampleZone points at a file on disk, not a pre-decoded buffer the
-    // way sliceManager2's sampleData2 is — decode it into a real SampleData
-    // instance so the existing DysektProcessor::getWaveformPeakAtIn() peak
-    // read works unmodified. Only re-decoded when the shown zone's file
-    // path actually changes (cached by path), not on every paint.
-    SampleData  multisamplerZoneSampleData;
-    juce::File  multisamplerDecodedFile;
-    void        decodeMultisamplerZoneFile (const juce::File& f);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SliceWaveformLcd)
 };
