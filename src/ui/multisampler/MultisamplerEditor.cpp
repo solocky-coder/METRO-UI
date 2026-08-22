@@ -26,6 +26,26 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
 {
     instrument.name = "New Instrument";
 
+    // Restore whatever instrument was last persisted into plugin state
+    // (see setStateInformation()/getSavedMultisamplerInstrumentJson()).
+    // Without this, every fresh DysektEditor construction (project reload,
+    // plugin re-instantiation, even just closing/reopening the plugin
+    // window in some hosts) starts from an empty "New Instrument" — the
+    // zones a user built are still sitting in savedMultisamplerInstrumentJson
+    // on the processor, but nothing here ever reads them back, which is
+    // exactly what "multisampler produces no sound" looks like from the
+    // outside. isFreshLoad=true below re-runs performEngineSync() so the
+    // restored zones also reach sfzPlayer2/voicePool2 immediately, not just
+    // the model — a silent model-only restore would still produce no sound
+    // until the next edit happened to trigger a resync.
+    const auto savedJson = processor.getSavedMultisamplerInstrumentJson();
+    if (savedJson.isNotEmpty())
+    {
+        auto result = InstrumentSerializer::fromJson (savedJson);
+        if (result.success)
+            instrument = std::move (result.instrument);
+    }
+
     addAndMakeVisible (zoneMapView);
     zoneMapView.setInstrument (&instrument);
     zoneMapView.onSelectionChanged = [this] { refreshInspectorFromSelection(); };
@@ -87,6 +107,12 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     addAndMakeVisible (headerZoneSummary);
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
+
+    // Push the restored instrument (if any) into the live engine right away
+    // — see the restore block above. isFreshLoad=true so a full rebuild
+    // happens rather than the in-place-edit field-preserving path.
+    if (! instrument.zones.empty())
+        performEngineSync (true);
 }
 
 MultisamplerEditor::~MultisamplerEditor()
@@ -498,6 +524,15 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     // completion touches it only after hopping back via
     // MessageManager::callAsync below).
     const int myGen = ++engineSyncGeneration;
+
+    // Mirror the model into plugin state on every sync (not just on an
+    // explicit SAVE) so getStateInformation() always has the current
+    // instrument to write out — see the restore block in the constructor.
+    // instrument.json serialization is just building a text string (no file
+    // I/O, no audio-thread involvement), so this is cheap enough to do
+    // synchronously on the UI thread rather than threading it through the
+    // background export job below.
+    processor.setSavedMultisamplerInstrumentJson (InstrumentSerializer::toJson (instrument));
 
     // Cache-directory file, not a user-visible path — same convention as
     // other generated-preview files elsewhere in the codebase. Fixed name is
