@@ -119,59 +119,36 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      resized();
      repaint(); // clear waveform/overview areas vacated by the old view
  };
- sliceControlBar.onInstrumentSaveRequested = [this] { multisamplerEditor.saveInPlace(); };
-sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float value)
-{
-    // Same SCB, same field enum, MULTISAMPLER's native model underneath —
-    // see MultisamplerEditor::applySliceControlBarFieldEdit's doc comment.
-    multisamplerEditor.applySliceControlBarFieldEdit (rowIndex, field, value);
-};
+ // SCB no longer has any MULTISAMPLER role — no onInstrumentSaveRequested/
+ // onSfzZoneParamEdited forwarding here any more. SAVE and per-zone field
+ // editing are now entirely internal to MultisamplerEditor (its own header
+ // SAVE button and its own zoneLcd) — see implementation plan §7/§8.
 
  addChildComponent (multisamplerEditor); // hidden until the MULTISAMPLER tab (uiMode == 1) is active
  multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
  multisamplerEditor.onInstrumentChanged = [this]
  {
      // Keep the normal SFZ-PLAYER view's live keyboard highlighting
-     // (sfzPlayerDropdown.keysPanel) in sync with MULTISAMPLER edits, and
-     // reflect MULTISAMPLER's dirty state on the SCB's SAVE button.
+     // (sfzPlayerDropdown.keysPanel) in sync with MULTISAMPLER edits.
+     // MULTISAMPLER's own dirty state now shows entirely on its own header
+     // (saveButton) — see MultisamplerEditor::refreshInspectorFromSelection
+     // — so there's no SCB mirror to push here any more.
      const auto keyzones = MultisamplerEditor::toKeyzones (multisamplerEditor.getInstrument());
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
-     sliceControlBar.setInstrumentDirty (multisamplerEditor.isDirty());
 
-     // resized()'s SCB-visibility gate depends on whether the instrument
-     // currently has any zones at all (see resized()'s multisamplerHasZones
-     // comment) — an edit here can be exactly the add/import/delete that
-     // flips that from zero to nonzero or back, so re-run layout rather than
-     // waiting for the next window resize to pick it up.
-     resized();
-
-     // Nothing to persist yet (Phase 4 / .metrokit isn't wired to plugin
-     // state), but repaint so the panel's own dirty-dot indicator and any
-     // future window-title "*" affordance stay current.
+     // MULTISAMPLER no longer affects the SCB's visibility (SCB is
+     // SLICER-only now — see resized()'s SCB block), so no layout
+     // dependency to re-run here beyond what's already scheduled elsewhere.
+     // repaint() is kept so any future window-title "*" affordance stays
+     // current.
      repaint();
  };
- multisamplerEditor.onZoneSelectionOrEditChanged = [this]
- {
-     // Pushes the selected zone's fields into both LCDs and
-     // sliceControlBar.setSfzZoneSummary() via syncMultisamplerDisplay() —
-     // fires on a selection click, a live drag, a drag commit, and an SCB
-     // field edit (see this callback's doc comment), so all three stay in
-     // sync with MULTISAMPLER's selection/edits.
-     if (! isMultisamplerTabActive()) return;
-     syncMultisamplerDisplay();
- };
- multisamplerEditor.onZoneHoverChanged = [this]
- {
-     // Read-only preview: takes priority over the selection-driven display
-     // (LCDs + SCB summary) while the cursor is over a zone, or cycling a
-     // stack via the wheel — falls back to the normal selection display the
-     // moment it goes back to -1 (cursor left the map). Safe to let this
-     // reach the SCB summary too, even though that readout doubles as the
-     // field-edit target — see syncMultisamplerDisplay()'s doc comment for
-     // why an edit can never land on a stale hover preview.
-     if (! isMultisamplerTabActive()) return;
-     syncMultisamplerDisplay();
- };
+ // onZoneSelectionOrEditChanged / onZoneHoverChanged are left unhooked —
+ // MultisamplerEditor now refreshes its own zoneLcd internally
+ // (refreshZoneLcd()) on every selection/hover/edit change, so PluginEditor
+ // has nothing left to do in response to either (see implementation plan
+ // §8: syncMultisamplerDisplay() and its SCB-summary/LCD mirroring are
+ // removed entirely, not just their call sites).
  multisamplerEditor.onImportWarnings = [this] (const juce::String& sourceFileName,
                                                 bool importSucceeded,
                                                 const std::vector<SfzImporter::Warning>& warnings)
@@ -689,74 +666,13 @@ void DysektEditor::visibilityChanged()
 }
 
 // ── MIDI route mode helper ────────────────────────────────────────────────────
-void DysektEditor::syncMultisamplerDisplay()
-{
-    const bool multiActive = isMultisamplerTabActive();
-    const MultisamplerInstrument* instr = multiActive ? &multisamplerEditor.getInstrument() : nullptr;
-
-    // Hover takes priority whenever the cursor is actually over the zone
-    // map — including mid-cycle through a stacked overlap via the wheel
-    // (see ZoneMapView::mouseWheelMove) — and falls back to the real
-    // click-selection the instant hover goes back to -1 (cursor left the
-    // map). See this method's header doc comment for why it's safe to let
-    // this reach the SCB summary even though that's also the field-edit
-    // target.
-    //
-    // If neither applies (mouse off the map, nothing clicked), fall back to
-    // whichever zone was last legitimately shown this tab-visit rather than
-    // going blank — tracked by id (lastMultisamplerZoneId), not index, so it
-    // survives inserts/reordering, and re-resolved against the current zone
-    // list every call so a deleted/replaced zone correctly drops back out.
-    // That id is ONLY ever written from an actual hover/selection below —
-    // never from this fallback branch — and is reset to null the instant the
-    // tab isn't active, so a fresh entry into MULTISAMPLER (or the very first
-    // paint on plugin load) always starts genuinely blank instead of popping
-    // up a default zone nobody asked to see.
-    int zone = -1;
-    if (multiActive)
-    {
-        const auto& zonesNow = multisamplerEditor.getInstrument().zones;
-        const int hovered  = multisamplerEditor.getHoveredZoneIndex();
-        const int selected = multisamplerEditor.getSelectedZoneIndex();
-        if (hovered >= 0)
-            zone = hovered;
-        else if (selected >= 0)
-            zone = selected;
-        else if (lastMultisamplerZoneId != juce::Uuid::null())
-        {
-            for (size_t i = 0; i < zonesNow.size(); ++i)
-                if (zonesNow[i].id == lastMultisamplerZoneId) { zone = (int) i; break; }
-        }
-
-        if (zone >= 0)
-            lastMultisamplerZoneId = zonesNow[(size_t) zone].id;
-    }
-    else
-    {
-        lastMultisamplerZoneId = juce::Uuid::null();
-    }
-
-    sliceLcd.setMultisamplerSource (multiActive, instr, zone);
-    sliceWaveformLcd.setMultisamplerSource (multiActive, instr, zone);
-
-    if (! multiActive)
-        return;
-
-    const auto& zones = multisamplerEditor.getInstrument().zones;
-    if (zone < 0 || zone >= (int) zones.size())
-    {
-        sliceControlBar.clearSfzZoneSummary();
-        return;
-    }
-    const auto& z = zones[(size_t) zone];
-    sliceControlBar.setSfzZoneSummary (zone,
-        z.sampleFile != juce::File() ? z.sampleFile.getFileNameWithoutExtension()
-                                      : juce::String ("Zone " + juce::String (zone + 1)),
-        z.lowKey, z.highKey, z.rootKey,
-        z.tuneCents, z.pan, z.gainDb, z.releaseSeconds,
-        z.loopMode != LoopMode::noLoop);
-}
-
+// syncMultisamplerDisplay() removed — it existed solely to mirror
+// MULTISAMPLER zone data into sliceLcd/sliceWaveformLcd (SLICER-owned LCDs)
+// and sliceControlBar's zone-summary readout. MultisamplerEditor now owns
+// its own zoneLcd and refreshes it internally on every selection/hover/edit
+// change (see MultisamplerEditor::refreshZoneLcd()), so there is nothing
+// left for PluginEditor to synchronize here (implementation plan §8/§9
+// Phase 6).
 void DysektEditor::syncMidiRouteMode()
 {
     using Mode = DysektProcessor::MidiRouteMode;
@@ -799,15 +715,10 @@ void DysektEditor::setUiMode (int mode)
  // from it.
  if (uiMode != 0 && trimSession != nullptr && ! trimSession->active)
      trimSession.reset();
- // Leaving the MULTISAMPLER tab — clear the SCB's zone readout so it can't
- // leak into other tabs. This doesn't discard anything: multisamplerEditor's
- // in-memory edits and dirty flag are untouched (per §5.4 of the Multisampler
- // Implementation Plan — ordinary tab navigation must not lose edits), only
- // the readout strip clears. Re-selecting this tab shows MultisamplerEditor
- // again immediately, with those edits intact — see the uiMode == 1 branch
- // in resized().
- if (uiMode != 1)
-     sliceControlBar.clearSfzZoneSummary();
+ // Leaving the MULTISAMPLER tab: nothing to clear here any more — SCB has
+ // no MULTISAMPLER zone-readout state left to leak (see implementation
+ // plan §8 step 7). multisamplerEditor's in-memory edits/dirty flag are
+ // untouched by a tab switch either way, same as before.
 
  syncBrowserMode();
 
@@ -1510,26 +1421,19 @@ void DysektEditor::resized()
  // Show/hide LCD panels per mode.
  // Real tab order: 0=SLICER, 1=SFZ-PLAYER, 2=SF2-PLAYER.
  // sliceLcd/sliceWaveformLcd are mode-aware (see WaveformView's
- // activeSliceManager/activeVoicePool pattern) and cover BOTH the Slicer
- // and SFZ-PLAYER tabs. SF2-PLAYER still uses its own dedicated panels.
- // MULTISAMPLER is a third case: its zones live in MultisamplerInstrument,
- // a model that isn't synced back into sliceManager2/sampleData2 (see
- // SliceControlBar::paint's identical carve-out for the SCB's own zone
- // readout). Both LCDs now read directly from the selected SampleZone via
- // setMultisamplerSource() (see the sync call below and
- // onZoneSelectionOrEditChanged's hookup near the constructor) instead of
- // going blank while MULTISAMPLER is open.
+ // activeSliceManager/activeVoicePool pattern) and cover the Slicer tab's
+ // Slicer LCDs. SF2-PLAYER uses its own dedicated sf2Lcd/sf2WaveformLcd
+ // pair, and MULTISAMPLER now has its own dedicated zoneLcd inside
+ // MultisamplerEditor (implementation plan §3/§7/§8 Phase 6) — sliceLcd/
+ // sliceWaveformLcd no longer accept a MultisamplerInstrument source and
+ // have no remaining role while the MULTISAMPLER tab is active, so they're
+ // hidden for both uiMode == 1 and uiMode == 2 now, not just SF2-PLAYER.
  const bool sf2Mode = (uiMode == 2);
- sliceLcd.setVisible (! sf2Mode);
- sliceWaveformLcd.setVisible (! sf2Mode);
+ const bool showSliceLcds = (uiMode == 0);
+ sliceLcd.setVisible (showSliceLcds);
+ sliceWaveformLcd.setVisible (showSliceLcds);
  sf2Lcd.setVisible (sf2Mode);
  sf2WaveformLcd.setVisible (sf2Mode);
-
- // Keep both LCDs' and the SCB summary's MULTISAMPLER read-only view in
- // sync with the tab's active state and current selection/hover every
- // layout pass — cheap, and this runs on every resized() so it
- // self-corrects regardless of what triggered the layout pass.
- syncMultisamplerDisplay();
 
  sliceLcd.setBounds (topRow.removeFromLeft (sideW));
  sf2Lcd.setBounds (sliceLcd.getBounds());
@@ -1699,19 +1603,14 @@ void DysektEditor::resized()
  } else {
  // SCB first (bottommost), then overview row sits immediately above it.
  //
- // Hidden until there's actually something for it to control: either a real
- // sample/kit is loaded (hasRealSample) in the Slicer tab, or the
- // MULTISAMPLER tab is active AND its instrument actually has a zone —
- // an empty/new instrument (zero zones, "NO ZONES" shown in the map) has
- // nothing for the SCB to read out, so it stays hidden rather than showing
- // its "Select a zone to edit" placeholder row. It reappears the moment a
- // zone exists (Add Zone / import), independent of whether one is currently
- // selected/hovered — see syncMultisamplerDisplay() for the separate
- // selected/hovered-vs-blank logic that governs the readout's *content*
- // once the bar itself is visible.
- const bool multisamplerHasZones = isMultisamplerTabActive()
-                                     && ! multisamplerEditor.getInstrument().zones.empty();
- if ((hasRealSample || multisamplerHasZones) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
+ // SLICER-only now (implementation plan §8/Phase 5) — MULTISAMPLER no
+ // longer has any SCB-hosted readout to show, so the SCB no longer
+ // reserves space while the MULTISAMPLER tab (uiMode == 1) is active. That
+ // reclaimed strip (kSliceCtrlH, 72px at 100% scale) is simply left inside
+ // `area` when uiMode == 1, which is what actually grows MultisamplerEditor
+ // — see its own resized(), which gives everything below its header/zoneLcd
+ // row to zoneMapView (and, inside that, KeysPanel).
+ if (hasRealSample && uiMode == 0 && ! inlineMixerOpen && !normalBrowserOpen)
  {
      {
          const int scbH = si (kSliceCtrlH);
