@@ -45,18 +45,6 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         scheduleEngineSync();
         if (onInstrumentChanged) onInstrumentChanged();
     };
-    zoneMapView.onZoneHovered = [this] (juce::Uuid id)
-    {
-        // Deliberately does NOT touch inspectedZoneId or fire
-        // onZoneSelectionOrEditChanged — the actual selection (and thus the
-        // eventual field-edit target once the cursor reaches an SCB cell)
-        // never moves just because the cursor passed over a different zone.
-        // PluginEditor's syncMultisamplerDisplay() is still free to use this
-        // for display priority (LCDs + SCB summary) — see
-        // getHoveredZoneIndex()'s doc comment for why that's safe.
-        hoveredZoneId = id;
-        if (onZoneHoverChanged) onZoneHoverChanged();
-    };
     zoneMapView.onZoneDeleted = [this]
     {
         // Same downstream effects as a committed drag edit (dirty flag,
@@ -233,8 +221,10 @@ void MultisamplerEditor::newInstrumentClicked()
 
 void MultisamplerEditor::addZoneClicked()
 {
-    // Pick a sample first, then confirm the key range in AddZoneOverlay
-    // before committing the zone.
+    // Stage 1 of 3: pick a sample. beginAddZoneTrim() opens the trim step,
+    // which hands off to beginAddZoneKeyMapping() (the original
+    // AddZoneOverlay step), which hands off to commitAddedZone(). See the
+    // three-stage split's declaration comment in MultisamplerEditor.h.
     fileChooser = std::make_unique<juce::FileChooser> ("Add sample as new zone…", juce::File(),
                                                          "*.wav;*.aif;*.aiff;*.flac;*.ogg");
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
@@ -243,50 +233,102 @@ void MultisamplerEditor::addZoneClicked()
             const auto chosen = fc.getResult();
             if (! chosen.existsAsFile()) return; // cancelled
 
-            // Default: start just above the highest key currently mapped, so a
-            // second Add Zone doesn't silently overlap the first.
-            int prevHiKey = -1;
-            for (const auto& z : instrument.zones)
-                prevHiKey = juce::jmax (prevHiKey, z.highKey);
-            const int defaultLo = (prevHiKey < 0) ? 0 : juce::jmin (prevHiKey + 1, 127);
-
-            zoneAddOverlay = std::make_unique<AddZoneOverlay> (chosen.getFileNameWithoutExtension(), defaultLo);
-            zoneAddOverlay->onResult = [this, chosen] (int lo, int hi, int root, bool confirmed)
-            {
-                // Defer the reset so it runs after onResult has returned and
-                // AddZoneOverlay is no longer on the call stack (use-after-free
-                // fix — same pattern PluginEditor's equivalent flow uses).
-                juce::MessageManager::callAsync ([this]
-                {
-                    if (zoneAddOverlay)
-                    {
-                        removeChildComponent (zoneAddOverlay.get());
-                        zoneAddOverlay.reset();
-                    }
-                });
-
-                if (! confirmed) return;
-
-                SampleZone zone;
-                zone.sampleFile = chosen;
-                zone.lowKey     = lo;
-                zone.highKey    = hi;
-                zone.rootKey    = root;
-                const auto& added = instrument.addZone (std::move (zone));
-
-                dirty = true;
-                zoneMapView.setSelectedZoneIds ({ added.id });
-                zoneMapView.refresh();
-                refreshInspectorFromSelection();
-                scheduleEngineSync();
-                if (onInstrumentChanged) onInstrumentChanged();
-                repaint();
-            };
-
-            addAndMakeVisible (*zoneAddOverlay);
-            zoneAddOverlay->setBounds (getLocalBounds());
-            zoneAddOverlay->toFront (true);
+            beginAddZoneTrim (chosen);
         });
+}
+
+void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
+{
+    zoneTrimOverlay = std::make_unique<AddZoneTrimOverlay> (sampleFile, processor.fileLoadPool);
+    zoneTrimOverlay->onResult = [this, sampleFile] (AddZoneTrimOverlay::Result result, bool confirmed)
+    {
+        // Same deferred-reset use-after-free fix the key-mapping step below
+        // uses: let onResult unwind before the overlay (currently on the
+        // call stack) is destroyed.
+        juce::MessageManager::callAsync ([this]
+        {
+            if (zoneTrimOverlay)
+            {
+                removeChildComponent (zoneTrimOverlay.get());
+                zoneTrimOverlay.reset();
+            }
+        });
+
+        if (! confirmed) return;   // cancelled or decode failed — instrument untouched
+
+        beginAddZoneKeyMapping (sampleFile, result.start, result.end, result.totalFrames);
+    };
+
+    addAndMakeVisible (*zoneTrimOverlay);
+    zoneTrimOverlay->setBounds (getLocalBounds());
+    zoneTrimOverlay->toFront (true);
+}
+
+void MultisamplerEditor::beginAddZoneKeyMapping (const juce::File& sampleFile,
+                                                  int64_t trimStart, int64_t trimEnd, int64_t totalFrames)
+{
+    // Default: start just above the highest key currently mapped, so a
+    // second Add Zone doesn't silently overlap the first.
+    int prevHiKey = -1;
+    for (const auto& z : instrument.zones)
+        prevHiKey = juce::jmax (prevHiKey, z.highKey);
+    const int defaultLo = (prevHiKey < 0) ? 0 : juce::jmin (prevHiKey + 1, 127);
+
+    zoneAddOverlay = std::make_unique<AddZoneOverlay> (sampleFile.getFileNameWithoutExtension(), defaultLo);
+    zoneAddOverlay->onResult = [this, sampleFile, trimStart, trimEnd, totalFrames]
+                               (int lo, int hi, int root, bool confirmed)
+    {
+        // Defer the reset so it runs after onResult has returned and
+        // AddZoneOverlay is no longer on the call stack (use-after-free
+        // fix — same pattern PluginEditor's equivalent flow uses).
+        juce::MessageManager::callAsync ([this]
+        {
+            if (zoneAddOverlay)
+            {
+                removeChildComponent (zoneAddOverlay.get());
+                zoneAddOverlay.reset();
+            }
+        });
+
+        if (! confirmed) return;   // cancelled — instrument untouched, even though trim was confirmed
+
+        commitAddedZone (sampleFile, trimStart, trimEnd, totalFrames, lo, hi, root);
+    };
+
+    addAndMakeVisible (*zoneAddOverlay);
+    zoneAddOverlay->setBounds (getLocalBounds());
+    zoneAddOverlay->toFront (true);
+}
+
+void MultisamplerEditor::commitAddedZone (const juce::File& sampleFile,
+                                           int64_t trimStart, int64_t trimEnd, int64_t totalFrames,
+                                           int lo, int hi, int root)
+{
+    SampleZone zone;
+    zone.sampleFile = sampleFile;
+    zone.lowKey     = lo;
+    zone.highKey    = hi;
+    zone.rootKey    = root;
+
+    // Preserve the model convention for an untrimmed selection (see
+    // SampleZone.h: "-1 == full sample length") rather than writing the
+    // file's current length as a literal sampleEnd — that would freeze a
+    // "whole file" selection to whatever length the file happened to be
+    // at Add Zone time, instead of tracking the file the way an untouched
+    // zone always has.
+    const bool spansWholeFile = trimStart == 0 && trimEnd >= totalFrames;
+    zone.sampleStart = trimStart;
+    zone.sampleEnd   = spansWholeFile ? -1 : trimEnd;
+
+    const auto& added = instrument.addZone (std::move (zone));
+
+    dirty = true;
+    zoneMapView.setSelectedZoneIds ({ added.id });
+    zoneMapView.refresh();
+    refreshInspectorFromSelection();
+    scheduleEngineSync();
+    if (onInstrumentChanged) onInstrumentChanged();
+    repaint();
 }
 
 // ── SFZ import / export ─────────────────────────────────────────────────
@@ -528,16 +570,6 @@ int MultisamplerEditor::getSelectedZoneIndex() const noexcept
     return -1;
 }
 
-int MultisamplerEditor::getHoveredZoneIndex() const noexcept
-{
-    if (hoveredZoneId == juce::Uuid::null())
-        return -1;
-    for (size_t i = 0; i < instrument.zones.size(); ++i)
-        if (instrument.zones[i].id == hoveredZoneId)
-            return (int) i;
-    return -1;
-}
-
 void MultisamplerEditor::refreshInspectorFromSelection()
 {
     const auto& selected = zoneMapView.getSelectedZoneIds();
@@ -623,8 +655,12 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
                 std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (z.sampleFile));
                 if (reader != nullptr && reader->lengthInSamples > 1)
                 {
+                    // Native loopEnd is exclusive (one-past-the-last frame,
+                    // matching sampleEnd's [start, end) convention — see
+                    // SampleZone.h) — the whole-file loop point is therefore
+                    // lengthInSamples, not lengthInSamples - 1.
                     z.loopStart = 0;
-                    z.loopEnd   = reader->lengthInSamples - 1;
+                    z.loopEnd   = reader->lengthInSamples;
                 }
             }
             break;

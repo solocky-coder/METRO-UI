@@ -161,8 +161,9 @@ void SliceLcdDisplay::buildDisplayData()
         data.rootNote  = z.rootKey;
         data.sliceName = z.sampleFile.getFileNameWithoutExtension();
 
-        data.startSample = (int) z.sampleStart;
-        data.endSample    = z.sampleEnd >= 0 ? (int) z.sampleEnd : data.sampleNumFrames;
+        const auto resolved = resolveSampleRange (z, data.sampleNumFrames);
+        data.startSample = (int) resolved.start;
+        data.endSample    = (int) resolved.end;
 
         data.volume = z.gainDb;
         data.pan    = z.pan;

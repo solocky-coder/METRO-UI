@@ -1,6 +1,5 @@
 #include "SliceWaveformLcd.h"
 #include "DysektLookAndFeel.h"
-#include "SliceControlBar.h"
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 #include "../audio/Slice.h"
@@ -150,8 +149,9 @@ void SliceWaveformLcd::buildDisplayData()
 
      data.hasSlice   = true;
      data.sliceIndex = multisamplerZoneIndex;
-     data.startSample = (int) z.sampleStart;
-     data.endSample    = z.sampleEnd >= 0 ? (int) z.sampleEnd : data.totalFrames;
+     const auto resolved = resolveSampleRange (z, data.totalFrames);
+     data.startSample = (int) resolved.start;
+     data.endSample    = (int) resolved.end;
      data.midiNote    = z.rootKey;
      data.volume      = z.gainDb;
      data.pan         = z.pan;
@@ -381,52 +381,6 @@ void SliceWaveformLcd::commitNodes()
     const float sustainPc = juce::jlimit (0.0f, 100.0f, (1.0f - env.sy) * 100.0f);
     const float releaseMs = juce::jlimit (0.0f, kViewMs, rRatio * rRatio * kViewMs);
 
-    if (multisamplerActive)
-    {
-        // MULTISAMPLER has no sliceManager/sliceManager2 slice behind the
-        // selected zone to push a Command at (see this file's header
-        // comment) — write straight into the SampleZone instead, through
-        // the same onSfzZoneParamEdited -> applySliceControlBarFieldEdit
-        // path the SCB's own numeric ADSR cells use. Field ids and native
-        // units (seconds for A/D/R, 0..1 for S) match that path exactly, so
-        // MultisamplerEditor doesn't need to know these values came from a
-        // node drag instead of a typed/dragged cell.
-        if (onMultisamplerZoneParamEdited && multisamplerZoneIndex >= 0)
-        {
-            switch (dragRole)
-            {
-                case NodeRole::Attack:
-                    onMultisamplerZoneParamEdited (multisamplerZoneIndex, SliceControlBar::ZoneAttack,  attackMs  / 1000.0f);
-                    break;
-                case NodeRole::Decay:
-                    onMultisamplerZoneParamEdited (multisamplerZoneIndex, SliceControlBar::ZoneDecay,   decayMs   / 1000.0f);
-                    break;
-                case NodeRole::Sustain:
-                    onMultisamplerZoneParamEdited (multisamplerZoneIndex, SliceControlBar::ZoneSustain, sustainPc / 100.0f);
-                    break;
-                case NodeRole::Release:
-                    onMultisamplerZoneParamEdited (multisamplerZoneIndex, SliceControlBar::ZoneRelease, releaseMs / 1000.0f);
-                    break;
-                default: break;
-            }
-        }
-
-        // Same guard/rebuild-deferral convention as the sliceManager path
-        // below — applySliceControlBarFieldEdit() calls
-        // refreshInspectorFromSelection() synchronously, which re-enters via
-        // PluginEditor's onZoneSelectionOrEditChanged straight back into
-        // setMultisamplerSource() (harmless — see that method; it only
-        // touches multisamplerInstrument/multisamplerZoneIndex/the rebuild
-        // flags, never dragRole/env/envNodes, so it can't disturb the drag
-        // in progress). That reentrant call already resets lastEnvSnapVer,
-        // so setting it again here is just making the "next repaintLcd()
-        // rebuilds from the model" contract explicit rather than relying on
-        // the reentrancy to have happened.
-        postCommitGuard = 6;
-        lastEnvSnapVer = -1;
-        return;
-    }
-
     // Read the lock state for the selected slice so we can decide whether to
     // write per-slice or global APVTS — mirroring SliceControlBar::mouseDrag
     // exactly.  Unlocked ADSR fields only update the global APVTS default
@@ -552,17 +506,19 @@ void SliceWaveformLcd::mouseMove (const juce::MouseEvent& e)
 
 void SliceWaveformLcd::mouseDown (const juce::MouseEvent& e)
 {
+ // MULTISAMPLER zones have no write path from this display yet (see
+ // buildDisplayData()'s MULTISAMPLER branch) — dragging a node or toggling
+ // a lock here would push a Command into sliceManager/sliceManager2, which
+ // would silently edit whichever slice happens to share this index there
+ // instead of the zone actually being shown. Read-only until a real
+ // SampleZone envelope-edit path exists.
+ if (multisamplerActive) return;
+
  const NodeRole hit = hitTest (e.position);
 
  if (e.mods.isRightButtonDown())
  {
-  // Right-click on a node: toggle that ADSR field's lock for the selected slice.
-  // Per-field locking (lockMask) is a sliceManager/sliceManager2 concept —
-  // SampleZone has no lock bits of its own, so there's nothing for a
-  // MULTISAMPLER zone to toggle here. Left-click-drag (below) is the only
-  // interaction MULTISAMPLER supports on this display.
-  if (multisamplerActive) return;
-
+  // Right-click on a node: toggle that ADSR field's lock for the selected slice
  uint32_t bit = 0;
  if      (hit == NodeRole::Attack)  bit = kLockAttack;
  else if (hit == NodeRole::Decay)   bit = kLockDecay;
@@ -658,9 +614,6 @@ void SliceWaveformLcd::mouseDrag (const juce::MouseEvent& e)
  // ═══════════════════════════════════════════════════════════════════════════
  // BUG FIX: Block dragging locked ADSR nodes — check slice's lockMask
  // ═══════════════════════════════════════════════════════════════════════════
- // No lockMask equivalent exists on SampleZone — MULTISAMPLER zones are
- // never lock-blocked here, matching mouseDown's right-click guard above.
- if (! multisamplerActive)
  {
      auto& sm3 = isSfzPlayer2Mode() ? processor.sliceManager2 : processor.sliceManager;
      const int sel = sm3.selectedSlice.load (std::memory_order_relaxed);
@@ -1199,6 +1152,10 @@ void SliceWaveformLcd::drawNoData (juce::Graphics& g)
 
 void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<float>& area)
 {
+ // MULTISAMPLER zone indices don't correspond to sliceManager2/voicePool2
+ // slice indices, so a voice's sliceIdx could coincidentally match
+ // data.sliceIndex and draw a playhead for the wrong sound entirely.
+ if (multisamplerActive) return;
  if (data.sliceIndex < 0) return;
 
  const int totalRange = data.endSample - data.startSample;
@@ -1206,80 +1163,14 @@ void SliceWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Rectangle<fl
 
  auto& vp = isSfzPlayer2Mode() ? processor.voicePool2 : processor.voicePool;
 
- // MULTISAMPLER zone indices don't correspond to sliceManager2/voicePool2
- // slice indices (loop-split zones can shift that numbering), so a voice's
- // sliceIdx can't be matched against data.sliceIndex the way Slicer/
- // SFZ-PLAYER do below. Instead, match the active voice against the
- // currently selected zone's own key/velocity range — every Voice already
- // carries the real midiNote/velocity that triggered it, and SampleZone
- // already carries lowKey/highKey/lowVelocity/highVelocity, so this needs
- // no new state.
- const SampleZone* selectedZone = nullptr;
- if (multisamplerActive)
- {
-     if (multisamplerInstrument == nullptr
-         || multisamplerZoneIndex < 0
-         || multisamplerZoneIndex >= (int) multisamplerInstrument->zones.size())
-         return;
-
-     selectedZone = &multisamplerInstrument->zones[(size_t) multisamplerZoneIndex];
- }
-
  for (int i = 0; i < VoicePool::kMaxVoices; ++i)
  {
  const auto& v = vp.getVoice (i);
- if (! v.active) continue;
+ if (! v.active || v.sliceIdx != data.sliceIndex) continue;
 
- float xn;
-
- if (multisamplerActive)
- {
-     // Voice::velocity is normalised 0..1 (see VoicePool::startVoice);
-     // SampleZone's range is stored in the original 1..127 MIDI scale.
-     const int vel127 = juce::roundToInt (v.velocity * 127.0f);
-     if (v.midiNote < selectedZone->lowKey || v.midiNote > selectedZone->highKey
-         || vel127 < selectedZone->lowVelocity || vel127 > selectedZone->highVelocity)
-         continue;
-
-     // rawPos below is an absolute sample index into processor.sampleData2 —
-     // the pre-rendered, per-note capture buffer SoundFontLoader.cpp builds
-     // for MULTISAMPLER (runJobSfizz(): one freshly-rendered, silence-trimmed
-     // segment per note, concatenated into one buffer). That has NO
-     // relationship to data.startSample/data.endSample, which describe
-     // positions in the *original* zone sample file (decoded separately, into
-     // multisamplerZoneSampleData, purely so this display has a waveform/
-     // peaks to draw) — dividing rawPos by that range compared two
-     // completely different timelines and left the line pinned to whichever
-     // edge the clamp below landed on instead of ever visibly tracking.
-     // v.sliceIdx (set from sliceManager2.midiNoteToSlice() at voice start —
-     // see PluginProcessor.cpp's processMidi2 note-on handling) identifies
-     // which rendered segment this voice is actually playing, in
-     // sampleData2's own coordinate space — the same one rawPos is in — even
-     // though that index has no relationship to multisamplerZoneIndex (see
-     // this function's own comment above on why key/velocity matching is
-     // used instead of index matching in the first place).
-     auto& sm2 = processor.sliceManager2;
-     if (v.sliceIdx < 0 || v.sliceIdx >= sm2.getNumSlices())
-         continue;
-
-     const int segStart = sm2.getSlice (v.sliceIdx).startSample;
-     const int segEnd   = (v.sliceIdx + 1 < sm2.getNumSlices())
-                               ? sm2.getSlice (v.sliceIdx + 1).startSample
-                               : processor.sampleData2.getNumFrames();
-     const int segRange = segEnd - segStart;
-     if (segRange <= 0) continue;
-
-     const float rawPos = vp.voicePositions[i].load (std::memory_order_relaxed);
-     xn = juce::jlimit (0.0f, 1.0f, (rawPos - (float) segStart) / (float) segRange);
- }
- else
- {
-     if (v.sliceIdx != data.sliceIndex)
-         continue;
-
-     const float rawPos = vp.voicePositions[i].load (std::memory_order_relaxed);
-     xn = juce::jlimit (0.0f, 1.0f, (rawPos - (float) data.startSample) / (float) totalRange);
- }
+ const float rawPos = vp.voicePositions[i].load (std::memory_order_relaxed);
+ float xn = (rawPos - (float) data.startSample) / (float) totalRange;
+ xn = juce::jlimit (0.0f, 1.0f, xn);
 
  const float x = area.getX() + xn * area.getWidth();
 

@@ -92,6 +92,8 @@ public:
         testSfzImportBasics();
         testSfzImportInheritanceAndExtraOpcodes();
         testSfzExportImportRoundTrip();
+        testSfzEndpointConvention();
+        testResolveSampleRangeClamping();
         testJsonRoundTripIsLossless();
         testValidation();
         testDefaultPathResolution();
@@ -336,6 +338,80 @@ private:
         expectEquals (loaded.instrument.zones.size(), (size_t) 1);
         expectEquals (loaded.instrument.zones[0].id.toString(), z.id.toString());
         expectEquals (loaded.instrument.zones[0].extraOpcodes.size(), (size_t) 1);
+    }
+
+    void testSfzEndpointConvention()
+    {
+        beginTest ("end/loop_end are written and read as SFZ's inclusive last frame");
+
+        MultisamplerInstrument instrument;
+        SampleZone z;
+        z.sampleFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("endpoint_sample.wav");
+        z.sampleFile.replaceWithText ("not really audio, just needs to exist");
+        // Native [start, end): frames 100..(200-1) inclusive play, i.e. 100 frames.
+        z.sampleStart = 100; z.sampleEnd = 200;
+        z.loopMode = LoopMode::loopContinuous; z.loopStart = 10; z.loopEnd = 20;
+        instrument.addZone (z);
+
+        const auto text = SfzExporter::render (instrument, juce::File());
+
+        // The SFZ opcode is the LAST INCLUDED frame, one less than the
+        // native exclusive end — see SfzExporter.cpp's appendRegion() and
+        // SfzImporter.cpp's matching +1 on the way back in.
+        expect (text.contains ("end=199"));
+        expect (text.contains ("loop_end=19"));
+        expect (! text.contains ("end=200"));
+        expect (! text.contains ("loop_end=20"));
+
+        z.sampleFile.deleteFile();
+    }
+
+    void testResolveSampleRangeClamping()
+    {
+        beginTest ("resolveSampleRange clamps and normalises malformed ranges");
+
+        // Unset end (-1) resolves to the whole file.
+        {
+            const auto r = resolveSampleRange (0, -1, 1000);
+            expectEquals ((juce::int64) r.start, (juce::int64) 0);
+            expectEquals ((juce::int64) r.end,   (juce::int64) 1000);
+        }
+
+        // Ordinary trimmed range passes through untouched.
+        {
+            const auto r = resolveSampleRange (100, 900, 1000);
+            expectEquals ((juce::int64) r.start, (juce::int64) 100);
+            expectEquals ((juce::int64) r.end,   (juce::int64) 900);
+        }
+
+        // Out-of-bounds start/end get clamped into range rather than
+        // producing a negative-length or out-of-bounds interval.
+        {
+            const auto r = resolveSampleRange (-50, 5000, 1000);
+            expectEquals ((juce::int64) r.start, (juce::int64) 0);
+            expectEquals ((juce::int64) r.end,   (juce::int64) 1000);
+        }
+
+        // Reversed/degenerate bounds still yield at least a one-frame region.
+        {
+            const auto r = resolveSampleRange (500, 500, 1000);
+            expect (r.end > r.start);
+            expectEquals ((juce::int64) r.length(), (juce::int64) 1);
+        }
+
+        // start pinned right at totalFrames - 1 still leaves one valid frame.
+        {
+            const auto r = resolveSampleRange (999, -1, 1000);
+            expectEquals ((juce::int64) r.start, (juce::int64) 999);
+            expectEquals ((juce::int64) r.end,   (juce::int64) 1000);
+        }
+
+        // totalFrames <= 0 (not-yet-decoded preview) resolves to an empty
+        // range rather than asserting or dividing by zero.
+        {
+            const auto r = resolveSampleRange (0, -1, 0);
+            expectEquals ((juce::int64) r.length(), (juce::int64) 0);
+        }
     }
 
     void testValidation()

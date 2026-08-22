@@ -25,6 +25,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ZoneMapView.h"
 #include "../AddZoneOverlay.h"
+#include "AddZoneTrimOverlay.h"
 #include "../KeysPanel.h"
 #include "../UIHelpers.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
@@ -133,28 +134,6 @@ public:
         clearSfzZoneSummary(). */
     std::function<void()> onZoneSelectionOrEditChanged;
 
-    /** -1 if nothing is currently hovered in the zone map (cursor off the
-        map, or over empty grid space); otherwise the index into
-        getInstrument().zones for whichever zone the cursor is currently
-        showing — see ZoneMapView::onZoneHovered's doc comment. This is a
-        display-priority index, not a separate edit target: PluginEditor's
-        syncMultisamplerDisplay() lets it drive the LCDs AND the
-        SliceControlBar summary while non-null, which is safe because a
-        field edit requires the mouse to be down on an SCB cell — reachable
-        only once the cursor has left the zone map, which already resets
-        this back to -1 first (see ZoneMapView::mouseExit). See
-        syncMultisamplerDisplay()'s doc comment for the full reasoning. */
-    int getHoveredZoneIndex() const noexcept;
-
-    /** Fired whenever the hovered zone (per getHoveredZoneIndex()) changes —
-        cursor moved to a different zone, off the map, or the wheel was used
-        to cycle a stacked overlap. PluginEditor hooks this to push a
-        read-only preview into the LCDs and the SliceControlBar summary,
-        taking priority over the normal selection-driven display while
-        non-null — see getHoveredZoneIndex()'s doc comment for why this is
-        safe even though the SCB summary doubles as the field-edit target. */
-    std::function<void()> onZoneHoverChanged;
-
     /** Applies one SliceControlBar field edit (see SliceControlBar::
         SfzZoneField) to the zone at `zoneIndex` (as returned by
         getSelectedZoneIndex()). PluginEditor's
@@ -230,7 +209,23 @@ private:
     void importSfzClicked();
     void exportSfzClicked();
     void newInstrumentClicked();
-    void addZoneClicked();   // pick a sample, then AddZoneOverlay for lo/hi/root
+    void addZoneClicked();   // pick a sample, then trim, then AddZoneOverlay for lo/hi/root
+
+    // ── Add Zone stages ──────────────────────────────────────────────────
+    // Split out of what used to be addZoneClicked()'s file-picker callback
+    // body so the new trim step sits cleanly between picking the file and
+    // collecting the key range — see the METRO-UI Multisampler Add Zone
+    // Trim implementation notes' "Refactor MultisamplerEditor::
+    // addZoneClicked()" section. Only commitAddedZone() actually touches
+    // `instrument`; the first two stages just juggle overlays and pass
+    // trim/key data forward, so cancelling either one leaves the
+    // instrument untouched.
+    void beginAddZoneTrim (const juce::File& sampleFile);
+    void beginAddZoneKeyMapping (const juce::File& sampleFile,
+                                  int64_t trimStart, int64_t trimEnd, int64_t totalFrames);
+    void commitAddedZone (const juce::File& sampleFile,
+                           int64_t trimStart, int64_t trimEnd, int64_t totalFrames,
+                           int lo, int hi, int root);
 
     void refreshInspectorFromSelection();
 
@@ -247,8 +242,9 @@ private:
     juce::TextButton importButton  { "IMPORT SFZ" };
     juce::TextButton exportButton  { "EXPORT SFZ" };
     juce::TextButton newButton     { "NEW" };
-    std::unique_ptr<juce::FileChooser> fileChooser;
-    std::unique_ptr<AddZoneOverlay>    zoneAddOverlay;   // modal popup; owned only while open
+    std::unique_ptr<juce::FileChooser>      fileChooser;
+    std::unique_ptr<AddZoneTrimOverlay>     zoneTrimOverlay;   // Add Zone step 1; owned only while open
+    std::unique_ptr<AddZoneOverlay>         zoneAddOverlay;    // Add Zone step 2; owned only while open
 
     // ── Header zone-summary readout ─────────────────────────────────────
     // Same loKey/hiKey/root/pitch/pan/volume/release/loop info the shared
@@ -266,7 +262,6 @@ private:
     // this is purely a convenience duplicate of the same data.
     juce::Label headerZoneSummary;
     juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing/multiple selected
-    juce::Uuid  hoveredZoneId   = juce::Uuid::null();   // display-only, see getHoveredZoneIndex()
 
     static constexpr int kEngineSyncDebounceMs = 300;
     static constexpr int kHeaderH    = 32;

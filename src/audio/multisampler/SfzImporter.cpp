@@ -411,10 +411,25 @@ namespace
         z.gainDb = floatOpcode (resolved, "volume", 0.0f);
         z.pan    = juce::jlimit (-1.0f, 1.0f, floatOpcode (resolved, "pan", 0.0f) / 100.0f);
 
+        // `offset`/`loop_start` already mean "first played frame" in both SFZ
+        // and the native model, so they copy straight across. `end`/`loop_end`
+        // do not: sfizz (like the SFZ spec) treats them as the *last included*
+        // frame, while the native model's [start, end) convention (see
+        // SampleZone.h) treats sampleEnd/loopEnd as one-past-the-last frame.
+        // Converting only at this import boundary (and the matching -1 at
+        // export) keeps every other piece of code — the waveform displays,
+        // trim UI, validation — working in one consistent exclusive-end
+        // convention without needing to know SFZ's opcode semantics at all.
         z.sampleStart = int64Opcode (resolved, "offset", 0);
-        z.sampleEnd   = int64Opcode (resolved, "end", -1);
-        z.loopStart   = int64Opcode (resolved, "loop_start", -1);
-        z.loopEnd     = int64Opcode (resolved, "loop_end", -1);
+        {
+            const auto importedEnd = int64Opcode (resolved, "end", -1);
+            z.sampleEnd = importedEnd < 0 ? -1 : importedEnd + 1;
+        }
+        z.loopStart = int64Opcode (resolved, "loop_start", -1);
+        {
+            const auto importedLoopEnd = int64Opcode (resolved, "loop_end", -1);
+            z.loopEnd = importedLoopEnd < 0 ? -1 : importedLoopEnd + 1;
+        }
         if (resolved.count ("loop_mode"))
             z.loopMode = loopModeFromOpcodeValue (resolved.at ("loop_mode"));
 

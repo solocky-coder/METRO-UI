@@ -135,3 +135,39 @@ struct SampleZone
         return enabled && keyInRange (midiNote) && velocityInRange (velocity);
     }
 };
+
+/** A resolved, clamped [start, end) playback range against a known
+    totalFrames — see SampleZone::sampleStart/sampleEnd's doc comments for
+    the half-open convention this normalises to. Any display or engine code
+    reading a zone's sample range should go through resolveSampleRange()
+    rather than re-deriving this by hand, so a malformed/out-of-range import
+    can never produce a negative-length or out-of-bounds interval anywhere
+    a zone is shown or played (SliceWaveformLcd, SliceLcdDisplay,
+    AddZoneTrimOverlay's preview-clamp on reopen, etc.) */
+struct ResolvedSampleRange
+{
+    int64_t start = 0;
+    int64_t end   = 0;   // exclusive
+
+    int64_t length() const noexcept { return end - start; }
+};
+
+/** totalFrames <= 0 resolves to an empty {0, 0} range rather than asserting —
+    callers (typically UI code reacting to a not-yet-decoded preview) are
+    expected to treat length() == 0 as "nothing to show yet". */
+inline ResolvedSampleRange resolveSampleRange (int64_t sampleStart, int64_t sampleEnd,
+                                                int64_t totalFrames) noexcept
+{
+    if (totalFrames <= 0)
+        return {};
+
+    const int64_t resolvedEnd = sampleEnd < 0 ? totalFrames : sampleEnd;
+    const int64_t start = juce::jlimit<int64_t> (0, totalFrames - 1, sampleStart);
+    const int64_t end   = juce::jlimit<int64_t> (start + 1, totalFrames, resolvedEnd);
+    return { start, end };
+}
+
+inline ResolvedSampleRange resolveSampleRange (const SampleZone& z, int64_t totalFrames) noexcept
+{
+    return resolveSampleRange (z.sampleStart, z.sampleEnd, totalFrames);
+}
