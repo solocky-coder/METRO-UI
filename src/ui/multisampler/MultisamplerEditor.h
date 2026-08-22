@@ -134,6 +134,22 @@ public:
         clearSfzZoneSummary(). */
     std::function<void()> onZoneSelectionOrEditChanged;
 
+    /** -1 if the cursor isn't currently over a zone in the zone map (or has
+        left the map entirely); otherwise the index into getInstrument().zones
+        for the zone currently shown for read-only hover/inspection purposes.
+        Mirrors getSelectedZoneIndex()'s id-to-index resolution, but sourced
+        from ZoneMapView::onZoneHovered rather than the click-selection —
+        see onZoneHoverChanged. */
+    int getHoveredZoneIndex() const noexcept;
+
+    /** Fired whenever getHoveredZoneIndex() changes — either a new zone is
+        hovered, the cursor leaves the map (back to -1), or the wheel is used
+        to cycle a stack under a stationary cursor. Read-only preview: takes
+        priority over the selection-driven display while non-null, matching
+        ZoneMapView::onZoneHovered's own contract. PluginEditor hooks this to
+        re-run syncMultisamplerDisplay(). */
+    std::function<void()> onZoneHoverChanged;
+
     /** Applies one SliceControlBar field edit (see SliceControlBar::
         SfzZoneField) to the zone at `zoneIndex` (as returned by
         getSelectedZoneIndex()). PluginEditor's
@@ -262,6 +278,7 @@ private:
     // this is purely a convenience duplicate of the same data.
     juce::Label headerZoneSummary;
     juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing/multiple selected
+    juce::Uuid  hoveredZoneId = juce::Uuid::null();     // mirrors ZoneMapView::hoverZoneId; juce::Uuid::null() when the cursor isn't over a zone
 
     static constexpr int kEngineSyncDebounceMs = 300;
     static constexpr int kHeaderH    = 32;

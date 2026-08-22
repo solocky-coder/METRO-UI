@@ -29,6 +29,14 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     addAndMakeVisible (zoneMapView);
     zoneMapView.setInstrument (&instrument);
     zoneMapView.onSelectionChanged = [this] { refreshInspectorFromSelection(); };
+    zoneMapView.onZoneHovered = [this] (juce::Uuid hoveredId)
+    {
+        // Display only — mirrors refreshInspectorFromSelection()'s id
+        // bookkeeping but never touches inspectedZoneId/selection state,
+        // matching ZoneMapView::onZoneHovered's own contract.
+        hoveredZoneId = hoveredId;
+        if (onZoneHoverChanged) onZoneHoverChanged();
+    };
     zoneMapView.onZoneEditing      = [this]
     {
         dirty = true;
@@ -566,6 +574,16 @@ int MultisamplerEditor::getSelectedZoneIndex() const noexcept
         return -1;
     for (size_t i = 0; i < instrument.zones.size(); ++i)
         if (instrument.zones[i].id == inspectedZoneId)
+            return (int) i;
+    return -1;
+}
+
+int MultisamplerEditor::getHoveredZoneIndex() const noexcept
+{
+    if (hoveredZoneId == juce::Uuid::null())
+        return -1;
+    for (size_t i = 0; i < instrument.zones.size(); ++i)
+        if (instrument.zones[i].id == hoveredZoneId)
             return (int) i;
     return -1;
 }
