@@ -132,9 +132,18 @@ public:
     void addOrUpdateSfTrackOnChannel (const Sf2PresetInfo& preset, int midiChannel0Based,
                                       juce::Colour colour);
 
-    /** Add a single SFZ track (one channel covers the whole instrument).
-     *  If an SFZ track already exists (identified by name), it is replaced. */
+    /** Add or update the singleton real-.sfz-instrument track (see
+     *  SequencerTrack::makeSfzInstrument()). If it already exists it's
+     *  updated in place (name/colour/channel); otherwise it's created.
+     *  Used both when a .sfz is loaded from the browser/drop and whenever
+     *  the MULTISAMPLER instrument (built via Add Zone or otherwise) goes
+     *  from zero to non-zero zones — see removeSfzTrack(). */
     void addSfzTrack (const juce::String& name, int midiChannel0Based, juce::Colour colour);
+
+    /** Remove the singleton real-.sfz-instrument track, if present. No-op
+     *  if it doesn't exist. Call whenever the MULTISAMPLER instrument's
+     *  zone list becomes empty — see addSfzTrack(). */
+    void removeSfzTrack();
 
     //==========================================================================
     //  Clip management  (message thread)

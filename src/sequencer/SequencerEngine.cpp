@@ -567,9 +567,12 @@ void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Bas
 
     // Only one SFZ-instrument track ever exists. If it's already there,
     // update it in place — same shared_ptr, same track-list index — so a
-    // channel change or loading a different .sfz file doesn't disturb the
+    // channel change, loading a different .sfz file, or an Add Zone edit
+    // to the currently-loaded MULTISAMPLER instrument doesn't disturb the
     // current selection. See the "sanctioned exception" note on
-    // SequencerTrack::name/colour.
+    // SequencerTrack::name/colour, and makeSfzInstrument()'s doc comment
+    // for why both the browser-load and Add Zone workflows share this one
+    // track instead of getting one each.
     for (auto& t : *current)
         if (t->type == TrackType::SfPlayer && t->isSfzInstrument)
         {
@@ -579,13 +582,29 @@ void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Bas
             return;
         }
 
-    // First SFZ load this session — nothing to replace, append fresh.
+    // Nothing to replace yet — either the first SFZ load this session, or
+    // the MULTISAMPLER instrument just gained its first zone. Append fresh.
     auto track = SequencerTrack::makeSfzInstrument (name, colour);
     track->midiChannel.store (ch, std::memory_order_relaxed);
 
     auto next = std::make_shared<Impl::TrackList> (*current);
     next->push_back (track);
     impl->publishTracks (std::move (next));
+}
+
+void SequencerEngine::removeSfzTrack()
+{
+    auto current = impl->getTracks();
+    auto next = std::make_shared<Impl::TrackList>();
+    next->reserve (current->size());
+    bool removedAny = false;
+    for (auto& t : *current)
+    {
+        if (t->type == TrackType::SfPlayer && t->isSfzInstrument) { removedAny = true; continue; }
+        next->push_back (t);
+    }
+    if (removedAny)
+        impl->publishTracks (std::move (next));
 }
 
 //==============================================================================

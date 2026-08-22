@@ -196,16 +196,19 @@ private:
     {
         if (info.type != TrackType::SfPlayer) return;
 
-        // The real .sfz-instrument track (isSfzInstrument) is a permanent
-        // singleton — SequencerEngine::addSfzTrack finds-and-updates it in
-        // place rather than ever creating a second one — and sfzPlayer2's
-        // routing mask only ever gains channels, never loses its channel-2
-        // default (see PluginProcessor.cpp's per-block sfzPlayer2ChannelMask
-        // OR-in). So there both isn't a second track to disambiguate from
-        // and no way to actually move sfzPlayer2 off channel 2 via this
-        // menu — it can only look like it worked. Multitimbral SF2 preset
-        // tracks (isSfzInstrument == false) are the real, multi-instance use
-        // case this menu exists for; leave it live for those.
+        // The real .sfz-instrument track (isSfzInstrument) is a singleton —
+        // SequencerEngine::addSfzTrack finds-and-updates it in place rather
+        // than ever creating a second one (it can still disappear and
+        // reappear via removeSfzTrack()/addSfzTrack() as the MULTISAMPLER
+        // instrument's zone count crosses 0, but there's still only ever
+        // one at a time) — and sfzPlayer2's routing mask only ever gains
+        // channels, never loses its channel-2 default (see
+        // PluginProcessor.cpp's per-block sfzPlayer2ChannelMask OR-in). So
+        // there both isn't a second track to disambiguate from and no way
+        // to actually move sfzPlayer2 off channel 2 via this menu — it can
+        // only look like it worked. Multitimbral SF2 preset tracks
+        // (isSfzInstrument == false) are the real, multi-instance use case
+        // this menu exists for; leave it live for those.
         if (info.isSfzInstrument) return;
 
         juce::PopupMenu menu;

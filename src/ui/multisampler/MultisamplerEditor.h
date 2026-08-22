@@ -30,7 +30,6 @@
 #include "../UIHelpers.h"
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/SfzImporter.h"
-#include "../../audio/multisampler/InstrumentSerializer.h"
 
 class DysektProcessor;
 

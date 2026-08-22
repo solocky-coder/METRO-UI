@@ -145,6 +145,26 @@ sliceControlBar.onSfzZoneParamEdited = [this] (int rowIndex, int field, float va
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
      sliceControlBar.setInstrumentDirty (multisamplerEditor.isDirty());
 
+#if DYSEKT_STANDALONE
+     // The MULTISAMPLER instrument's Arranger track (the same singleton
+     // .sfz-instrument track a browser/drop load creates via
+     // pianoRollPanel.addSfzInstrumentTrack() below — see
+     // SequencerTrack::makeSfzInstrument()'s doc comment for why this is
+     // one track, not two) tracks the instrument's zone count 1:1: created
+     // the moment the first zone is added (e.g. via Add Zone), removed the
+     // moment none are left. addSfzTrack()/removeSfzTrack() are both
+     // idempotent, so it's safe to call this on every edit — including the
+     // one fired mid-way through a browser/drop load — rather than trying
+     // to detect the exact 0<->nonzero transition or which workflow
+     // triggered it here.
+     static const juce::Colour kSfzTrackColour (0xFF9060D0);
+     const auto& instrument = multisamplerEditor.getInstrument();
+     if (instrument.zones.empty())
+         processor.sequencer.removeSfzTrack();
+     else
+         processor.sequencer.addSfzTrack (instrument.name, 1, kSfzTrackColour);
+#endif
+
      // resized()'s SCB-visibility gate depends on whether the instrument
      // currently has any zones at all (see resized()'s multisamplerHasZones
      // comment) — an edit here can be exactly the add/import/delete that

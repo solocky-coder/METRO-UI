@@ -214,7 +214,20 @@ struct SequencerTrack
      *  callers (e.g. ArrangeView's selection callback) can tell a real
      *  .sfz-file track apart from an SF2 preset track — both share
      *  TrackType::SfPlayer since they play back through the sequencer's
-     *  clip/channel machinery identically. */
+     *  clip/channel machinery identically.
+     *
+     *  This is the one track for whichever MULTISAMPLER instrument is
+     *  currently loaded in MultisamplerEditor — whether it got there by
+     *  loading a .sfz file from the browser/drop or by building one from
+     *  scratch via Add Zone. Both paths edit the same underlying
+     *  MultisamplerInstrument model and sync it to the same sfzPlayer2
+     *  engine, so there is only ever one live instrument and this is its
+     *  one track; a second TrackType for the Add Zone case would just be a
+     *  duplicate, disconnected track for the same instrument. See
+     *  SequencerEngine::addSfzTrack()/removeSfzTrack(): created the moment
+     *  the instrument gains its first zone, removed the moment it has none
+     *  left — despite older comments elsewhere calling it "permanent", it
+     *  is not a fixture once created. */
     static std::shared_ptr<SequencerTrack> makeSfzInstrument (const juce::String& name,
                                                                juce::Colour colour)
     {
