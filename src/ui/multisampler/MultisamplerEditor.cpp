@@ -1,6 +1,7 @@
 #include "MultisamplerEditor.h"
 #include "../../PluginProcessor.h"
 #include "../DysektLookAndFeel.h"
+#include "../SliceControlBar.h"
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
 #include "../../audio/SfzZoneColours.h"
@@ -48,13 +49,12 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     {
         // Deliberately does NOT touch inspectedZoneId or fire
         // onZoneSelectionOrEditChanged — the actual selection (and thus the
-        // eventual field-edit target once a zoneLcd drag starts) never moves
-        // just because the cursor passed over a different zone.
-        // refreshZoneLcd() below uses this for display priority only —
-        // see its doc comment and getHoveredZoneIndex()'s for why that's
-        // safe even though zoneLcd can also be mid-edit.
+        // eventual field-edit target once the cursor reaches an SCB cell)
+        // never moves just because the cursor passed over a different zone.
+        // PluginEditor's syncMultisamplerDisplay() is still free to use this
+        // for display priority (LCDs + SCB summary) — see
+        // getHoveredZoneIndex()'s doc comment for why that's safe.
         hoveredZoneId = id;
-        refreshZoneLcd();   // preview-only display update — see refreshZoneLcd()'s doc comment
         if (onZoneHoverChanged) onZoneHoverChanged();
     };
     zoneMapView.onZoneDeleted = [this]
@@ -84,29 +84,11 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     addAndMakeVisible (newButton);
     newButton.onClick = [this] { newInstrumentClicked(); };
 
-    // SAVE — moved from the shared SliceControlBar (implementation plan
-    // §7/Phase 4). Same behavior as the old SCB button: writes in place,
-    // clearing the dirty dot on success.
-    addAndMakeVisible (saveButton);
-    saveButton.onClick = [this] { saveInPlace(); };
-    saveButton.setVisible (dirty);
-
     // ── Header zone-summary readout ─────────────────────────────────────
     configureStaticLabel (headerZoneSummary, "Select a zone to edit");
     headerZoneSummary.setFont (juce::FontOptions (11.5f));
     headerZoneSummary.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (headerZoneSummary);
-
-    // ── Dedicated zone LCD ───────────────────────────────────────────────
-    addAndMakeVisible (zoneLcd);
-    zoneLcd.onFieldEdited = [this] (MultisamplerZoneField field, float value, bool isCommit)
-    {
-        // inspectedZoneId, not a vector index — see applyZoneFieldEdit's
-        // doc comment for why. zoneLcd only ever has setEditable(true) when
-        // the displayed zone IS the selected zone (see refreshZoneLcd()),
-        // so inspectedZoneId is always the right target here.
-        applyZoneFieldEdit (inspectedZoneId, field, value, isCommit);
-    };
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
 }
@@ -130,14 +112,7 @@ void MultisamplerEditor::paint (juce::Graphics& g)
 
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH, 4.0f, bounds.getWidth() - 4.0f);
-    // zoneLcd draws its own complete frame/border (see MultisamplerZoneLcd::
-    // paint()), so no second separator is needed beneath it here.
 
-    // Dirty indicator now lives on saveButton's visibility (see
-    // resized()/the constructor) rather than this dot, but the dot is kept
-    // as a secondary, always-visible-even-if-scrolled cue in the corner —
-    // harmless to keep alongside SAVE, matches the old SCB's own dual
-    // dot+button treatment.
     if (dirty)
     {
         g.setColour (theme.accent);
@@ -152,8 +127,6 @@ void MultisamplerEditor::resized()
     auto header = r.removeFromTop (kHeaderH - 6);
     titleLabel.setBounds (header.removeFromLeft (140));
     header.removeFromRight (4);
-    saveButton.setBounds   (header.removeFromRight (56));
-    header.removeFromRight (4);
     newButton.setBounds    (header.removeFromRight (60));
     header.removeFromRight (4);
     exportButton.setBounds (header.removeFromRight (90));
@@ -165,15 +138,6 @@ void MultisamplerEditor::resized()
     headerZoneSummary.setBounds (header);   // whatever's left between title and buttons
 
     r.removeFromTop (6);
-
-    // Dedicated LCD row (implementation plan §7's suggested vertical order:
-    // header, then LCD, then zone map/keyboard receiving the rest). Fixed
-    // height; zoneMapView (and, inside it, KeysPanel) gets everything left
-    // over — including the 72px this panel no longer has to share with the
-    // SCB (see PluginEditor.cpp's resized(), which stopped reserving
-    // kSliceCtrlH for MULTISAMPLER — implementation plan §8/Phase 5).
-    zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
-    r.removeFromTop (kZoneLcdGap);
 
     zoneMapView.setBounds (r);
 }
@@ -387,8 +351,16 @@ void MultisamplerEditor::exportSfzClicked()
                 // The file just picked is now the thing SAVE / discard-revert
                 // operate against, same as an IMPORT SFZ would set it.
                 lastSavedFile = file;
-                clearDirtyFlag();   // hides saveButton directly now — no external mirror to refresh
+                clearDirtyFlag();
 
+                // clearDirtyFlag() alone never reaches the SCB — its SAVE
+                // button reads a *cached copy* of isDirty() that only gets
+                // refreshed inside onInstrumentChanged (see PluginEditor's
+                // sliceControlBar.setInstrumentDirty(...) callback). Without
+                // firing it here, the SAVE button silently stays lit and
+                // clickable after a successful export, with zero visible
+                // sign that anything happened — indistinguishable from the
+                // button doing nothing at all.
                 if (onInstrumentChanged) onInstrumentChanged();
             }
         });
@@ -410,6 +382,12 @@ void MultisamplerEditor::saveInPlace()
     if (SfzExporter::exportToFile (instrument, lastSavedFile, opts))
     {
         clearDirtyFlag();
+
+        // Same reason as exportSfzClicked()'s success path: without this,
+        // the SCB's cached instrumentDirty mirror never learns the save
+        // happened, so its SAVE button stays lit/clickable with no visible
+        // change — the save silently succeeds on disk but looks like the
+        // button did nothing.
         if (onInstrumentChanged) onInstrumentChanged();
     }
 }
@@ -562,13 +540,6 @@ int MultisamplerEditor::getHoveredZoneIndex() const noexcept
 
 void MultisamplerEditor::refreshInspectorFromSelection()
 {
-    // Every dirty=true call site in this class calls this method
-    // immediately afterward (see the constructor's zoneMapView.onZoneEditing
-    // /onZoneEditCommitted/onZoneDeleted and applyZoneFieldEdit), so this is
-    // the single place saveButton's visibility needs to track dirty —
-    // clearDirtyFlag() (dirty -> false) handles the other direction itself.
-    saveButton.setVisible (dirty);
-
     const auto& selected = zoneMapView.getSelectedZoneIds();
     const bool single = selected.size() == 1;
 
@@ -583,14 +554,18 @@ void MultisamplerEditor::refreshInspectorFromSelection()
 
     if (zone == nullptr)
     {
+        // Same wording as SliceControlBar::drawSfzZoneSummary's own empty
+        // state, so this header readout and the SCB's own row agree
+        // exactly when nothing (or more than one zone) is selected.
         headerZoneSummary.setText (selected.empty() ? "Select a zone to edit" : "Multiple zones selected",
                                     juce::dontSendNotification);
     }
     else
     {
-        // loKey/hiKey/ROOT/PITCH/PAN/VOLUME/RELEASE/LOOP — same field set
-        // and formatting zoneLcd shows in full (see this label's
-        // declaration comment); this is a compact one-line duplicate.
+        // Mirrors SliceControlBar::drawSfzZoneSummary()'s field set and
+        // formatting exactly (loKey/hiKey/ROOT/PITCH/PAN/VOLUME/RELEASE/
+        // LOOP) so this reads as the same information, not a shorthand
+        // version of it — see this label's declaration comment.
         const auto note = [] (int n) { return UIHelpers::midiNoteToName (juce::jlimit (0, 127, n)); };
         const juce::String panStr = zone->pan == 0.0f
             ? "C" : (zone->pan < 0.0f ? "L" : "R") + juce::String (juce::roundToInt (std::abs (zone->pan) * 100.0f));
@@ -608,116 +583,39 @@ void MultisamplerEditor::refreshInspectorFromSelection()
         headerZoneSummary.setText (text, juce::dontSendNotification);
     }
 
-    refreshZoneLcd();
-
+    // Drives the shared SliceControlBar — see this method's declaration
+    // comment. PluginEditor reads getSelectedZoneIndex()/getInstrument()
+    // right after this fires to build the SCB readout via
+    // sliceControlBar.setSfzZoneSummary().
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
 }
 
-void MultisamplerEditor::refreshZoneLcd()
+void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field, float value)
 {
-    // Resolution rules per implementation plan §4: hover takes *display*
-    // priority over selection, but editability is tied to selection only —
-    // a hovered-but-not-selected zone is always shown read-only, even while
-    // it's the thing on screen.
-    const int selectedIndex = getSelectedZoneIndex();
-    const int previewIndex  = getHoveredZoneIndex();
-    const int displayIndex  = previewIndex >= 0 ? previewIndex : selectedIndex;
-    const bool isPreview    = previewIndex >= 0 && previewIndex != selectedIndex;
-    const bool editable     = displayIndex >= 0 && displayIndex == selectedIndex;
-
-    const auto& selectedIds = zoneMapView.getSelectedZoneIds();
-    if (selectedIds.size() > 1 && previewIndex < 0)
-    {
-        zoneLcd.setMultipleSelection (true);
-        zoneLcd.setEditable (false);
+    if (zoneIndex < 0 || zoneIndex >= (int) instrument.zones.size())
         return;
-    }
+    auto& z = instrument.zones[(size_t) zoneIndex];
 
-    if (displayIndex < 0 || displayIndex >= (int) instrument.zones.size())
-    {
-        zoneLcd.clearZone();
-        zoneLcd.setEditable (false);
-        return;
-    }
-
-    const bool auditioning = false;   // no layer-audition tracking in this slice yet
-    zoneLcd.setZoneForDisplay (&instrument.zones[(size_t) displayIndex], displayIndex, isPreview, auditioning);
-    zoneLcd.setEditable (editable);
-}
-
-void MultisamplerEditor::applyZoneFieldEdit (const juce::Uuid& zoneId, MultisamplerZoneField field,
-                                              float value, bool isCommit)
-{
-    // Resolve by stable id, not index — see this method's header doc
-    // comment (implementation plan §4/§6). A hover transition, insert,
-    // delete, or reorder between the drag starting and this call landing
-    // cannot redirect the edit to a different zone: if the id no longer
-    // resolves (e.g. the zone was deleted mid-drag), this is simply a no-op
-    // rather than silently mutating whatever now happens to sit at the old
-    // index.
-    if (zoneId == juce::Uuid::null())
-        return;
-
-    SampleZone* zonePtr = nullptr;
-    for (auto& z : instrument.zones)
-        if (z.id == zoneId) { zonePtr = &z; break; }
-    if (zonePtr == nullptr)
-        return;
-    auto& z = *zonePtr;
-
-    // Full 14-field coverage (implementation plan §2/§6 — the reviewed
-    // baseline's applySliceControlBarFieldEdit only implemented 8 of these;
-    // attack/decay/sustain/cutoff/resonance/group fell through to a no-op
-    // default). Every branch clamps using the same ranges the UI presents
-    // (MultisamplerZoneLcd::dragScaleFor's field set) and that import/export
-    // accept (SfzImporter/SfzExporter, mirrored from SampleZone.h's own
-    // field-range comments).
     switch (field)
     {
-        case MultisamplerZoneField::lowKey:
-            z.lowKey = juce::jmin (z.highKey, juce::jlimit (0, 127, juce::roundToInt (value)));
-            break;
-        case MultisamplerZoneField::highKey:
-            z.highKey = juce::jmax (z.lowKey, juce::jlimit (0, 127, juce::roundToInt (value)));
-            break;
-        case MultisamplerZoneField::rootKey:
-            z.rootKey = juce::jlimit (0, 127, juce::roundToInt (value));
-            break;
-        case MultisamplerZoneField::tune:
-            z.tuneCents = juce::jlimit (-1200.0f, 1200.0f, value);
-            break;
-        case MultisamplerZoneField::pan:
-            z.pan = juce::jlimit (-1.0f, 1.0f, value);
-            break;
-        case MultisamplerZoneField::gain:
-            z.gainDb = juce::jlimit (-60.0f, 12.0f, value);
-            break;
-        case MultisamplerZoneField::attack:
-            z.attackSeconds = juce::jmax (0.0f, value);
-            break;
-        case MultisamplerZoneField::decay:
-            z.decaySeconds = juce::jmax (0.0f, value);
-            break;
-        case MultisamplerZoneField::sustain:
-            z.sustainLevel = juce::jlimit (0.0f, 1.0f, value);
-            break;
-        case MultisamplerZoneField::release:
-            z.releaseSeconds = juce::jmax (0.0f, value);
-            break;
-        case MultisamplerZoneField::loopEnabled:
-        {
+        case SliceControlBar::ZoneLoKey:   z.lowKey       = juce::jmin (z.highKey, juce::roundToInt (value)); break;
+        case SliceControlBar::ZoneHiKey:   z.highKey      = juce::jmax (z.lowKey,  juce::roundToInt (value)); break;
+        case SliceControlBar::ZoneRoot:    z.rootKey      = juce::roundToInt (value); break;
+        case SliceControlBar::ZonePitch:   z.tuneCents    = value; break;
+        case SliceControlBar::ZonePan:     z.pan          = value; break;
+        case SliceControlBar::ZoneVolume:  z.gainDb       = value; break;
+        case SliceControlBar::ZoneRelease: z.releaseSeconds = value; break;
+        case SliceControlBar::ZoneLoop:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 
-            // Same loop-point auto-fill behavior as the baseline this
-            // migration replaces (see implementation plan §9 Phase 1 —
-            // "preserve the current loop-point initialization behavior").
-            // SfzExporter only writes loop_start/loop_end when
-            // z.loopStart/z.loopEnd are already set, so toggling LOOP on
-            // with neither set would otherwise export loop_mode=
-            // loop_continuous with no usable points. There's no loop-point
-            // editor here for the user to set explicit points, so auto-fill
-            // the whole sample the first time LOOP is turned on. Never
-            // overwrites an already-set range.
+            // Root cause 2 fix (MULTISAMPLER): SfzExporter only writes
+            // loop_start/loop_end when z.loopStart/z.loopEnd are already
+            // set (see SfzExporter.cpp's appendRegion), so toggling LOOP on
+            // with none set exported loop_mode=loop_continuous with no
+            // points — unactionable by SoundFontLoader on reload. There's
+            // no loop-point editor here for the user to set explicit
+            // points, so auto-fill the whole sample the first time LOOP is
+            // turned on. Never overwrites an already-set range.
             if (z.loopMode == LoopMode::loopContinuous && (z.loopStart < 0 || z.loopEnd < 0))
             {
                 juce::AudioFormatManager fm;
@@ -730,27 +628,12 @@ void MultisamplerEditor::applyZoneFieldEdit (const juce::Uuid& zoneId, Multisamp
                 }
             }
             break;
-        }
-        case MultisamplerZoneField::cutoff:
-            z.filterCutoffHz = juce::jlimit (20.0f, 20000.0f, value);
-            break;
-        case MultisamplerZoneField::resonance:
-            z.filterResonance = juce::jlimit (0.0f, 1.0f, value);
-            break;
-        case MultisamplerZoneField::group:
-            z.group = juce::jmax (0, juce::roundToInt (value));
-            break;
+        default: return;
     }
 
     dirty = true;
     zoneMapView.refresh();
-    // Engine sync stays debounced regardless of isCommit — matches plan §6:
-    // "engine synchronization should remain debounced" even though dirty
-    // state itself is effectively committed once per gesture here (the
-    // model write above already happened; isCommit is used by callers that
-    // want a single one-time-per-gesture side effect, not this one).
     scheduleEngineSync();
     if (onInstrumentChanged) onInstrumentChanged();
-    refreshInspectorFromSelection();   // pushes the just-applied value back into zoneLcd's own readout
-    juce::ignoreUnused (isCommit);
+    refreshInspectorFromSelection();   // pushes the just-applied value back into SCB's own readout
 }

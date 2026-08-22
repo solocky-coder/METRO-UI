@@ -141,6 +141,15 @@ private:
     int  uiMode = 0;
     bool showPadGrid     = false;  ///< true = PadGridView, false = WaveformView (within uiMode 0)
 
+    /// Sticky "last shown" zone for syncMultisamplerDisplay()'s fallback tier —
+    /// tracked by id (not index) so it survives zone reordering/insertion, and
+    /// resolved back to an index by scanning the current zone list each time.
+    /// Deliberately starts (and is reset back to) juce::Uuid::null() so the SCB/
+    /// LCDs stay genuinely blank on init and on every fresh entry into the
+    /// MULTISAMPLER tab, only picking up a default once the user has actually
+    /// hovered or selected a zone at least once this tab-visit — see
+    /// syncMultisamplerDisplay()'s doc comment.
+    juce::Uuid lastMultisamplerZoneId = juce::Uuid::null();
     bool hasSampleLoaded = false;   // true once a sample with audio is loaded
     bool hasSampleLoaded2 = false;  // true once SFZ-PLAYER (sliceManager2/sampleData2) has a real sample loaded
 
@@ -152,12 +161,31 @@ private:
     /// checking showMultisamplerEditor); it's a pure function of uiMode.
     bool isMultisamplerTabActive() const noexcept { return uiMode == 1; }
 
-    // syncMultisamplerDisplay() and lastMultisamplerZoneId removed —
-    // MultisamplerEditor now owns its own dedicated zoneLcd and refreshes
-    // it internally on every selection/hover/edit change (see
-    // MultisamplerEditor::refreshZoneLcd()), so PluginEditor no longer
-    // tracks or synchronizes any MULTISAMPLER display state of its own
-    // (implementation plan §8/§9 Phase 6).
+    /// Pushes the right zone into both LCDs AND the SliceControlBar's zone
+    /// summary/readout for MULTISAMPLER: the hovered zone
+    /// (multisamplerEditor.getHoveredZoneIndex()) takes priority whenever
+    /// the cursor is over the zone map — including mid-cycle through a
+    /// stacked overlap via the wheel — falling back to the click-selected
+    /// zone (getSelectedZoneIndex()) once hover goes back to -1. Safe to let
+    /// the SCB summary follow hover too, even though that same readout
+    /// doubles as the field-edit target: dragging an SCB zone field requires
+    /// the mouse to be down on that cell, which is only reachable after the
+    /// cursor has left the zone map (firing mouseExit -> hover back to -1 ->
+    /// this resync back to the real selection) — see ZoneMapView::mouseExit
+    /// and MultisamplerEditor::onZoneHoverChanged's doc comment. So an edit
+    /// can never land while a hover preview from a different zone is still
+    /// showing. If neither hover nor selection resolves to a zone (mouse off
+    /// the map, nothing clicked), falls back to whichever zone was last
+    /// legitimately shown this tab-visit (lastMultisamplerZoneId) rather than
+    /// going blank — so moving the cursor off a zone you were just looking at
+    /// keeps showing it instead of flashing empty. That sticky id is only
+    /// ever set from a real hover/selection, and is reset to null on init and
+    /// on every fresh entry into the tab, so the SCB/LCDs stay genuinely
+    /// blank until the user actually hovers or clicks a zone — they never
+    /// pop up a default on their own. Called from resized() (every layout
+    /// pass, self-correcting), onZoneSelectionOrEditChanged, and
+    /// onZoneHoverChanged.
+    void syncMultisamplerDisplay();
 
     bool iconNeedsApplying = true;   // set icon once peer is available
 
