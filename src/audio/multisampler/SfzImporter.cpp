@@ -16,7 +16,7 @@ namespace
             "offset", "end", "loop_mode", "loop_start", "loop_end",
             "ampeg_attack", "ampeg_decay", "ampeg_sustain", "ampeg_release",
             "cutoff", "resonance", "group", "off_by", "seq_position", "seq_length",
-            "dysekt_zone_color", "dysekt_output_bus"
+            "dysekt_zone_color", "dysekt_output_bus", "dysekt_show_in_mixer"
         };
         return s;
     }
@@ -463,6 +463,10 @@ namespace
         // Output-bus override — see SfzExporter for the write side. Same
         // lowercased-key guarantee as dysekt_zone_color above.
         z.outputBus = juce::jlimit (0, 15, intOpcode (resolved, "dysekt_output_bus", 0));
+
+        // Mixer-visibility override — see SfzExporter for the write side.
+        // Same lowercased-key guarantee as dysekt_zone_color above.
+        z.showInMixer = intOpcode (resolved, "dysekt_show_in_mixer", 0) != 0;
 
         z.group           = intOpcode (resolved, "group", 0);
         z.offBy           = intOpcode (resolved, "off_by", 0);

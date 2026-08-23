@@ -28,5 +28,6 @@ enum class MultisamplerZoneField
     cutoff,
     resonance,
     group,
-    outputBus
+    outputBus,
+    showInMixer
 };

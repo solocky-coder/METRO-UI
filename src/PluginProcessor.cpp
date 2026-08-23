@@ -3244,6 +3244,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 int      zoneLoKey;
                 int      zoneHiKey;
                 int      outputBus;   // -1 = unset — see SfzSliceDescriptor::outputBus
+                int      showInMixer; // -1 = unset — see SfzSliceDescriptor::showInMixer
             };
             std::vector<PendingZonePin> pendingZonePins;
             pendingZonePins.reserve (zonesOwner2->slices.size());
@@ -3264,7 +3265,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // No (valid) loop region for this note — plain one-shot slice.
                     int idx = sliceManager2.createSlice (desc.startSample, desc.endSample);
                     if (idx >= 0)
-                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus });
+                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
                     continue;
                 }
 
@@ -3301,7 +3302,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SliceControlBar.cpp.
                     sliceManager2.getSlice (tailIdx).loopMode = 1;   // forward loop, whole-slice
 
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
 
                     // Head + tail belong to the same zone — same colour on
                     // both so the loop-split doesn't look like two zones.
@@ -3322,17 +3323,25 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // bus or the sustain portion would audibly jump back to
                     // Main partway through the note.
                     if (desc.outputBus >= 0)
-                    {
                         sliceManager2.getSlice (tailIdx).outputBus = desc.outputBus;
-                        if (desc.outputBus != 0)
-                            sliceManager2.getSlice (tailIdx).showInMixer = true;
-                    }
+
+                    // Real per-zone value now (see SfzSliceDescriptor::
+                    // showInMixer) rather than inferring it from outputBus —
+                    // a zone can be routed off Main and still be explicitly
+                    // hidden, or stay on Main and still be explicitly
+                    // pinned, so outputBus != 0 is no longer treated as a
+                    // proxy for this field. -1 (no dysekt_show_in_mixer
+                    // opcode on this region) leaves Slice's own default
+                    // (false) alone, same "unset means don't overwrite"
+                    // convention hasZoneColour/outputBus use above.
+                    if (desc.showInMixer >= 0)
+                        sliceManager2.getSlice (tailIdx).showInMixer = desc.showInMixer != 0;
                 }
                 else if (headIdx >= 0)
                 {
                     // Tail creation failed (cap reached) — fall back to a
                     // plain one-shot head so the note still plays something.
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
                 }
             }
 
@@ -3353,11 +3362,13 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // default (bus 0/Main) alone in that case, same "unset
                 // means don't overwrite" convention hasZoneColour uses above.
                 if (pin.outputBus >= 0)
-                {
                     sliceManager2.getSlice (pin.sliceIdx).outputBus = pin.outputBus;
-                    if (pin.outputBus != 0)
-                        sliceManager2.getSlice (pin.sliceIdx).showInMixer = true;
-                }
+
+                // Real per-zone value now — see the tail-mirroring block
+                // above (same reasoning: outputBus != 0 is no longer used
+                // as a stand-in for this field).
+                if (pin.showInMixer >= 0)
+                    sliceManager2.getSlice (pin.sliceIdx).showInMixer = pin.showInMixer != 0;
             }
 
             // Reapply anything captured above, just before clearAll(), for

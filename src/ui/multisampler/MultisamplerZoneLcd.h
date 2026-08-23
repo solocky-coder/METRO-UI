@@ -97,6 +97,7 @@ private:
         float tuneCents = 0.0f, pan = 0.0f, gainDb = 0.0f;
         float attackSeconds = 0.005f, decaySeconds = 0.1f, sustainLevel = 1.0f, releaseSeconds = 0.1f;
         bool loopOn = false;
+        bool showInMixer = false;
         float filterCutoffHz = 20000.0f, filterResonance = 0.0f;
         bool isPreview = false;
         bool isAuditioning = false;
@@ -136,9 +137,14 @@ private:
     void drawKnobField (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field, int cellIdx);
     void drawKnobArc (juce::Graphics& g, int cx, int cy, int r, float normVal, bool hovered, bool dragging) const;
 
-    // LOOP is boolean — drawn as a flat toggle badge rather than a knob,
-    // same call this component made before for that field.
-    void drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
+    // LOOP and MIX are both boolean — drawn as a flat ON/OFF-style badge
+    // rather than a knob (a 0..1 arc reads as a fader, not a toggle, for a
+    // binary field), same treatment this component used for LOOP alone
+    // before MIX (MultisamplerZoneField::showInMixer) was added alongside
+    // it. Parameterized on `field` purely to pick the right label/value
+    // pair and drag-state comparison; the drawing itself is identical for
+    // both fields.
+    void drawBoolToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field, int cellIdx);
 
     // Native value → 0-1 for the knob arc. Ranges mirror either the field's
     // own documented range in SampleZone.h (tune ±1200ct, cutoff 20Hz..

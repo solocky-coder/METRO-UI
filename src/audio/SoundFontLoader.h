@@ -139,6 +139,15 @@ struct SfzSliceDescriptor
     // zoneColourArgb/zoneLoKey/zoneHiKey by SoundFontLoader::loadFile's
     // Step 3d, via the same parseSfzAllRegionKeyRanges() region scan.
     int outputBus = -1;
+
+    // Mixer-visibility override carried by the <region>'s
+    // dysekt_show_in_mixer custom opcode (see SfzExporter/SfzImporter and
+    // SampleZone::showInMixer). Same -1/0/1 "unset"/false/true convention as
+    // outputBus above, for the same reason: an absent opcode must fall back
+    // to the consumer's own default rather than be read as a literal false,
+    // so a load path that never emitted this opcode (or one that predates
+    // its introduction) doesn't silently force every zone's mixer row off.
+    int showInMixer = -1;
 };
 
 // Heap-allocated payload posted via pendingSfzSlices atomic.

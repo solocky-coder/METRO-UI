@@ -879,6 +879,9 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             // autoAssignOutputBuses()'s clamping below.
             z.outputBus = juce::jlimit (0, 15, juce::roundToInt (value));
             break;
+        case MultisamplerZoneField::showInMixer:
+            z.showInMixer = value > 0.5f;
+            break;
         case MultisamplerZoneField::loopEnabled:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 
@@ -956,6 +959,12 @@ void MultisamplerEditor::autoAssignOutputBuses (int numZones)
         // reasonable default (matches the old SfzDrumKitBusApplier's
         // identical choice).
         instrument.zones[(size_t) i].outputBus = 1 + (i % 15);
+
+        // Sensible default for a freshly auto-routed drum kit: each pad
+        // just got its own aux bus, so give it its own mixer row too
+        // rather than leaving the user to discover and toggle MIX on
+        // every zone by hand. Still independently toggleable afterward.
+        instrument.zones[(size_t) i].showInMixer = true;
     }
 
     dirty = true;

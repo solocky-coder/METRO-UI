@@ -107,6 +107,20 @@ struct SampleZone
         autoAssignOutputBuses() (the drum-kit auto-routing prompt). */
     int outputBus = 0;
 
+    /** Whether this zone gets its own row in MixerPanel. Mirrors Slice::
+        showInMixer (see src/audio/Slice.h) — same reasoning: with a large
+        instrument's worth of zones, showing every one unconditionally would
+        flood the mixer, so it's opt-in per zone. Round-tripped through the
+        `dysekt_show_in_mixer` custom opcode (same pattern as
+        `dysekt_output_bus` above) so it survives save/reload and
+        MultisamplerEditor::performEngineSync()'s export/reimport cycle.
+        Defaults false; MultisamplerEditor::autoAssignOutputBuses() sets it
+        true as a sensible default for a freshly auto-routed drum kit, and
+        it's independently toggleable per zone from MultisamplerZoneLcd's
+        MIX cell so a user can pin an unrouted zone for manual gain/pan
+        access, or hide a routed one they don't want cluttering the mixer. */
+    bool showInMixer = false;
+
     bool enabled = true;   ///< editor-only mute; excluded from SFZ export when false
 
     /** User-picked colour override, round-tripped through the same

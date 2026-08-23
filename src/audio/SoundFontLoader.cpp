@@ -254,6 +254,11 @@ struct SfzRegionKeyRange
     // dysekt_output_bus=N, if present (see SfzSliceDescriptor::outputBus's
     // doc comment for the -1-means-unset convention this carries through to).
     int outputBus = -1;
+
+    // dysekt_show_in_mixer=0/1, if present (see SfzSliceDescriptor::
+    // showInMixer's doc comment for the -1-means-unset convention this
+    // carries through to).
+    int showInMixer = -1;
 };
 
 static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::File& sfzFile)
@@ -339,6 +344,13 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
         const int outputBus = scanIntOpcode (chunk, "dysekt_output_bus");
         if (outputBus >= 0)
             rk.outputBus = juce::jlimit (0, 15, outputBus);
+
+        // dysekt_show_in_mixer — same custom-opcode scan as dysekt_output_bus
+        // above; left at -1 ("unset") when absent, matching a false value
+        // being omitted from the exported .sfz (see SfzExporter).
+        const int showInMixer = scanIntOpcode (chunk, "dysekt_show_in_mixer");
+        if (showInMixer >= 0)
+            rk.showInMixer = showInMixer != 0 ? 1 : 0;
 
         result.push_back (rk);
     }
@@ -1095,6 +1107,7 @@ private:
                     desc.zoneLoKey      = rk.loKey;
                     desc.zoneHiKey      = rk.hiKey;
                     desc.outputBus      = rk.outputBus;   // -1 if the region had no dysekt_output_bus opcode
+                    desc.showInMixer    = rk.showInMixer; // -1 if the region had no dysekt_show_in_mixer opcode
                     break;   // first matching region wins (matches Step 3c's rule)
                 }
             }
