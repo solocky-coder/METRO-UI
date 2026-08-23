@@ -848,8 +848,14 @@ void ZoneMapView::paint (juce::Graphics& g)
         {
             const auto badgeText = "A" + juce::String (r.outputBus);
             const float badgeFontSize = 9.0f * uiScale;
-            g.setFont (juce::FontOptions (badgeFontSize, juce::Font::bold));
-            const float textW = g.getCurrentFont().getStringWidthFloat (badgeText);
+            const auto badgeFont = juce::FontOptions (badgeFontSize, juce::Font::bold);
+            g.setFont (badgeFont);
+            // GlyphArrangement::getStringWidthInt (not Font::getStringWidthFloat,
+            // which this JUCE version doesn't have) — same measuring call every
+            // other LCD in this codebase already uses (SliceLcdDisplay,
+            // SfzLcdDisplay, Sf2LcdDisplay, etc.).
+            const float textW = (float) juce::GlyphArrangement::getStringWidthInt (
+                                     juce::Font (badgeFont), badgeText);
             const float badgeW = juce::jmin (r.bounds.getWidth() - 4.0f, textW + 7.0f * uiScale);
             const float badgeH = 12.0f * uiScale;
             const juce::Rectangle<float> badge (r.bounds.getRight() - badgeW - 2.0f,
