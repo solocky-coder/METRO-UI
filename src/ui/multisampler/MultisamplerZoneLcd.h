@@ -82,7 +82,11 @@ public:
         applyZoneFieldEdit is the single place values are clamped). */
     std::function<void (MultisamplerZoneField field, float value, bool isCommit)> onFieldEdited;
 
-    static constexpr int kPreferredHeight = 76;
+    // Taller than the original 76px flat-text layout — knob cells need a
+    // title row plus two full rows of knob+label+value (SliceControlBar's
+    // own psCellH is 32px per row); see MultisamplerEditor::resized(),
+    // which reads this constant when it reserves space for this component.
+    static constexpr int kPreferredHeight = 100;
 
 private:
     float uiScale = 1.0f;
@@ -125,6 +129,30 @@ private:
 
     void drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field);
     void applyDrag (MultisamplerZoneField field, float rawValue, bool commit);
+
+    // Rotary knob cell — same visual language as SliceControlBar::drawKnob /
+    // drawKnobCell (thin arc track, single accent fill arc, plain indicator
+    // line, label above value) so the MULTISAMPLER zone row reads as the
+    // same kind of control as the rest of the app instead of the cramped
+    // flat text pairs this replaces. There's no MIDI Learn / lock concept
+    // here — zones aren't Slicer slices — so this only carries the subset
+    // of drawKnobCell's state that applies: hover and active-drag.
+    void drawKnobField (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field, int cellIdx);
+    void drawKnobArc (juce::Graphics& g, int cx, int cy, int r, float normVal, bool hovered, bool dragging) const;
+
+    // LOOP is boolean — drawn as a flat toggle badge rather than a knob,
+    // same call this component made before for that field.
+    void drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
+
+    // Native value → 0-1 for the knob arc. Ranges mirror either the field's
+    // own documented range in SampleZone.h (tune ±1200ct, cutoff 20Hz..
+    // 20kHz log, resonance/sustain 0..1) or, where SampleZone.h leaves a
+    // field's practical range unstated (gain, attack, decay, release), the
+    // same range SliceControlBar's own knobs already use for the nearest
+    // equivalent (FieldVolume, FieldAttack/Decay/Release) — see
+    // SliceControlBar::toNorm — so a given field's knob sweeps the same
+    // visual arc everywhere it appears in the app.
+    float normForField (MultisamplerZoneField field) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultisamplerZoneLcd)
 };
