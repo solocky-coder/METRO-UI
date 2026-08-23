@@ -250,6 +250,10 @@ static std::vector<SfzRegionLoop> parseSfzPerRegionLoopPoints (const juce::File&
 struct SfzRegionKeyRange
 {
     int loKey = -1, hiKey = -1;   // inclusive MIDI key range this region covers
+
+    // dysekt_output_bus=N, if present (see SfzSliceDescriptor::outputBus's
+    // doc comment for the -1-means-unset convention this carries through to).
+    int outputBus = -1;
 };
 
 static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::File& sfzFile)
@@ -328,6 +332,13 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
         else if (lokey >= 0 || hikey >= 0)  { rk.loKey = lokey >= 0 ? lokey : 0;
                                                rk.hiKey = hikey >= 0 ? hikey : 127; }
         else                                  { rk.loKey = 0;     rk.hiKey = 127; }
+
+        // dysekt_output_bus — same custom-opcode scan as key/lokey/hikey
+        // above; left at -1 ("unset") when absent, matching bus 0 (Main)
+        // being omitted from the exported .sfz (see SfzExporter).
+        const int outputBus = scanIntOpcode (chunk, "dysekt_output_bus");
+        if (outputBus >= 0)
+            rk.outputBus = juce::jlimit (0, 15, outputBus);
 
         result.push_back (rk);
     }
@@ -1083,6 +1094,7 @@ private:
                     desc.zoneColourArgb = SfzZoneColours::zoneColourArgb (i);
                     desc.zoneLoKey      = rk.loKey;
                     desc.zoneHiKey      = rk.hiKey;
+                    desc.outputBus      = rk.outputBus;   // -1 if the region had no dysekt_output_bus opcode
                     break;   // first matching region wins (matches Step 3c's rule)
                 }
             }

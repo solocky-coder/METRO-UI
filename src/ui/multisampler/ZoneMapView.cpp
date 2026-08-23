@@ -187,6 +187,7 @@ void ZoneMapView::rebuildLayout()
                                                  : juce::String ("(no sample)");
         r.lowKey = z.lowKey;  r.highKey = z.highKey;
         r.lowVel = z.lowVelocity; r.highVel = z.highVelocity;
+        r.outputBus = z.outputBus;
 
         // A user-picked colour (see showZoneContextMenu) always wins over
         // the palette-index default, matching MultisamplerEditor::
@@ -834,6 +835,33 @@ void ZoneMapView::paint (juce::Graphics& g)
             g.setColour (juce::Colours::red.withAlpha (0.85f));
             g.setFont (juce::FontOptions (10.0f * uiScale, juce::Font::bold));
             g.drawText ("!", r.bounds.toNearestInt(), juce::Justification::topLeft);
+        }
+
+        // Output-bus badge — a small pill in the tile's top-right corner so
+        // a zone routed off Main is visible at a glance without opening the
+        // zone LCD (which is the only other place OUT is shown; see
+        // MultisamplerZoneLcd's OUT cell). Bus 0 (Main) draws nothing, same
+        // "unrouted zones don't clutter the view" choice SfzExporter makes
+        // for the opcode itself. Skipped on tiles too small to hold it
+        // legibly rather than shrinking the badge down to unreadable.
+        if (r.outputBus != 0 && r.bounds.getWidth() > 20.0f && r.bounds.getHeight() > 14.0f)
+        {
+            const auto badgeText = "A" + juce::String (r.outputBus);
+            const float badgeFontSize = 9.0f * uiScale;
+            g.setFont (juce::FontOptions (badgeFontSize, juce::Font::bold));
+            const float textW = g.getCurrentFont().getStringWidthFloat (badgeText);
+            const float badgeW = juce::jmin (r.bounds.getWidth() - 4.0f, textW + 7.0f * uiScale);
+            const float badgeH = 12.0f * uiScale;
+            const juce::Rectangle<float> badge (r.bounds.getRight() - badgeW - 2.0f,
+                                                 r.bounds.getY() + 2.0f,
+                                                 badgeW, badgeH);
+
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.fillRoundedRectangle (badge, badgeH * 0.5f);
+            g.setColour (theme.accent);
+            g.drawRoundedRectangle (badge, badgeH * 0.5f, 1.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.95f));
+            g.drawText (badgeText, badge, juce::Justification::centred);
         }
     }
 

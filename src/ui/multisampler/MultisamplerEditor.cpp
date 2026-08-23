@@ -873,6 +873,12 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             // Matches SampleZone::filterResonance's own documented 0..1 range.
             z.filterResonance = juce::jlimit (0.0f, 1.0f, value);
             break;
+        case MultisamplerZoneField::outputBus:
+            // 0 = Main, 1-15 = Aux — matches SampleZone::outputBus's own
+            // documented range and SfzDrumKitBusApplier/
+            // autoAssignOutputBuses()'s clamping below.
+            z.outputBus = juce::jlimit (0, 15, juce::roundToInt (value));
+            break;
         case MultisamplerZoneField::loopEnabled:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 
@@ -912,4 +918,49 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
 
     refreshZoneLcdDisplay();
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
+}
+
+// Drum-kit auto-routing (PluginEditor::offerDrumKitAutoRouting). Assigns
+// buses 1..15 round-robin, in top-to-bottom zones[] order, to the first
+// `numZones` zones — writing straight to SampleZone::outputBus so the
+// assignment round-trips through save/reload and performEngineSync() the
+// same way a manual OUT-cell edit does.
+//
+// This used to be SfzDrumKitBusApplier, a self-deleting juce::Timer that
+// polled processor.getUiSliceSnapshot2() and pushed CmdSetSliceParam
+// commands once the async loadSoundFontAsync() load caught up — necessary
+// back when the drum-kit prompt targeted sliceManager2 directly, since that
+// engine only populates asynchronously. It's no longer needed: the prompt
+// now fires from loadSfzIntoMultisampler()'s doImport lambda, strictly
+// after multisamplerEditor.importFromFile() has already run SfzImporter
+// synchronously and populated `instrument.zones` — so there's nothing left
+// to wait on, and the old polling/command-queue indirection was itself the
+// bug (it wrote the derived sliceManager2 copy, not SampleZone, so
+// performEngineSync()'s next export/reimport silently wiped it — see this
+// method's call site for the fuller history).
+//
+// `numZones` comes from SfzLayoutClassifier's independent parse of the same
+// file (see offerDrumKitAutoRouting) rather than instrument.zones.size()
+// directly, so this clamps defensively in case the two ever disagree.
+void MultisamplerEditor::autoAssignOutputBuses (int numZones)
+{
+    const int n = juce::jmin (numZones, (int) instrument.zones.size());
+    if (n <= 0)
+        return;
+
+    for (int i = 0; i < n; ++i)
+    {
+        // Bus 0 = Main is left alone; 1-15 round-robin. Wraps if there are
+        // more than 15 zones — no UI currently exists to pick specific
+        // buses per zone, so simple round-robin distribution is the
+        // reasonable default (matches the old SfzDrumKitBusApplier's
+        // identical choice).
+        instrument.zones[(size_t) i].outputBus = 1 + (i % 15);
+    }
+
+    dirty = true;
+    zoneMapView.refresh();
+    scheduleEngineSync();
+    if (onInstrumentChanged) onInstrumentChanged();
+    refreshZoneLcdDisplay();
 }

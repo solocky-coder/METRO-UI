@@ -3243,6 +3243,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 uint32_t colourArgb;
                 int      zoneLoKey;
                 int      zoneHiKey;
+                int      outputBus;   // -1 = unset — see SfzSliceDescriptor::outputBus
             };
             std::vector<PendingZonePin> pendingZonePins;
             pendingZonePins.reserve (zonesOwner2->slices.size());
@@ -3263,7 +3264,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // No (valid) loop region for this note — plain one-shot slice.
                     int idx = sliceManager2.createSlice (desc.startSample, desc.endSample);
                     if (idx >= 0)
-                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey });
+                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus });
                     continue;
                 }
 
@@ -3300,7 +3301,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SliceControlBar.cpp.
                     sliceManager2.getSlice (tailIdx).loopMode = 1;   // forward loop, whole-slice
 
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus });
 
                     // Head + tail belong to the same zone — same colour on
                     // both so the loop-split doesn't look like two zones.
@@ -3314,12 +3315,24 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // head in case anything ever iterates slices by zone.
                     sliceManager2.getSlice (tailIdx).zoneLoKey = desc.zoneLoKey;
                     sliceManager2.getSlice (tailIdx).zoneHiKey = desc.zoneHiKey;
+
+                    // Same reasoning again for output bus — the tail plays
+                    // as part of the same note as the head (via
+                    // nextSliceIdx), so it needs to be routed to the same
+                    // bus or the sustain portion would audibly jump back to
+                    // Main partway through the note.
+                    if (desc.outputBus >= 0)
+                    {
+                        sliceManager2.getSlice (tailIdx).outputBus = desc.outputBus;
+                        if (desc.outputBus != 0)
+                            sliceManager2.getSlice (tailIdx).showInMixer = true;
+                    }
                 }
                 else if (headIdx >= 0)
                 {
                     // Tail creation failed (cap reached) — fall back to a
                     // plain one-shot head so the note still plays something.
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus });
                 }
             }
 
@@ -3334,6 +3347,17 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     sliceManager2.getSlice (pin.sliceIdx).colour = juce::Colour (pin.colourArgb);
                 sliceManager2.getSlice (pin.sliceIdx).zoneLoKey = pin.zoneLoKey;
                 sliceManager2.getSlice (pin.sliceIdx).zoneHiKey = pin.zoneHiKey;
+
+                // -1 means the matched <region> had no dysekt_output_bus
+                // opcode (or no region matched at all) — leave Slice's own
+                // default (bus 0/Main) alone in that case, same "unset
+                // means don't overwrite" convention hasZoneColour uses above.
+                if (pin.outputBus >= 0)
+                {
+                    sliceManager2.getSlice (pin.sliceIdx).outputBus = pin.outputBus;
+                    if (pin.outputBus != 0)
+                        sliceManager2.getSlice (pin.sliceIdx).showInMixer = true;
+                }
             }
 
             // Reapply anything captured above, just before clearAll(), for

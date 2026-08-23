@@ -18,7 +18,6 @@
 #include "ui/MidiLearnDialog.h"
 #include "ui/ConfirmOverlay.h"
 #include "audio/SfzLayoutClassifier.h"
-#include "ui/SfzDrumKitBusApplier.h"
 #include "ui/RenameOverlay.h"
 #include "ui/MessageOverlay.h"
 #include "ui/ThemeEditorPanel.h"

@@ -139,6 +139,11 @@ private:
         juce::String label;      // sample file name (sans extension), or "(no sample)"
         int lowKey  = 0, highKey  = 0;
         int lowVel  = 1, highVel  = 127;
+
+        // 0 = Main (no badge drawn); 1-15 = Aux N — see SampleZone::outputBus.
+        // Cached here for the same reason label/lowKey/etc. are: paint()
+        // shouldn't re-resolve the zone by id every frame.
+        int outputBus = 0;
     };
 
     // Grid geometry -----------------------------------------------------

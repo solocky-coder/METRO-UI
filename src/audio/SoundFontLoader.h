@@ -130,6 +130,15 @@ struct SfzSliceDescriptor
     // FieldShowInMixer handling.
     int zoneLoKey = -1;
     int zoneHiKey = -1;
+
+    // Output-bus override carried by the <region>'s dysekt_output_bus
+    // custom opcode (see SfzExporter/SfzImporter and SampleZone::outputBus).
+    // -1 = "unset" (no opcode present, or not an SfzPlayer2-target load) —
+    // consumers should fall back to their own default (bus 0/Main) rather
+    // than treat -1 as a literal bus number. Matched alongside
+    // zoneColourArgb/zoneLoKey/zoneHiKey by SoundFontLoader::loadFile's
+    // Step 3d, via the same parseSfzAllRegionKeyRanges() region scan.
+    int outputBus = -1;
 };
 
 // Heap-allocated payload posted via pendingSfzSlices atomic.

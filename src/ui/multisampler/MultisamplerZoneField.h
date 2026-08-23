@@ -27,5 +27,6 @@ enum class MultisamplerZoneField
     loopEnabled,
     cutoff,
     resonance,
-    group
+    group,
+    outputBus
 };

@@ -46,6 +46,7 @@ void MultisamplerZoneLcd::setZoneForDisplay (const SampleZone* zone, int display
     snapshot.highKey        = zone->highKey;
     snapshot.rootKey        = zone->rootKey;
     snapshot.group          = zone->group;
+    snapshot.outputBus      = zone->outputBus;
     snapshot.tuneCents      = zone->tuneCents;
     snapshot.pan            = zone->pan;
     snapshot.gainDb         = zone->gainDb;
@@ -95,6 +96,7 @@ juce::String MultisamplerZoneLcd::labelFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::release:     return "RELEASE";
         case MultisamplerZoneField::cutoff:      return "FILTER";
         case MultisamplerZoneField::resonance:   return "RES";
+        case MultisamplerZoneField::outputBus:   return "OUT";
     }
     return {};
 }
@@ -117,6 +119,7 @@ float MultisamplerZoneLcd::getFieldValue (MultisamplerZoneField field) const
         case MultisamplerZoneField::release:     return snapshot.releaseSeconds;
         case MultisamplerZoneField::cutoff:      return snapshot.filterCutoffHz;
         case MultisamplerZoneField::resonance:   return snapshot.filterResonance;
+        case MultisamplerZoneField::outputBus:   return (float) snapshot.outputBus;
     }
     return 0.0f;
 }
@@ -147,6 +150,9 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
                     / (std::log2 (20000.0f) - std::log2 (20.0f)));
         case MultisamplerZoneField::resonance: return juce::jlimit (0.0f, 1.0f, v);
         case MultisamplerZoneField::loopEnabled: return v; // unused — LOOP draws as a toggle, not a knob
+        // 0-15 range matches SampleZone::outputBus's own documented range
+        // (0 = Main, 1-15 = Aux).
+        case MultisamplerZoneField::outputBus: return juce::jlimit (0.0f, 1.0f, v / 15.0f);
     }
     return 0.5f;
 }
@@ -172,6 +178,7 @@ float MultisamplerZoneLcd::defaultValueFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::release:     return 0.1f;
         case MultisamplerZoneField::cutoff:      return 20000.0f;
         case MultisamplerZoneField::resonance:   return 0.0f;
+        case MultisamplerZoneField::outputBus:   return 0.0f;   // Main
     }
     return 0.0f;
 }
@@ -199,6 +206,7 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::cutoff:      scale = 50.0f;  break;
         case MultisamplerZoneField::resonance:   scale = 0.01f;  break;
         case MultisamplerZoneField::loopEnabled: scale = 0.0f;   break; // toggle, not a drag
+        case MultisamplerZoneField::outputBus:   scale = 0.25f;  break; // ~4px per bus step
     }
     return fineMode ? scale * kFineModeScale : scale;
 }
@@ -231,6 +239,9 @@ juce::String MultisamplerZoneLcd::formatFieldValue (MultisamplerZoneField field)
                        ? juce::String (snapshot.filterCutoffHz / 1000.0f, 1) + "kHz"
                        : juce::String (snapshot.filterCutoffHz, 0) + "Hz";
         case MultisamplerZoneField::resonance: return juce::String (snapshot.filterResonance, 2);
+        case MultisamplerZoneField::outputBus:
+            return snapshot.outputBus == 0 ? juce::String ("MAIN")
+                                            : "AUX " + juce::String (snapshot.outputBus);
     }
     return {};
 }
@@ -318,7 +329,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
                { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
                  MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
                  MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
-                 MultisamplerZoneField::resonance });
+                 MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus });
 }
 
 void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field)
@@ -559,6 +570,7 @@ void MultisamplerZoneLcd::applyDrag (MultisamplerZoneField field, float rawValue
         case MultisamplerZoneField::release:     snapshot.releaseSeconds = rawValue; break;
         case MultisamplerZoneField::cutoff:      snapshot.filterCutoffHz = rawValue; break;
         case MultisamplerZoneField::resonance:   snapshot.filterResonance = rawValue; break;
+        case MultisamplerZoneField::outputBus:   snapshot.outputBus = juce::jlimit (0, 15, juce::roundToInt (rawValue)); break;
     }
 
     repaint();

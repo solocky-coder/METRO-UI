@@ -93,7 +93,7 @@ private:
         bool valid = false;
         juce::String name;
         int displayIndex = -1;
-        int lowKey = 0, highKey = 127, rootKey = 60, group = 0;
+        int lowKey = 0, highKey = 127, rootKey = 60, group = 0, outputBus = 0;
         float tuneCents = 0.0f, pan = 0.0f, gainDb = 0.0f;
         float attackSeconds = 0.005f, decaySeconds = 0.1f, sustainLevel = 1.0f, releaseSeconds = 0.1f;
         bool loopOn = false;

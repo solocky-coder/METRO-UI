@@ -91,6 +91,12 @@ namespace
         if (z.hasCustomColour)
             out << "dysekt_zone_color=" << juce::Colour (z.customColourArgb).toString() << "\n";
 
+        // Output-bus override — see SfzImporter for the read side. Omitted
+        // for bus 0 (Main) so unrouted zones don't clutter the file, same
+        // reasoning as the colour override above.
+        if (z.outputBus != 0)
+            out << "dysekt_output_bus=" << z.outputBus << "\n";
+
         for (const auto& [k, v] : z.extraOpcodes)
             out << k << "=" << v << "\n";
 

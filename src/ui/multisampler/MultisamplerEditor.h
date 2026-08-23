@@ -200,6 +200,15 @@ public:
         (commit) split. No-op if nothing is currently selected/editable. */
     void applyZoneFieldEdit (MultisamplerZoneField field, float value, bool isCommit);
 
+    /** Auto-assigns output buses 1-15 (round-robin, top-to-bottom zones[]
+        order) to the first `numZones` zones — used by the drum-kit
+        auto-routing confirm prompt (PluginEditor::offerDrumKitAutoRouting)
+        right after import. Writes SampleZone::outputBus directly so the
+        assignment round-trips through save/reload and performEngineSync(),
+        unlike the old SfzDrumKitBusApplier path it replaces (see .cpp for
+        the full history). No-op if numZones <= 0. */
+    void autoAssignOutputBuses (int numZones);
+
     /** Fired after every committed model edit (drag-commit, inspector apply,
         import, New) — after the debounced resync has been scheduled, not
         after it completes. Lets PluginEditor update window chrome / the

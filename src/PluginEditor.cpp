@@ -2615,8 +2615,13 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
     confirmOverlay->onResult = [this, numZones] (bool assign)
     {
         confirmOverlay.reset();
+        // Writes straight into MultisamplerInstrument::zones[i].outputBus
+        // (see MultisamplerEditor::autoAssignOutputBuses) rather than the
+        // old SfzDrumKitBusApplier's async sliceManager2-only path — the
+        // zones already exist synchronously by this point (importFromFile()
+        // already ran, above), so there's nothing left to poll for.
         if (assign)
-            new SfzDrumKitBusApplier (processor, numZones);   // self-deleting, see header
+            multisamplerEditor.autoAssignOutputBuses (numZones);
     };
 }
 

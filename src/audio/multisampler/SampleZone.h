@@ -97,6 +97,16 @@ struct SampleZone
     int sequencePosition  = 0;   ///< sfz `seq_position`
     int sequenceLength    = 0;   ///< sfz `seq_length` — 0/1 means "no round robin"
 
+    /** Output routing for this zone: 0 = Main, 1-15 = Aux N. Round-tripped
+        through the `dysekt_output_bus` custom opcode (same pattern as
+        `dysekt_zone_color` — see SfzImporter/SfzExporter) so it survives
+        save/reload and MultisamplerEditor::performEngineSync()'s
+        export/reimport cycle instead of only ever living on the derived
+        sliceManager2 copy. Edited via MultisamplerZoneField::outputBus
+        (MultisamplerZoneLcd's OUT cell) or MultisamplerEditor::
+        autoAssignOutputBuses() (the drum-kit auto-routing prompt). */
+    int outputBus = 0;
+
     bool enabled = true;   ///< editor-only mute; excluded from SFZ export when false
 
     /** User-picked colour override, round-tripped through the same
