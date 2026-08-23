@@ -56,6 +56,16 @@ public:
         once, instead of a dead-end "multiple selected" placeholder. */
     juce::Uuid topmostZoneAmong (const std::vector<juce::Uuid>& ids) const;
 
+    /** Makes a visually-obscured layer the topmost map tile and selects it
+        for the shared zone inspector. This changes display/editing order only;
+        the instrument's SFZ region order and playback behaviour stay intact.
+        Public so a toolbar-level "Edit Layer" control (MultisamplerEditor)
+        can promote a layer directly, without needing a click position —
+        see showZoneContextMenu()'s "Edit Layer" submenu for the original,
+        click-driven route into this same call. No-op if `zoneId` doesn't
+        resolve to a zone in the current instrument. */
+    void bringZoneToFrontForEditing (const juce::Uuid& zoneId);
+
     /** Fired whenever the selection set changes as a result of a click
         (not when set programmatically via setSelectedZoneIds). */
     std::function<void()> onSelectionChanged;
@@ -142,11 +152,6 @@ private:
     DragMode hitTestEdges (const ZoneRect&, juce::Point<float>) const;
     const ZoneRect* topmostZoneAt (juce::Point<float>) const;
     std::vector<const ZoneRect*> zonesAt (juce::Point<float>) const;
-
-    /** Makes a visually-obscured layer the topmost map tile and selects it
-        for the shared zone inspector. This changes display/editing order only;
-        the instrument's SFZ region order and playback behaviour stay intact. */
-    void bringZoneToFrontForEditing (const juce::Uuid& zoneId);
 
     /** Deletes every currently-selected zone (or, if `rightClickedId` isn't
         part of the current selection, just that one — matches how ZONES'

@@ -393,21 +393,28 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
     const bool hoveredNow  = editable && (cellIdx == hoveredCellIdx);
     const bool draggingNow = haveActiveDrag && activeField == field;
 
-    const int knobR  = juce::roundToInt (juce::jlimit (6.0f, 10.0f, r.getHeight() * 0.28f) * uiScale);
-    const int knobCX = r.getX() + knobR + juce::roundToInt (3.0f * uiScale);
+    // Knob radius used to be capped at a flat 10px regardless of how much
+    // room the cell actually had — with 7 cells spread across the LCD's
+    // full width, most cells had far more width than a 10px knob + label
+    // could ever use. Scale off the smaller of the two cell dimensions
+    // instead of height alone, and raise the cap so the knob actually grows
+    // into the space it's given rather than leaving it blank.
+    const int knobR  = juce::roundToInt (juce::jlimit (10.0f, 18.0f,
+                            juce::jmin (r.getHeight() * 0.42f, r.getWidth() * 0.16f)) * uiScale);
+    const int knobCX = r.getX() + knobR + juce::roundToInt (4.0f * uiScale);
     const int knobCY = r.getY() + r.getHeight() / 2;
 
     drawKnobArc (g, knobCX, knobCY, knobR, normForField (field), hoveredNow, draggingNow);
 
-    const int textX = knobCX + knobR + juce::roundToInt (5.0f * uiScale);
+    const int textX = knobCX + knobR + juce::roundToInt (8.0f * uiScale);
     const int textW = juce::jmax (0, r.getRight() - textX);
 
     g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
-    g.setFont (DysektLookAndFeel::makeFont (8.5f * uiScale, false));
+    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
     g.drawText (labelFor (field), textX, r.getY(), textW, r.getHeight() / 2, juce::Justification::centredLeft);
 
     g.setColour (editable ? theme.foreground : theme.foreground.withAlpha (0.6f));
-    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * uiScale, true));
+    g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
     g.drawText (formatFieldValue (field), textX, r.getY() + r.getHeight() / 2,
                 textW, r.getHeight() - r.getHeight() / 2, juce::Justification::centredLeft);
 }
@@ -432,12 +439,12 @@ void MultisamplerZoneLcd::drawLoopToggleCell (juce::Graphics& g, juce::Rectangle
     }
 
     g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
-    g.setFont (DysektLookAndFeel::makeFont (8.5f * uiScale, false));
+    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
     auto labelRow = r.removeFromTop (r.getHeight() / 2);
     g.drawText (labelFor (MultisamplerZoneField::loopEnabled), labelRow, juce::Justification::centredLeft);
 
     g.setColour (snapshot.loopOn ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
-    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * uiScale, true));
+    g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
     g.drawText (formatFieldValue (MultisamplerZoneField::loopEnabled), r, juce::Justification::centredLeft);
 }
 

@@ -301,6 +301,16 @@ private:
         applyZoneFieldEdit() (the displayed zone's own data changed). */
     void refreshZoneLcdDisplay();
 
+    /** Rebuilds editLayerCombo's items from whatever key/velocity-overlaps
+        inspectedZoneId right now (MultisamplerInstrument::
+        findOverlappingPairs(), the same pairwise overlap definition the
+        zone-map's overlap hatching and the old right-click "Edit Layer"
+        submenu use), and re-selects the entry matching inspectedZoneId.
+        Disables the combo when nothing is selected or the selected zone
+        doesn't overlap anything. Called from refreshInspectorFromSelection()
+        so it always tracks the current selection, the same way zoneLcd does. */
+    void refreshEditLayerCombo();
+
     DysektProcessor& processor;
     MultisamplerInstrument instrument;
     bool dirty = false;
@@ -310,6 +320,17 @@ private:
 
     // ── Header ───────────────────────────────────────────────────────────
     juce::Label  titleLabel;
+
+    // Toolbar promotion of the right-click zone-map "Edit Layer" submenu
+    // (see ZoneMapView::showZoneContextMenu) — lets the user reach a buried
+    // layer without needing to right-click the exact stack of tiles first.
+    // Scoped to whichever zone is currently selected/inspected rather than a
+    // click point (see refreshEditLayerCombo()'s doc comment); disabled
+    // when the current selection has nothing overlapping it. Placed before
+    // (i.e. to the left of, in this right-to-left header layout) addZoneButton.
+    juce::ComboBox editLayerCombo;
+    std::vector<juce::Uuid> editLayerStackIds;   // combo item id N -> editLayerStackIds[N-1]
+
     juce::TextButton addZoneButton { "ADD ZONE" };
     juce::TextButton importButton  { "IMPORT SFZ" };
     juce::TextButton exportButton  { "EXPORT SFZ" };

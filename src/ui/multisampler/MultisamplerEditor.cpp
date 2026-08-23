@@ -5,6 +5,7 @@
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
 #include "../../audio/SfzZoneColours.h"
+#include <algorithm>
 #include <cmath>
 
 namespace
@@ -68,6 +69,21 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     configureStaticLabel (titleLabel, "MULTISAMPLER");
     titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     addAndMakeVisible (titleLabel);
+
+    addAndMakeVisible (editLayerCombo);
+    editLayerCombo.setTextWhenNothingSelected ("EDIT LAYER");
+    editLayerCombo.setTextWhenNoChoicesAvailable ("EDIT LAYER");
+    editLayerCombo.setEnabled (false);
+    editLayerCombo.onChange = [this]
+    {
+        const int idx = editLayerCombo.getSelectedId() - 1;
+        if (idx < 0 || idx >= (int) editLayerStackIds.size())
+            return;
+        // Fires ZoneMapView::onSelectionChanged -> refreshInspectorFromSelection()
+        // -> refreshEditLayerCombo(), which re-selects this same entry — see
+        // that method's doc comment.
+        zoneMapView.bringZoneToFrontForEditing (editLayerStackIds[(size_t) idx]);
+    };
 
     addAndMakeVisible (addZoneButton);
     addZoneButton.onClick = [this] { addZoneClicked(); };
@@ -133,6 +149,8 @@ void MultisamplerEditor::resized()
     importButton.setBounds (header.removeFromRight (90));
     header.removeFromRight (4);
     addZoneButton.setBounds (header.removeFromRight (84));
+    header.removeFromRight (4);
+    editLayerCombo.setBounds (header.removeFromRight (150));
 
     r.removeFromTop (6);
     zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
@@ -615,6 +633,8 @@ void MultisamplerEditor::refreshInspectorFromSelection()
 
     inspectedZoneId = (zone != nullptr) ? zone->id : juce::Uuid::null();
 
+    refreshEditLayerCombo();
+
     // zoneLcd is now the sole display AND the sole edit surface for this
     // data (see MultisamplerZoneLcd.h) — it renders its own "NO ZONE
     // SELECTED" / full-field-readout states directly from
@@ -627,6 +647,61 @@ void MultisamplerEditor::refreshInspectorFromSelection()
     // multisamplerWaveformLcd's waveform displays in sync — see this
     // method's declaration comment and syncMultisamplerDisplay().
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
+}
+
+void MultisamplerEditor::refreshEditLayerCombo()
+{
+    editLayerStackIds.clear();
+    editLayerCombo.clear (juce::dontSendNotification);
+
+    int inspectedIdx = -1;
+    if (inspectedZoneId != juce::Uuid::null())
+        for (size_t i = 0; i < instrument.zones.size(); ++i)
+            if (instrument.zones[i].id == inspectedZoneId) { inspectedIdx = (int) i; break; }
+
+    if (inspectedIdx < 0)
+    {
+        editLayerCombo.setEnabled (false);
+        return;
+    }
+
+    // Same pairwise key/velocity-overlap definition ZoneMapView's overlap
+    // hatching and showZoneContextMenu()'s "Edit Layer" submenu are built
+    // on, scoped here to just the currently inspected zone's stack (this
+    // control has no click position of its own to test against).
+    std::vector<size_t> stackIdx { (size_t) inspectedIdx };
+    for (const auto& pair : instrument.findOverlappingPairs())
+    {
+        if (pair.first == (size_t) inspectedIdx)       stackIdx.push_back (pair.second);
+        else if (pair.second == (size_t) inspectedIdx) stackIdx.push_back (pair.first);
+    }
+
+    if (stackIdx.size() < 2)
+    {
+        editLayerCombo.setEnabled (false);
+        return;
+    }
+
+    std::sort (stackIdx.begin(), stackIdx.end());
+    stackIdx.erase (std::unique (stackIdx.begin(), stackIdx.end()), stackIdx.end());
+
+    editLayerCombo.setEnabled (true);
+    int itemId = 1;
+    int selectId = 1;
+    for (auto idx : stackIdx)
+    {
+        const auto& z = instrument.zones[idx];
+        const juce::String label = juce::String (itemId) + ". "
+            + (z.sampleFile != juce::File() ? z.sampleFile.getFileNameWithoutExtension()
+                                             : juce::String ("(no sample)"))
+            + "  [" + UIHelpers::midiNoteToName (z.lowKey) + "-" + UIHelpers::midiNoteToName (z.highKey)
+            + ", v" + juce::String (z.lowVelocity) + "-" + juce::String (z.highVelocity) + "]";
+        editLayerCombo.addItem (label, itemId);
+        editLayerStackIds.push_back (z.id);
+        if (z.id == inspectedZoneId) selectId = itemId;
+        ++itemId;
+    }
+    editLayerCombo.setSelectedId (selectId, juce::dontSendNotification);
 }
 
 void MultisamplerEditor::refreshZoneLcdDisplay()
