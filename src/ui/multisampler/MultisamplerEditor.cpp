@@ -960,11 +960,12 @@ void MultisamplerEditor::autoAssignOutputBuses (int numZones)
         // identical choice).
         instrument.zones[(size_t) i].outputBus = 1 + (i % 15);
 
-        // Sensible default for a freshly auto-routed drum kit: each pad
-        // just got its own aux bus, so give it its own mixer row too
-        // rather than leaving the user to discover and toggle MIX on
-        // every zone by hand. Still independently toggleable afterward.
-        instrument.zones[(size_t) i].showInMixer = true;
+        // MIX (showInMixer) is deliberately left at its default (hidden)
+        // here, even though every one of these zones just got its own aux
+        // bus. No zone should default to shown in the mixer on import —
+        // the user must explicitly select which zones they want a mixer
+        // row for by toggling MIX from HIDDEN to SHOWN themselves, whether
+        // that's right after this auto-routing prompt or later.
     }
 
     dirty = true;

@@ -3181,7 +3181,21 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     snap.grainMode         = s.grainMode;
                     snap.releaseTail       = s.releaseTail;
                     snap.reverse           = s.reverse;
-                    snap.outputBus         = s.outputBus;
+                    // outputBus and showInMixer are deliberately NOT captured
+                    // here — unlike the other fields in this struct, both now
+                    // round-trip through the zone model itself (SampleZone::
+                    // outputBus/showInMixer, via the dysekt_output_bus/
+                    // dysekt_show_in_mixer custom opcodes) and get set to
+                    // their correct, freshly-edited values by the
+                    // pendingZonePins pass below on every reload. Capturing
+                    // them here previously meant this "DYSEKT-only custom
+                    // field" preservation pass would silently reapply the
+                    // STALE pre-edit value right after pendingZonePins set
+                    // the correct one (see the reapply block below) — so an
+                    // OUT/MIX edit committed via the LCD would appear to
+                    // apply for one instant and then immediately revert,
+                    // and a new zone reusing a previously-"shown" MIDI note
+                    // slot could inherit a stale true it never actually had.
                     snap.oneShot           = s.oneShot;
                     snap.centsDetune       = s.centsDetune;
                     snap.filterCutoff      = s.filterCutoff;
@@ -3193,7 +3207,6 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     snap.eqHighGain        = s.eqHighGain;
                     snap.chromaticChannel  = s.chromaticChannel;
                     snap.chromaticLegato   = s.chromaticLegato;
-                    snap.showInMixer       = s.showInMixer;
                     snap.name              = s.name;
                     snap.lockMask          = s.lockMask;
                 }
@@ -3400,7 +3413,13 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     s.grainMode        = snap.grainMode;
                     s.releaseTail      = snap.releaseTail;
                     s.reverse          = snap.reverse;
-                    s.outputBus        = snap.outputBus;
+                    // outputBus/showInMixer intentionally NOT reapplied here —
+                    // see this field's removal from SliceOverrideSnapshot's
+                    // capture site above for the full explanation. Both are
+                    // now zone-model fields (round-tripped via SFZ), already
+                    // set correctly by the pendingZonePins pass above, and
+                    // reapplying a captured pre-edit value here would revert
+                    // whatever OUT/MIX edit just triggered this reload.
                     s.oneShot          = snap.oneShot;
                     s.centsDetune      = snap.centsDetune;
                     s.filterCutoff     = snap.filterCutoff;
@@ -3412,7 +3431,6 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     s.eqHighGain       = snap.eqHighGain;
                     s.chromaticChannel = snap.chromaticChannel;
                     s.chromaticLegato  = snap.chromaticLegato;
-                    s.showInMixer      = snap.showInMixer;
                     s.name             = snap.name;
                     s.lockMask         = snap.lockMask;
                 }
