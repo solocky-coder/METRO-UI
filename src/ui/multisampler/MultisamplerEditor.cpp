@@ -599,22 +599,27 @@ int MultisamplerEditor::getSelectedZoneCount() const noexcept
 void MultisamplerEditor::refreshInspectorFromSelection()
 {
     const auto& selected = zoneMapView.getSelectedZoneIds();
-    const bool single = selected.size() == 1;
 
-    const SampleZone* zone = nullptr;
-    if (single)
-    {
-        for (auto& z : instrument.zones)
-            if (z.id == selected.front()) { zone = &z; break; }
-    }
+    // A lone selected zone is trivially its own top layer. With 2+
+    // selected, auto-elect the one sitting highest in z-order (drawn on
+    // top) instead of leaving inspectedZoneId null and falling back to a
+    // dead-end "multiple selected" state — see
+    // ZoneMapView::topmostZoneAmong()'s doc comment.
+    juce::Uuid showId;
+    if (selected.size() == 1)
+        showId = selected.front();
+    else if (selected.size() >= 2)
+        showId = zoneMapView.topmostZoneAmong (selected);
+
+    const SampleZone* zone = (showId != juce::Uuid::null()) ? instrument.findZone (showId) : nullptr;
 
     inspectedZoneId = (zone != nullptr) ? zone->id : juce::Uuid::null();
 
     // zoneLcd is now the sole display AND the sole edit surface for this
     // data (see MultisamplerZoneLcd.h) — it renders its own "NO ZONE
-    // SELECTED" / "MULTIPLE ZONES SELECTED" / full-field-readout states
-    // directly from setZoneForDisplay()/clearZone()/setMultipleSelection(),
-    // so there is no separate text to build here any more.
+    // SELECTED" / full-field-readout states directly from
+    // setZoneForDisplay()/clearZone(), so there is no separate text to
+    // build here any more.
     refreshZoneLcdDisplay();
 
     // PluginEditor reads getSelectedZoneIndex()/getSelectedZoneCount()/
@@ -644,16 +649,13 @@ void MultisamplerEditor::refreshZoneLcdDisplay()
         }
         else if (selectedIds.size() >= 2)
         {
-            // Multiple zones selected, nothing hovered — show the
-            // "Multiple zones selected" state rather than freezing on
-            // whatever single zone was selected right before (the root
-            // cause of the old LCD/SCB desync: getSelectedZoneIndex()
-            // collapsed "0 selected" and "2+ selected" to the same -1
-            // sentinel, so a sticky-last-zone fallback couldn't tell them
-            // apart). getSelectedZoneIds().size() can't make that mistake.
-            zoneLcd.setMultipleSelection (true);
-            zoneLcd.setEditable (false);
-            return;
+            // Auto-elect the top-most (highest z-order, i.e. drawn-on-top)
+            // zone among the selection for editing, rather than the old
+            // "MULTIPLE ZONES SELECTED" dead end — matches ZoneMapView's
+            // own topmost-wins hit-testing convention (topmostZoneAt()/
+            // zonesAt()), so the zone shown here is the same one a click
+            // at the stack's location would have hit.
+            showId = zoneMapView.topmostZoneAmong (selectedIds);
         }
         // else: selectedIds.empty() — showId stays juce::Uuid::null(),
         // falls through to the clearZone() branch below.
@@ -675,10 +677,11 @@ void MultisamplerEditor::refreshZoneLcdDisplay()
     }
 
     zoneLcd.setZoneForDisplay (zone, displayIndex, isPreview, /*isAuditioning*/ false);
-    // Editable only when the zone being shown IS the true single
-    // selection — never a hover preview, never part of a multi-selection
-    // (matches MultisamplerZoneLcd::setEditable's doc comment contract).
-    zoneLcd.setEditable (! isPreview && selectedIds.size() == 1);
+    // Editable whenever the zone being shown is a genuine selection target
+    // — the true single selection, or the auto-elected top layer of a
+    // multi-selection — but never a hover preview (matches
+    // MultisamplerZoneLcd::setEditable's doc comment contract).
+    zoneLcd.setEditable (! isPreview && ! selectedIds.empty());
 }
 
 void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field, float value)
@@ -736,9 +739,10 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
 void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float value, bool isCommit)
 {
     // Resolved by id, not index — see this method's declaration comment.
-    // The only zone this can ever be editing is the true single selection
-    // (refreshZoneLcdDisplay() only ever calls zoneLcd.setEditable(true)
-    // for that case), and inspectedZoneId tracks exactly that zone.
+    // The only zone this can ever be editing is whatever refreshZoneLcdDisplay()
+    // most recently called zoneLcd.setEditable(true) for — the true single
+    // selection, or the auto-elected top layer when 2+ zones are selected
+    // (see topmostZoneAmong()) — and inspectedZoneId tracks exactly that zone.
     if (inspectedZoneId == juce::Uuid::null())
         return;
 

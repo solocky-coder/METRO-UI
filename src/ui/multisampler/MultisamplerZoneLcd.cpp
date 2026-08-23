@@ -28,8 +28,6 @@ MultisamplerZoneLcd::MultisamplerZoneLcd()
 void MultisamplerZoneLcd::setZoneForDisplay (const SampleZone* zone, int displayIndex,
                                               bool isPreview, bool isAuditioning)
 {
-    multipleSelected = false;
-
     if (zone == nullptr)
     {
         clearZone();
@@ -67,15 +65,6 @@ void MultisamplerZoneLcd::setZoneForDisplay (const SampleZone* zone, int display
 void MultisamplerZoneLcd::clearZone()
 {
     snapshot = Snapshot{};
-    multipleSelected = false;
-    repaint();
-}
-
-void MultisamplerZoneLcd::setMultipleSelection (bool multiple)
-{
-    multipleSelected = multiple;
-    if (multiple)
-        snapshot.valid = false;
     repaint();
 }
 
@@ -267,14 +256,6 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
 
     cells.clear();
-
-    if (multipleSelected)
-    {
-        g.setColour (theme.foreground.withAlpha (0.55f));
-        g.setFont (DysektLookAndFeel::makeFont (12.0f * uiScale, false));
-        g.drawText ("MULTIPLE ZONES SELECTED", bounds, juce::Justification::centred);
-        return;
-    }
 
     if (! snapshot.valid)
     {

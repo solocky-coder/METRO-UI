@@ -289,7 +289,8 @@ private:
     void refreshInspectorFromSelection();
 
     /** Resolves what zoneLcd should currently show — hover preview, the
-        single selection, "multiple selected", or empty — directly from
+        single selection, the auto-elected top layer of a multi-selection
+        (see ZoneMapView::topmostZoneAmong()), or empty — directly from
         zoneMapView.getSelectedZoneIds() and hoveredZoneId. This is the
         replacement for the old headerZoneSummary text-building logic, and
         the reason zoneLcd never has the -1-ambiguity bug the SCB fallback
@@ -329,7 +330,8 @@ private:
     // refreshZoneLcdDisplay() above for how edits and display resolution
     // are handled on this side.
     MultisamplerZoneLcd zoneLcd;
-    juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing/multiple selected
+    juce::Uuid  inspectedZoneId = juce::Uuid::null();   // juce::Uuid::null() when nothing selected; otherwise the single
+                                                         // selected zone, or the auto-elected top layer of a multi-selection
     juce::Uuid  hoveredZoneId = juce::Uuid::null();     // mirrors ZoneMapView::hoverZoneId; juce::Uuid::null() when the cursor isn't over a zone
 
     static constexpr int kEngineSyncDebounceMs = 300;

@@ -46,6 +46,16 @@ public:
     const std::vector<juce::Uuid>& getSelectedZoneIds() const noexcept { return selectedIds; }
     void setSelectedZoneIds (std::vector<juce::Uuid> ids);
 
+    /** Among `ids`, returns whichever one sits highest in this view's
+        z-order (i.e. drawn last/on top — same convention topmostZoneAt()/
+        zonesAt() already use for hit-testing, including any frontZoneId
+        promotion from "Edit Layer"). Returns juce::Uuid::null() if `ids`
+        is empty or none of them resolve to a rect currently in
+        cachedRects. Used by MultisamplerEditor::refreshInspectorFromSelection()
+        to auto-elect a zone to show/edit when 2+ zones are selected at
+        once, instead of a dead-end "multiple selected" placeholder. */
+    juce::Uuid topmostZoneAmong (const std::vector<juce::Uuid>& ids) const;
+
     /** Fired whenever the selection set changes as a result of a click
         (not when set programmatically via setSelectedZoneIds). */
     std::function<void()> onSelectionChanged;

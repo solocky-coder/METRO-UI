@@ -54,9 +54,6 @@ public:
     /** No zone to show — draws the empty-state treatment. */
     void clearZone();
 
-    /** Shows the "multiple zones selected" state instead of a field readout. */
-    void setMultipleSelection (bool multiple);
-
     /** Whether the currently-displayed zone accepts drag/click edits. Must
         only be true when the displayed zone IS the selected zone (see
         MultisamplerEditor::resized()'s displayIndex/editable resolution in
@@ -105,7 +102,6 @@ private:
         bool isAuditioning = false;
     } snapshot;
 
-    bool multipleSelected = false;
     bool editable = false;
 
     struct Cell { juce::Rectangle<int> bounds; MultisamplerZoneField field; };

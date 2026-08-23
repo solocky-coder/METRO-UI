@@ -257,6 +257,22 @@ const ZoneMapView::ZoneRect* ZoneMapView::topmostZoneAt (juce::Point<float> p) c
     return nullptr;
 }
 
+juce::Uuid ZoneMapView::topmostZoneAmong (const std::vector<juce::Uuid>& ids) const
+{
+    if (ids.empty())
+        return juce::Uuid::null();
+
+    // Same back-to-front walk as zonesAt()/topmostZoneAt() — cachedRects is
+    // already in the view's real z-order (instrument order, with any
+    // frontZoneId promotion rotated to the end), so the first match found
+    // walking from the end is the highest layer among `ids`.
+    for (auto it = cachedRects.rbegin(); it != cachedRects.rend(); ++it)
+        if (std::find (ids.begin(), ids.end(), it->id) != ids.end())
+            return it->id;
+
+    return juce::Uuid::null();
+}
+
 void ZoneMapView::bringZoneToFrontForEditing (const juce::Uuid& zoneId)
 {
     if (instrument == nullptr || instrument->findZone (zoneId) == nullptr)
