@@ -127,6 +127,31 @@ jobs:
             -DJUCE_BUILD_EXTRAS=OFF `
             -DJUCE_BUILD_EXAMPLES=OFF
 
+      # Isolated diagnostic for the SF2-PLAYER experimental-multi-group
+      # crash investigation (see diagnostics/audio_groups_repro.c). Only
+      # needs FluidSynth itself, so it's cheap and runs before the full
+      # plugin build -- if this alone reproduces the crash, the answer
+      # doesn't require waiting on Standalone/VST3 to finish building.
+      # Runs once across the matrix (not tied to DYSEKT's own toggle --
+      # this test always requests audio-groups=16 itself, independently).
+      - name: Diagnostic - audio-groups=16 construct/destroy repro
+        if: matrix.variant == 'experimental'
+        shell: pwsh
+        run: |
+          cmake --build build --config ${{ matrix.build_config }} --target audio_groups_repro --parallel 1
+          $exe = Get-ChildItem -Recurse -File -Filter "audio_groups_repro.exe" build/ | Select-Object -First 1
+          if ($null -eq $exe) {
+            Write-Error "audio_groups_repro.exe not found after build."
+            exit 1
+          }
+          Write-Host "Running $($exe.FullName)"
+          & $exe.FullName
+          $code = $LASTEXITCODE
+          Write-Host "Exit code: $code"
+          if ($code -ne 0) {
+            Write-Warning "audio_groups_repro exited abnormally (code $code) -- see the last printed step above for where it died."
+          }
+
       # Build one project/compiler task at a time. JUCE + sfizz exceeds the
       # hosted runner's memory limit when MSBuild and MSVC compile in parallel.
       - name: Build Standalone

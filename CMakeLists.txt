@@ -88,6 +88,15 @@ option(DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
         Untested — only enable for a supervised debug/ASan run, never a release build."
        OFF)
 
+# --- Diagnostic repro: isolated audio-groups=16 construct/destroy test ---
+# See diagnostics/audio_groups_repro.c for the full rationale. Only needs
+# FluidSynth itself, not JUCE/sfizz/the rest of the plugin, so it's declared
+# here rather than alongside the main targets further down this file.
+if(DYSEKT_HAS_FLUIDSYNTH)
+    add_executable(audio_groups_repro diagnostics/audio_groups_repro.c)
+    target_link_libraries(audio_groups_repro PRIVATE FluidSynth::libfluidsynth)
+endif()
+
 # Resolve the sfizz C API include directory.
 # sfizz.h (C API) lives at sfizz/src/sfizz.h in the sfizz source tree.
 # The sfizz::sfizz CMake target only exposes C++ headers, so we add it manually.
