@@ -2683,9 +2683,15 @@ void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArra
     confirmOverlay->toFront (true);
     confirmOverlay->onResult = [this, doImport] (bool replace)
     {
+        // doImport is a raw lambda (auto-typed, line ~2644), not a
+        // std::function -- it has no operator bool()/&&, so unlike the
+        // std::function-typed onResult/onDismiss members fixed elsewhere
+        // in this pass, there's no null state to guard against here. Just
+        // move it out before the overlay (and this capture along with it)
+        // gets destroyed by confirmOverlay.reset().
         auto importFn = doImport;
         confirmOverlay.reset();
-        if (replace && importFn)
+        if (replace)
             importFn();
     };
 }
