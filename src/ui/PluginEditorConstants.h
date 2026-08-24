@@ -10,12 +10,6 @@ constexpr int kLcdRowH    = SliceLcdDisplay::kPreferredHeight + 12;
 constexpr int kSliceLaneH = 36;
 constexpr int kScrollbarH = 28;
 constexpr int kSliceCtrlH = 72;
-// MULTISAMPLER's SCB strip only ever draws a single SAVE button (see
-// SliceControlBar::drawViewToggleButtons' sfzMode branch) — kSliceCtrlH is
-// sized for the Slicer's dense per-slice param-cell row and is massive
-// overkill here, wasting most of that height as dead space directly above
-// the ZoneMapView/keyboard. Sized for one si(24)-tall button plus margin.
-constexpr int kMultisamplerScbH = 40;
 constexpr int kActionH    = 22;
 constexpr int kTrimBarH   = 34;
 constexpr int kPanelSlotH = 200;

@@ -55,7 +55,6 @@ void MultisamplerZoneLcd::setZoneForDisplay (const SampleZone* zone, int display
     snapshot.sustainLevel   = zone->sustainLevel;
     snapshot.releaseSeconds = zone->releaseSeconds;
     snapshot.loopOn         = zone->loopMode != LoopMode::noLoop;
-    snapshot.showInMixer    = zone->showInMixer;
     snapshot.filterCutoffHz = zone->filterCutoffHz;
     snapshot.filterResonance = zone->filterResonance;
     snapshot.isPreview      = isPreview;
@@ -68,6 +67,13 @@ void MultisamplerZoneLcd::clearZone()
 {
     snapshot = Snapshot{};
     repaint();
+}
+
+juce::String MultisamplerZoneLcd::getZoneTitleText() const
+{
+    if (! snapshot.valid)
+        return {};
+    return "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
 }
 
 void MultisamplerZoneLcd::setEditable (bool shouldEdit)
@@ -98,7 +104,6 @@ juce::String MultisamplerZoneLcd::labelFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::cutoff:      return "FILTER";
         case MultisamplerZoneField::resonance:   return "RES";
         case MultisamplerZoneField::outputBus:   return "OUT";
-        case MultisamplerZoneField::showInMixer: return "MIX";
     }
     return {};
 }
@@ -122,7 +127,6 @@ float MultisamplerZoneLcd::getFieldValue (MultisamplerZoneField field) const
         case MultisamplerZoneField::cutoff:      return snapshot.filterCutoffHz;
         case MultisamplerZoneField::resonance:   return snapshot.filterResonance;
         case MultisamplerZoneField::outputBus:   return (float) snapshot.outputBus;
-        case MultisamplerZoneField::showInMixer: return snapshot.showInMixer ? 1.0f : 0.0f;
     }
     return 0.0f;
 }
@@ -156,7 +160,6 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         // 0-15 range matches SampleZone::outputBus's own documented range
         // (0 = Main, 1-15 = Aux).
         case MultisamplerZoneField::outputBus: return juce::jlimit (0.0f, 1.0f, v / 15.0f);
-        case MultisamplerZoneField::showInMixer: return v; // unused — MIX draws as a toggle, not a knob
     }
     return 0.5f;
 }
@@ -183,7 +186,6 @@ float MultisamplerZoneLcd::defaultValueFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::cutoff:      return 20000.0f;
         case MultisamplerZoneField::resonance:   return 0.0f;
         case MultisamplerZoneField::outputBus:   return 0.0f;   // Main
-        case MultisamplerZoneField::showInMixer: return 0.0f;   // matches SampleZone::showInMixer's own default
     }
     return 0.0f;
 }
@@ -212,7 +214,6 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::resonance:   scale = 0.01f;  break;
         case MultisamplerZoneField::loopEnabled: scale = 0.0f;   break; // toggle, not a drag
         case MultisamplerZoneField::outputBus:   scale = 0.25f;  break; // ~4px per bus step
-        case MultisamplerZoneField::showInMixer: scale = 0.0f;   break; // toggle, not a drag
     }
     return fineMode ? scale * kFineModeScale : scale;
 }
@@ -248,8 +249,6 @@ juce::String MultisamplerZoneLcd::formatFieldValue (MultisamplerZoneField field)
         case MultisamplerZoneField::outputBus:
             return snapshot.outputBus == 0 ? juce::String ("MAIN")
                                             : "AUX " + juce::String (snapshot.outputBus);
-        case MultisamplerZoneField::showInMixer:
-            return snapshot.showInMixer ? "SHOWN" : "HIDDEN";
     }
     return {};
 }
@@ -286,32 +285,35 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
 
     auto content = bounds.reduced (8, 4);
 
-    // Title row — name, index, preview/auditioning badges.
-    auto titleRow = content.removeFromTop (18);
-    g.setColour (theme.foreground);
-    g.setFont (DysektLookAndFeel::makeFont (11.5f * uiScale, true));
-    juce::String title = "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
-    g.drawText (title, titleRow, juce::Justification::centredLeft);
-
-    if (snapshot.isPreview)
+    // The "ZONE NN   name" text that used to open this row now lives in
+    // MultisamplerEditor's toolbar (see getZoneTitleText()) — only the
+    // PREVIEW/AUDITIONING badge still belongs here, and only reserves
+    // space when one actually applies, so the common (unbadged) case gives
+    // the knob rows below the full height instead of leaving that strip
+    // sitting empty.
+    if (snapshot.isPreview || snapshot.isAuditioning)
     {
-        g.setColour (theme.accent.withAlpha (0.8f));
+        auto badgeRow = content.removeFromTop (14);
         g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
-        g.drawText ("PREVIEW", titleRow, juce::Justification::centredRight);
-    }
-    else if (snapshot.isAuditioning)
-    {
-        g.setColour (theme.accent);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
-        g.drawText ("AUDITIONING", titleRow, juce::Justification::centredRight);
+
+        if (snapshot.isPreview)
+        {
+            g.setColour (theme.accent.withAlpha (0.8f));
+            g.drawText ("PREVIEW", badgeRow, juce::Justification::centredRight);
+        }
+        else
+        {
+            g.setColour (theme.accent);
+            g.drawText ("AUDITIONING", badgeRow, juce::Justification::centredRight);
+        }
+
+        content.removeFromTop (2);
     }
 
-    content.removeFromTop (2);
-
-    // Two rows of cells (7 + 9 = 16 fields total) — same field set as
-    // before with MIX added to the second row, matching SliceControlBar's
-    // own knob-row layouts (drawKnobCell in a straight horizontal run)
-    // instead of the old cramped 4/4/6 text-cell split.
+    // Two rows of 7 knob cells — same field set as before, regrouped so
+    // every row divides evenly (14 fields / 2 rows = 7), matching
+    // SliceControlBar's own knob-row layouts (drawKnobCell in a straight
+    // horizontal run) instead of the old cramped 4/4/6 text-cell split.
     const int rowH = content.getHeight() / 2;
 
     auto layoutRow = [&] (juce::Rectangle<int> row, std::initializer_list<MultisamplerZoneField> fields)
@@ -337,8 +339,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
                { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
                  MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
                  MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
-                 MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus,
-                 MultisamplerZoneField::showInMixer });
+                 MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus });
 }
 
 void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field)
@@ -348,8 +349,8 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
     // cell's own index for the hover/drag comparisons below.
     const int idx = (int) cells.size() - 1;
 
-    if (field == MultisamplerZoneField::loopEnabled || field == MultisamplerZoneField::showInMixer)
-        drawBoolToggleCell (g, bounds, field, idx);
+    if (field == MultisamplerZoneField::loopEnabled)
+        drawLoopToggleCell (g, bounds, idx);
     else
         drawKnobField (g, bounds, field, idx);
 }
@@ -440,22 +441,17 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
 }
 
 // =============================================================================
-// drawBoolToggleCell — LOOP and MIX are both boolean, so they draw as a flat
-// ON/OFF-style badge rather than a knob (a 0..1 arc reads as a fader, not a
-// toggle, for a binary field). Was drawLoopToggleCell (LOOP only) before MIX
-// (MultisamplerZoneField::showInMixer) needed the identical treatment;
-// parameterized on `field` to pick the right label/value/drag-state, with
-// LOOP's behavior kept bit-for-bit identical.
+// drawLoopToggleCell — LOOP is boolean, so it draws as a flat ON/OFF badge
+// rather than a knob (a 0..1 arc reads as a fader, not a toggle, for a
+// binary field) — same treatment this component used for LOOP before.
 // =============================================================================
-void MultisamplerZoneLcd::drawBoolToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds,
-                                               MultisamplerZoneField field, int cellIdx)
+void MultisamplerZoneLcd::drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx)
 {
     const auto& theme = getTheme();
     auto r = bounds.reduced (2, 1);
 
-    const bool boolValue   = field == MultisamplerZoneField::loopEnabled ? snapshot.loopOn : snapshot.showInMixer;
     const bool hoveredNow  = editable && (cellIdx == hoveredCellIdx);
-    const bool draggingNow = haveActiveDrag && activeField == field;
+    const bool draggingNow = haveActiveDrag && activeField == MultisamplerZoneField::loopEnabled;
 
     if (draggingNow || hoveredNow)
     {
@@ -466,11 +462,11 @@ void MultisamplerZoneLcd::drawBoolToggleCell (juce::Graphics& g, juce::Rectangle
     g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
     g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
     auto labelRow = r.removeFromTop (r.getHeight() / 2);
-    g.drawText (labelFor (field), labelRow, juce::Justification::centredLeft);
+    g.drawText (labelFor (MultisamplerZoneField::loopEnabled), labelRow, juce::Justification::centredLeft);
 
-    g.setColour (boolValue ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
+    g.setColour (snapshot.loopOn ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
     g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
-    g.drawText (formatFieldValue (field), r, juce::Justification::centredLeft);
+    g.drawText (formatFieldValue (MultisamplerZoneField::loopEnabled), r, juce::Justification::centredLeft);
 }
 
 // ── Mouse / editing ──────────────────────────────────────────────────────
@@ -501,11 +497,10 @@ void MultisamplerZoneLcd::mouseDown (const juce::MouseEvent& e)
     {
         if (! cell.bounds.contains (e.getPosition())) continue;
 
-        if (cell.field == MultisamplerZoneField::loopEnabled || cell.field == MultisamplerZoneField::showInMixer)
+        if (cell.field == MultisamplerZoneField::loopEnabled)
         {
             // Click toggles immediately — no drag gesture for a boolean.
-            const bool current = cell.field == MultisamplerZoneField::loopEnabled ? snapshot.loopOn : snapshot.showInMixer;
-            applyDrag (cell.field, current ? 0.0f : 1.0f, /*commit=*/true);
+            applyDrag (cell.field, snapshot.loopOn ? 0.0f : 1.0f, /*commit=*/true);
             return;
         }
 
@@ -586,7 +581,6 @@ void MultisamplerZoneLcd::applyDrag (MultisamplerZoneField field, float rawValue
         case MultisamplerZoneField::cutoff:      snapshot.filterCutoffHz = rawValue; break;
         case MultisamplerZoneField::resonance:   snapshot.filterResonance = rawValue; break;
         case MultisamplerZoneField::outputBus:   snapshot.outputBus = juce::jlimit (0, 15, juce::roundToInt (rawValue)); break;
-        case MultisamplerZoneField::showInMixer: snapshot.showInMixer = rawValue > 0.5f; break;
     }
 
     repaint();

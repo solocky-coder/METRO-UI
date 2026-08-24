@@ -109,13 +109,12 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      renameOverlay->toFront (true);
      renameOverlay->onResult = [this, sliceIdx] (const juce::String& newName, bool cancelled)
      {
-         const int targetSlice = sliceIdx;
          renameOverlay.reset();
          if (! cancelled)
          {
              DysektProcessor::Command cmd;
              cmd.type = DysektProcessor::CmdSetSliceName;
-             cmd.intParam1 = targetSlice;
+             cmd.intParam1 = sliceIdx;
              cmd.stringParam = newName;
              processor.pushCommand (cmd);
          }
@@ -127,11 +126,13 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      resized();
      repaint(); // clear waveform/overview areas vacated by the old view
  };
- sliceControlBar.onInstrumentSaveRequested = [this] { multisamplerEditor.saveInPlace(); };
-// SliceControlBar::onSfzZoneParamEdited is intentionally left unwired —
+ // SliceControlBar::onSfzZoneParamEdited is intentionally left unwired —
 // the SCB has no MULTISAMPLER-facing role any more, now that
 // multisamplerEditor's own zoneLcd is both the display and edit surface
-// for zone fields (see MultisamplerEditor.h's zoneLcd doc comment). This
+// for zone fields (see MultisamplerEditor.h's zoneLcd doc comment), and
+// its own SAVE button (see MultisamplerEditor.h's saveButton doc comment)
+// replaces the SCB's former SAVE button too — the SCB is never shown at
+// all while MULTISAMPLER is the active tab any more, see resized(). This
 // doesn't touch multisamplerWaveformLcd.onZoneParamEdited below, which is
 // unrelated (ADSR envelope-node dragging on the waveform) and still wired
 // to multisamplerEditor.applySliceControlBarFieldEdit as before.
@@ -141,11 +142,12 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  multisamplerEditor.onInstrumentChanged = [this]
  {
      // Keep the normal SFZ-PLAYER view's live keyboard highlighting
-     // (sfzPlayerDropdown.keysPanel) in sync with MULTISAMPLER edits, and
-     // reflect MULTISAMPLER's dirty state on the SCB's SAVE button.
+     // (sfzPlayerDropdown.keysPanel) in sync with MULTISAMPLER edits.
+     // MULTISAMPLER's own SAVE button (on multisamplerEditor's toolbar)
+     // already reflects its dirty state directly — see MultisamplerEditor::
+     // paint() — so there's no SCB counterpart left to push it to any more.
      const auto keyzones = MultisamplerEditor::toKeyzones (multisamplerEditor.getInstrument());
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
-     sliceControlBar.setInstrumentDirty (multisamplerEditor.isDirty());
 
 #if DYSEKT_STANDALONE
      // The MULTISAMPLER instrument's Arranger track (the same singleton
@@ -167,10 +169,8 @@ DysektEditor::DysektEditor (DysektProcessor& p)
          processor.sequencer.addSfzTrack (instrument.name, 1, kSfzTrackColour);
 #endif
 
-     // resized()'s SCB-visibility gate depends on whether the instrument
-     // currently has any zones at all (see resized()'s multisamplerHasZones
-     // comment) — an edit here can be exactly the add/import/delete that
-     // flips that from zero to nonzero or back, so re-run layout rather than
+     // An edit here can be exactly the add/import/delete that changes what
+     // the zone map/keyboard have to lay out, so re-run layout rather than
      // waiting for the next window resize to pick it up.
      resized();
 
@@ -266,10 +266,9 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      confirmOverlay->toFront (true);
      confirmOverlay->onResult = [this, proceed] (bool replace)
      {
-         auto proceedFn = proceed;
          confirmOverlay.reset();
-         if (replace && proceedFn)
-             proceedFn();
+         if (replace)
+             proceed();
      };
  };
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
@@ -538,13 +537,12 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  renameOverlay->toFront (true);
  renameOverlay->onResult = [this, sliceIdx] (const juce::String& newName, bool cancelled)
  {
- const int targetSlice = sliceIdx;
  renameOverlay.reset();
  if (! cancelled)
  {
  DysektProcessor::Command cmd;
  cmd.type = DysektProcessor::CmdSetSliceName;
- cmd.intParam1 = targetSlice;
+ cmd.intParam1 = sliceIdx;
  cmd.stringParam = newName;
  processor.pushCommand (cmd);
  }
@@ -1001,13 +999,12 @@ void DysektEditor::showTrimDialog (const juce::File& file, bool isRelink)
  confirmOverlay->toFront (true);
  confirmOverlay->onResult = [this, file] (bool trim)
  {
- auto targetFile = file;
  confirmOverlay.reset();
  if (trim)
- showTrimMode (targetFile);
+ showTrimMode (file);
  else
  {
- processor.loadFileAsync (targetFile);
+ processor.loadFileAsync (file);
  processor.zoom.store (1.0f);
  processor.scroll.store (0.0f);
  }
@@ -1695,19 +1692,13 @@ void DysektEditor::resized()
  int overviewTopGuard = area.getBottom();
 
  // SCB and zoom bar (overview) are only shown when a real user sample is loaded —
- // the default Empty.wav placeholder does not count.
+ // the default Empty.wav placeholder does not count. Slicer-only now (see
+ // the SCB-strip block below) — MULTISAMPLER's own toolbar carries its
+ // SAVE button directly (MultisamplerEditor.h's saveButton), so nothing in
+ // this tab needs hasRealSample any more, but hasSampleLoaded still isn't
+ // meaningful outside the Slicer tab either way, so this stays as-is.
  auto sampleSnap = processor.sampleData.getSnapshot();
- // SFZ-PLAYER is a full second Slicer instance (sliceManager2/sampleData2) —
- // NOT the disconnected legacy sfzPlayer2 live engine. Read sampleData2's own
- // snapshot directly here, exactly like the Slicer branch below does for
- // sampleData — not via getUiSliceSnapshot2(), which only refreshes once
- // processBlock() next consumes uiSnapshotDirty and is an extra, avoidable
- // hop for what should be an immediate "is anything actually loaded?" check.
- auto sampleSnap2 = processor.sampleData2.getSnapshot();
- const bool sfz2HasSample = (sampleSnap2 != nullptr && sampleSnap2->buffer.getNumSamples() > 0);
- const bool hasRealSample = (uiMode == 1)
-    ? sfz2HasSample
-    : (hasSampleLoaded
+ const bool hasRealSample = (hasSampleLoaded
        && sampleSnap != nullptr
        && ! sampleSnap->filePath.containsIgnoreCase ("DYSEKT_default.wav"));
 
@@ -1725,32 +1716,19 @@ void DysektEditor::resized()
  } else {
  // SCB first (bottommost), then overview row sits immediately above it.
  //
- // Hidden until there's actually something for it to control: either a real
- // sample/kit is loaded (hasRealSample) in the Slicer tab, or the
- // MULTISAMPLER tab is active AND its instrument actually has a zone —
- // an empty/new instrument (zero zones, "NO ZONES" shown in the map) has
- // nothing for the SCB to read out, so it stays hidden rather than showing
- // its "Select a zone to edit" placeholder row. It reappears the moment a
- // zone exists (Add Zone / import), independent of whether one is currently
- // selected/hovered — see syncMultisamplerDisplay() for the separate
- // selected/hovered-vs-blank logic that governs the readout's *content*
- // once the bar itself is visible.
- const bool multisamplerHasZones = isMultisamplerTabActive()
-                                     && ! multisamplerEditor.getInstrument().zones.empty();
- if ((hasRealSample || multisamplerHasZones) && (uiMode == 0 || uiMode == 1) && ! inlineMixerOpen && !normalBrowserOpen)
+ // Slicer-only now: MULTISAMPLER used to borrow this strip for a single
+ // SAVE button (no per-slice param cells applied there — see
+ // SliceControlBar::drawViewToggleButtons' now-removed sfzMode SAVE
+ // branch), but that button now lives directly on multisamplerEditor's
+ // own toolbar (see MultisamplerEditor.h's saveButton doc comment), so
+ // the SCB has no MULTISAMPLER-facing role left at all and is never
+ // reserved/shown while uiMode == 1 — that height folds back into
+ // zoneMapView/the keyboard below instead of sitting empty above it.
+ if (hasRealSample && uiMode == 0 && ! inlineMixerOpen && !normalBrowserOpen)
  {
-     {
-         // MULTISAMPLER only ever shows a single SAVE button in this strip
-         // (no per-slice param cells — see SliceControlBar::
-         // drawViewToggleButtons' sfzMode branch), so give it a slim
-         // button-sized strip instead of the Slicer's full kSliceCtrlH —
-         // otherwise most of that height renders as unexplained dead space
-         // directly above ZoneMapView's keyboard, shortening it for no
-         // visual benefit.
-         const int scbH = (uiMode == 1) ? si (kMultisamplerScbH) : si (kSliceCtrlH);
-         auto scbStrip = area.removeFromBottom (scbH);
-         sliceControlBar.setBounds (kFX, scbStrip.getY(), kFW, scbH);
-     }
+     const int scbH = si (kSliceCtrlH);
+     auto scbStrip = area.removeFromBottom (scbH);
+     sliceControlBar.setBounds (kFX, scbStrip.getY(), kFW, scbH);
  }
  else
  {
@@ -2240,17 +2218,9 @@ void DysektEditor::timerCallback()
  const int totalFrames = snap->buffer.getNumSamples();
  waveformView.enterTrimMode (0, totalFrames);
 
- // Region bounds MUST be published before the flag that gates the audio
- // thread's use of them. trimModeActive.store() below uses release
- // ordering specifically so that processMidi()'s acquire-load of it
- // (PluginProcessor.cpp) happens-before these two writes -- without that,
- // the audio thread could observe trimModeActive == true while still
- // reading a stale trimRegionEnd (e.g. left over from the previous
- // file/session), since relaxed atomics give no ordering guarantee
- // between different atomic variables.
+ processor.trimModeActive.store (true, std::memory_order_relaxed);
  processor.trimRegionStart.store (0, std::memory_order_relaxed);
  processor.trimRegionEnd .store (totalFrames, std::memory_order_relaxed);
- processor.trimModeActive.store (true, std::memory_order_release);
 
  if (trimDialog == nullptr)
  {
@@ -2626,7 +2596,6 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
     const int numZones = classification.numZones;
     confirmOverlay->onResult = [this, numZones] (bool assign)
     {
-        const int zoneCount = numZones;
         confirmOverlay.reset();
         // Writes straight into MultisamplerInstrument::zones[i].outputBus
         // (see MultisamplerEditor::autoAssignOutputBuses) rather than the
@@ -2634,7 +2603,7 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
         // zones already exist synchronously by this point (importFromFile()
         // already ran, above), so there's nothing left to poll for.
         if (assign)
-            multisamplerEditor.autoAssignOutputBuses (zoneCount);
+            multisamplerEditor.autoAssignOutputBuses (numZones);
     };
 }
 
@@ -2683,16 +2652,9 @@ void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArra
     confirmOverlay->toFront (true);
     confirmOverlay->onResult = [this, doImport] (bool replace)
     {
-        // doImport is a raw lambda (auto-typed, line ~2644), not a
-        // std::function -- it has no operator bool()/&&, so unlike the
-        // std::function-typed onResult/onDismiss members fixed elsewhere
-        // in this pass, there's no null state to guard against here. Just
-        // move it out before the overlay (and this capture along with it)
-        // gets destroyed by confirmOverlay.reset().
-        auto importFn = doImport;
         confirmOverlay.reset();
         if (replace)
-            importFn();
+            doImport();
     };
 }
 

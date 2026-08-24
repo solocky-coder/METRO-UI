@@ -79,11 +79,22 @@ public:
         applyZoneFieldEdit is the single place values are clamped). */
     std::function<void (MultisamplerZoneField field, float value, bool isCommit)> onFieldEdited;
 
-    // Taller than the original 76px flat-text layout — knob cells need a
-    // title row plus two full rows of knob+label+value (SliceControlBar's
-    // own psCellH is 32px per row); see MultisamplerEditor::resized(),
-    // which reads this constant when it reserves space for this component.
-    static constexpr int kPreferredHeight = 100;
+    /** "ZONE NN   name" — the text this component used to draw in its own
+        dedicated title row. That row now lives in MultisamplerEditor's
+        toolbar instead (next to the MULTISAMPLER label), freeing the space
+        for the knob grid (see kPreferredHeight below and paint()'s badge-
+        only top strip) — MultisamplerEditor reads this via
+        refreshZoneLcdDisplay() to keep its own copy in sync. Mirrors
+        setZoneForDisplay()/clearZone() exactly; returns an empty string
+        when nothing is currently shown (snapshot.valid == false). */
+    juce::String getZoneTitleText() const;
+
+    // Was 100 (18px title row + two 41px knob rows) — now just the two knob
+    // rows, since the title row moved out to MultisamplerEditor's toolbar
+    // (see getZoneTitleText() above). paint() still reserves a slim strip
+    // of this for the PREVIEW/AUDITIONING badge, but only when one applies,
+    // so the common case gets the full height for knob cells.
+    static constexpr int kPreferredHeight = 82;
 
 private:
     float uiScale = 1.0f;
@@ -97,7 +108,6 @@ private:
         float tuneCents = 0.0f, pan = 0.0f, gainDb = 0.0f;
         float attackSeconds = 0.005f, decaySeconds = 0.1f, sustainLevel = 1.0f, releaseSeconds = 0.1f;
         bool loopOn = false;
-        bool showInMixer = false;
         float filterCutoffHz = 20000.0f, filterResonance = 0.0f;
         bool isPreview = false;
         bool isAuditioning = false;
@@ -137,14 +147,9 @@ private:
     void drawKnobField (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field, int cellIdx);
     void drawKnobArc (juce::Graphics& g, int cx, int cy, int r, float normVal, bool hovered, bool dragging) const;
 
-    // LOOP and MIX are both boolean — drawn as a flat ON/OFF-style badge
-    // rather than a knob (a 0..1 arc reads as a fader, not a toggle, for a
-    // binary field), same treatment this component used for LOOP alone
-    // before MIX (MultisamplerZoneField::showInMixer) was added alongside
-    // it. Parameterized on `field` purely to pick the right label/value
-    // pair and drag-state comparison; the drawing itself is identical for
-    // both fields.
-    void drawBoolToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field, int cellIdx);
+    // LOOP is boolean — drawn as a flat toggle badge rather than a knob,
+    // same call this component made before for that field.
+    void drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
 
     // Native value → 0-1 for the knob arc. Ranges mirror either the field's
     // own documented range in SampleZone.h (tune ±1200ct, cutoff 20Hz..

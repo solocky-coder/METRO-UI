@@ -34,14 +34,11 @@ public:
     // (loKey/hiKey/root/pitch/pan/volume/release/loop) is now gated purely
     // on isSfzPlayer2Mode(), same as everything else in this class.
 
-    // SAVE button — right-aligned (SFZ-PLAYER/MULTISAMPLER mode only)
-    // while MULTISAMPLER has staged-but-unsaved edits. Set externally by
-    // the editor whenever its instrument's dirty state changes.
-    void setInstrumentDirty (bool dirty) { instrumentDirty = dirty; repaint(); }
-    bool getInstrumentDirty() const noexcept { return instrumentDirty; }
-
-    /// Fired when the user clicks the SAVE button.
-    std::function<void()> onInstrumentSaveRequested;
+    // SAVE used to live here (right-aligned, SFZ-PLAYER/MULTISAMPLER mode
+    // only, shown while MULTISAMPLER had staged-but-unsaved edits). It now
+    // lives directly on MultisamplerEditor's own toolbar instead — see
+    // MultisamplerEditor.h's saveButton doc comment — since the SCB is
+    // never shown at all while that tab is active any more.
 
     /// Resolves the theme colour key represented by whatever's under this
     /// point (a knob's accent fill, the lock icon, a toggle badge...), for
@@ -90,9 +87,6 @@ private:
     bool  padViewActive = false;   // mirrors editor showPadGrid
     juce::Rectangle<int> padToggleBtnArea;  // hit-tested in mouseDown — PADS button
     juce::Rectangle<int> waveToggleBtnArea; // hit-tested in mouseDown — WAVE button
-
-    bool  instrumentDirty = false;        // mirrors multisamplerEditor.isDirty() — shows/hides the SAVE button
-    juce::Rectangle<int> zoneSaveBtnArea; // hit-tested in mouseDown — SAVE button (SFZ-PLAYER only, when dirty)
 
     // Selected-zone readout state — see setSfzZoneSummary() doc comment above.
     struct SfzZoneSummary

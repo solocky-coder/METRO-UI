@@ -71,10 +71,9 @@ bool SliceControlBar::isSfzPlayer2Mode() const noexcept
 
 juce::String SliceControlBar::themeKeyAt (juce::Point<int> p) const
 {
-    // PADS/WAVE/SAVE toggle buttons — drawn from theme.button (see
+    // PADS/WAVE toggle buttons — drawn from theme.button (see
     // drawViewToggleButtons) — aren't part of the `cells` vector below.
-    if (padToggleBtnArea.contains (p) || waveToggleBtnArea.contains (p)
-        || zoneSaveBtnArea.contains (p))
+    if (padToggleBtnArea.contains (p) || waveToggleBtnArea.contains (p))
         return "button";
 
     for (const auto& c : cells)
@@ -1595,70 +1594,16 @@ void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
 
      drawBtn (padToggleBtnArea,  "PADS",  padViewActive);
      drawBtn (waveToggleBtnArea, "WAVE", !padViewActive);
-
-     // Not SFZ-PLAYER/MULTISAMPLER mode — SAVE doesn't apply here.
-     zoneSaveBtnArea   = {};
  }
  else
  {
-     // SFZ-PLAYER/MULTISAMPLER mode: no PADS/WAVE toggle (MultisamplerEditor
-     // is the tab's permanent content — there's nothing left to toggle to;
-     // see METRO-UI Multisampler Implementation Plan §5.2/5.3). SAVE is the
-     // only button this mode ever draws, and only while dirty.
+     // SFZ-PLAYER/MULTISAMPLER mode: the SCB is never given nonzero bounds
+     // while this tab is active (see PluginEditor::resized()'s SCB-strip
+     // gate, which is Slicer-only now), so this branch never actually
+     // paints — nothing left for it to draw. PADS/WAVE never applied here
+     // either (MultisamplerEditor is the tab's permanent content).
      padToggleBtnArea  = {};
      waveToggleBtnArea = {};
-
-     const int btnY   = si (9);
-     const int btnH   = si (24);
-     const int rightX = getWidth() - si (8);
-
-     g.setFont (DysektLookAndFeel::makeFont (9.5f * paintSf, true));
-
-     // Same chrome formula as the PADS/WAVE drawBtn lambda above, kept local
-     // to this branch since it's only ever drawn one button at a time here.
-     auto drawZoneBtn = [&] (const juce::Rectangle<int>& area, const juce::String& label, bool active)
-     {
-         juce::Rectangle<float> rf = area.toFloat().reduced (0.5f);
-         const float r = 0.0f;   // flat, square corners
-         const auto accent  = getTheme().accent;
-         auto baseBg  = getTheme().button;
-         auto fillCol = active ? baseBg.interpolatedWith (accent, 0.18f) : baseBg;
-
-         auto stateDrawable = active ? IconManager::getButtonActive()
-                                      : IconManager::getButtonIdle();
-
-         if (stateDrawable != nullptr)
-             stateDrawable->drawWithin (g, rf, juce::RectanglePlacement::stretchToFit, 1.0f);
-         else
-         {
-             g.setColour (fillCol);
-             g.fillRoundedRectangle (rf, r);
-         }
-
-         const auto border = active
-             ? accent.withAlpha (0.80f)
-             : getTheme().separator.withAlpha (0.35f);
-         g.setColour (border);
-         g.drawRoundedRectangle (rf, r, 1.0f);
-
-         g.setColour (active
-             ? accent
-             : getTheme().foreground.withAlpha (0.50f));
-         g.drawText (label, area, juce::Justification::centred);
-     };
-
-     // SAVE now takes the rightmost slot outright (the MULTI button that
-     // used to sit there is gone — MULTISAMPLER no longer needs a toggle to
-     // be reachable).
-     if (instrumentDirty)
-     {
-         zoneSaveBtnArea = juce::Rectangle<int> (rightX - kToggleBtnW, btnY, kToggleBtnW, btnH);
-         drawZoneBtn (zoneSaveBtnArea, "SAVE", true); // always drawn "active"/accented — it's a call to action
-     }
-     else
-     {
-         zoneSaveBtnArea = {};
-     }
  }
 }
 
@@ -1687,16 +1632,6 @@ void SliceControlBar::mouseDown (const juce::MouseEvent& e)
         }
         if (padToggleBtnArea.contains (e.getPosition()) || waveToggleBtnArea.contains (e.getPosition()))
             return; // already active — swallow click, no-op
-    }
-
-    // ── SAVE — SFZ-PLAYER-only, only present/hit-testable while instrumentDirty ──
-    // Checked before MULTI since the two buttons sit side by side and must
-    // not both react to the same click.
-    if (e.mods.isLeftButtonDown() && isSfzPlayer2Mode() && instrumentDirty
-        && zoneSaveBtnArea.contains (e.getPosition()))
-    {
-        if (onInstrumentSaveRequested) onInstrumentSaveRequested();
-        return;
     }
 
  // ── Lock guard: block all param changes if selected slice is fully locked ─
