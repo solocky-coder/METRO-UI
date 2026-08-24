@@ -109,12 +109,13 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      renameOverlay->toFront (true);
      renameOverlay->onResult = [this, sliceIdx] (const juce::String& newName, bool cancelled)
      {
+         const int targetSlice = sliceIdx;
          renameOverlay.reset();
          if (! cancelled)
          {
              DysektProcessor::Command cmd;
              cmd.type = DysektProcessor::CmdSetSliceName;
-             cmd.intParam1 = sliceIdx;
+             cmd.intParam1 = targetSlice;
              cmd.stringParam = newName;
              processor.pushCommand (cmd);
          }
@@ -265,9 +266,10 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      confirmOverlay->toFront (true);
      confirmOverlay->onResult = [this, proceed] (bool replace)
      {
+         auto proceedFn = proceed;
          confirmOverlay.reset();
-         if (replace)
-             proceed();
+         if (replace && proceedFn)
+             proceedFn();
      };
  };
  // When a new SF2/SFZ is loaded from the dropdown, reset the restore flag
@@ -536,12 +538,13 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  renameOverlay->toFront (true);
  renameOverlay->onResult = [this, sliceIdx] (const juce::String& newName, bool cancelled)
  {
+ const int targetSlice = sliceIdx;
  renameOverlay.reset();
  if (! cancelled)
  {
  DysektProcessor::Command cmd;
  cmd.type = DysektProcessor::CmdSetSliceName;
- cmd.intParam1 = sliceIdx;
+ cmd.intParam1 = targetSlice;
  cmd.stringParam = newName;
  processor.pushCommand (cmd);
  }
@@ -998,12 +1001,13 @@ void DysektEditor::showTrimDialog (const juce::File& file, bool isRelink)
  confirmOverlay->toFront (true);
  confirmOverlay->onResult = [this, file] (bool trim)
  {
+ auto targetFile = file;
  confirmOverlay.reset();
  if (trim)
- showTrimMode (file);
+ showTrimMode (targetFile);
  else
  {
- processor.loadFileAsync (file);
+ processor.loadFileAsync (targetFile);
  processor.zoom.store (1.0f);
  processor.scroll.store (0.0f);
  }
@@ -2236,9 +2240,17 @@ void DysektEditor::timerCallback()
  const int totalFrames = snap->buffer.getNumSamples();
  waveformView.enterTrimMode (0, totalFrames);
 
- processor.trimModeActive.store (true, std::memory_order_relaxed);
+ // Region bounds MUST be published before the flag that gates the audio
+ // thread's use of them. trimModeActive.store() below uses release
+ // ordering specifically so that processMidi()'s acquire-load of it
+ // (PluginProcessor.cpp) happens-before these two writes -- without that,
+ // the audio thread could observe trimModeActive == true while still
+ // reading a stale trimRegionEnd (e.g. left over from the previous
+ // file/session), since relaxed atomics give no ordering guarantee
+ // between different atomic variables.
  processor.trimRegionStart.store (0, std::memory_order_relaxed);
  processor.trimRegionEnd .store (totalFrames, std::memory_order_relaxed);
+ processor.trimModeActive.store (true, std::memory_order_release);
 
  if (trimDialog == nullptr)
  {
@@ -2614,6 +2626,7 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
     const int numZones = classification.numZones;
     confirmOverlay->onResult = [this, numZones] (bool assign)
     {
+        const int zoneCount = numZones;
         confirmOverlay.reset();
         // Writes straight into MultisamplerInstrument::zones[i].outputBus
         // (see MultisamplerEditor::autoAssignOutputBuses) rather than the
@@ -2621,7 +2634,7 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
         // zones already exist synchronously by this point (importFromFile()
         // already ran, above), so there's nothing left to poll for.
         if (assign)
-            multisamplerEditor.autoAssignOutputBuses (numZones);
+            multisamplerEditor.autoAssignOutputBuses (zoneCount);
     };
 }
 
@@ -2670,9 +2683,10 @@ void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArra
     confirmOverlay->toFront (true);
     confirmOverlay->onResult = [this, doImport] (bool replace)
     {
+        auto importFn = doImport;
         confirmOverlay.reset();
-        if (replace)
-            doImport();
+        if (replace && importFn)
+            importFn();
     };
 }
 

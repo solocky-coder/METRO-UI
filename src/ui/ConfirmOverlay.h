@@ -39,7 +39,10 @@ public:
             juce::MessageManager::callAsync ([safeThis]
             {
                 if (safeThis != nullptr && safeThis->onResult)
-                    safeThis->onResult (true);
+                {
+                    auto cb = std::move (safeThis->onResult);
+                    cb (true);
+                }
             });
         };
         noBtn.onClick = [safeThis]
@@ -47,7 +50,10 @@ public:
             juce::MessageManager::callAsync ([safeThis]
             {
                 if (safeThis != nullptr && safeThis->onResult)
-                    safeThis->onResult (false);
+                {
+                    auto cb = std::move (safeThis->onResult);
+                    cb (false);
+                }
             });
         };
 
@@ -110,7 +116,10 @@ public:
             juce::MessageManager::callAsync ([safeThis]
             {
                 if (safeThis != nullptr && safeThis->onResult)
-                    safeThis->onResult (false);
+                {
+                    auto cb = std::move (safeThis->onResult);
+                    cb (false);
+                }
             });
         }
     }

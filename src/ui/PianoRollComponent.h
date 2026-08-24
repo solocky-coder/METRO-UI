@@ -1410,12 +1410,20 @@ private:
             void commit()
             {
                 const int v = juce::jlimit (1, 127, editor.getText().getIntValue());
-                if (onResult) onResult (true, v);
+                if (onResult)
+                {
+                    auto cb = std::move (onResult);
+                    cb (true, v);
+                }
             }
 
             void dismiss()
             {
-                if (onResult) onResult (false, 0);
+                if (onResult)
+                {
+                    auto cb = std::move (onResult);
+                    cb (false, 0);
+                }
             }
         };
 

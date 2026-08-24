@@ -212,6 +212,11 @@ void AddZoneTrimOverlay::resetTrim()
 {
     trimStart = 0;
     trimEnd   = totalFrames;
+
+    // Covers both call sites: the initial seed from handleDecodeSuccess()
+    // (first time there's anything playable) and the RESET button.
+    if (onTrimChanged)
+        onTrimChanged (trimStart, trimEnd);
 }
 
 // ── Layout ───────────────────────────────────────────────────────────────
@@ -427,6 +432,9 @@ void AddZoneTrimOverlay::mouseDrag (const juce::MouseEvent& e)
         trimStart = juce::jlimit ((int64_t) 0, trimEnd - 1, frame);
     else
         trimEnd = juce::jlimit (trimStart + 1, totalFrames, frame);
+
+    if (onTrimChanged)
+        onTrimChanged (trimStart, trimEnd);
 
     repaint();
 }

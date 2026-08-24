@@ -133,7 +133,10 @@ private:
         juce::MessageManager::callAsync ([safeThis, text]
         {
             if (safeThis != nullptr && safeThis->onResult)
-                safeThis->onResult (text, false);
+            {
+                auto cb = std::move (safeThis->onResult);
+                cb (text, false);
+            }
         });
     }
 
@@ -143,7 +146,10 @@ private:
         juce::MessageManager::callAsync ([safeThis]
         {
             if (safeThis != nullptr && safeThis->onResult)
-                safeThis->onResult ({}, true);
+            {
+                auto cb = std::move (safeThis->onResult);
+                cb ({}, true);
+            }
         });
     }
 

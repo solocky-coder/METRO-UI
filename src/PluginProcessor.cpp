@@ -1903,7 +1903,17 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
     // UI focus, so all engines keep listening concurrently regardless of tab.
     const uint32_t sfMask  = sfPlayerChannelMask.load  (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
     const uint32_t sfz2Mask = sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
-    const bool inTrimMode = trimModeActive.load (std::memory_order_relaxed);
+    // Acquire pairs with the release store in PluginEditor.cpp (entering
+    // trim mode). Reading true here means every write the UI thread made
+    // before that release store -- specifically trimRegionStart/End for
+    // the new file -- is guaranteed visible to this thread from this point
+    // on, including the later relaxed re-loads of trimModeActive and the
+    // trim region atomics further down this function and in processBlock()
+    // (both sequenced-after this load within the same audio callback).
+    // Without this, trimModeActive could be observed true before its
+    // paired region bounds were, since relaxed atomics give no ordering
+    // guarantee between different atomic variables.
+    const bool inTrimMode = trimModeActive.load (std::memory_order_acquire);
 
     for (const auto metadata : midi)
     {

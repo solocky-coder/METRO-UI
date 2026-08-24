@@ -111,6 +111,13 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
 MultisamplerEditor::~MultisamplerEditor()
 {
     stopTimer();
+
+    // Belt-and-braces alongside trimPreviewTimer's own destructor (a
+    // juce::Timer stops itself safely when destroyed) — explicit here for
+    // the same reason the line above exists, and so a reader scanning this
+    // destructor doesn't have to go check that fact for a second timer.
+    if (trimPreviewTimer != nullptr)
+        trimPreviewTimer->stopTimer();
 }
 
 // ── Layout / paint ───────────────────────────────────────────────────────
@@ -283,9 +290,23 @@ void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
             }
         });
 
+        // The trim step is closing either way (confirmed or cancelled) —
+        // sfzPlayer2 must stop pointing at the throwaway trim-preview zone
+        // and go back to reflecting the real, committed instrument.
+        restoreEngineToRealInstrument();
+
         if (! confirmed) return;   // cancelled or decode failed — instrument untouched
 
         beginAddZoneKeyMapping (sampleFile, result.start, result.end, result.totalFrames);
+    };
+
+    // Audition wiring: every time the user moves a trim handle (or hits
+    // RESET, or the initial decode finishes), debounce a preview export so
+    // notes played while this overlay is open sound the current [start,
+    // end) region — see the class-level comment on trimPreviewTimer.
+    zoneTrimOverlay->onTrimChanged = [this, sampleFile] (int64_t start, int64_t end)
+    {
+        scheduleTrimPreviewSync (sampleFile, start, end);
     };
 
     addAndMakeVisible (*zoneTrimOverlay);
@@ -585,6 +606,115 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
                 safeThis->processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
             });
         });
+}
+
+// ── Add Zone trim audition ─────────────────────────────────────────────────
+// See the trimPreviewTimer/addZoneTrimPreview* declarations in the header
+// for the full rationale. Mirrors performEngineSync() above closely on
+// purpose — same export -> loadFile() -> loadSoundFontAsync() shape, same
+// SafePointer + generation-counter guard against a stale background export
+// landing after a newer one — just pointed at a throwaway single-zone
+// instrument and a separate cache file instead of the real `instrument`.
+
+void MultisamplerEditor::scheduleTrimPreviewSync (const juce::File& sampleFile,
+                                                   int64_t start, int64_t end)
+{
+    addZoneTrimPreviewFile  = sampleFile;
+    addZoneTrimPreviewStart = start;
+    addZoneTrimPreviewEnd   = end;
+
+    if (trimPreviewTimer == nullptr)
+    {
+        // SafePointer here too: the trim overlay (and this editor along
+        // with it, in the plugin-teardown case) can close/be destroyed
+        // while this timer is still pending.
+        juce::Component::SafePointer<MultisamplerEditor> safeThis (this);
+        trimPreviewTimer = std::make_unique<TrimPreviewTimer> ([safeThis]
+        {
+            if (safeThis != nullptr)
+                safeThis->performTrimPreviewSync();
+        });
+    }
+
+    // Restarting on every call is the debounce, same as scheduleEngineSync().
+    trimPreviewTimer->startTimer (kEngineSyncDebounceMs);
+}
+
+void MultisamplerEditor::performTrimPreviewSync()
+{
+    const int myGen = ++trimPreviewGeneration;
+
+    // A single region spanning the full key/velocity range so any note on
+    // any channel routed to sfzPlayer2 triggers it, played chromatically
+    // off root C3 (MIDI 60) — same audition convention the Slicer's own
+    // trim mode uses (PluginProcessor.cpp's kChromaticDefaultRoot). Every
+    // other SampleZone field stays at its default; this zone is never
+    // written into `instrument` or serialized anywhere.
+    SampleZone previewZone;
+    previewZone.sampleFile   = addZoneTrimPreviewFile;
+    previewZone.lowKey       = 0;
+    previewZone.highKey      = 127;
+    previewZone.rootKey      = 60;
+    previewZone.lowVelocity  = 1;
+    previewZone.highVelocity = 127;
+    previewZone.sampleStart  = addZoneTrimPreviewStart;
+    previewZone.sampleEnd    = addZoneTrimPreviewEnd;
+
+    MultisamplerInstrument previewInstrument;
+    previewInstrument.addZone (previewZone);
+
+    // Cache-directory file, distinct from performEngineSync()'s
+    // multisampler_preview.sfz so the two syncs can never read/write each
+    // other's file mid-export.
+    const auto cacheFile = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                .getChildFile ("DYSEKT")
+                                .getChildFile ("multisampler_addzone_trim_preview.sfz");
+    cacheFile.getParentDirectory().createDirectory();
+
+    SfzExporter::Options opts;   // absolute sample paths — same as performEngineSync()
+
+    juce::Component::SafePointer<MultisamplerEditor> safeThis (this);
+
+    processor.fileLoadPool.addJob (
+        [safeThis, myGen, cacheFile, opts, snapshot = previewInstrument]
+        {
+            if (! SfzExporter::exportToFile (snapshot, cacheFile, opts))
+                return;
+
+            juce::MessageManager::callAsync ([safeThis, myGen, cacheFile]
+            {
+                if (safeThis == nullptr)
+                    return;   // panel/overlay destroyed while the export was in flight
+                if (myGen != safeThis->trimPreviewGeneration)
+                    return;   // superseded by a newer trim-handle move
+
+                safeThis->processor.sfzPlayer2.loadFile (cacheFile, safeThis->processor.fileLoadPool);
+
+                // Fresh-load semantics throughout: this throwaway zone has no
+                // DYSEKT-only per-slice customisation to preserve across the
+                // rebuild (see performEngineSync()'s identical branch for why
+                // that distinction exists for real edits) — every trim-preview
+                // sync is a brand new single-zone instrument regardless of
+                // whether an earlier one ran, so zoneBuilderReloadPending is
+                // deliberately never set here.
+                safeThis->processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
+            });
+        });
+}
+
+void MultisamplerEditor::restoreEngineToRealInstrument()
+{
+    // Bump the generation first so any trim-preview export/load already in
+    // flight discards itself instead of racing this restore and possibly
+    // landing after it.
+    ++trimPreviewGeneration;
+    if (trimPreviewTimer != nullptr)
+        trimPreviewTimer->stopTimer();
+
+    // Immediate, not debounced — the trim step just closed, so there is no
+    // burst of edits to coalesce, and the user may want to play the real
+    // instrument again right away.
+    performEngineSync (false);
 }
 
 // ── Inspector ────────────────────────────────────────────────────────────

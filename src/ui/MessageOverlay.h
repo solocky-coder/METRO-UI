@@ -114,7 +114,10 @@ private:
         juce::MessageManager::callAsync ([safeThis]
         {
             if (safeThis != nullptr && safeThis->onDismiss)
-                safeThis->onDismiss();
+            {
+                auto cb = std::move (safeThis->onDismiss);
+                cb();
+            }
         });
     }
 

@@ -367,5 +367,62 @@ private:
     static constexpr int kEngineSyncDebounceMs = 300;
     static constexpr int kHeaderH    = 32;
 
+    // ── Add Zone trim audition (plan §5-style preview, scoped to the trim
+    // step only) ────────────────────────────────────────────────────────
+    // While AddZoneTrimOverlay (beginAddZoneTrim()) is open, the user can
+    // play notes on any channel routed to sfzPlayer2 to audition the
+    // in-progress [start, end) trim region before a zone is ever added to
+    // `instrument`. This reuses the exact export -> loadFile() ->
+    // loadSoundFontAsync() pipeline performEngineSync() uses for real
+    // edits, but renders a throwaway single-region MultisamplerInstrument
+    // (spanning the full key/velocity range, root C3) instead of the real
+    // `instrument`, and writes it to a separate cache file so it can never
+    // collide with — or be overwritten by — a real edit's debounced sync
+    // landing at the same time.
+    //
+    // Trade-off, by design: sfzPlayer2 can only have one file loaded at
+    // once, so while this preview is active the real `instrument`'s
+    // committed zones are NOT audible — the user is inside a modal
+    // "add zone" overlay at this point anyway, not looking at the zone map.
+    // restoreEngineToRealInstrument() puts the real instrument back the
+    // moment the trim step closes (confirmed or cancelled), via the
+    // existing performEngineSync() path, so nothing needs to change there.
+    //
+    // Needs its own timer rather than reusing the engineSyncGeneration/
+    // Timer pair above: that timer's timerCallback() is hardwired to
+    // performEngineSync(), and a trim-handle drag happening concurrently
+    // with an unrelated real edit must not have either debounce starve or
+    // pre-empt the other.
+    class TrimPreviewTimer : public juce::Timer
+    {
+    public:
+        explicit TrimPreviewTimer (std::function<void()> cb) : onTick (std::move (cb)) {}
+        void timerCallback() override { stopTimer(); if (onTick) onTick(); }
+    private:
+        std::function<void()> onTick;
+    };
+    std::unique_ptr<TrimPreviewTimer> trimPreviewTimer;
+
+    // Latest pending trim-preview request; read only by performTrimPreviewSync()
+    // after the debounce fires, both on the UI thread — mirrors the
+    // snapshot-by-value pattern performEngineSync() uses for `instrument`.
+    juce::File addZoneTrimPreviewFile;
+    int64_t    addZoneTrimPreviewStart = 0;
+    int64_t    addZoneTrimPreviewEnd   = 0;
+
+    // Same stale-completion guard as engineSyncGeneration, scoped separately
+    // so a real edit's sync and a trim-preview sync can never invalidate
+    // each other.
+    int trimPreviewGeneration = 0;
+
+    /** Debounces AddZoneTrimOverlay::onTrimChanged into performTrimPreviewSync(). */
+    void scheduleTrimPreviewSync (const juce::File& sampleFile, int64_t start, int64_t end);
+    void performTrimPreviewSync();
+    /** Points sfzPlayer2 back at the real `instrument` — call once when the
+     *  trim step closes, however it closes. Safe to call even if no trim
+     *  preview was ever scheduled (e.g. the user cancelled before decode
+     *  finished). */
+    void restoreEngineToRealInstrument();
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultisamplerEditor)
 };

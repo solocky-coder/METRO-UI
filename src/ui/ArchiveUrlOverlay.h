@@ -71,7 +71,14 @@ private:
     juce::String     titleText, bodyText;
     juce::TextButton okBtn;
 
-    void dismiss() { if (onDismiss) onDismiss(); }
+    void dismiss()
+    {
+        if (onDismiss)
+        {
+            auto cb = std::move (onDismiss);
+            cb();
+        }
+    }
 
     static juce::Font bodyFont() { return DysektLookAndFeel::makeFont (11.5f); }
 
@@ -201,12 +208,20 @@ private:
 
     void commit()
     {
-        if (onResult) onResult (editor.getText().trim(), false);
+        if (onResult)
+        {
+            auto cb = std::move (onResult);
+            cb (editor.getText().trim(), false);
+        }
     }
 
     void cancel()
     {
-        if (onResult) onResult ({}, true);
+        if (onResult)
+        {
+            auto cb = std::move (onResult);
+            cb ({}, true);
+        }
     }
 
     juce::Rectangle<int> dialogBox() const

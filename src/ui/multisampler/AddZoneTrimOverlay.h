@@ -72,6 +72,14 @@ public:
      *  preview failed to decode — NEXT is disabled in that state. */
     std::function<void (Result, bool confirmed)> onResult;
 
+    /** Fired whenever the live [start, end) trim region changes: on every
+     *  handle drag step, on RESET, and once right after a successful decode
+     *  (seeded to the full file). Lets the caller keep an audition preview
+     *  in sync with the region the user is currently dragging, without
+     *  waiting for NEXT/onResult. Never fires while decoding or after a
+     *  decode failure — there is nothing playable yet in either case. */
+    std::function<void (int64_t start, int64_t end)> onTrimChanged;
+
     // Called by the background decode job via MessageManager::callAsync —
     // public only so the .cpp's ThreadPoolJob subclass can reach them;
     // not part of the public API a caller should use.
