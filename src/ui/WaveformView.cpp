@@ -283,8 +283,8 @@ void WaveformView::drawTrimHandleTab (juce::Graphics& g, int lineX, int topY, bo
 {
  const auto& T = getTheme();
 
- constexpr int tabW = 16;
- constexpr int tabH = 14;
+ const int tabW = kTrimHandleTabW;
+ const int tabH = kTrimHandleTabH;
  const int tabX = tabOnRight ? lineX : lineX - tabW;
 
  g.setColour (T.accent);
@@ -297,6 +297,21 @@ void WaveformView::drawTrimHandleTab (juce::Graphics& g, int lineX, int topY, bo
  const int gripH = tabH - 8;
  g.fillRect (tabX + tabW / 2 - 3, gripY, 2, gripH);
  g.fillRect (tabX + tabW / 2 + 1, gripY, 2, gripH);
+}
+
+// Hit-test against the actual tab rectangle drawn above, not just a fixed
+// symmetric distance from the line — the tab is asymmetric (it extends
+// kTrimHandleTabW to one side only), so a symmetric tolerance leaves half
+// the visible handle outside its own click zone, which is what was making
+// grabs feel like they weren't registering / the marker lagging behind
+// the cursor. tabOnRight matches drawTrimHandleTab's parameter: IN's tab
+// sits to the right of its line, OUT's sits to the left.
+bool WaveformView::isNearTrimHandle (int ex, int lineX, bool tabOnRight) noexcept
+{
+ constexpr int kSlack = 4;   // a little grab margin beyond the tab's own edges
+ const int lo = tabOnRight ? (lineX - kSlack)                      : (lineX - kTrimHandleTabW - kSlack);
+ const int hi = tabOnRight ? (lineX + kTrimHandleTabW + kSlack)    : (lineX + kSlack);
+ return ex >= lo && ex <= hi;
 }
 
 void WaveformView::paintTransientMarkers (juce::Graphics& g)
@@ -904,7 +919,7 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
  {
  const int x1 = sampleToPixel (trimInPoint);
  const int x2 = sampleToPixel (trimOutPoint);
- if (std::abs (e.x - x1) < 8 || std::abs (e.x - x2) < 8)
+ if (isNearTrimHandle (e.x, x1, true) || isNearTrimHandle (e.x, x2, false))
  setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
  else
  setMouseCursor (juce::MouseCursor::NormalCursor);
@@ -956,13 +971,13 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
  auto totalFrames = sampleSnap->buffer.getNumSamples();
  int x1 = juce::jlimit(0, w, sampleToPixel(juce::jlimit(0, totalFrames - 1, trimInPoint)));
  int x2 = juce::jlimit(0, w, sampleToPixel(juce::jlimit(trimInPoint + 1, totalFrames, trimOutPoint)));
- if (std::abs (e.x - x1) < 8)
+ if (isNearTrimHandle (e.x, x1, true))
  {
  dragMode = DragTrimIn;
  trimDragging = true;
  return;
  }
- else if (std::abs (e.x - x2) < 8)
+ else if (isNearTrimHandle (e.x, x2, false))
  {
  dragMode = DragTrimOut;
  trimDragging = true;
