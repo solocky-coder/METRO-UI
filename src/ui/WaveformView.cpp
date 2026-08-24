@@ -265,53 +265,19 @@ void WaveformView::paintTrimOverlay (juce::Graphics& g)
 
  g.setColour (ac.withAlpha (0.90f));
  g.drawVerticalLine (x1, 0.0f, (float) h);
+ {
+ juce::Path tri;
+ tri.addTriangle ((float) x1, 0.0f, (float) x1 + 10.0f, 0.0f, (float) x1, 10.0f);
+ g.fillPath (tri);
+ }
  g.drawVerticalLine (x2, 0.0f, (float) h);
-
- // Flat square-topped tab handles — same language as
- // AddZoneTrimOverlay::drawTrimHandleTab, rather than the pointed
- // triangle flags this used to draw. IN's tab sits to the right of its
- // line (grabbing rightward, toward the kept audio); OUT's sits to the
- // left, mirroring that same "toward the kept region" orientation.
- drawTrimHandleTab (g, x1, 0, true);
- drawTrimHandleTab (g, x2, 0, false);
-
+ {
+ juce::Path tri;
+ tri.addTriangle ((float) x2, 0.0f, (float) x2 - 10.0f, 0.0f, (float) x2, 10.0f);
+ g.fillPath (tri);
+ }
  g.setColour (ac.withAlpha (0.04f));
  if (x2 > x1) g.fillRect (x1, 0, x2 - x1, h);
-}
-
-void WaveformView::drawTrimHandleTab (juce::Graphics& g, int lineX, int topY, bool tabOnRight)
-{
- const auto& T = getTheme();
-
- const int tabW = kTrimHandleTabW;
- const int tabH = kTrimHandleTabH;
- const int tabX = tabOnRight ? lineX : lineX - tabW;
-
- g.setColour (T.accent);
- g.fillRect (tabX, topY, tabW, tabH);
-
- // Two-bar grip, cut out in the waveform's own background colour so it
- // reads as a notch in the tab rather than a separate drawn element.
- g.setColour (T.waveformBg);
- const int gripY = topY + 4;
- const int gripH = tabH - 8;
- g.fillRect (tabX + tabW / 2 - 3, gripY, 2, gripH);
- g.fillRect (tabX + tabW / 2 + 1, gripY, 2, gripH);
-}
-
-// Hit-test against the actual tab rectangle drawn above, not just a fixed
-// symmetric distance from the line — the tab is asymmetric (it extends
-// kTrimHandleTabW to one side only), so a symmetric tolerance leaves half
-// the visible handle outside its own click zone, which is what was making
-// grabs feel like they weren't registering / the marker lagging behind
-// the cursor. tabOnRight matches drawTrimHandleTab's parameter: IN's tab
-// sits to the right of its line, OUT's sits to the left.
-bool WaveformView::isNearTrimHandle (int ex, int lineX, bool tabOnRight) noexcept
-{
- constexpr int kSlack = 4;   // a little grab margin beyond the tab's own edges
- const int lo = tabOnRight ? (lineX - kSlack)                      : (lineX - kTrimHandleTabW - kSlack);
- const int hi = tabOnRight ? (lineX + kTrimHandleTabW + kSlack)    : (lineX + kSlack);
- return ex >= lo && ex <= hi;
 }
 
 void WaveformView::paintTransientMarkers (juce::Graphics& g)
@@ -919,7 +885,7 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
  {
  const int x1 = sampleToPixel (trimInPoint);
  const int x2 = sampleToPixel (trimOutPoint);
- if (isNearTrimHandle (e.x, x1, true) || isNearTrimHandle (e.x, x2, false))
+ if (std::abs (e.x - x1) < 8 || std::abs (e.x - x2) < 8)
  setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
  else
  setMouseCursor (juce::MouseCursor::NormalCursor);
@@ -971,13 +937,13 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
  auto totalFrames = sampleSnap->buffer.getNumSamples();
  int x1 = juce::jlimit(0, w, sampleToPixel(juce::jlimit(0, totalFrames - 1, trimInPoint)));
  int x2 = juce::jlimit(0, w, sampleToPixel(juce::jlimit(trimInPoint + 1, totalFrames, trimOutPoint)));
- if (isNearTrimHandle (e.x, x1, true))
+ if (std::abs (e.x - x1) < 8)
  {
  dragMode = DragTrimIn;
  trimDragging = true;
  return;
  }
- else if (isNearTrimHandle (e.x, x2, false))
+ else if (std::abs (e.x - x2) < 8)
  {
  dragMode = DragTrimOut;
  trimDragging = true;
@@ -1348,18 +1314,6 @@ void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
  processor.pushCommand (cmd);
 }
 
-// Repaints just the strip that could have changed as a trim handle moves
-// from oldX to newX: the shading boundary shift, the vertical line at both
-// positions, and the tab graphic (which can extend kTrimHandleTabW past the
-// line on either side, plus grab slack) — instead of the whole component.
-void WaveformView::repaintTrimHandleBand (int oldX, int newX)
-{
- const int margin = kTrimHandleTabW + 4;
- const int lo = juce::jmin (oldX, newX) - margin;
- const int hi = juce::jmax (oldX, newX) + margin;
- repaint (juce::Rectangle<int> (lo, 0, hi - lo, getHeight()));
-}
-
 void WaveformView::mouseDrag (const juce::MouseEvent& e)
 {
  auto sampleSnap = activeSampleData().getSnapshot();
@@ -1369,20 +1323,12 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
  {
  int totalFrames = sampleSnap->buffer.getNumSamples();
  int minLen = 1;
- // Capture the marker's pixel position BEFORE moving it, so we can union
- // it with the post-move position below and repaint only that band —
- // repaint() with no args was invalidating the whole view (waveform path,
- // every slice, cursors, overlays) on every single drag tick, which is
- // almost certainly what reads as the marker lagging behind the mouse:
- // the expensive full redraw can't keep pace with a fast mouseDrag stream.
- const int oldX = sampleToPixel (dragMode == DragTrimIn ? trimInPoint : trimOutPoint);
  int newSample = juce::jlimit(0, totalFrames, pixelToSample(e.x));
  if (dragMode == DragTrimIn)
  trimInPoint = juce::jlimit(0, trimOutPoint - minLen, newSample);
  else if (dragMode == DragTrimOut)
  trimOutPoint = juce::jlimit(trimInPoint + minLen, totalFrames, newSample);
- const int newX = sampleToPixel (dragMode == DragTrimIn ? trimInPoint : trimOutPoint);
- repaintTrimHandleBand (oldX, newX);
+ repaint();
  return;
  }
 
@@ -1594,17 +1540,9 @@ void WaveformView::enterTrimMode (int start, int end)
 
 void WaveformView::setTrimPoints (int inPt, int outPt)
 {
- // TrimDialog's knob drag calls this on every mouseDrag tick too, so it
- // gets the same scoped-repaint treatment as the direct on-waveform drag
- // (see mouseDrag / repaintTrimHandleBand) rather than a full-view repaint.
- const int oldX1 = sampleToPixel (trimInPoint);
- const int oldX2 = sampleToPixel (trimOutPoint);
  trimInPoint = inPt;
  trimOutPoint = outPt;
- const int newX1 = sampleToPixel (trimInPoint);
- const int newX2 = sampleToPixel (trimOutPoint);
- repaintTrimHandleBand (oldX1, newX1);
- repaintTrimHandleBand (oldX2, newX2);
+ repaint();
 }
 
 void WaveformView::setTrimMode (bool active)
