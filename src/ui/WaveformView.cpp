@@ -265,19 +265,38 @@ void WaveformView::paintTrimOverlay (juce::Graphics& g)
 
  g.setColour (ac.withAlpha (0.90f));
  g.drawVerticalLine (x1, 0.0f, (float) h);
- {
- juce::Path tri;
- tri.addTriangle ((float) x1, 0.0f, (float) x1 + 10.0f, 0.0f, (float) x1, 10.0f);
- g.fillPath (tri);
- }
  g.drawVerticalLine (x2, 0.0f, (float) h);
- {
- juce::Path tri;
- tri.addTriangle ((float) x2, 0.0f, (float) x2 - 10.0f, 0.0f, (float) x2, 10.0f);
- g.fillPath (tri);
- }
+
+ // Flat square-topped tab handles — same language as
+ // AddZoneTrimOverlay::drawTrimHandleTab, rather than the pointed
+ // triangle flags this used to draw. IN's tab sits to the right of its
+ // line (grabbing rightward, toward the kept audio); OUT's sits to the
+ // left, mirroring that same "toward the kept region" orientation.
+ drawTrimHandleTab (g, x1, 0, true);
+ drawTrimHandleTab (g, x2, 0, false);
+
  g.setColour (ac.withAlpha (0.04f));
  if (x2 > x1) g.fillRect (x1, 0, x2 - x1, h);
+}
+
+void WaveformView::drawTrimHandleTab (juce::Graphics& g, int lineX, int topY, bool tabOnRight)
+{
+ const auto& T = getTheme();
+
+ constexpr int tabW = 16;
+ constexpr int tabH = 14;
+ const int tabX = tabOnRight ? lineX : lineX - tabW;
+
+ g.setColour (T.accent);
+ g.fillRect (tabX, topY, tabW, tabH);
+
+ // Two-bar grip, cut out in the waveform's own background colour so it
+ // reads as a notch in the tab rather than a separate drawn element.
+ g.setColour (T.waveformBg);
+ const int gripY = topY + 4;
+ const int gripH = tabH - 8;
+ g.fillRect (tabX + tabW / 2 - 3, gripY, 2, gripH);
+ g.fillRect (tabX + tabW / 2 + 1, gripY, 2, gripH);
 }
 
 void WaveformView::paintTransientMarkers (juce::Graphics& g)

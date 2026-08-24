@@ -177,7 +177,8 @@ struct SequencerTrack
         t->type    = TrackType::MainSlice;
         t->name    = "MAIN";
         t->colour  = juce::Colour (0xFF25D9D9);
-        t->addClip (0);
+        // No init clip — the arranger starts empty; the user adds clips via
+        // double-click (1 bar) or by drawing a clip at their drawn length.
         return t;
     }
 
@@ -193,7 +194,7 @@ struct SequencerTrack
                             ? ("CHROM " + juce::String (sliceIdx + 1))
                             : sliceName;
         t->colour      = sliceColour;
-        t->addClip (0);
+        // No init clip — see makeMain() for why.
         return t;
     }
 
@@ -206,7 +207,7 @@ struct SequencerTrack
         t->midiChannel.store (15, std::memory_order_relaxed);
         t->name        = p.name;
         t->colour      = colour;
-        t->addClip (0);
+        // No init clip — see makeMain() for why.
         return t;
     }
 
@@ -243,7 +244,7 @@ struct SequencerTrack
         t->midiChannel.store (15, std::memory_order_relaxed);
         t->name        = name;
         t->colour      = colour;
-        t->addClip (0);
+        // No init clip — see makeMain() for why.
         return t;
     }
 

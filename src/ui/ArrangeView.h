@@ -319,6 +319,7 @@ public:
         paintLoopOverlay (g);
         paintPlayhead (g);
         paintRubberBand (g);
+        paintDrawClipPreview (g);
 
         // Corner fill between scrollbars
         if (getWidth() > kLeftW + 8 && getHeight() > kTransportH + kScrollH + 8)
@@ -422,7 +423,7 @@ public:
         }
 
         // Non-Select tools act on a single left-click instead of the
-        // Select tool's move/resize/create-on-empty-space behaviour below.
+        // Select tool's move/resize/rubber-band-select behaviour below.
         // They all need a real track under the cursor.
         if (currentTool != Tool::Select)
         {
@@ -473,21 +474,20 @@ public:
             repaint(); return;
         }
 
-        // Empty space — a plain click on an existing track still creates a
-        // new clip there (unchanged pre-existing behaviour), but a drag
-        // starts a rubber-band selection instead; mouseUp tells the two
-        // apart by whether rubberBandRect ever grew past a couple of
-        // pixels. This also fires below the last track row (validTrack
-        // false, dragTrack -1) so a rubber-band can be started anywhere in
-        // the arranger — mouseUp's click-fallback clip creation already
-        // checks dragTrack is a real track before acting on it.
+        // Empty space — starts a rubber-band selection drag. Clip creation
+        // is opt-in only (double-click for a 1-bar clip, or the Draw tool
+        // for a drawn length — see mouseDoubleClick / handleDrawClipDown),
+        // so a plain click here just clears/starts the selection rect.
+        // This also fires below the last track row (validTrack false,
+        // dragTrack -1) so a rubber-band can be started anywhere in the
+        // arranger.
         {
             rubberBandStart = e.getPosition();
             rubberBandRect  = juce::Rectangle<int> (rubberBandStart, rubberBandStart);
             rubberBandBaseSelection = e.mods.isShiftDown() ? selectedClips
                                                             : std::vector<std::pair<int,int>>{};
             dragMode  = DragMode::RubberBand;
-            dragTrack = trackIdx;   // track to create the click-fallback clip on
+            dragTrack = trackIdx;
             repaint(); return;
         }
     }   // end mouseDown
@@ -543,6 +543,14 @@ public:
             repaint(); return;
         }
 
+        if (dragMode == DragMode::DrawClip)
+        {
+            const int64_t tick   = snapTick (xToTick (e.x));
+            const int64_t minLen = MidiClip::kPPQ * 4;   // 1-bar floor
+            drawLenTicks = juce::jmax (minLen, tick - drawStartTick);
+            repaint(); return;
+        }
+
         const int dx = e.x - dragStartX;
 
         if (dragMode == DragMode::ResizeRight)
@@ -574,6 +582,17 @@ public:
 
     void mouseUp (const juce::MouseEvent&) override
     {
+        // Commit a drawn clip — length is whatever drawLenTicks grew to
+        // while dragging (floored to 1 bar in handleDrawClipDown/mouseDrag
+        // above), so a plain click-with-no-drag still yields a usable
+        // 1-bar clip rather than nothing.
+        if (dragMode == DragMode::DrawClip && dragTrack >= 0)
+        {
+            const int newIdx = engine.addClip (dragTrack, drawStartTick, drawLenTicks);
+            selectSingleClip (dragTrack, newIdx);
+            drawLenTicks = 0;
+        }
+
         // Commit clip resize
         if (dragMode == DragMode::ResizeRight && dragTrack >= 0)
         {
@@ -648,20 +667,13 @@ public:
 
         // Finalize the rubber-band drag: a real drag (rect grew past a
         // couple of pixels) just leaves the live-updated selectedClips in
-        // place; anything smaller is treated as the plain click empty
-        // space has always meant — create a new clip there — and that new
-        // clip becomes the sole selection.
+        // place. A plain click on empty space no longer creates a clip —
+        // clip creation is opt-in only, via double-click (see
+        // mouseDoubleClick, 1-bar clip) or the Draw tool (see
+        // handleDrawClipDown/DragMode::DrawClip, drawn-length clip) — so a
+        // non-drag click here just clears the selection.
         if (dragMode == DragMode::RubberBand)
         {
-            const bool wasRealDrag = rubberBandRect.getWidth()  > 2
-                                   || rubberBandRect.getHeight() > 2;
-            if (! wasRealDrag && juce::isPositiveAndBelow (dragTrack, engine.getNumTracks()))
-            {
-                const int64_t clickTick = snapTick (xToTick (rubberBandStart.x));
-                const int64_t defLen    = MidiClip::kPPQ * 4 * 4;  // 4 bars default
-                const int newIdx = engine.addClip (dragTrack, clickTick, defLen);
-                selectSingleClip (dragTrack, newIdx);
-            }
             rubberBandRect = {};
             rubberBandBaseSelection.clear();
         }
@@ -702,6 +714,18 @@ public:
                 return;
             }
         }
+
+        // Double-click on empty space — the only click-based way to create
+        // a clip (see mouseUp's RubberBand handling: a plain single click
+        // no longer creates one). Always exactly 1 bar; a longer clip is
+        // made explicitly with the Draw tool (handleDrawClipDown), which
+        // sizes to whatever length the user drags out.
+        const int64_t clickTick = snapTick (xToTick (e.x));
+        const int64_t oneBarLen = MidiClip::kPPQ * 4;
+        const int newIdx = engine.addClip (trackIdx, clickTick, oneBarLen);
+        selectSingleClip (trackIdx, newIdx);
+        trackStrip.setSelectedTrack (trackIdx);
+        repaint();
     }
 
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
@@ -867,7 +891,7 @@ private:
     int64_t  lastAutoScrollTick = -1;
 
     // Drag state
-    enum class DragMode  { None, MoveClip, ResizeRight, RubberBand };
+    enum class DragMode  { None, MoveClip, ResizeRight, RubberBand, DrawClip };
     enum class RulerDrag { None, Scrub, LoopSet, DragLoopStart, DragLoopEnd };
     DragMode  dragMode       = DragMode::None;
     RulerDrag rulerDrag      = RulerDrag::None;
@@ -897,6 +921,8 @@ private:
     int64_t   dragStartTicks = 0;
     int64_t   dragLiveOffset = 0;
     int64_t   dragResizeLen  = 0;   // live preview length during ResizeRight
+    int64_t   drawStartTick  = 0;   // Draw-tool clip start, set on mouseDown
+    int64_t   drawLenTicks   = 0;   // Draw-tool live preview length while dragging
 
     int       selectedClip   = 0;   // which clip is selected on selectedTrack
 
@@ -1549,12 +1575,17 @@ private:
     //  Tool handlers — clip-grid equivalents of PianoRollComponent's
     //  Draw/Erase/Split/Glue handlers, operating on whole clips.
     //==========================================================================
+    /** Starts a drawn clip: the clip isn't created yet — mouseDrag grows
+     *  drawLenTicks live as the user drags right, and mouseUp commits it at
+     *  whatever length that ended up at (floored to 1 bar for a plain
+     *  click with no real drag, matching the double-click-to-create
+     *  shortcut's clip length). */
     void handleDrawClipDown (int trackIdx, const juce::MouseEvent& e)
     {
-        const int64_t clickTick = snapTick (xToTick (e.x));
-        const int64_t defLen    = MidiClip::kPPQ * 4 * 4;  // 4 bars default
-        const int newIdx = engine.addClip (trackIdx, clickTick, defLen);
-        selectSingleClip (trackIdx, newIdx);
+        drawStartTick = snapTick (xToTick (e.x));
+        drawLenTicks  = MidiClip::kPPQ * 4;   // 1-bar floor while not yet dragged
+        dragMode  = DragMode::DrawClip;
+        dragTrack = trackIdx;
     }
 
     void handleEraseClipDown (int trackIdx, int clipIdx)
@@ -1864,6 +1895,30 @@ private:
         g.fillRect (rubberBandRect);
         g.setColour (theme.accent.withAlpha (0.75f));
         g.drawRect (rubberBandRect, 1);
+
+        g.restoreState();
+    }
+
+    /** Live preview of the clip being drawn with the Draw tool — same
+     *  visual language as the rubber-band rect, drawn in the target
+     *  track's row so it reads as "this is where the clip will land". */
+    void paintDrawClipPreview (juce::Graphics& g) const
+    {
+        if (dragMode != DragMode::DrawClip || ! juce::isPositiveAndBelow (dragTrack, engine.getNumTracks()))
+            return;
+
+        const int x = (int) tickToX (drawStartTick);
+        const int w = juce::jmax (kMinClipPx, (int) (drawLenTicks * pixelsPerTick));
+        const juce::Rectangle<int> r (x, trackTopY (dragTrack), w, trackH - 1);
+
+        g.saveState();
+        g.reduceClipRegion (clipGridBounds);
+
+        const auto& theme = getTheme();
+        g.setColour (theme.accent.withAlpha (0.20f));
+        g.fillRect (r);
+        g.setColour (theme.accent.withAlpha (0.85f));
+        g.drawRect (r, 1);
 
         g.restoreState();
     }

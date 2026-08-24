@@ -123,6 +123,7 @@ private:
     void paintLazyChopOverlay (juce::Graphics& g);
     void paintTransientMarkers (juce::Graphics& g);
     void paintTrimOverlay (juce::Graphics& g);
+    void drawTrimHandleTab (juce::Graphics& g, int lineX, int topY, bool tabOnRight);
     void paintMidiSliceOverlay (juce::Graphics& g);
 
     static constexpr int kMidiOverlayH = 22;
