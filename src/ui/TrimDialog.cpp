@@ -35,11 +35,29 @@ void TrimDialog::drawTrimKnob (juce::Graphics& g,
     const auto& T = getTheme();
     const float sf = (float) getHeight() / 34.0f;   // scale relative to nominal 34px bar height
 
-    // Background + border — square corners, flat 1px full-opacity accent border, no glow.
+    // Background + border — square corners, flat 1px hairline accent border, no glow.
+    // Alpha dropped from full-strength to match AddZoneTrimOverlay's popup-box
+    // hairline treatment (UIHelpers::drawPopupBox uses T.separator; this stays
+    // on T.accent but softened, since these cells are draggable controls, not
+    // a static frame).
     g.setColour (T.darkBar);
     g.fillRoundedRectangle (cell.toFloat(), 0.0f);
-    g.setColour (T.accent);
+    g.setColour (T.accent.withAlpha (0.55f));
     g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 0.0f, 1.0f);
+
+    // Grip motif — same two-bar tab language as AddZoneTrimOverlay::drawTrimHandleTab,
+    // scaled down into the cell's existing top-right corner so it reads as "this
+    // is a drag handle" without adding any height/width to the cell itself.
+    {
+        const int barW = juce::roundToInt (2.0f * sf);
+        const int barH = juce::roundToInt (5.0f * sf);
+        const int gap  = juce::roundToInt (2.0f * sf);
+        const int y    = cell.getY() + juce::roundToInt (2.0f * sf);
+        const int x    = cell.getRight() - juce::roundToInt (4.0f * sf) - barW * 2 - gap;
+        g.setColour (T.accent.withAlpha (0.6f));
+        g.fillRect (x,              y, barW, barH);
+        g.fillRect (x + barW + gap, y, barW, barH);
+    }
 
     // Progress bar — inset inside frame, does NOT mutate cell.
     // Both knobs represent "how much audio remains once this trim point is
@@ -82,8 +100,9 @@ void TrimDialog::drawTrimKnob (juce::Graphics& g,
                 cell.getWidth(), midY - cell.getY() - 2,
                 juce::Justification::centred, false);
 
-    // Value — bottom half, full brightness
-    g.setFont (DysektLookAndFeel::makeFont (10.0f * sf));
+    // Value — bottom half, full brightness. Bold, matching the readout-text
+    // weight AddZoneTrimOverlay uses for its IN/OUT/LENGTH figures.
+    g.setFont (DysektLookAndFeel::makeFont (10.0f * sf, true));
     g.setColour (T.foreground);
     const int barH = juce::roundToInt (4.0f * sf);   // reserve space for progress bar
     g.drawText (juce::String (sampleVal),
@@ -96,7 +115,7 @@ void TrimDialog::drawTrimKnob (juce::Graphics& g,
 void TrimDialog::paint (juce::Graphics& g)
 {
     g.fillAll (getTheme().header);
-    g.setColour (getTheme().accent.withAlpha (0.3f));
+    g.setColour (getTheme().accent.withAlpha (0.5f));
     g.drawLine (0.0f, 0.0f, (float) getWidth(), 0.0f, 1.0f);
 
     const int total = processor.sampleData.getNumFrames();
@@ -112,15 +131,17 @@ void TrimDialog::paint (juce::Graphics& g)
         const auto& T = getTheme();
         const auto  r = labelArea.toFloat();
 
-        // Background + accent border — square corners, flat 1px full-opacity border.
+        // Background + accent border — square corners, flat 1px hairline border,
+        // matching AddZoneTrimOverlay's popup-box hairline weight.
         g.setColour (T.darkBar);
         g.fillRoundedRectangle (r, 0.0f);
-        g.setColour (T.accent);
+        g.setColour (T.accent.withAlpha (0.55f));
         g.drawRoundedRectangle (r.reduced (0.5f), 0.0f, 1.0f);
 
-        // Title text — single line: "TRIM SAMPLE" centred
+        // Title text — single line: "TRIM SAMPLE" centred. Bold, matching the
+        // weight of AddZoneTrimOverlay's "TRIM — <filename>" title.
         const float sf = (float) getHeight() / 34.0f;
-        g.setFont (DysektLookAndFeel::makeFont (11.0f * sf));
+        g.setFont (DysektLookAndFeel::makeFont (11.0f * sf, true));
         g.setColour (T.accent);
         g.drawText ("TRIM SAMPLE", r.getX(), (int) r.getY(),
                     (int) r.getWidth(), (int) r.getHeight(),
