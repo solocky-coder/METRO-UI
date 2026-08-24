@@ -1,35 +1,38 @@
-// Minimal, isolated repro for the SF2-PLAYER experimental-multi-group crash
-// investigation (see docs/EXPERIMENTAL_MULTI_GROUP_TEST.md and the Aug 24
-// crash logs). Tests ONLY whether constructing + destroying a FluidSynth
-// instance with synth.audio-groups=16 crashes on its own -- no render call,
-// no note played, no soundfont loaded, no JUCE/plugin code involved.
+// Minimal, isolated repro for the SF2-PLAYER experimental-multi-group
+// crash investigation (see docs/EXPERIMENTAL_MULTI_GROUP_TEST.md and the
+// Aug 24 crash logs).
 //
-// This mirrors what the actual crash logs showed: every crashing session's
-// sf2_player_debug.log had ZERO MIDI events processed before the crash, so
-// the render path and note-on path are already ruled out as the trigger --
-// only construction (SfzPlayer.cpp ~1514-1587) and destruction
-// (SfzPlayer.cpp ~76-96) of an audio-groups=16 instance ran in every one
-// of those sessions. This test isolates exactly that.
+// v1 of this test (construct -> destroy, no render call) came back clean
+// in CI -- ruled that out as the trigger.
 //
-// No soundfont file is loaded, deliberately -- that step isn't needed to
-// reproduce (per the same log evidence) and would require a file that
-// doesn't exist on a CI runner. If this test DOES crash, that's about as
-// narrow as the repro can get without stepping into FluidSynth's own
-// source: it proves the bug needs nothing from this codebase at all.
+// v2 (this version) adds the piece v1 was missing: SfzPlayer.cpp's render
+// path calls fluid_synth_process() with nout=32 on EVERY processed block,
+// even ones with zero MIDI events (see the unconditional renderSegment()
+// call after the per-event loop, SfzPlayer.cpp ~1183) -- so every crashing
+// session's silent blocks still ran this call repeatedly, many times,
+// before the crash. This test now does the same: construct with
+// audio-groups=16, call fluid_synth_process() with 32 output buffers
+// (silence in, matching a block with no notes) a few hundred times to
+// mirror a short real session, then destroy. Still no soundfont loaded --
+// per the crash logs, sfload of the real synth (not the preview synth)
+// completing is not required to observe the crash, only the render calls
+// that follow it are.
 //
-// If this DOESN'T crash, the trigger needs something more than bare
-// construct/destroy (e.g. sfload specifically, or something concurrent) --
-// which redirects the investigation back into SfzPlayer.cpp/
-// SoundFontLoader.cpp instead of pointing at FluidSynth itself.
+// If this crashes, it narrows the cause to the render call itself (most
+// likely fluid_synth_process() with nout=32 touching something in
+// FluidSynth's internal state that a plain nout=2 call doesn't). If it
+// STILL doesn't crash, the remaining candidates are: sfload() specifically
+// completing on the main synth, or something concurrent with the preview
+// synth's own rendering (SoundFontLoader.cpp's discoverActiveNotesFs, on
+// its own thread) -- which would need the two synths running side by side
+// to reproduce, not just one in isolation.
 
 #include <fluidsynth.h>
 #include <stdio.h>
+#include <string.h>
 
 int main (void)
 {
-    fflush (stdout);   // make sure each line is visible in the CI log even
-                        // if this crashes immediately after printing it
-
     printf ("1. new_fluid_settings()\n"); fflush (stdout);
     fluid_settings_t* settings = new_fluid_settings();
 
@@ -40,12 +43,43 @@ int main (void)
     fluid_synth_t* synth = new_fluid_synth (settings);
     printf ("   synth = %p\n", (void*) synth); fflush (stdout);
 
-    printf ("4. delete_fluid_synth()\n"); fflush (stdout);
+    // Mirror SfzPlayer.cpp's buffer setup: 32 buffers (16 groups x L/R),
+    // sized for a typical block (matches the 441-sample blocks seen in
+    // the real crash logs at a 44.1kHz-ish rate/44.1kHz-derived buffer).
+    enum { kBlockSize = 512, kNumGroups = 16, kNumBuffers = kNumGroups * 2 };
+    static float groupBuffers[kNumBuffers][kBlockSize];
+    float* groupPtrs[kNumBuffers];
+    for (int i = 0; i < kNumBuffers; ++i)
+        groupPtrs[i] = groupBuffers[i];
+
+    printf ("4. fluid_synth_process() x 500 (nout=32, silence, no notes)\n");
+    fflush (stdout);
+    for (int block = 0; block < 500; ++block)
+    {
+        for (int i = 0; i < kNumBuffers; ++i)
+            memset (groupBuffers[i], 0, sizeof (float) * kBlockSize);
+
+        int rc = fluid_synth_process (synth, kBlockSize, 0, NULL, kNumBuffers, groupPtrs);
+        if (rc != 0)
+        {
+            printf ("   block %d: fluid_synth_process rc=%d (FLUID_FAILED)\n", block, rc);
+            fflush (stdout);
+        }
+        if (block == 0 || block == 499)
+        {
+            printf ("   block %d: rc=%d\n", block, rc);
+            fflush (stdout);
+        }
+    }
+    printf ("   500 render calls completed.\n"); fflush (stdout);
+
+    printf ("5. delete_fluid_synth()\n"); fflush (stdout);
     delete_fluid_synth (synth);
 
-    printf ("5. delete_fluid_settings()\n"); fflush (stdout);
+    printf ("6. delete_fluid_settings()\n"); fflush (stdout);
     delete_fluid_settings (settings);
 
     printf ("DONE - no crash.\n"); fflush (stdout);
     return 0;
 }
+
