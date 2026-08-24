@@ -1348,6 +1348,18 @@ void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
  processor.pushCommand (cmd);
 }
 
+// Repaints just the strip that could have changed as a trim handle moves
+// from oldX to newX: the shading boundary shift, the vertical line at both
+// positions, and the tab graphic (which can extend kTrimHandleTabW past the
+// line on either side, plus grab slack) — instead of the whole component.
+void WaveformView::repaintTrimHandleBand (int oldX, int newX)
+{
+ const int margin = kTrimHandleTabW + 4;
+ const int lo = juce::jmin (oldX, newX) - margin;
+ const int hi = juce::jmax (oldX, newX) + margin;
+ repaint (juce::Rectangle<int> (lo, 0, hi - lo, getHeight()));
+}
+
 void WaveformView::mouseDrag (const juce::MouseEvent& e)
 {
  auto sampleSnap = activeSampleData().getSnapshot();
@@ -1357,12 +1369,20 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
  {
  int totalFrames = sampleSnap->buffer.getNumSamples();
  int minLen = 1;
+ // Capture the marker's pixel position BEFORE moving it, so we can union
+ // it with the post-move position below and repaint only that band —
+ // repaint() with no args was invalidating the whole view (waveform path,
+ // every slice, cursors, overlays) on every single drag tick, which is
+ // almost certainly what reads as the marker lagging behind the mouse:
+ // the expensive full redraw can't keep pace with a fast mouseDrag stream.
+ const int oldX = sampleToPixel (dragMode == DragTrimIn ? trimInPoint : trimOutPoint);
  int newSample = juce::jlimit(0, totalFrames, pixelToSample(e.x));
  if (dragMode == DragTrimIn)
  trimInPoint = juce::jlimit(0, trimOutPoint - minLen, newSample);
  else if (dragMode == DragTrimOut)
  trimOutPoint = juce::jlimit(trimInPoint + minLen, totalFrames, newSample);
- repaint();
+ const int newX = sampleToPixel (dragMode == DragTrimIn ? trimInPoint : trimOutPoint);
+ repaintTrimHandleBand (oldX, newX);
  return;
  }
 
@@ -1574,9 +1594,17 @@ void WaveformView::enterTrimMode (int start, int end)
 
 void WaveformView::setTrimPoints (int inPt, int outPt)
 {
+ // TrimDialog's knob drag calls this on every mouseDrag tick too, so it
+ // gets the same scoped-repaint treatment as the direct on-waveform drag
+ // (see mouseDrag / repaintTrimHandleBand) rather than a full-view repaint.
+ const int oldX1 = sampleToPixel (trimInPoint);
+ const int oldX2 = sampleToPixel (trimOutPoint);
  trimInPoint = inPt;
  trimOutPoint = outPt;
- repaint();
+ const int newX1 = sampleToPixel (trimInPoint);
+ const int newX2 = sampleToPixel (trimOutPoint);
+ repaintTrimHandleBand (oldX1, newX1);
+ repaintTrimHandleBand (oldX2, newX2);
 }
 
 void WaveformView::setTrimMode (bool active)

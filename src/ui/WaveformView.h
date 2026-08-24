@@ -123,6 +123,9 @@ private:
     void paintLazyChopOverlay (juce::Graphics& g);
     void paintTransientMarkers (juce::Graphics& g);
     void paintTrimOverlay (juce::Graphics& g);
+    // Scoped repaint used by both the direct-on-waveform trim drag and
+    // setTrimPoints() (driven by TrimDialog's knob drag) — see call sites.
+    void repaintTrimHandleBand (int oldX, int newX);
     void drawTrimHandleTab (juce::Graphics& g, int lineX, int topY, bool tabOnRight);
     static bool isNearTrimHandle (int ex, int lineX, bool tabOnRight) noexcept;
     static constexpr int kTrimHandleTabW = 16;   // must match drawTrimHandleTab's tabW
