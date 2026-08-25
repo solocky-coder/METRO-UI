@@ -565,6 +565,7 @@ public:
         int   grainMode       = 0;
         bool  releaseTail     = false;
         bool  reverse         = false;
+        int   outputBus       = 0;
         bool  oneShot         = false;
         float centsDetune     = 0.0f;
         float filterCutoff    = 20000.0f;
@@ -576,6 +577,7 @@ public:
         float eqHighGain      = 0.0f;
         int   chromaticChannel = 0;
         bool  chromaticLegato  = false;
+        bool  showInMixer      = false;
         juce::String name;
         uint32_t lockMask      = 0;
     };
