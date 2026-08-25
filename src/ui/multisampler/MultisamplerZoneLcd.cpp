@@ -420,8 +420,19 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
     // could ever use. Scale off the smaller of the two cell dimensions
     // instead of height alone, and raise the cap so the knob actually grows
     // into the space it's given rather than leaving it blank.
-    const int knobR  = juce::roundToInt (juce::jlimit (10.0f, 18.0f,
-                            juce::jmin (r.getHeight() * 0.42f, r.getWidth() * 0.16f)) * uiScale);
+    //
+    // NOTE: `r` is already real, post-scale on-screen bounds (it comes from
+    // the widget's actual getLocalBounds(), laid out using `sf` upstream in
+    // PluginEditor::resized()) — unlike the font sizes below, which are
+    // hard-coded design-time constants that genuinely need `* uiScale` to
+    // track the host window. Re-multiplying this already-scaled value by
+    // uiScale double-applied the scale and put the fixed 10-18px clamp in
+    // the wrong space, so two nearly-identical window sizes could land on
+    // opposite sides of the clamp and render visibly different knob sizes.
+    // Clamp bounds are scaled down to design space for the comparison
+    // instead, so uiScale is only ever applied once.
+    const int knobR  = juce::roundToInt (juce::jlimit (10.0f * uiScale, 18.0f * uiScale,
+                            juce::jmin (r.getHeight() * 0.42f, r.getWidth() * 0.16f)));
     const int knobCX = r.getX() + knobR + juce::roundToInt (4.0f * uiScale);
     const int knobCY = r.getY() + r.getHeight() / 2;
 
