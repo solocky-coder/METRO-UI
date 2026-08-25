@@ -109,6 +109,7 @@ private:
         float attackSeconds = 0.005f, decaySeconds = 0.1f, sustainLevel = 1.0f, releaseSeconds = 0.1f;
         bool loopOn = false;
         float filterCutoffHz = 20000.0f, filterResonance = 0.0f;
+        bool showInMixer = false;
         bool isPreview = false;
         bool isAuditioning = false;
     } snapshot;
@@ -150,6 +151,12 @@ private:
     // LOOP is boolean — drawn as a flat toggle badge rather than a knob,
     // same call this component made before for that field.
     void drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
+
+    // SHOW IN MIXER is boolean too — same toggle-badge treatment as LOOP,
+    // not a separate reusable helper, so each stays a simple, obviously-
+    // correct mirror of the other rather than a parameterised helper that
+    // has to thread field/snapshot-member/label through both call sites.
+    void drawShowInMixerToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
 
     // Native value → 0-1 for the knob arc. Ranges mirror either the field's
     // own documented range in SampleZone.h (tune ±1200ct, cutoff 20Hz..

@@ -903,6 +903,9 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             // autoAssignOutputBuses()'s clamping below.
             z.outputBus = juce::jlimit (0, 15, juce::roundToInt (value));
             break;
+        case MultisamplerZoneField::showInMixer:
+            z.showInMixer = value > 0.5f;
+            break;
         case MultisamplerZoneField::loopEnabled:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 
