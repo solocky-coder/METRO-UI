@@ -45,11 +45,14 @@ public:
         hazard (delete-selected-zone-mid-edit, import-during-drag), not a
         hypothetical one — see METRO-UI Multisampler Implementation Plan
         §3.3. `displayIndex` is only used for the "ZONE NN" label.
-        `isPreview` shows the read-only hover treatment; `isAuditioning`
-        shows the same cosmetic badge SliceControlBar::drawSfzZoneSummary
-        used to draw for layer-audition zones. */
+        `isAuditioning` shows the same cosmetic badge SliceControlBar::
+        drawSfzZoneSummary used to draw for layer-audition zones. There is
+        no `isPreview` badge here — a hover-previewed zone is shown exactly
+        like any other, and read-only-ness is entirely setEditable()'s job
+        (see its doc comment), not something this method's caller-supplied
+        flags encode. */
     void setZoneForDisplay (const SampleZone* zone, int displayIndex,
-                             bool isPreview, bool isAuditioning);
+                             bool isAuditioning);
 
     /** No zone to show — draws the empty-state treatment. */
     void clearZone();
@@ -59,8 +62,8 @@ public:
         MultisamplerEditor::resized()'s displayIndex/editable resolution in
         the implementation plan §4) — a hovered-but-not-selected zone is
         always shown read-only regardless of this flag's caller-side intent,
-        enforced by MultisamplerEditor only ever passing isPreview=true for
-        those and setEditable(false) alongside it. */
+        enforced by MultisamplerEditor always pairing a hover-shown zone
+        with setEditable(false). */
     void setEditable (bool shouldEdit);
 
     /** Scales every font size this component draws with, so its text keeps
@@ -79,22 +82,11 @@ public:
         applyZoneFieldEdit is the single place values are clamped). */
     std::function<void (MultisamplerZoneField field, float value, bool isCommit)> onFieldEdited;
 
-    /** "ZONE NN   name" — the text this component used to draw in its own
-        dedicated title row. That row now lives in MultisamplerEditor's
-        toolbar instead (next to the MULTISAMPLER label), freeing the space
-        for the knob grid (see kPreferredHeight below and paint()'s badge-
-        only top strip) — MultisamplerEditor reads this via
-        refreshZoneLcdDisplay() to keep its own copy in sync. Mirrors
-        setZoneForDisplay()/clearZone() exactly; returns an empty string
-        when nothing is currently shown (snapshot.valid == false). */
-    juce::String getZoneTitleText() const;
-
-    // Was 100 (18px title row + two 41px knob rows) — now just the two knob
-    // rows, since the title row moved out to MultisamplerEditor's toolbar
-    // (see getZoneTitleText() above). paint() still reserves a slim strip
-    // of this for the PREVIEW/AUDITIONING badge, but only when one applies,
-    // so the common case gets the full height for knob cells.
-    static constexpr int kPreferredHeight = 82;
+    // Taller than the original 76px flat-text layout — knob cells need a
+    // title row plus two full rows of knob+label+value (SliceControlBar's
+    // own psCellH is 32px per row); see MultisamplerEditor::resized(),
+    // which reads this constant when it reserves space for this component.
+    static constexpr int kPreferredHeight = 100;
 
 private:
     float uiScale = 1.0f;
@@ -109,8 +101,6 @@ private:
         float attackSeconds = 0.005f, decaySeconds = 0.1f, sustainLevel = 1.0f, releaseSeconds = 0.1f;
         bool loopOn = false;
         float filterCutoffHz = 20000.0f, filterResonance = 0.0f;
-        bool showInMixer = false;
-        bool isPreview = false;
         bool isAuditioning = false;
     } snapshot;
 
@@ -151,12 +141,6 @@ private:
     // LOOP is boolean — drawn as a flat toggle badge rather than a knob,
     // same call this component made before for that field.
     void drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
-
-    // SHOW IN MIXER is boolean too — same toggle-badge treatment as LOOP,
-    // not a separate reusable helper, so each stays a simple, obviously-
-    // correct mirror of the other rather than a parameterised helper that
-    // has to thread field/snapshot-member/label through both call sites.
-    void drawShowInMixerToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
 
     // Native value → 0-1 for the knob arc. Ranges mirror either the field's
     // own documented range in SampleZone.h (tune ±1200ct, cutoff 20Hz..

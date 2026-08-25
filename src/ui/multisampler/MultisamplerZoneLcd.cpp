@@ -26,7 +26,7 @@ MultisamplerZoneLcd::MultisamplerZoneLcd()
 // ── Display ──────────────────────────────────────────────────────────────
 
 void MultisamplerZoneLcd::setZoneForDisplay (const SampleZone* zone, int displayIndex,
-                                              bool isPreview, bool isAuditioning)
+                                              bool isAuditioning)
 {
     if (zone == nullptr)
     {
@@ -57,8 +57,6 @@ void MultisamplerZoneLcd::setZoneForDisplay (const SampleZone* zone, int display
     snapshot.loopOn         = zone->loopMode != LoopMode::noLoop;
     snapshot.filterCutoffHz = zone->filterCutoffHz;
     snapshot.filterResonance = zone->filterResonance;
-    snapshot.showInMixer    = zone->showInMixer;
-    snapshot.isPreview      = isPreview;
     snapshot.isAuditioning  = isAuditioning;
 
     repaint();
@@ -68,13 +66,6 @@ void MultisamplerZoneLcd::clearZone()
 {
     snapshot = Snapshot{};
     repaint();
-}
-
-juce::String MultisamplerZoneLcd::getZoneTitleText() const
-{
-    if (! snapshot.valid)
-        return {};
-    return "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
 }
 
 void MultisamplerZoneLcd::setEditable (bool shouldEdit)
@@ -105,7 +96,6 @@ juce::String MultisamplerZoneLcd::labelFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::cutoff:      return "FILTER";
         case MultisamplerZoneField::resonance:   return "RES";
         case MultisamplerZoneField::outputBus:   return "OUT";
-        case MultisamplerZoneField::showInMixer: return "MIX";
     }
     return {};
 }
@@ -129,7 +119,6 @@ float MultisamplerZoneLcd::getFieldValue (MultisamplerZoneField field) const
         case MultisamplerZoneField::cutoff:      return snapshot.filterCutoffHz;
         case MultisamplerZoneField::resonance:   return snapshot.filterResonance;
         case MultisamplerZoneField::outputBus:   return (float) snapshot.outputBus;
-        case MultisamplerZoneField::showInMixer: return snapshot.showInMixer ? 1.0f : 0.0f;
     }
     return 0.0f;
 }
@@ -163,7 +152,6 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         // 0-15 range matches SampleZone::outputBus's own documented range
         // (0 = Main, 1-15 = Aux).
         case MultisamplerZoneField::outputBus: return juce::jlimit (0.0f, 1.0f, v / 15.0f);
-        case MultisamplerZoneField::showInMixer: return v; // unused — draws as a toggle, not a knob
     }
     return 0.5f;
 }
@@ -190,7 +178,6 @@ float MultisamplerZoneLcd::defaultValueFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::cutoff:      return 20000.0f;
         case MultisamplerZoneField::resonance:   return 0.0f;
         case MultisamplerZoneField::outputBus:   return 0.0f;   // Main
-        case MultisamplerZoneField::showInMixer: return 0.0f;   // hidden — matches SampleZone::showInMixer's own default
     }
     return 0.0f;
 }
@@ -219,7 +206,6 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::resonance:   scale = 0.01f;  break;
         case MultisamplerZoneField::loopEnabled: scale = 0.0f;   break; // toggle, not a drag
         case MultisamplerZoneField::outputBus:   scale = 0.25f;  break; // ~4px per bus step
-        case MultisamplerZoneField::showInMixer: scale = 0.0f;   break; // toggle, not a drag
     }
     return fineMode ? scale * kFineModeScale : scale;
 }
@@ -255,10 +241,6 @@ juce::String MultisamplerZoneLcd::formatFieldValue (MultisamplerZoneField field)
         case MultisamplerZoneField::outputBus:
             return snapshot.outputBus == 0 ? juce::String ("MAIN")
                                             : "AUX " + juce::String (snapshot.outputBus);
-        // "SHOWN"/"HIDDEN" matches SliceControlBar::drawMixerToggleCell's own
-        // wording for the identical field, so the same toggle reads the same
-        // way everywhere it appears in the app.
-        case MultisamplerZoneField::showInMixer: return snapshot.showInMixer ? "SHOWN" : "HIDDEN";
     }
     return {};
 }
@@ -295,29 +277,30 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
 
     auto content = bounds.reduced (8, 4);
 
-    // The "ZONE NN   name" text that used to open this row now lives in
-    // MultisamplerEditor's toolbar (see getZoneTitleText()) — only the
-    // PREVIEW/AUDITIONING badge still belongs here.
-    //
-    // IMPORTANT: the badge must never remove height from `content`. Every
-    // knob's radius in drawKnobField() scales off its cell's height
-    // (rowH below), so shrinking content's height whenever a zone was
-    // hovered (isPreview) made every knob visibly shrink, then grow back
-    // the moment the mouse left — a distracting resize that had nothing to
-    // do with the knobs themselves. rowH is therefore always computed from
-    // the full content rect, badge or no badge, so knob size never changes
-    // with hover state. The badge instead borrows a strip of *width* from
-    // the top row only — width is never the limiting factor for knobR (the
-    // cells are far wider than a knob needs), so this has no visual effect
-    // on knob size either.
-    const int rowH = content.getHeight() / 2;
-    auto row1 = content.removeFromTop (rowH);
-    auto row2 = content;
+    // Title row — name, index, auditioning badge. There's no PREVIEW badge
+    // here any more: a hover-previewed zone renders identically to any
+    // other, distinguished only by setEditable(false) (see this component's
+    // header doc comment).
+    auto titleRow = content.removeFromTop (18);
+    g.setColour (theme.foreground);
+    g.setFont (DysektLookAndFeel::makeFont (11.5f * uiScale, true));
+    juce::String title = "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
+    g.drawText (title, titleRow, juce::Justification::centredLeft);
 
-    const bool showBadge = snapshot.isPreview || snapshot.isAuditioning;
-    juce::Rectangle<int> badgeArea;
-    if (showBadge)
-        badgeArea = row1.removeFromRight (juce::roundToInt (70.0f * uiScale));
+    if (snapshot.isAuditioning)
+    {
+        g.setColour (theme.accent);
+        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
+        g.drawText ("AUDITIONING", titleRow, juce::Justification::centredRight);
+    }
+
+    content.removeFromTop (2);
+
+    // Two rows of 7 knob cells — same field set as before, regrouped so
+    // every row divides evenly (14 fields / 2 rows = 7), matching
+    // SliceControlBar's own knob-row layouts (drawKnobCell in a straight
+    // horizontal run) instead of the old cramped 4/4/6 text-cell split.
+    const int rowH = content.getHeight() / 2;
 
     auto layoutRow = [&] (juce::Rectangle<int> row, std::initializer_list<MultisamplerZoneField> fields)
     {
@@ -333,34 +316,16 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
         }
     };
 
-    layoutRow (row1,
+    layoutRow (content.removeFromTop (rowH),
                { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
                  MultisamplerZoneField::rootKey, MultisamplerZoneField::group,
                  MultisamplerZoneField::tune, MultisamplerZoneField::pan,
                  MultisamplerZoneField::gain });
-    layoutRow (row2,
+    layoutRow (content,
                { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
                  MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
                  MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
-                 MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus,
-                 MultisamplerZoneField::showInMixer });
-
-    if (showBadge)
-    {
-        auto badgeRow = badgeArea.removeFromTop (14);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
-
-        if (snapshot.isPreview)
-        {
-            g.setColour (theme.accent.withAlpha (0.8f));
-            g.drawText ("PREVIEW", badgeRow, juce::Justification::centredRight);
-        }
-        else
-        {
-            g.setColour (theme.accent);
-            g.drawText ("AUDITIONING", badgeRow, juce::Justification::centredRight);
-        }
-    }
+                 MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus });
 }
 
 void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field)
@@ -372,8 +337,6 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
 
     if (field == MultisamplerZoneField::loopEnabled)
         drawLoopToggleCell (g, bounds, idx);
-    else if (field == MultisamplerZoneField::showInMixer)
-        drawShowInMixerToggleCell (g, bounds, idx);
     else
         drawKnobField (g, bounds, field, idx);
 }
@@ -492,36 +455,6 @@ void MultisamplerZoneLcd::drawLoopToggleCell (juce::Graphics& g, juce::Rectangle
     g.drawText (formatFieldValue (MultisamplerZoneField::loopEnabled), r, juce::Justification::centredLeft);
 }
 
-// =============================================================================
-// drawShowInMixerToggleCell — SHOW IN MIXER is boolean, exact same treatment
-// as drawLoopToggleCell above (flat ON/OFF-style badge, not a knob) — see
-// SliceControlBar::drawMixerToggleCell for the "SHOWN"/"HIDDEN" wording this
-// mirrors so the same field reads identically everywhere it appears.
-// =============================================================================
-void MultisamplerZoneLcd::drawShowInMixerToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx)
-{
-    const auto& theme = getTheme();
-    auto r = bounds.reduced (2, 1);
-
-    const bool hoveredNow  = editable && (cellIdx == hoveredCellIdx);
-    const bool draggingNow = haveActiveDrag && activeField == MultisamplerZoneField::showInMixer;
-
-    if (draggingNow || hoveredNow)
-    {
-        g.setColour (draggingNow ? theme.accent.withAlpha (0.25f) : theme.accent.withAlpha (0.12f));
-        g.fillRoundedRectangle (r.toFloat(), 3.0f);
-    }
-
-    g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
-    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
-    auto labelRow = r.removeFromTop (r.getHeight() / 2);
-    g.drawText (labelFor (MultisamplerZoneField::showInMixer), labelRow, juce::Justification::centredLeft);
-
-    g.setColour (snapshot.showInMixer ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
-    g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
-    g.drawText (formatFieldValue (MultisamplerZoneField::showInMixer), r, juce::Justification::centredLeft);
-}
-
 // ── Mouse / editing ──────────────────────────────────────────────────────
 
 void MultisamplerZoneLcd::mouseMove (const juce::MouseEvent& e)
@@ -554,12 +487,6 @@ void MultisamplerZoneLcd::mouseDown (const juce::MouseEvent& e)
         {
             // Click toggles immediately — no drag gesture for a boolean.
             applyDrag (cell.field, snapshot.loopOn ? 0.0f : 1.0f, /*commit=*/true);
-            return;
-        }
-
-        if (cell.field == MultisamplerZoneField::showInMixer)
-        {
-            applyDrag (cell.field, snapshot.showInMixer ? 0.0f : 1.0f, /*commit=*/true);
             return;
         }
 
@@ -640,7 +567,6 @@ void MultisamplerZoneLcd::applyDrag (MultisamplerZoneField field, float rawValue
         case MultisamplerZoneField::cutoff:      snapshot.filterCutoffHz = rawValue; break;
         case MultisamplerZoneField::resonance:   snapshot.filterResonance = rawValue; break;
         case MultisamplerZoneField::outputBus:   snapshot.outputBus = juce::jlimit (0, 15, juce::roundToInt (rawValue)); break;
-        case MultisamplerZoneField::showInMixer: snapshot.showInMixer = rawValue > 0.5f; break;
     }
 
     repaint();

@@ -70,13 +70,6 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     addAndMakeVisible (titleLabel);
 
-    // Starts empty — refreshZoneLcdDisplay() (called at the end of this
-    // constructor) fills it in from zoneLcd's own resolved snapshot the
-    // same way it fills in zoneLcd itself.
-    configureStaticLabel (zoneTagLabel, {});
-    zoneTagLabel.setFont (juce::FontOptions (11.5f, juce::Font::bold));
-    addAndMakeVisible (zoneTagLabel);
-
     addAndMakeVisible (editLayerCombo);
     editLayerCombo.setTextWhenNothingSelected ("EDIT LAYER");
     editLayerCombo.setTextWhenNoChoicesAvailable ("EDIT LAYER");
@@ -103,9 +96,6 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
 
     addAndMakeVisible (newButton);
     newButton.onClick = [this] { newInstrumentClicked(); };
-
-    addChildComponent (saveButton);   // hidden until isDirty() — see paint()
-    saveButton.onClick = [this] { saveInPlace(); };
 
     // ── Zone LCD ─────────────────────────────────────────────────────────
     addAndMakeVisible (zoneLcd);
@@ -138,12 +128,6 @@ void MultisamplerEditor::paint (juce::Graphics& g)
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH, 4.0f, bounds.getWidth() - 4.0f);
 
-    // Same freshness guarantee as the dirty-dot below: every dirty=true/
-    // false site already triggers a repaint (directly or via a call this
-    // panel makes into itself), so resolving saveButton's visibility here
-    // needs no extra plumbing at each of those sites.
-    saveButton.setVisible (dirty);
-
     if (dirty)
     {
         g.setColour (theme.accent);
@@ -157,21 +141,7 @@ void MultisamplerEditor::resized()
 
     auto header = r.removeFromTop (kHeaderH - 6);
     titleLabel.setBounds (header.removeFromLeft (140));
-    // saveButton only occupies header space while it's actually visible
-    // (paint()'s saveButton.setVisible (dirty) hides it once the instrument
-    // is clean again) — reserving its 60px + 4px gutter unconditionally
-    // left a permanent blank gap to the right of newButton whenever nothing
-    // was dirty, since nothing else stepped in to reclaim that space.
     header.removeFromRight (4);
-    if (saveButton.isVisible())
-    {
-        saveButton.setBounds (header.removeFromRight (60));
-        header.removeFromRight (4);
-    }
-    else
-    {
-        saveButton.setBounds ({});
-    }
     newButton.setBounds    (header.removeFromRight (60));
     header.removeFromRight (4);
     exportButton.setBounds (header.removeFromRight (90));
@@ -181,12 +151,6 @@ void MultisamplerEditor::resized()
     addZoneButton.setBounds (header.removeFromRight (84));
     header.removeFromRight (4);
     editLayerCombo.setBounds (header.removeFromRight (150));
-
-    // Whatever's left of the header, between titleLabel and editLayerCombo
-    // — this is the "ZONE NN   name" readout that used to be
-    // MultisamplerZoneLcd's own title row (see zoneTagLabel's doc comment).
-    header.removeFromLeft (8);
-    zoneTagLabel.setBounds (header);
 
     r.removeFromTop (6);
     zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
@@ -460,13 +424,14 @@ void MultisamplerEditor::exportSfzClicked()
                 lastSavedFile = file;
                 clearDirtyFlag();
 
-                // clearDirtyFlag() alone doesn't repaint — saveButton reads
-                // `dirty` directly in paint() (see its setVisible() call
-                // there), so without a repaint reaching this component the
-                // SAVE button would silently stay lit and clickable after a
-                // successful export, with zero visible sign that anything
-                // happened. onInstrumentChanged() triggers PluginEditor's
-                // own repaint(), which reaches this component's paint() too.
+                // clearDirtyFlag() alone never reaches the SCB — its SAVE
+                // button reads a *cached copy* of isDirty() that only gets
+                // refreshed inside onInstrumentChanged (see PluginEditor's
+                // sliceControlBar.setInstrumentDirty(...) callback). Without
+                // firing it here, the SAVE button silently stays lit and
+                // clickable after a successful export, with zero visible
+                // sign that anything happened — indistinguishable from the
+                // button doing nothing at all.
                 if (onInstrumentChanged) onInstrumentChanged();
             }
         });
@@ -490,9 +455,10 @@ void MultisamplerEditor::saveInPlace()
         clearDirtyFlag();
 
         // Same reason as exportSfzClicked()'s success path: without this,
-        // saveButton never learns the save happened and stays lit/
-        // clickable with no visible change — the save silently succeeds on
-        // disk but looks like the button did nothing.
+        // the SCB's cached instrumentDirty mirror never learns the save
+        // happened, so its SAVE button stays lit/clickable with no visible
+        // change — the save silently succeeds on disk but looks like the
+        // button did nothing.
         if (onInstrumentChanged) onInstrumentChanged();
     }
 }
@@ -782,17 +748,15 @@ void MultisamplerEditor::refreshZoneLcdDisplay()
     {
         zoneLcd.clearZone();
         zoneLcd.setEditable (false);
-        zoneTagLabel.setText ({}, juce::dontSendNotification);
         return;
     }
 
-    zoneLcd.setZoneForDisplay (zone, displayIndex, isPreview, /*isAuditioning*/ false);
+    zoneLcd.setZoneForDisplay (zone, displayIndex, /*isAuditioning*/ false);
     // Editable whenever the zone being shown is a genuine selection target
     // — the true single selection, or the auto-elected top layer of a
     // multi-selection — but never a hover preview (matches
     // MultisamplerZoneLcd::setEditable's doc comment contract).
     zoneLcd.setEditable (! isPreview && ! selectedIds.empty());
-    zoneTagLabel.setText (zoneLcd.getZoneTitleText(), juce::dontSendNotification);
 }
 
 void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field, float value)
@@ -914,9 +878,6 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             // documented range and SfzDrumKitBusApplier/
             // autoAssignOutputBuses()'s clamping below.
             z.outputBus = juce::jlimit (0, 15, juce::roundToInt (value));
-            break;
-        case MultisamplerZoneField::showInMixer:
-            z.showInMixer = value > 0.5f;
             break;
         case MultisamplerZoneField::loopEnabled:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
