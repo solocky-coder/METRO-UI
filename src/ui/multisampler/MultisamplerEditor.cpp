@@ -157,9 +157,21 @@ void MultisamplerEditor::resized()
 
     auto header = r.removeFromTop (kHeaderH - 6);
     titleLabel.setBounds (header.removeFromLeft (140));
+    // saveButton only occupies header space while it's actually visible
+    // (paint()'s saveButton.setVisible (dirty) hides it once the instrument
+    // is clean again) — reserving its 60px + 4px gutter unconditionally
+    // left a permanent blank gap to the right of newButton whenever nothing
+    // was dirty, since nothing else stepped in to reclaim that space.
     header.removeFromRight (4);
-    saveButton.setBounds   (header.removeFromRight (60));
-    header.removeFromRight (4);
+    if (saveButton.isVisible())
+    {
+        saveButton.setBounds (header.removeFromRight (60));
+        header.removeFromRight (4);
+    }
+    else
+    {
+        saveButton.setBounds ({});
+    }
     newButton.setBounds    (header.removeFromRight (60));
     header.removeFromRight (4);
     exportButton.setBounds (header.removeFromRight (90));
