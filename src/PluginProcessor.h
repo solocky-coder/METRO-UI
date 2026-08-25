@@ -1016,6 +1016,36 @@ public:
     // Sample loading (public so UI thread can dispatch SFZ/SF2 loads)
     // =========================================================================
     juce::ThreadPool fileLoadPool { 1 };
+
+    /** Shared "is this processor still alive" flag for SoundFontLoader's
+     *  background LoadJobs. SoundFontLoader itself is a cheap wrapper
+     *  constructed fresh per loadSoundFontAsync() call (see that function),
+     *  so this flag can't live on SoundFontLoader -- it has to live here,
+     *  with the same lifetime as the processor, and be handed to every
+     *  LoadJob as a shared_ptr copy.
+     *
+     *  A LoadJob's discovery/render passes can legitimately run for several
+     *  seconds (a 128-note SF2 preset probe+render easily produces minutes
+     *  of synthesized audio), and ~DysektProcessor()'s
+     *  fileLoadPool.removeAllJobs(true, 5000) only WAITS up to 5 seconds for
+     *  a job to notice it should exit -- it does not forcibly kill the job's
+     *  thread if that timeout is exceeded. Without this flag, a job still
+     *  running past that timeout would go on to touch `processor` (logging,
+     *  posting results) after the processor object has already been freed --
+     *  a use-after-free. markLoaderJobsShouldStop() flips this to false in
+     *  the destructor BEFORE removeAllJobs() is called, and every LoadJob
+     *  checkpoint (see SoundFontLoader.cpp) treats it exactly like
+     *  shouldExit(): stop touching `processor` immediately, don't just stop
+     *  doing further work. The flag itself is a shared_ptr so it stays valid
+     *  for the job to read even after `processor` no longer exists. */
+    std::shared_ptr<std::atomic<bool>> loaderAliveFlag { std::make_shared<std::atomic<bool>> (true) };
+
+    /** Call once, at the very top of ~DysektProcessor(), before
+     *  fileLoadPool.removeAllJobs(). See loaderAliveFlag's comment. */
+    void markLoaderJobsShouldStop() noexcept
+    {
+        loaderAliveFlag->store (false, std::memory_order_release);
+    }
     bool             defaultSampleScheduled { false }; // true once default or saved sample is queued
     std::atomic<int>  nextLoadToken  { 0 };
     std::atomic<int>  latestLoadToken{ 0 };

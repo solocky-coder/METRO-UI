@@ -33,6 +33,8 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_audio_basics/juce_audio_basics.h>
+#include <memory>
+#include <atomic>
 #include "SampleData.h"   // for INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
 #include "SfzZoneColours.h"
 
@@ -96,6 +98,11 @@ private:
     class LoadJob;
 #endif
 };
+
+// Convenience alias shared between DysektProcessor and LoadJob. Defined here
+// (rather than only in PluginProcessor.h) so SoundFontLoader.cpp doesn't need
+// to pull in the full processor header just to name the type.
+using SoundFontLoaderAliveFlag = std::shared_ptr<std::atomic<bool>>;
 
 // =============================================================================
 //  Per-note slice descriptor — carried through to processBlock

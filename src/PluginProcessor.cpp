@@ -250,6 +250,15 @@ DysektProcessor::DysektProcessor()
 
 DysektProcessor::~DysektProcessor()
 {
+    // Tell any in-flight SoundFontLoader::LoadJob to stop touching this
+    // processor RIGHT NOW, before we even ask the pool to wait for it.
+    // removeAllJobs()'s 5000ms below is a best-effort wait, not a guarantee
+    // -- a job stuck in a long, previously-uninterruptible probe/render pass
+    // can outlive it, and this flag is what keeps that straggler from
+    // reaching into a `this` that's about to be freed. See loaderAliveFlag's
+    // doc comment in PluginProcessor.h.
+    markLoaderJobsShouldStop();
+
     fileLoadPool.removeAllJobs (true, 5000);
     exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
