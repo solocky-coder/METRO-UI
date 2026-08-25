@@ -183,7 +183,7 @@ float MultisamplerZoneLcd::defaultValueFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::cutoff:      return 20000.0f;
         case MultisamplerZoneField::resonance:   return 0.0f;
         case MultisamplerZoneField::outputBus:   return 0.0f;   // Main
-        case MultisamplerZoneField::showInMixer: return 0.0f;   // off
+        case MultisamplerZoneField::showInMixer: return 0.0f;   // hidden
     }
     return 0.0f;
 }
@@ -248,7 +248,7 @@ juce::String MultisamplerZoneLcd::formatFieldValue (MultisamplerZoneField field)
         case MultisamplerZoneField::outputBus:
             return snapshot.outputBus == 0 ? juce::String ("MAIN")
                                             : "AUX " + juce::String (snapshot.outputBus);
-        case MultisamplerZoneField::showInMixer: return snapshot.showInMixer ? "ON" : "OFF";
+        case MultisamplerZoneField::showInMixer: return snapshot.showInMixer ? "SHOWN" : "HIDDEN";
     }
     return {};
 }

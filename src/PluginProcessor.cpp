@@ -3181,7 +3181,6 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     snap.grainMode         = s.grainMode;
                     snap.releaseTail       = s.releaseTail;
                     snap.reverse           = s.reverse;
-                    snap.outputBus         = s.outputBus;
                     snap.oneShot           = s.oneShot;
                     snap.centsDetune       = s.centsDetune;
                     snap.filterCutoff      = s.filterCutoff;
@@ -3193,7 +3192,6 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     snap.eqHighGain        = s.eqHighGain;
                     snap.chromaticChannel  = s.chromaticChannel;
                     snap.chromaticLegato   = s.chromaticLegato;
-                    snap.showInMixer       = s.showInMixer;
                     snap.name              = s.name;
                     snap.lockMask          = s.lockMask;
                 }
@@ -3394,7 +3392,16 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     s.grainMode        = snap.grainMode;
                     s.releaseTail      = snap.releaseTail;
                     s.reverse          = snap.reverse;
-                    s.outputBus        = snap.outputBus;
+                    // outputBus/showInMixer are deliberately NOT restored
+                    // here — unlike the other DYSEKT-only fields above,
+                    // both now round-trip through their own SFZ opcodes
+                    // (dysekt_output_bus / dysekt_show_in_mixer — see
+                    // SampleZone::outputBus/showInMixer), so the fresh
+                    // import a few lines up (PendingZonePin handling)
+                    // already applied the CURRENT, correct value. Restoring
+                    // the pre-edit snapshot here would silently revert
+                    // whatever OUT/MIX edit just triggered this reload —
+                    // exactly the bug this comment used to cause.
                     s.oneShot          = snap.oneShot;
                     s.centsDetune      = snap.centsDetune;
                     s.filterCutoff     = snap.filterCutoff;
@@ -3406,7 +3413,6 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     s.eqHighGain       = snap.eqHighGain;
                     s.chromaticChannel = snap.chromaticChannel;
                     s.chromaticLegato  = snap.chromaticLegato;
-                    s.showInMixer      = snap.showInMixer;
                     s.name             = snap.name;
                     s.lockMask         = snap.lockMask;
                 }
