@@ -751,7 +751,7 @@ void MultisamplerEditor::refreshZoneLcdDisplay()
         return;
     }
 
-    zoneLcd.setZoneForDisplay (zone, displayIndex, /*isAuditioning*/ false);
+    zoneLcd.setZoneForDisplay (zone, displayIndex, isPreview, /*isAuditioning*/ false);
     // Editable whenever the zone being shown is a genuine selection target
     // — the true single selection, or the auto-elected top layer of a
     // multi-selection — but never a hover preview (matches
@@ -878,6 +878,14 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             // documented range and SfzDrumKitBusApplier/
             // autoAssignOutputBuses()'s clamping below.
             z.outputBus = juce::jlimit (0, 15, juce::roundToInt (value));
+            break;
+        case MultisamplerZoneField::showInMixer:
+            // Manual mixer-pin override — see SampleZone::showInMixer's doc
+            // comment. Independent of outputBus: turning this off never
+            // hides a zone that's routed off Main (performEngineSync()'s
+            // export/reimport ORs it back in via PluginProcessor's
+            // PendingZonePin handling).
+            z.showInMixer = value > 0.5f;
             break;
         case MultisamplerZoneField::loopEnabled:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;

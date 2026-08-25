@@ -33,8 +33,6 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_audio_basics/juce_audio_basics.h>
-#include <memory>
-#include <atomic>
 #include "SampleData.h"   // for INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
 #include "SfzZoneColours.h"
 
@@ -99,11 +97,6 @@ private:
 #endif
 };
 
-// Convenience alias shared between DysektProcessor and LoadJob. Defined here
-// (rather than only in PluginProcessor.h) so SoundFontLoader.cpp doesn't need
-// to pull in the full processor header just to name the type.
-using SoundFontLoaderAliveFlag = std::shared_ptr<std::atomic<bool>>;
-
 // =============================================================================
 //  Per-note slice descriptor — carried through to processBlock
 // =============================================================================
@@ -147,14 +140,14 @@ struct SfzSliceDescriptor
     // Step 3d, via the same parseSfzAllRegionKeyRanges() region scan.
     int outputBus = -1;
 
-    // Mixer-visibility override carried by the <region>'s
+    // Manual mixer-pin override carried by the <region>'s
     // dysekt_show_in_mixer custom opcode (see SfzExporter/SfzImporter and
-    // SampleZone::showInMixer). Same -1/0/1 "unset"/false/true convention as
-    // outputBus above, for the same reason: an absent opcode must fall back
-    // to the consumer's own default rather than be read as a literal false,
-    // so a load path that never emitted this opcode (or one that predates
-    // its introduction) doesn't silently force every zone's mixer row off.
-    int showInMixer = -1;
+    // SampleZone::showInMixer). Always a definite true/false — unlike
+    // outputBus there's no "unset" state to preserve, since absence of the
+    // opcode means the same thing as writing it false (see PluginProcessor's
+    // PendingZonePin handling, which ORs this with outputBus!=0 rather than
+    // ever using it to clear the auto-pin).
+    bool showInMixer = false;
 };
 
 // Heap-allocated payload posted via pendingSfzSlices atomic.

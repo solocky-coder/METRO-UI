@@ -45,14 +45,11 @@ public:
         hazard (delete-selected-zone-mid-edit, import-during-drag), not a
         hypothetical one — see METRO-UI Multisampler Implementation Plan
         §3.3. `displayIndex` is only used for the "ZONE NN" label.
-        `isAuditioning` shows the same cosmetic badge SliceControlBar::
-        drawSfzZoneSummary used to draw for layer-audition zones. There is
-        no `isPreview` badge here — a hover-previewed zone is shown exactly
-        like any other, and read-only-ness is entirely setEditable()'s job
-        (see its doc comment), not something this method's caller-supplied
-        flags encode. */
+        `isPreview` shows the read-only hover treatment; `isAuditioning`
+        shows the same cosmetic badge SliceControlBar::drawSfzZoneSummary
+        used to draw for layer-audition zones. */
     void setZoneForDisplay (const SampleZone* zone, int displayIndex,
-                             bool isAuditioning);
+                             bool isPreview, bool isAuditioning);
 
     /** No zone to show — draws the empty-state treatment. */
     void clearZone();
@@ -62,8 +59,8 @@ public:
         MultisamplerEditor::resized()'s displayIndex/editable resolution in
         the implementation plan §4) — a hovered-but-not-selected zone is
         always shown read-only regardless of this flag's caller-side intent,
-        enforced by MultisamplerEditor always pairing a hover-shown zone
-        with setEditable(false). */
+        enforced by MultisamplerEditor only ever passing isPreview=true for
+        those and setEditable(false) alongside it. */
     void setEditable (bool shouldEdit);
 
     /** Scales every font size this component draws with, so its text keeps
@@ -100,7 +97,9 @@ private:
         float tuneCents = 0.0f, pan = 0.0f, gainDb = 0.0f;
         float attackSeconds = 0.005f, decaySeconds = 0.1f, sustainLevel = 1.0f, releaseSeconds = 0.1f;
         bool loopOn = false;
+        bool showInMixer = false;
         float filterCutoffHz = 20000.0f, filterResonance = 0.0f;
+        bool isPreview = false;
         bool isAuditioning = false;
     } snapshot;
 
@@ -141,6 +140,11 @@ private:
     // LOOP is boolean — drawn as a flat toggle badge rather than a knob,
     // same call this component made before for that field.
     void drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
+
+    // MIX — show-in-MixerPanel pin/hide toggle, same flat badge treatment
+    // as LOOP above (and the same concept as SliceControlBar's own
+    // drawMixerToggleCell for a Slicer/SFZ-PLAYER slice).
+    void drawMixerToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
 
     // Native value → 0-1 for the knob arc. Ranges mirror either the field's
     // own documented range in SampleZone.h (tune ±1200ct, cutoff 20Hz..

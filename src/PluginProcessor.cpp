@@ -250,15 +250,6 @@ DysektProcessor::DysektProcessor()
 
 DysektProcessor::~DysektProcessor()
 {
-    // Tell any in-flight SoundFontLoader::LoadJob to stop touching this
-    // processor RIGHT NOW, before we even ask the pool to wait for it.
-    // removeAllJobs()'s 5000ms below is a best-effort wait, not a guarantee
-    // -- a job stuck in a long, previously-uninterruptible probe/render pass
-    // can outlive it, and this flag is what keeps that straggler from
-    // reaching into a `this` that's about to be freed. See loaderAliveFlag's
-    // doc comment in PluginProcessor.h.
-    markLoaderJobsShouldStop();
-
     fileLoadPool.removeAllJobs (true, 5000);
     exchangeCompletedLoadData (nullptr);    // drops the SnapshotPtr; frees itself, no delete needed
     auto* failed = completedLoadFailure.exchange (nullptr, std::memory_order_acq_rel);
@@ -1912,17 +1903,7 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
     // UI focus, so all engines keep listening concurrently regardless of tab.
     const uint32_t sfMask  = sfPlayerChannelMask.load  (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
     const uint32_t sfz2Mask = sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
-    // Acquire pairs with the release store in PluginEditor.cpp (entering
-    // trim mode). Reading true here means every write the UI thread made
-    // before that release store -- specifically trimRegionStart/End for
-    // the new file -- is guaranteed visible to this thread from this point
-    // on, including the later relaxed re-loads of trimModeActive and the
-    // trim region atomics further down this function and in processBlock()
-    // (both sequenced-after this load within the same audio callback).
-    // Without this, trimModeActive could be observed true before its
-    // paired region bounds were, since relaxed atomics give no ordering
-    // guarantee between different atomic variables.
-    const bool inTrimMode = trimModeActive.load (std::memory_order_acquire);
+    const bool inTrimMode = trimModeActive.load (std::memory_order_relaxed);
 
     for (const auto metadata : midi)
     {
@@ -3200,21 +3181,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     snap.grainMode         = s.grainMode;
                     snap.releaseTail       = s.releaseTail;
                     snap.reverse           = s.reverse;
-                    // outputBus and showInMixer are deliberately NOT captured
-                    // here — unlike the other fields in this struct, both now
-                    // round-trip through the zone model itself (SampleZone::
-                    // outputBus/showInMixer, via the dysekt_output_bus/
-                    // dysekt_show_in_mixer custom opcodes) and get set to
-                    // their correct, freshly-edited values by the
-                    // pendingZonePins pass below on every reload. Capturing
-                    // them here previously meant this "DYSEKT-only custom
-                    // field" preservation pass would silently reapply the
-                    // STALE pre-edit value right after pendingZonePins set
-                    // the correct one (see the reapply block below) — so an
-                    // OUT/MIX edit committed via the LCD would appear to
-                    // apply for one instant and then immediately revert,
-                    // and a new zone reusing a previously-"shown" MIDI note
-                    // slot could inherit a stale true it never actually had.
+                    snap.outputBus         = s.outputBus;
                     snap.oneShot           = s.oneShot;
                     snap.centsDetune       = s.centsDetune;
                     snap.filterCutoff      = s.filterCutoff;
@@ -3226,6 +3193,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     snap.eqHighGain        = s.eqHighGain;
                     snap.chromaticChannel  = s.chromaticChannel;
                     snap.chromaticLegato   = s.chromaticLegato;
+                    snap.showInMixer       = s.showInMixer;
                     snap.name              = s.name;
                     snap.lockMask          = s.lockMask;
                 }
@@ -3276,7 +3244,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 int      zoneLoKey;
                 int      zoneHiKey;
                 int      outputBus;   // -1 = unset — see SfzSliceDescriptor::outputBus
-                int      showInMixer; // -1 = unset — see SfzSliceDescriptor::showInMixer
+                bool     showInMixer; // manual pin override — see SfzSliceDescriptor::showInMixer
             };
             std::vector<PendingZonePin> pendingZonePins;
             pendingZonePins.reserve (zonesOwner2->slices.size());
@@ -3355,19 +3323,11 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // bus or the sustain portion would audibly jump back to
                     // Main partway through the note.
                     if (desc.outputBus >= 0)
+                    {
                         sliceManager2.getSlice (tailIdx).outputBus = desc.outputBus;
-
-                    // Real per-zone value now (see SfzSliceDescriptor::
-                    // showInMixer) rather than inferring it from outputBus —
-                    // a zone can be routed off Main and still be explicitly
-                    // hidden, or stay on Main and still be explicitly
-                    // pinned, so outputBus != 0 is no longer treated as a
-                    // proxy for this field. -1 (no dysekt_show_in_mixer
-                    // opcode on this region) leaves Slice's own default
-                    // (false) alone, same "unset means don't overwrite"
-                    // convention hasZoneColour/outputBus use above.
-                    if (desc.showInMixer >= 0)
-                        sliceManager2.getSlice (tailIdx).showInMixer = desc.showInMixer != 0;
+                        if (desc.outputBus != 0 || desc.showInMixer)
+                            sliceManager2.getSlice (tailIdx).showInMixer = true;
+                    }
                 }
                 else if (headIdx >= 0)
                 {
@@ -3396,11 +3356,13 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (pin.outputBus >= 0)
                     sliceManager2.getSlice (pin.sliceIdx).outputBus = pin.outputBus;
 
-                // Real per-zone value now — see the tail-mirroring block
-                // above (same reasoning: outputBus != 0 is no longer used
-                // as a stand-in for this field).
-                if (pin.showInMixer >= 0)
-                    sliceManager2.getSlice (pin.sliceIdx).showInMixer = pin.showInMixer != 0;
+                // MIX pin: either the zone's own manual override
+                // (SampleZone::showInMixer) or the existing auto-pin for
+                // any zone routed off Main — see PendingZonePin's doc
+                // comment above and SampleZone::showInMixer's own comment
+                // for why this is an OR, never a replacement.
+                if (pin.showInMixer || pin.outputBus > 0)
+                    sliceManager2.getSlice (pin.sliceIdx).showInMixer = true;
             }
 
             // Reapply anything captured above, just before clearAll(), for
@@ -3432,13 +3394,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     s.grainMode        = snap.grainMode;
                     s.releaseTail      = snap.releaseTail;
                     s.reverse          = snap.reverse;
-                    // outputBus/showInMixer intentionally NOT reapplied here —
-                    // see this field's removal from SliceOverrideSnapshot's
-                    // capture site above for the full explanation. Both are
-                    // now zone-model fields (round-tripped via SFZ), already
-                    // set correctly by the pendingZonePins pass above, and
-                    // reapplying a captured pre-edit value here would revert
-                    // whatever OUT/MIX edit just triggered this reload.
+                    s.outputBus        = snap.outputBus;
                     s.oneShot          = snap.oneShot;
                     s.centsDetune      = snap.centsDetune;
                     s.filterCutoff     = snap.filterCutoff;
@@ -3450,6 +3406,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     s.eqHighGain       = snap.eqHighGain;
                     s.chromaticChannel = snap.chromaticChannel;
                     s.chromaticLegato  = snap.chromaticLegato;
+                    s.showInMixer      = snap.showInMixer;
                     s.name             = snap.name;
                     s.lockMask         = snap.lockMask;
                 }

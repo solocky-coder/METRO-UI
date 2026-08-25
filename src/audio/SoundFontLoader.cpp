@@ -255,10 +255,8 @@ struct SfzRegionKeyRange
     // doc comment for the -1-means-unset convention this carries through to).
     int outputBus = -1;
 
-    // dysekt_show_in_mixer=0/1, if present (see SfzSliceDescriptor::
-    // showInMixer's doc comment for the -1-means-unset convention this
-    // carries through to).
-    int showInMixer = -1;
+    // dysekt_show_in_mixer=1, if present (see SfzSliceDescriptor::showInMixer).
+    bool showInMixer = false;
 };
 
 static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::File& sfzFile)
@@ -345,12 +343,9 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
         if (outputBus >= 0)
             rk.outputBus = juce::jlimit (0, 15, outputBus);
 
-        // dysekt_show_in_mixer — same custom-opcode scan as dysekt_output_bus
-        // above; left at -1 ("unset") when absent, matching a false value
-        // being omitted from the exported .sfz (see SfzExporter).
-        const int showInMixer = scanIntOpcode (chunk, "dysekt_show_in_mixer");
-        if (showInMixer >= 0)
-            rk.showInMixer = showInMixer != 0 ? 1 : 0;
+        // dysekt_show_in_mixer — presence (not value) is what matters, same
+        // as SfzImporter's read side; SfzExporter only ever writes "=1".
+        rk.showInMixer = chunk.containsIgnoreCase ("dysekt_show_in_mixer=");
 
         result.push_back (rk);
     }
@@ -486,7 +481,6 @@ class SoundFontLoader::LoadJob final : public juce::ThreadPoolJob
 {
 public:
     LoadJob (juce::File f, double sr, int tok, DysektProcessor& proc, SoundFontLoadTarget tgt,
-             SoundFontLoaderAliveFlag aliveIn,
              int presetBankIn = -1, int presetProgramIn = -1)
         : juce::ThreadPoolJob ("SfzLoadJob"),
           file (std::move (f)),
@@ -494,7 +488,6 @@ public:
           token (tok),
           processor (proc),
           target (tgt),
-          alive (std::move (aliveIn)),
           presetBank (presetBankIn),
           presetProgram (presetProgramIn)
     {}
@@ -518,30 +511,6 @@ public:
     }
 
 private:
-    // True once `processor` is no longer safe to touch (plugin/processor is
-    // being destroyed). This is checked EVERYWHERE shouldExit() already is
-    // (they're both "stop what you're doing" signals) plus a few extra spots
-    // shouldExit() alone doesn't cover -- see log()/processorGone()'s comment
-    // and each call site below. shouldExit() means "a newer job superseded
-    // you, wrap up"; processorGone() means "the object you're about to touch
-    // no longer exists" -- once true, the ONLY safe thing left to do is
-    // return, with no further reads or writes through `processor` at all,
-    // not even a log line.
-    bool processorGone() const noexcept
-    {
-        return ! alive->load (std::memory_order_acquire);
-    }
-
-    // Guarded logging: every direct processor.crashLogger.log(...) call in
-    // this file goes through here instead, so a straggler job that notices
-    // processorGone() mid-function can never accidentally slip one more
-    // touch of `processor` through on its way out.
-    void log (const juce::String& message) const
-    {
-        if (! processorGone())
-            processor.crashLogger.log (message);
-    }
-
     // Per-note render captured during discovery+render, shared by both the
     // sfizz and FluidSynth backends and consumed by finishAndPost().
     struct NoteRender
@@ -561,7 +530,7 @@ private:
         const bool ok = sfizz_load_file (sfz, file.getFullPathName().toRawUTF8());
 
         if (target == SoundFontLoadTarget::SfPlayer)
-            log ("SF2 preview: sfizz_load_file(\"" + file.getFullPathName()
+            processor.crashLogger.log ("SF2 preview: sfizz_load_file(\"" + file.getFullPathName()
                 + "\") -> " + (ok ? "OK" : "FAILED")
                 + "  [preset override " + juce::String (presetBank) + "/" + juce::String (presetProgram) + "]"
                 + "  regions=" + juce::String (ok ? sfizz_get_num_regions (sfz) : -1));
@@ -571,15 +540,9 @@ private:
             // completely silently — matrix (parseSfzZones, a lenient text scan)
             // could show zones that sfizz's real parser rejects outright, with
             // zero indication why the LCD/waveform/slice-count stayed empty.
-            log ("SFZ-PLAYER zone preview: sfizz_load_file(\"" + file.getFullPathName()
+            processor.crashLogger.log ("SFZ-PLAYER zone preview: sfizz_load_file(\"" + file.getFullPathName()
                 + "\") -> " + (ok ? "OK" : "FAILED")
                 + "  regions=" + juce::String (ok ? sfizz_get_num_regions (sfz) : -1));
-
-        if (processorGone())
-        {
-            sfizz_free (sfz);
-            return jobHasFinished;   // nothing left to touch, not even postFailure()
-        }
 
         if (! ok)
         {
@@ -606,7 +569,7 @@ private:
             return jobHasFinished;
         }
 
-        if (shouldExit() || processorGone())
+        if (shouldExit())
         {
             sfizz_free (sfz);
             postFailure();
@@ -634,25 +597,22 @@ private:
             float* flushOuts[2] = { flushL.data(), flushR.data() };
             sfizz_render_block (sfz, flushOuts, 2, kBlockSize);
 
-            if (shouldExit() || processorGone()) { sfizz_free (sfz); postFailure(); return jobHasFinished; }
+            if (shouldExit()) { sfizz_free (sfz); postFailure(); return jobHasFinished; }
         }
 
         // ── Step 1: discover active notes ─────────────────────────────────────
-        // discoverActiveNotes() checks `alive` itself now (it can otherwise
-        // run a full, uninterruptible 128-note sweep — see its comment) and
-        // may return early/partial if the processor went away mid-probe.
-        std::vector<int> activeNotes = discoverActiveNotes (sfz, sampleRate, alive);
-        if (shouldExit() || processorGone()) { sfizz_free (sfz); postFailure(); return jobHasFinished; }
+        std::vector<int> activeNotes = discoverActiveNotes (sfz, sampleRate);
+        if (shouldExit()) { sfizz_free (sfz); postFailure(); return jobHasFinished; }
 
         if (target == SoundFontLoadTarget::SfPlayer)
-            log ("SF2 preview: discoverActiveNotes found "
+            processor.crashLogger.log ("SF2 preview: discoverActiveNotes found "
                 + juce::String ((int) activeNotes.size()) + " responsive note(s)"
                 + (activeNotes.empty() ? " -> falling back to piano range 21-108" : ""));
         else if (target == SoundFontLoadTarget::SfzPlayer2)
         {
             juce::String notesStr;
             for (int n : activeNotes) notesStr << n << " ";
-            log ("SFZ-PLAYER zone preview: discoverActiveNotes found "
+            processor.crashLogger.log ("SFZ-PLAYER zone preview: discoverActiveNotes found "
                 + juce::String ((int) activeNotes.size()) + " responsive note(s)"
                 + (activeNotes.empty() ? " -> falling back to full 0-127 sweep" : ": " + notesStr));
         }
@@ -689,7 +649,7 @@ private:
 
         for (int note : activeNotes)
         {
-            if (shouldExit() || processorGone()) break;
+            if (shouldExit()) break;
 
             sfizz_send_note_on (sfz, 0, note, kVelocity);
 
@@ -769,11 +729,11 @@ private:
 
         const bool ok = (sfontId != FLUID_FAILED);
 
-        log ("SF2 preview (FluidSynth): fluid_synth_sfload(\"" + file.getFullPathName()
+        processor.crashLogger.log ("SF2 preview (FluidSynth): fluid_synth_sfload(\"" + file.getFullPathName()
             + "\") -> " + (ok ? "OK" : "FAILED")
             + "  [preset override " + juce::String (presetBank) + "/" + juce::String (presetProgram) + "]");
 
-        if (! ok || shouldExit() || processorGone())
+        if (! ok || shouldExit())
         {
             {
                 FLUIDSYNTH_LIFECYCLE_LOCK();
@@ -796,7 +756,7 @@ private:
                                         static_cast<unsigned int> (offset + presetBank),
                                         static_cast<unsigned int> (presetProgram));
 
-            if (shouldExit() || processorGone())
+            if (shouldExit())
             {
                 {
                     FLUIDSYNTH_LIFECYCLE_LOCK();
@@ -809,12 +769,8 @@ private:
         }
 
         // ── Step 1: discover active notes ─────────────────────────────────────
-        // discoverActiveNotesFs() previously had NO cancellation check at all
-        // inside its 128-note probe loop — this was the actual gap that let a
-        // background job outlive removeAllJobs()'s timeout and go on to touch
-        // a freed `processor`. It now takes `alive` and bails out per-note.
-        std::vector<int> activeNotes = discoverActiveNotesFs (synth, alive);
-        if (shouldExit() || processorGone())
+        std::vector<int> activeNotes = discoverActiveNotesFs (synth);
+        if (shouldExit())
         {
             {
                 FLUIDSYNTH_LIFECYCLE_LOCK();
@@ -825,7 +781,7 @@ private:
             return jobHasFinished;
         }
 
-        log ("SF2 preview (FluidSynth): discoverActiveNotesFs found "
+        processor.crashLogger.log ("SF2 preview (FluidSynth): discoverActiveNotesFs found "
             + juce::String ((int) activeNotes.size()) + " responsive note(s)"
             + (activeNotes.empty() ? " -> falling back to piano range 21-108" : ""));
 
@@ -848,7 +804,7 @@ private:
 
         for (int note : activeNotes)
         {
-            if (shouldExit() || processorGone()) break;
+            if (shouldExit()) break;
 
             fluid_synth_noteon (synth, 0, note, kVelocity);
 
@@ -897,18 +853,8 @@ private:
     //    Backend-agnostic — used by both runJobSfizz() and runJobFluidSynth().
     JobStatus finishAndPost (std::vector<NoteRender> renders, int numProbed)
     {
-        // MUST be the very first thing this function does. Everything below
-        // this point touches `processor` (logging, posting results, setting
-        // in-flight flags) — previously the log lines below ran BEFORE any
-        // exit check at all, so even a job that noticed processorGone() a
-        // moment earlier (via the discovery/render loop guards) could still
-        // reach into a freed processor right here. If it's gone, there is
-        // nothing left in this function that's safe to do.
-        if (processorGone())
-            return jobHasFinished;
-
         if (target == SoundFontLoadTarget::SfPlayer)
-            log ("SF2 preview: " + juce::String ((int) renders.size())
+            processor.crashLogger.log ("SF2 preview: " + juce::String ((int) renders.size())
                 + " note(s) produced audio above silence threshold (of "
                 + juce::String (numProbed) + " probed)"
                 + (renders.empty() ? " -> ALL SILENT, render aborted" : ""));
@@ -918,7 +864,7 @@ private:
             // produced audible output, or a stale/mismatched sample) causes
             // postFailure() to no-op and the zone-builder preview to stay
             // silently empty with no other indication anywhere.
-            log ("SFZ-PLAYER zone preview: " + juce::String ((int) renders.size())
+            processor.crashLogger.log ("SFZ-PLAYER zone preview: " + juce::String ((int) renders.size())
                 + " note(s) produced audio above silence threshold (of "
                 + juce::String (numProbed) + " probed)"
                 + (renders.empty() ? " -> ALL SILENT, render aborted" : ""));
@@ -1156,7 +1102,7 @@ private:
                     desc.zoneLoKey      = rk.loKey;
                     desc.zoneHiKey      = rk.hiKey;
                     desc.outputBus      = rk.outputBus;   // -1 if the region had no dysekt_output_bus opcode
-                    desc.showInMixer    = rk.showInMixer; // -1 if the region had no dysekt_show_in_mixer opcode
+                    desc.showInMixer    = rk.showInMixer;
                     break;   // first matching region wins (matches Step 3c's rule)
                 }
             }
@@ -1248,7 +1194,7 @@ private:
             zonePayload->presetProgram = presetProgram;
             delete payload;
 
-            log ("SF2 preview: posting " + juce::String (decoded->buffer.getNumSamples())
+            processor.crashLogger.log ("SF2 preview: posting " + juce::String (decoded->buffer.getNumSamples())
                 + " frames, " + juce::String ((int) zonePayload->slices.size()) + " zone(s) to sampleData3/previewZones3"
                 + "  [preset " + juce::String (presetBank) + "/" + juce::String (presetProgram) + "]");
 
@@ -1326,16 +1272,7 @@ private:
     // discoverActiveNotes() to 0 results, forcing the caller into the
     // expensive full-128-note/full-duration fallback sweep even when a
     // proper probe would have found the real key range directly.
-    // `alive` is checked once per note (128 notes total): cheap enough that
-    // it doesn't matter perf-wise, and frequent enough that a shutdown mid-
-    // probe is noticed within a fraction of a millisecond of real work,
-    // rather than this loop running to completion regardless (previously it
-    // had no cancellation check of any kind — this was the actual hole a
-    // straggler background job could use to keep running well past the
-    // ThreadPool's removeAllJobs() timeout; see loaderAliveFlag's comment in
-    // PluginProcessor.h).
-    static std::vector<int> discoverActiveNotes (sfizz_synth_t* sfz, double sampleRate,
-                                                  const SoundFontLoaderAliveFlag& alive)
+    static std::vector<int> discoverActiveNotes (sfizz_synth_t* sfz, double sampleRate)
     {
         const int probeSize = std::max (SfzConst::kProbeSize,
                                         (int) std::lround (sampleRate * SfzConst::kProbeDurationSec));
@@ -1352,9 +1289,6 @@ private:
 
         for (int n = 0; n <= 127; ++n)
         {
-            if (! alive->load (std::memory_order_acquire))
-                break;   // processor is gone — stop probing, return whatever we have
-
             sfizz_send_note_on (sfz, 0, n, SfzConst::kVelocity);
 
             float peak = 0.f;
@@ -1402,15 +1336,8 @@ private:
         }
     }
 
-    // FluidSynth counterpart of discoverActiveNotes(). THIS is the loop that
-    // was implicated in the 0xC0000005 crash: it used to have no
-    // cancellation check whatsoever, so a plugin-close during a large SF2's
-    // preview probe (128 notes, each round-tripping through FluidSynth) let
-    // this run all the way to completion no matter how long the destructor
-    // had already been waiting — see loaderAliveFlag's comment in
-    // PluginProcessor.h for the full mechanism.
-    static std::vector<int> discoverActiveNotesFs (fluid_synth_t* synth,
-                                                    const SoundFontLoaderAliveFlag& alive)
+    // FluidSynth counterpart of discoverActiveNotes().
+    static std::vector<int> discoverActiveNotesFs (fluid_synth_t* synth)
     {
         std::vector<int> found;
         std::vector<float> probeL (SfzConst::kProbeSize, 0.f);
@@ -1419,9 +1346,6 @@ private:
 
         for (int n = 0; n <= 127; ++n)
         {
-            if (! alive->load (std::memory_order_acquire))
-                break;   // processor is gone — stop probing, return whatever we have
-
             std::fill (probeL.begin(), probeL.end(), 0.f);
             std::fill (probeR.begin(), probeR.end(), 0.f);
 
@@ -1460,11 +1384,6 @@ private:
     // callers are responsible for that check before calling this.
     void postEmptySfzPlayer2Result()
     {
-        // Same rule as finishAndPost()/postFailure() — nothing below this
-        // line is safe to run once the processor is gone.
-        if (processorGone())
-            return;
-
         if (token == processor.latestPreviewToken2.load (std::memory_order_acquire))
         {
             auto emptyDecoded = std::make_unique<SampleData::DecodedSample>();
@@ -1497,13 +1416,6 @@ private:
 
     void postFailure()
     {
-        // Same rule as finishAndPost(): if the processor is gone, every
-        // field this function touches below (sf2PreviewRenderInFlight,
-        // mainLoadInFlight, completedLoadFailure, ...) lives on it — bail
-        // out before the first touch, not after.
-        if (processorGone())
-            return;
-
         // Any SfPlayer render (initial file-load OR a preset-scoped click
         // re-render) can bail out here — bad file, silent preset, or
         // shouldExit() mid-probe — every early "return jobHasFinished"
@@ -1555,14 +1467,13 @@ private:
         delete old;
     }
 
-    juce::File               file;
-    double                   sampleRate;
-    int                      token;
-    DysektProcessor&         processor;
-    SoundFontLoadTarget      target;
-    SoundFontLoaderAliveFlag alive;   // see processorGone()'s comment above
-    int                      presetBank;
-    int                      presetProgram;
+    juce::File          file;
+    double              sampleRate;
+    int                 token;
+    DysektProcessor&    processor;
+    SoundFontLoadTarget target;
+    int                 presetBank;
+    int                 presetProgram;
 };
 
 // =============================================================================
@@ -1641,13 +1552,8 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         processor.sf2PreviewRenderInFlight.store (true, std::memory_order_release);
     }
 
-    // processor.loaderAliveFlag is a shared_ptr owned by the processor for
-    // its whole lifetime (see PluginProcessor.h) — the job gets its own
-    // reference-counted copy, so the flag itself stays valid for the job to
-    // read even if `processor` is destroyed while the job is still running.
     processor.fileLoadPool.addJob (
-        new LoadJob (file, sr, token, processor, target, processor.loaderAliveFlag,
-                     presetBank, presetProgram), true);
+        new LoadJob (file, sr, token, processor, target, presetBank, presetProgram), true);
 }
 
 #else  // DYSEKT_HAS_SFIZZ not defined

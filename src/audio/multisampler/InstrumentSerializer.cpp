@@ -59,6 +59,8 @@ namespace
         o->setProperty ("sequencePosition", z.sequencePosition);
         o->setProperty ("sequenceLength", z.sequenceLength);
         o->setProperty ("enabled", z.enabled);
+        o->setProperty ("outputBus", z.outputBus);
+        o->setProperty ("showInMixer", z.showInMixer);
 
         // Custom colour override — stored as the same 8-digit ARGB hex
         // juce::Colour::toString() produces (and dysekt_zone_color carries
@@ -128,6 +130,8 @@ namespace
         outZone.sequencePosition = (int) v.getProperty ("sequencePosition", 0);
         outZone.sequenceLength   = (int) v.getProperty ("sequenceLength", 0);
         outZone.enabled          = (bool) v.getProperty ("enabled", true);
+        outZone.outputBus        = juce::jlimit (0, 15, (int) v.getProperty ("outputBus", 0));
+        outZone.showInMixer      = (bool) v.getProperty ("showInMixer", false);
 
         if (auto* extras = v.getProperty ("extraOpcodes", {}).getArray())
         {

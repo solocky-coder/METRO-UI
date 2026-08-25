@@ -464,9 +464,9 @@ namespace
         // lowercased-key guarantee as dysekt_zone_color above.
         z.outputBus = juce::jlimit (0, 15, intOpcode (resolved, "dysekt_output_bus", 0));
 
-        // Mixer-visibility override — see SfzExporter for the write side.
-        // Same lowercased-key guarantee as dysekt_zone_color above.
-        z.showInMixer = intOpcode (resolved, "dysekt_show_in_mixer", 0) != 0;
+        // Manual mixer-pin override — see SfzExporter for the write side
+        // and SampleZone::showInMixer for the round-trip rationale.
+        z.showInMixer = resolved.count ("dysekt_show_in_mixer") != 0;
 
         z.group           = intOpcode (resolved, "group", 0);
         z.offBy           = intOpcode (resolved, "off_by", 0);

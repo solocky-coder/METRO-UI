@@ -97,9 +97,9 @@ namespace
         if (z.outputBus != 0)
             out << "dysekt_output_bus=" << z.outputBus << "\n";
 
-        // Mixer-visibility override — see SfzImporter for the read side.
-        // Omitted when false (the default) so a zone nobody pinned to the
-        // mixer doesn't pick up a stray opcode on reload.
+        // Manual mixer-pin override — see SampleZone::showInMixer's doc
+        // comment. Omitted when false so a plain Main-bus zone doesn't pick
+        // up a mixer row it never asked for on reload.
         if (z.showInMixer)
             out << "dysekt_show_in_mixer=1\n";
 
