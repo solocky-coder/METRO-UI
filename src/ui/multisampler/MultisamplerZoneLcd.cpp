@@ -297,34 +297,27 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
 
     // The "ZONE NN   name" text that used to open this row now lives in
     // MultisamplerEditor's toolbar (see getZoneTitleText()) — only the
-    // PREVIEW/AUDITIONING badge still belongs here, and only reserves
-    // space when one actually applies, so the common (unbadged) case gives
-    // the knob rows below the full height instead of leaving that strip
-    // sitting empty.
-    if (snapshot.isPreview || snapshot.isAuditioning)
-    {
-        auto badgeRow = content.removeFromTop (14);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
-
-        if (snapshot.isPreview)
-        {
-            g.setColour (theme.accent.withAlpha (0.8f));
-            g.drawText ("PREVIEW", badgeRow, juce::Justification::centredRight);
-        }
-        else
-        {
-            g.setColour (theme.accent);
-            g.drawText ("AUDITIONING", badgeRow, juce::Justification::centredRight);
-        }
-
-        content.removeFromTop (2);
-    }
-
-    // Two rows of 7 knob cells — same field set as before, regrouped so
-    // every row divides evenly (14 fields / 2 rows = 7), matching
-    // SliceControlBar's own knob-row layouts (drawKnobCell in a straight
-    // horizontal run) instead of the old cramped 4/4/6 text-cell split.
+    // PREVIEW/AUDITIONING badge still belongs here.
+    //
+    // IMPORTANT: the badge must never remove height from `content`. Every
+    // knob's radius in drawKnobField() scales off its cell's height
+    // (rowH below), so shrinking content's height whenever a zone was
+    // hovered (isPreview) made every knob visibly shrink, then grow back
+    // the moment the mouse left — a distracting resize that had nothing to
+    // do with the knobs themselves. rowH is therefore always computed from
+    // the full content rect, badge or no badge, so knob size never changes
+    // with hover state. The badge instead borrows a strip of *width* from
+    // the top row only — width is never the limiting factor for knobR (the
+    // cells are far wider than a knob needs), so this has no visual effect
+    // on knob size either.
     const int rowH = content.getHeight() / 2;
+    auto row1 = content.removeFromTop (rowH);
+    auto row2 = content;
+
+    const bool showBadge = snapshot.isPreview || snapshot.isAuditioning;
+    juce::Rectangle<int> badgeArea;
+    if (showBadge)
+        badgeArea = row1.removeFromRight (juce::roundToInt (70.0f * uiScale));
 
     auto layoutRow = [&] (juce::Rectangle<int> row, std::initializer_list<MultisamplerZoneField> fields)
     {
@@ -340,17 +333,34 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
         }
     };
 
-    layoutRow (content.removeFromTop (rowH),
+    layoutRow (row1,
                { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
                  MultisamplerZoneField::rootKey, MultisamplerZoneField::group,
                  MultisamplerZoneField::tune, MultisamplerZoneField::pan,
                  MultisamplerZoneField::gain });
-    layoutRow (content,
+    layoutRow (row2,
                { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
                  MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
                  MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
                  MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus,
                  MultisamplerZoneField::showInMixer });
+
+    if (showBadge)
+    {
+        auto badgeRow = badgeArea.removeFromTop (14);
+        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
+
+        if (snapshot.isPreview)
+        {
+            g.setColour (theme.accent.withAlpha (0.8f));
+            g.drawText ("PREVIEW", badgeRow, juce::Justification::centredRight);
+        }
+        else
+        {
+            g.setColour (theme.accent);
+            g.drawText ("AUDITIONING", badgeRow, juce::Justification::centredRight);
+        }
+    }
 }
 
 void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field)
