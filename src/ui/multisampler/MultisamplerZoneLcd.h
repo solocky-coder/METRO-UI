@@ -54,6 +54,15 @@ public:
     /** No zone to show — draws the empty-state treatment. */
     void clearZone();
 
+    /** "ZONE NN   name" (plus a PREVIEW/AUDITIONING suffix where those
+        apply), formatted the same way this component used to draw its own
+        title row before that row moved up into MultisamplerEditor's header
+        — see MultisamplerEditor::refreshZoneLcdDisplay(), which pushes this
+        into its own zoneTagLabel after every setZoneForDisplay()/
+        clearZone() call so the two never drift out of sync. Returns an
+        empty string when there's no zone to show (snapshot invalid). */
+    juce::String getZoneTitleText() const;
+
     /** Whether the currently-displayed zone accepts drag/click edits. Must
         only be true when the displayed zone IS the selected zone (see
         MultisamplerEditor::resized()'s displayIndex/editable resolution in
@@ -79,10 +88,13 @@ public:
         applyZoneFieldEdit is the single place values are clamped). */
     std::function<void (MultisamplerZoneField field, float value, bool isCommit)> onFieldEdited;
 
-    // Taller than the original 76px flat-text layout — knob cells need a
-    // title row plus two full rows of knob+label+value (SliceControlBar's
-    // own psCellH is 32px per row); see MultisamplerEditor::resized(),
-    // which reads this constant when it reserves space for this component.
+    // Taller than the original 76px flat-text layout — knob cells need two
+    // full rows of knob+label+value (SliceControlBar's own psCellH is 32px
+    // per row). The title row this used to reserve space for now lives in
+    // MultisamplerEditor's header (see zoneTitleLabel there), so all of
+    // this height goes to the two knob rows; see MultisamplerEditor::
+    // resized(), which reads this constant when it reserves space for this
+    // component.
     static constexpr int kPreferredHeight = 100;
 
 private:

@@ -70,6 +70,21 @@ void MultisamplerZoneLcd::clearZone()
     repaint();
 }
 
+juce::String MultisamplerZoneLcd::getZoneTitleText() const
+{
+    if (! snapshot.valid)
+        return {};
+
+    juce::String title = "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
+
+    if (snapshot.isPreview)
+        title << "   ·   PREVIEW";
+    else if (snapshot.isAuditioning)
+        title << "   ·   AUDITIONING";
+
+    return title;
+}
+
 void MultisamplerZoneLcd::setEditable (bool shouldEdit)
 {
     if (editable == shouldEdit) return;
@@ -283,29 +298,11 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
         return;
     }
 
+    // Name/index and the PREVIEW/AUDITIONING badge now live in
+    // MultisamplerEditor's header (zoneTagLabel — see getZoneTitleText()
+    // below), not here, so the full content box goes to the knob rows
+    // instead of losing 20px to a title row every time.
     auto content = bounds.reduced (8, 4);
-
-    // Title row — name, index, preview/auditioning badges.
-    auto titleRow = content.removeFromTop (18);
-    g.setColour (theme.foreground);
-    g.setFont (DysektLookAndFeel::makeFont (11.5f * uiScale, true));
-    juce::String title = "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
-    g.drawText (title, titleRow, juce::Justification::centredLeft);
-
-    if (snapshot.isPreview)
-    {
-        g.setColour (theme.accent.withAlpha (0.8f));
-        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
-        g.drawText ("PREVIEW", titleRow, juce::Justification::centredRight);
-    }
-    else if (snapshot.isAuditioning)
-    {
-        g.setColour (theme.accent);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
-        g.drawText ("AUDITIONING", titleRow, juce::Justification::centredRight);
-    }
-
-    content.removeFromTop (2);
 
     // Two rows of knob cells — row 1 has 7 fields (mapping + tune/pan/gain),
     // row 2 has 8 (envelope/filter/routing, including the LOOP and MIX flat
@@ -420,16 +417,31 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
     // full width, most cells had far more width than a 10px knob + label
     // could ever use. Scale off the smaller of the two cell dimensions
     // instead of height alone, and raise the cap so the knob actually grows
-    // into the space it's given rather than leaving it blank.
-    const int knobR  = juce::roundToInt (juce::jlimit (10.0f, 18.0f,
-                            juce::jmin (r.getHeight() * 0.42f, r.getWidth() * 0.16f)) * uiScale);
-    const int knobCX = r.getX() + knobR + juce::roundToInt (4.0f * uiScale);
+    // into the space it's given rather than leaving it blank. The cap was
+    // raised again (18 -> 22) once the title row moved out into the header
+    // (see paint()) and freed extra row height for these knobs to grow into.
+    const int knobR = juce::roundToInt (juce::jlimit (10.0f, 22.0f,
+                           juce::jmin (r.getHeight() * 0.42f, r.getWidth() * 0.16f)) * uiScale);
+    const int knobToTextGap = juce::roundToInt (8.0f * uiScale);
+
+    // The label/value text is never as wide as the leftover cell space once
+    // the knob is drawn — pinning both to the cell's left edge just piled
+    // all of that slack up as a dead gap before the next cell's knob (the
+    // whole knob+text block used to hug the left edge of a much wider
+    // cell). Cap the text to the width it actually needs and centre the
+    // whole knob+text block in the cell instead, so leftover space is
+    // split evenly on both sides rather than dumped entirely on the right.
+    const int maxTextW = juce::roundToInt (60.0f * uiScale);
+    const int textW    = juce::jmin (maxTextW, juce::jmax (0, r.getWidth() - knobR * 2 - knobToTextGap));
+    const int blockW   = knobR * 2 + knobToTextGap + textW;
+    const int blockX   = r.getX() + juce::jmax (0, (r.getWidth() - blockW) / 2);
+
+    const int knobCX = blockX + knobR;
     const int knobCY = r.getY() + r.getHeight() / 2;
 
     drawKnobArc (g, knobCX, knobCY, knobR, normForField (field), hoveredNow, draggingNow);
 
-    const int textX = knobCX + knobR + juce::roundToInt (8.0f * uiScale);
-    const int textW = juce::jmax (0, r.getRight() - textX);
+    const int textX = knobCX + knobR + knobToTextGap;
 
     g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
     g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
@@ -460,14 +472,18 @@ void MultisamplerZoneLcd::drawLoopToggleCell (juce::Graphics& g, juce::Rectangle
         g.fillRoundedRectangle (r.toFloat(), 3.0f);
     }
 
+    // Centred rather than left-hugged (see drawKnobField's matching note) —
+    // a flat toggle cell has no knob to anchor against, so left-justifying
+    // its short label/value pair just stranded them against the cell's
+    // left edge with a dead gap to the right.
     g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
     g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
     auto labelRow = r.removeFromTop (r.getHeight() / 2);
-    g.drawText (labelFor (MultisamplerZoneField::loopEnabled), labelRow, juce::Justification::centredLeft);
+    g.drawText (labelFor (MultisamplerZoneField::loopEnabled), labelRow, juce::Justification::centred);
 
     g.setColour (snapshot.loopOn ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
     g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
-    g.drawText (formatFieldValue (MultisamplerZoneField::loopEnabled), r, juce::Justification::centredLeft);
+    g.drawText (formatFieldValue (MultisamplerZoneField::loopEnabled), r, juce::Justification::centred);
 }
 
 // =============================================================================
@@ -491,14 +507,15 @@ void MultisamplerZoneLcd::drawMixerToggleCell (juce::Graphics& g, juce::Rectangl
         g.fillRoundedRectangle (r.toFloat(), 3.0f);
     }
 
+    // Centred rather than left-hugged — see drawLoopToggleCell's matching note.
     g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
     g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
     auto labelRow = r.removeFromTop (r.getHeight() / 2);
-    g.drawText (labelFor (MultisamplerZoneField::showInMixer), labelRow, juce::Justification::centredLeft);
+    g.drawText (labelFor (MultisamplerZoneField::showInMixer), labelRow, juce::Justification::centred);
 
     g.setColour (snapshot.showInMixer ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
     g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
-    g.drawText (formatFieldValue (MultisamplerZoneField::showInMixer), r, juce::Justification::centredLeft);
+    g.drawText (formatFieldValue (MultisamplerZoneField::showInMixer), r, juce::Justification::centred);
 }
 
 // ── Mouse / editing ──────────────────────────────────────────────────────

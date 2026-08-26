@@ -84,6 +84,15 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     addAndMakeVisible (titleLabel);
 
+    // "ZONE NN   name" — promoted out of MultisamplerZoneLcd's own title
+    // row (see MultisamplerZoneLcd::getZoneTitleText()) and up into the
+    // header, in the space between titleLabel and the right-hand button
+    // cluster, at a size that's actually readable. Kept in sync from
+    // refreshZoneLcdDisplay() below.
+    configureStaticLabel (zoneTagLabel, {});
+    zoneTagLabel.setFont (juce::FontOptions (15.0f, juce::Font::bold));
+    addAndMakeVisible (zoneTagLabel);
+
     addAndMakeVisible (editLayerCombo);
     editLayerCombo.setTextWhenNothingSelected ("EDIT LAYER");
     editLayerCombo.setTextWhenNoChoicesAvailable ("EDIT LAYER");
@@ -141,12 +150,6 @@ void MultisamplerEditor::paint (juce::Graphics& g)
 
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH, 4.0f, bounds.getWidth() - 4.0f);
-
-    if (dirty)
-    {
-        g.setColour (theme.accent);
-        g.fillEllipse ((float) getWidth() - 14.0f, 10.0f, 6.0f, 6.0f);
-    }
 }
 
 void MultisamplerEditor::resized()
@@ -165,6 +168,11 @@ void MultisamplerEditor::resized()
     addZoneButton.setBounds (header.removeFromRight (84));
     header.removeFromRight (4);
     editLayerCombo.setBounds (header.removeFromRight (150));
+    header.removeFromRight (12);
+
+    // Whatever's left between titleLabel and the button cluster — this used
+    // to just sit empty (see zoneTagLabel's declaration comment).
+    zoneTagLabel.setBounds (header);
 
     r.removeFromTop (6);
     zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
@@ -821,6 +829,7 @@ void MultisamplerEditor::refreshZoneLcdDisplay()
     {
         zoneLcd.clearZone();
         zoneLcd.setEditable (false);
+        zoneTagLabel.setText (zoneLcd.getZoneTitleText(), juce::dontSendNotification);
         return;
     }
 
@@ -830,6 +839,7 @@ void MultisamplerEditor::refreshZoneLcdDisplay()
     // multi-selection — but never a hover preview (matches
     // MultisamplerZoneLcd::setEditable's doc comment contract).
     zoneLcd.setEditable (! isPreview && ! selectedIds.empty());
+    zoneTagLabel.setText (zoneLcd.getZoneTitleText(), juce::dontSendNotification);
 }
 
 void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field, float value)
