@@ -122,6 +122,11 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
 
     // ── Zone LCD ─────────────────────────────────────────────────────────
     addAndMakeVisible (zoneLcd);
+    // Live meter reads processor.sfz2PeakL/R — the engine that actually
+    // renders MULTISAMPLER zone playback (see this class's own header doc
+    // comment on the debounced-SFZ-export sync path) — see
+    // MultisamplerZoneLcd::setMeterSource's doc comment for details.
+    zoneLcd.setMeterSource (&processor);
     zoneLcd.onFieldEdited = [this] (MultisamplerZoneField field, float value, bool isCommit)
     {
         applyZoneFieldEdit (field, value, isCommit);

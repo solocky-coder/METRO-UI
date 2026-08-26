@@ -1,6 +1,7 @@
 #include "MultisamplerZoneLcd.h"
 #include "../DysektLookAndFeel.h"
 #include "../UIHelpers.h"
+#include "../../PluginProcessor.h"
 #include <cmath>
 
 namespace
@@ -21,6 +22,28 @@ namespace
 MultisamplerZoneLcd::MultisamplerZoneLcd()
 {
     setInterceptsMouseClicks (true, true);
+
+    // 30Hz repaint timer for the live meter — same polling rate/convention
+    // as SliceControlBar::timerCallback's own "30Hz repaint timer for live
+    // meter/marker data" (see that method's doc comment). Always running,
+    // same as SCB's; timerCallback() itself no-ops the repaint whenever
+    // there's nothing live to show, so this costs nothing when idle.
+    startTimerHz (30);
+}
+
+void MultisamplerZoneLcd::setMeterSource (DysektProcessor* processorForMeter)
+{
+    meterProcessor = processorForMeter;
+    repaint();
+}
+
+void MultisamplerZoneLcd::timerCallback()
+{
+    // Only the meter needs continuous repaint — everything else here is
+    // event-driven (setZoneForDisplay / drag / hover already repaint
+    // themselves). No point repainting a hidden or meter-less LCD.
+    if (meterProcessor != nullptr && snapshot.valid && isVisible())
+        repaint();
 }
 
 // ── Display ──────────────────────────────────────────────────────────────
@@ -283,10 +306,23 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     const auto& theme = getTheme();
     auto bounds = getLocalBounds();
 
-    g.setColour (theme.darkBar.darker (0.15f));
-    g.fillRoundedRectangle (bounds.toFloat(), 4.0f);
+    // ── LCD-style frame — matches SliceControlBar's own waveform/LCD
+    // screen aesthetic (see SliceControlBar::paint's "LCD-style frame"
+    // block: square corners, dark inset screen, faint scanlines) instead
+    // of this component's old plain rounded flat panel, so the two zone
+    // inspectors read as the same kind of screen.
+    g.setColour (juce::Colour (0xFF0F0F0F));
+    g.fillRoundedRectangle (bounds.toFloat(), 0.0f);
     g.setColour (theme.separator);
-    g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
+    g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 0.0f, 1.0f);
+
+    auto screen = bounds.reduced (4);
+    g.setColour (theme.darkBar.darker (0.55f));
+    g.fillRoundedRectangle (screen.toFloat(), 0.0f);
+
+    g.setColour (juce::Colours::black.withAlpha (0.18f));
+    for (int y = screen.getY(); y < screen.getBottom(); y += 2)
+        g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
 
     cells.clear();
 
@@ -303,19 +339,28 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     // below), not here, so the full content box goes to the knob rows
     // instead of losing 20px to a title row every time.
     auto content = bounds.reduced (8, 4);
-
-    // Two rows of knob cells — row 1 has 7 fields (mapping + tune/pan/gain),
-    // row 2 has 8 (envelope/filter/routing, including the LOOP and MIX flat
-    // toggles) — matching SliceControlBar's own knob-row layouts (drawKnobCell
-    // in a straight horizontal run) instead of the old cramped 4/4/6 text-cell
-    // split.
     const int rowH = content.getHeight() / 2;
+    auto row1 = content.removeFromTop (rowH);
+    auto row2 = content;
 
-    auto layoutRow = [&] (juce::Rectangle<int> row, std::initializer_list<MultisamplerZoneField> fields)
+    // Divider between the two rows — same treatment SliceControlBar draws
+    // between its own row1/row2 (see SliceControlBar::paint's
+    // "g.drawHorizontalLine (si (36), ...)" call).
+    g.setColour (theme.separator);
+    g.drawHorizontalLine (row2.getY(), (float) row1.getX(), (float) row1.getRight());
+
+    // Fixed-width tightly-packed cells (rather than the old full-width-
+    // divided-by-count layout) grouped with thin vertical separators —
+    // matches SliceControlBar's own row layout (fixed psCellW knob/param
+    // cells, drawn left-to-right in logical groups with a separator line
+    // between each group) instead of every cell stretching to fill
+    // whatever space happens to be left. Leftover row-2 width goes to the
+    // meter, same as SCB's own "meter takes remaining space after EQ".
+    const int cellW  = juce::roundToInt (74.0f * uiScale);
+    const int sepGap = juce::roundToInt (8.0f * uiScale);
+
+    auto layoutGroup = [&] (juce::Rectangle<int> row, int& x, std::initializer_list<MultisamplerZoneField> fields)
     {
-        const int n = (int) fields.size();
-        const int cellW = row.getWidth() / juce::jmax (1, n);
-        int x = row.getX();
         for (auto f : fields)
         {
             juce::Rectangle<int> cellBounds (x, row.getY(), cellW, row.getHeight());
@@ -325,17 +370,39 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
         }
     };
 
-    layoutRow (content.removeFromTop (rowH),
-               { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
-                 MultisamplerZoneField::rootKey, MultisamplerZoneField::group,
-                 MultisamplerZoneField::tune, MultisamplerZoneField::pan,
-                 MultisamplerZoneField::gain });
-    layoutRow (content,
-               { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
-                 MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
-                 MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
-                 MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus,
-                 MultisamplerZoneField::showInMixer });
+    auto drawGroupSeparator = [&] (juce::Rectangle<int> row, int& x)
+    {
+        g.setColour (theme.separator.withAlpha (0.5f));
+        g.drawVerticalLine (x + juce::roundToInt (2.0f * uiScale),
+                            (float) row.getY() + 4.0f * uiScale,
+                            (float) row.getBottom() - 4.0f * uiScale);
+        x += sepGap;
+    };
+
+    // ── Row 1 — mapping | tune/pan/gain ─────────────────────────────────
+    {
+        int x = row1.getX();
+        layoutGroup (row1, x, { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
+                                 MultisamplerZoneField::rootKey, MultisamplerZoneField::group });
+        drawGroupSeparator (row1, x);
+        layoutGroup (row1, x, { MultisamplerZoneField::tune, MultisamplerZoneField::pan,
+                                 MultisamplerZoneField::gain });
+    }
+
+    // ── Row 2 — envelope | filter | routing | meter ─────────────────────
+    {
+        int x = row2.getX();
+        layoutGroup (row2, x, { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
+                                 MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
+                                 MultisamplerZoneField::release });
+        drawGroupSeparator (row2, x);
+        layoutGroup (row2, x, { MultisamplerZoneField::cutoff, MultisamplerZoneField::resonance });
+        drawGroupSeparator (row2, x);
+        layoutGroup (row2, x, { MultisamplerZoneField::outputBus, MultisamplerZoneField::showInMixer });
+        drawGroupSeparator (row2, x);
+
+        drawMeter (g, juce::Rectangle<int> (x, row2.getY(), juce::jmax (0, row2.getRight() - x), row2.getHeight()));
+    }
 }
 
 void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field)
@@ -516,6 +583,71 @@ void MultisamplerZoneLcd::drawMixerToggleCell (juce::Graphics& g, juce::Rectangl
     g.setColour (snapshot.showInMixer ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
     g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
     g.drawText (formatFieldValue (MultisamplerZoneField::showInMixer), r, juce::Justification::centred);
+}
+
+// =============================================================================
+// drawMeter — dual-bar L/R peak meter, same flat background/border +
+// green(0-75%)/red(75-100%) fill-split visual language as
+// SliceControlBar's own per-slice meter (see SliceControlBar::paint's
+// "Meter — takes remaining space after EQ" block), reused verbatim here
+// for UI consistency between the two LCDs. See setMeterSource()'s doc
+// comment in the header for what feeds pkL/pkR and why it's engine-wide
+// rather than resolved to this specific zone.
+// =============================================================================
+void MultisamplerZoneLcd::drawMeter (juce::Graphics& g, juce::Rectangle<int> bounds) const
+{
+    const auto& theme = getTheme();
+
+    const int meterX = bounds.getX();
+    const int meterY = bounds.getY() + juce::roundToInt (4.0f * uiScale);
+    const int meterW = juce::jmax (juce::roundToInt (20.0f * uiScale),
+                                    bounds.getWidth() - juce::roundToInt (4.0f * uiScale));
+    const int meterH = juce::jmin (bounds.getHeight() - juce::roundToInt (8.0f * uiScale),
+                                    juce::roundToInt (22.0f * uiScale));
+    if (meterW <= 0 || meterH <= 0)
+        return;
+
+    g.setColour (theme.separator.withAlpha (0.20f));
+    g.fillRect (meterX, meterY, meterW, meterH);
+    g.setColour (theme.separator.withAlpha (0.50f));
+    g.drawRect (meterX, meterY, meterW, meterH);
+
+    const float pkL = meterProcessor != nullptr ? meterProcessor->sfz2PeakL.load (std::memory_order_relaxed) : 0.0f;
+    const float pkR = meterProcessor != nullptr ? meterProcessor->sfz2PeakR.load (std::memory_order_relaxed) : 0.0f;
+
+    const int barH  = (meterH - 2) / 2;
+    const int inner = meterW - 4; // pixels available for signal fill
+
+    auto drawBar = [&] (int barY, float peak)
+    {
+        const int litW = juce::roundToInt (juce::jlimit (0.0f, 1.0f, peak) * (float) inner);
+        if (litW > 0)
+        {
+            const int greenW = juce::jmin (litW, juce::roundToInt (0.75f * (float) inner));
+            if (greenW > 0)
+            {
+                g.setColour (theme.accent.withAlpha (0.70f));
+                g.fillRect (meterX + 2, barY, greenW, barH);
+            }
+            const int redStart = juce::roundToInt (0.75f * (float) inner);
+            const int redW = litW - greenW;
+            if (redW > 0)
+            {
+                g.setColour (juce::Colour (0xFFE05050).withAlpha (0.80f));
+                g.fillRect (meterX + 2 + redStart, barY, redW, barH);
+            }
+        }
+        const int unlitStart = litW;
+        const int unlitW     = inner - unlitStart;
+        if (unlitW > 0)
+        {
+            g.setColour (theme.foreground.withAlpha (0.06f));
+            g.fillRect (meterX + 2 + unlitStart, barY, unlitW, barH);
+        }
+    };
+
+    drawBar (meterY + 1,            pkL);
+    drawBar (meterY + 1 + barH + 1, pkR);
 }
 
 // ── Mouse / editing ──────────────────────────────────────────────────────

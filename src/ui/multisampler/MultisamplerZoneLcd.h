@@ -22,7 +22,10 @@
 #include "MultisamplerZoneField.h"
 #include "../../audio/multisampler/SampleZone.h"
 
-class MultisamplerZoneLcd : public juce::Component
+class DysektProcessor;
+
+class MultisamplerZoneLcd : public juce::Component,
+                             private juce::Timer
 {
 public:
     MultisamplerZoneLcd();
@@ -79,6 +82,20 @@ public:
         scale here — see MultisamplerEditor::setUiScale(). */
     void setUiScale (float newScale) { uiScale = newScale; repaint(); }
 
+    /** Wires this LCD's meter to the live output of the SFZ-PLAYER 2 engine
+        (processor->sfz2PeakL/R) — that's the engine that actually renders
+        MULTISAMPLER zone playback (MultisamplerEditor debounces edits into
+        a cache-directory SFZ and hands it to sfzPlayer2 — see
+        MultisamplerEditor.h's class doc comment), so this is the real
+        signal genuinely tied to what's sounding. It isn't broken out per
+        zone, so every zone's LCD reflects the same engine-wide level while
+        anything from this instrument is playing — same limitation
+        SliceControlBar's own SFZ-PLAYER meter would have if it weren't
+        indexed per-slice. Pass nullptr to disable and just show an idle
+        (unlit) meter — e.g. before the owning editor has a processor
+        reference ready. */
+    void setMeterSource (DysektProcessor* processorForMeter);
+
     /** field/value/isCommit — isCommit is false on every intermediate drag
         frame and true exactly once at gesture end (mouse-up, double-click
         reset, or loop toggle). MultisamplerEditor owns clamping, dirty
@@ -116,6 +133,11 @@ private:
     } snapshot;
 
     bool editable = false;
+
+    // Live meter — see setMeterSource()'s doc comment for what this points
+    // at and why it's engine-wide rather than per-zone. Not owned.
+    DysektProcessor* meterProcessor = nullptr;
+    void timerCallback() override;
 
     struct Cell { juce::Rectangle<int> bounds; MultisamplerZoneField field; };
     std::vector<Cell> cells;
@@ -157,6 +179,13 @@ private:
     // as LOOP above (and the same concept as SliceControlBar's own
     // drawMixerToggleCell for a Slicer/SFZ-PLAYER slice).
     void drawMixerToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
+
+    // Dual-bar L/R peak meter — same flat background/border + green/red
+    // fill-split visual language as SliceControlBar's own per-slice meter
+    // (see SliceControlBar::paint's "Meter — takes remaining space after
+    // EQ" block), reused here for UI consistency between the two LCDs.
+    // See setMeterSource()'s doc comment for the live data source.
+    void drawMeter (juce::Graphics& g, juce::Rectangle<int> bounds) const;
 
     // Native value → 0-1 for the knob arc. Ranges mirror either the field's
     // own documented range in SampleZone.h (tune ±1200ct, cutoff 20Hz..
