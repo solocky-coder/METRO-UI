@@ -194,6 +194,14 @@ private:
                               juce::Point<float> localPos,
                               juce::Point<int> screenPos);
 
+    /** Right-click context menu for a click that landed on no zone at all
+        (mouseDown()'s hit == nullptr branch). Just "Paste Zone" — every
+        other item in showZoneContextMenu() above needs an existing zone
+        to act on. This is what makes pasting into empty space, or into a
+        just-created empty instrument that has no zones yet, possible. */
+    void showEmptyAreaContextMenu (juce::Point<float> localPos,
+                                   juce::Point<int> screenPos);
+
     /** "Repeat Zone": thin wrapper around MultisamplerInstrument::
         duplicateZone() (adjacent copy, same mapping) that also moves
         selection to the new zone and fires onZoneAdded — the menu-driven

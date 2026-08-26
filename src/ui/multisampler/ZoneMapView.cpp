@@ -320,6 +320,20 @@ void ZoneMapView::mouseDown (const juce::MouseEvent& e)
 
     if (hit == nullptr)
     {
+        if (e.mods.isRightButtonDown())
+        {
+            // No zone under the cursor: Trim/Repeat/Copy/Delete all need an
+            // existing zone to act on, so the only thing that makes sense
+            // here is Paste Zone — see showEmptyAreaContextMenu(). This is
+            // also what makes "copy a zone, then paste it into a brand new
+            // (empty) instrument" possible: pasteZoneAt() only needs a
+            // clipboard and an instrument, never an existing zone to land
+            // near or on top of.
+            showEmptyAreaContextMenu (p, e.getScreenPosition());
+            dragMode = DragMode::none;
+            return;
+        }
+
         if (! e.mods.isShiftDown() && ! selectedIds.empty())
         {
             selectedIds.clear();
@@ -632,6 +646,34 @@ void ZoneMapView::pasteZoneAt (juce::Point<float> localPos)
 }
 
 // ── Context menu ─────────────────────────────────────────────────────────
+
+void ZoneMapView::showEmptyAreaContextMenu (juce::Point<float> localPos,
+                                            juce::Point<int> screenPos)
+{
+    if (instrument == nullptr) return;
+
+    // Paste Zone is the only item that makes sense with no zone under the
+    // cursor — everything else in showZoneContextMenu() (Trim, Repeat,
+    // Copy, Delete, Zone Color) needs an existing zone to act on. Still
+    // shown (disabled) rather than suppressing the menu entirely when the
+    // clipboard is empty, same "discoverable but greyed out" treatment
+    // showZoneContextMenu() already gives its own Paste Zone item.
+    auto* topLvl = getTopLevelComponent();
+    const float ms = DysektLookAndFeel::getMenuScale();
+    juce::PopupMenu menu;
+    menu.addItem (5, "Paste Zone", zoneClipboard.has_value());
+    menu.showMenuAsync (
+        juce::PopupMenu::Options()
+            .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
+            .withParentComponent (topLvl)
+            .withStandardItemHeight ((int) (24 * ms)),
+        [this, localPos] (int result)
+        {
+            if (instrument == nullptr) return;   // view may have been repointed while the menu was open
+            if (result == 5)
+                pasteZoneAt (localPos);
+        });
+}
 
 void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId,
                                        juce::Point<float> localPos,
