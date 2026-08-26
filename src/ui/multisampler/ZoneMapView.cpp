@@ -571,6 +571,66 @@ void ZoneMapView::deleteZones (const juce::Uuid& rightClickedId)
     if (onZoneDeleted)       onZoneDeleted();
 }
 
+void ZoneMapView::repeatZone (const juce::Uuid& zoneId)
+{
+    if (instrument == nullptr) return;
+
+    // MultisamplerInstrument::duplicateZone() already does the actual work
+    // (fresh id, inserted right after the source zone) — this just gives
+    // it a right-click-menu entry point and follows the same
+    // select-the-result / rebuild / notify pattern every other mutating
+    // path in this class uses.
+    auto* added = instrument->duplicateZone (zoneId);
+    if (added == nullptr) return;
+
+    selectedIds = { added->id };
+    dragMode = DragMode::none;
+    rebuildLayout();
+    repaint();
+
+    if (onSelectionChanged) onSelectionChanged();
+    if (onZoneAdded)        onZoneAdded();
+}
+
+void ZoneMapView::pasteZoneAt (juce::Point<float> localPos)
+{
+    if (instrument == nullptr || ! zoneClipboard.has_value()) return;
+
+    SampleZone newZone = *zoneClipboard;
+    newZone.id = juce::Uuid();
+
+    // Recentre the copied zone's own key/velocity span on the click point
+    // rather than reusing its old mapping verbatim — an exact-position
+    // duplicate is what "Repeat Zone" is for; pasting is more useful when
+    // it lands wherever the user right-clicked. Each axis is clamped
+    // independently so a paste near an edge shrinks against that edge
+    // instead of being silently dropped or ending up with an inverted
+    // (high < low) range.
+    const int keySpan = juce::jmax (0, zoneClipboard->highKey - zoneClipboard->lowKey);
+    const int velSpan = juce::jmax (0, zoneClipboard->highVelocity - zoneClipboard->lowVelocity);
+
+    const int centreKey = keyForX (localPos.x);
+    const int centreVel = velocityForY (localPos.y);
+
+    const int newLowKey = juce::jlimit (0, 127 - keySpan, centreKey - keySpan / 2);
+    const int newLowVel = juce::jlimit (1, 127 - velSpan, centreVel - velSpan / 2);
+
+    newZone.lowKey       = newLowKey;
+    newZone.highKey      = newLowKey + keySpan;
+    newZone.lowVelocity  = newLowVel;
+    newZone.highVelocity = newLowVel + velSpan;
+
+    const auto& added = instrument->addZone (std::move (newZone));
+
+    selectedIds = { added.id };
+    dragMode = DragMode::none;
+    rebuildLayout();
+    repaint();
+
+    if (onSelectionChanged) onSelectionChanged();
+    if (onZoneAdded)        onZoneAdded();
+}
+
 // ── Context menu ─────────────────────────────────────────────────────────
 
 void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId,
@@ -637,6 +697,14 @@ void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId,
         menu.addSubMenu ("Edit Layer (" + juce::String ((int) layerIds.size()) + ")", layerSub);
         menu.addSeparator();
     }
+    // Trim/Repeat/Copy/Paste sit together above Delete, same grouping as
+    // ZONES' equivalent row menu (see PluginEditor.cpp's onRowRightClicked)
+    // — the destructive action stays isolated below its own separator.
+    menu.addItem (2, "Trim Sample");
+    menu.addItem (3, multi ? "Repeat " + juce::String ((int) selectedIds.size()) + " Zones" : "Repeat Zone");
+    menu.addItem (4, multi ? "Copy " + juce::String ((int) selectedIds.size()) + " Zones" : "Copy Zone");
+    menu.addItem (5, "Paste Zone", zoneClipboard.has_value());
+    menu.addSeparator();
     menu.addItem (1, multi ? "Delete " + juce::String ((int) selectedIds.size()) + " Zones" : "Delete Zone");
     menu.addSeparator();
     menu.addSubMenu ("Zone Color", colourSub);
@@ -645,7 +713,7 @@ void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId,
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
             .withParentComponent (topLvl)
             .withStandardItemHeight ((int) (24 * ms)),
-        [this, zoneId, layerIds] (int result)
+        [this, zoneId, layerIds, localPos, multi] (int result)
         {
             if (instrument == nullptr) return;   // view may have been repointed while the menu was open
 
@@ -656,6 +724,38 @@ void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId,
             else if (result == 1)
             {
                 deleteZones (zoneId);
+            }
+            else if (result == 2)
+            {
+                // Just reports the request — this view has no knowledge of
+                // AddZoneTrimOverlay (that's MultisamplerEditor's), see
+                // onTrimZoneRequested's doc comment. Trims only the
+                // right-clicked zone even when part of a multi-selection —
+                // unlike Delete/Repeat/Copy, "trim" doesn't have a
+                // meaningful bulk form (one waveform, one pair of handles).
+                if (onTrimZoneRequested) onTrimZoneRequested (zoneId);
+            }
+            else if (result == 3)
+            {
+                // Repeats every selected zone, in selection order, if the
+                // right-clicked zone is part of a multi-selection — same
+                // "act on the whole selection" rule deleteZones() already
+                // follows — otherwise just the one zone.
+                for (const auto& id : multi ? selectedIds : std::vector<juce::Uuid> { zoneId })
+                    repeatZone (id);
+            }
+            else if (result == 4)
+            {
+                // Only the right-clicked zone's full data is ever copied,
+                // even out of a multi-selection — a single clipboard slot
+                // can't meaningfully hold several zones at once, and Paste
+                // always creates exactly one new zone.
+                if (auto* z = instrument->findZone (zoneId))
+                    zoneClipboard = *z;
+            }
+            else if (result == 5)
+            {
+                pasteZoneAt (localPos);
             }
             else if (result >= 20 && result < 36)
             {

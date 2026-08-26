@@ -295,6 +295,17 @@ private:
                            int64_t trimStart, int64_t trimEnd, int64_t totalFrames,
                            int lo, int hi, int root);
 
+    /** "Trim Sample" (ZoneMapView::onTrimZoneRequested, right-click menu):
+        reopens the same AddZoneTrimOverlay the Add Zone flow uses, but
+        seeded with an *existing* zone's current sampleFile/sampleStart/
+        sampleEnd instead of starting a brand new zone. On confirm, writes
+        the result straight back into that zone's sampleStart/sampleEnd
+        (mapping/other fields untouched) rather than handing off to
+        beginAddZoneKeyMapping()/commitAddedZone() — there's no key range
+        to collect, the zone is already mapped. No-op if the zone's sample
+        is currently missing (nothing to decode/trim). */
+    void beginTrimExistingZone (const juce::Uuid& zoneId);
+
     void refreshInspectorFromSelection();
 
     /** Resolves what zoneLcd should currently show — hover preview, the

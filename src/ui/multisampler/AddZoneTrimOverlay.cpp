@@ -1,6 +1,7 @@
 #include "AddZoneTrimOverlay.h"
 #include "../UIHelpers.h"
 #include "../../audio/SampleData.h"
+#include "../../audio/multisampler/SampleZone.h"
 #include <cmath>
 
 // =============================================================================
@@ -131,8 +132,10 @@ private:
 //  AddZoneTrimOverlay
 // =============================================================================
 
-AddZoneTrimOverlay::AddZoneTrimOverlay (const juce::File& sampleFile, juce::ThreadPool& decodePool)
-    : file (sampleFile), pool (decodePool)
+AddZoneTrimOverlay::AddZoneTrimOverlay (const juce::File& sampleFile, juce::ThreadPool& decodePool,
+                                         int64_t initialTrimStart, int64_t initialTrimEnd)
+    : file (sampleFile), pool (decodePool),
+      seedTrimStart (initialTrimStart), seedTrimEnd (initialTrimEnd)
 {
     const auto& T = getTheme();
 
@@ -194,7 +197,20 @@ void AddZoneTrimOverlay::handleDecodeSuccess (int64_t newTotalFrames, double new
     peaksMax         = std::move (peakMax);
     peaksMin         = std::move (peakMin);
 
-    resetTrim();   // seeds trimStart/trimEnd to the full file
+    // Seed from the constructor args (an existing zone's current trim
+    // points, when reopened via "Trim Sample" — see this class's header
+    // comment) rather than unconditionally resetting to the full file;
+    // resolveSampleRange() is the same clamp/"-1 == full length" logic
+    // SampleZone.h's own accessors use, so an out-of-range or stale seed
+    // (e.g. the file on disk shrank since the zone was last saved) can
+    // never leave trimStart/trimEnd negative or past totalFrames. RESET
+    // (see resetTrim()) still always restores the full file regardless —
+    // this seed only affects the starting selection.
+    const auto seeded = resolveSampleRange (seedTrimStart, seedTrimEnd, totalFrames);
+    trimStart = seeded.start;
+    trimEnd   = seeded.end;
+    if (onTrimChanged)
+        onTrimChanged (trimStart, trimEnd);
     nextBtn.setEnabled (true);
     repaint();
 }

@@ -22,7 +22,9 @@
 // =============================================================================
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "../../audio/multisampler/SampleZone.h"
 #include <functional>
+#include <optional>
 
 struct MultisamplerInstrument;
 class DysektProcessor;
@@ -86,6 +88,24 @@ public:
         time this fires), but kept separate so the owning panel can tell a
         deletion apart from a drag when it matters (e.g. status text). */
     std::function<void()> onZoneDeleted;
+
+    /** Fired after "Repeat Zone" or "Paste Zone" (right-click menu below)
+        adds a brand new zone to the instrument — same "commit" contract as
+        onZoneEditCommitted (model already updated, selection already moved
+        to the new zone) but kept separate so the owning panel can tell a
+        zone being added apart from an in-place edit, the same way
+        onZoneDeleted is kept separate for removals. */
+    std::function<void()> onZoneAdded;
+
+    /** Fired when "Trim Sample" (right-click menu below) is chosen for a
+        zone. This view never opens the trim overlay itself — that's
+        MultisamplerEditor's AddZoneTrimOverlay, which this class doesn't
+        know about — so it just reports which zone the user asked to
+        re-trim and lets the owning panel drive the rest (open the overlay
+        seeded with that zone's current sampleFile/sampleStart/sampleEnd,
+        then write the result back via refresh()). No-op if the owning
+        panel doesn't wire this up. */
+    std::function<void (juce::Uuid)> onTrimZoneRequested;
 
     /** Fired whenever the zone being shown for read-only hover/inspection
         purposes changes — either because the cursor moved to a new zone (or
@@ -167,11 +187,36 @@ private:
 
     /** Right-click context menu. When several zones overlap at the click,
         an "Edit Layer" submenu lets the user bring any one to the visual
-        front and select it for editing. Also includes Delete Zone and the
-        standard 16-colour zone palette. */
+        front and select it for editing. Also includes Trim Sample, Repeat
+        Zone, Copy Zone, Paste Zone, Delete Zone, and the standard 16-colour
+        zone palette. */
     void showZoneContextMenu (const juce::Uuid& zoneId,
                               juce::Point<float> localPos,
                               juce::Point<int> screenPos);
+
+    /** "Repeat Zone": thin wrapper around MultisamplerInstrument::
+        duplicateZone() (adjacent copy, same mapping) that also moves
+        selection to the new zone and fires onZoneAdded — the menu-driven
+        counterpart to that model method, which existed but had no UI path
+        to it before this menu item. */
+    void repeatZone (const juce::Uuid& zoneId);
+
+    /** "Paste Zone": inserts a new zone carrying every field of
+        zoneClipboard except id (fresh) and mapping, which is instead
+        recentred on `localPos` at the copied zone's own key/velocity span
+        — pasting somewhere else on the grid is more useful than an exact
+        overlapping duplicate, which "Repeat Zone" above already covers.
+        No-op if zoneClipboard is empty (menu item is disabled in that
+        case; this is just belt-and-suspenders). */
+    void pasteZoneAt (juce::Point<float> localPos);
+
+    // Set by "Copy Zone", read by "Paste Zone" — see showZoneContextMenu().
+    // Deliberately a plain optional<SampleZone> rather than just a
+    // juce::Uuid: the source zone can be deleted (or this view repointed
+    // at a different instrument entirely) between copy and paste, and the
+    // clipboard should still work, the same way a text clipboard doesn't
+    // die when its source document closes.
+    std::optional<SampleZone> zoneClipboard;
 
     MultisamplerInstrument* instrument = nullptr;
     std::vector<ZoneRect> cachedRects;   // instrument order, except the promoted edit layer is last/front

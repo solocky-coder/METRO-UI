@@ -65,6 +65,20 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         scheduleEngineSync();
         if (onInstrumentChanged) onInstrumentChanged();
     };
+    zoneMapView.onZoneAdded = [this]
+    {
+        // "Repeat Zone" / "Paste Zone" (right-click menu) — same downstream
+        // effects as onZoneEditCommitted/onZoneDeleted above; adding a zone
+        // is just another committed model edit.
+        dirty = true;
+        refreshInspectorFromSelection();
+        scheduleEngineSync();
+        if (onInstrumentChanged) onInstrumentChanged();
+    };
+    zoneMapView.onTrimZoneRequested = [this] (juce::Uuid zoneIdToTrim)
+    {
+        beginTrimExistingZone (zoneIdToTrim);
+    };
 
     configureStaticLabel (titleLabel, "MULTISAMPLER");
     titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
@@ -358,6 +372,65 @@ void MultisamplerEditor::commitAddedZone (const juce::File& sampleFile,
     scheduleEngineSync();
     if (onInstrumentChanged) onInstrumentChanged();
     repaint();
+}
+
+void MultisamplerEditor::beginTrimExistingZone (const juce::Uuid& zoneId)
+{
+    // "Trim Sample" (right-click menu) — reopens the same overlay used to
+    // trim a brand new sample in the Add Zone flow, but seeded with an
+    // existing zone's current sampleFile/sampleStart/sampleEnd instead. See
+    // this method's declaration comment for why it writes straight back to
+    // the zone rather than routing through beginAddZoneKeyMapping()/
+    // commitAddedZone().
+    auto* zone = instrument.findZone (zoneId);
+    if (zone == nullptr) return;
+
+    // Nothing to decode/trim if the sample doesn't currently resolve —
+    // same guard AddZoneTrimOverlay's own decode-failure path would hit
+    // anyway, just without the wasted round trip through the file system.
+    if (zone->hasMissingSample()) return;
+
+    zoneTrimOverlay = std::make_unique<AddZoneTrimOverlay> (zone->sampleFile, processor.fileLoadPool,
+                                                             zone->sampleStart, zone->sampleEnd);
+    zoneTrimOverlay->onResult = [this, zoneId] (AddZoneTrimOverlay::Result result, bool confirmed)
+    {
+        // Same deferred-reset use-after-free fix beginAddZoneTrim() uses:
+        // let onResult unwind before the overlay (currently on the call
+        // stack) is destroyed.
+        juce::MessageManager::callAsync ([this]
+        {
+            if (zoneTrimOverlay)
+            {
+                removeChildComponent (zoneTrimOverlay.get());
+                zoneTrimOverlay.reset();
+            }
+        });
+
+        if (! confirmed) return;   // cancelled or decode failed — instrument untouched
+
+        auto* z = instrument.findZone (zoneId);
+        if (z == nullptr) return;   // zone was deleted while the overlay was open
+
+        // Same "-1 == full sample length" convention commitAddedZone()
+        // writes for a brand new zone — see its comment — so re-trimming
+        // back out to the full file round-trips to the same sampleEnd a
+        // never-trimmed zone would have, not a literal frame count frozen
+        // to this file's length right now.
+        const bool spansWholeFile = result.start == 0 && result.end >= result.totalFrames;
+        z->sampleStart = result.start;
+        z->sampleEnd   = spansWholeFile ? -1 : result.end;
+
+        dirty = true;
+        zoneMapView.refresh();
+        refreshInspectorFromSelection();
+        scheduleEngineSync();
+        if (onInstrumentChanged) onInstrumentChanged();
+        repaint();
+    };
+
+    addAndMakeVisible (*zoneTrimOverlay);
+    zoneTrimOverlay->setBounds (getLocalBounds());
+    zoneTrimOverlay->toFront (true);
 }
 
 // ── SFZ import / export ─────────────────────────────────────────────────
