@@ -1086,13 +1086,30 @@ private:
         // region in both places — see SfzZoneColours.h for why colour is a
         // pure function of that index rather than something handed across
         // threads.
+        //
+        // Matching direction: when two <region> blocks have overlapping key
+        // ranges (e.g. a main hit zone plus a group= mute/choke-group
+        // companion covering nearly the same keys — a legitimate Multisampler
+        // construct, not malformed input), a note in the overlap can match
+        // more than one entry in regionRanges. sfizz renders the actual
+        // per-note audio as a black box and never reports back which region
+        // it used, so there is no authoritative answer here — but scanning
+        // LAST-to-first and keeping the first hit (i.e. preferring the region
+        // that appears LATEST in the file) is a better tie-break than the
+        // previous first-to-first scan: MultisamplerInstrument::zones is
+        // rendered into <region> blocks in list order, so "latest in file"
+        // corresponds to "most recently added/edited zone" — the one a user
+        // mid-edit (e.g. just toggled MIX on) actually cares about. Previously
+        // scanning top-to-bottom meant an older, unrelated zone earlier in the
+        // list could permanently shadow a newer overlapping one's colour/
+        // outputBus/showInMixer, with no way for the newer zone to ever win.
         if (target == SoundFontLoadTarget::SfzPlayer2
             && file.getFileExtension().toLowerCase() == ".sfz")
         {
             const auto regionRanges = parseSfzAllRegionKeyRanges (file);
             for (auto& desc : payload->slices)
             {
-                for (int i = 0; i < (int) regionRanges.size(); ++i)
+                for (int i = (int) regionRanges.size() - 1; i >= 0; --i)
                 {
                     const auto& rk = regionRanges[(size_t) i];
                     if (rk.loKey < 0 || desc.midiNote < rk.loKey || desc.midiNote > rk.hiKey)
@@ -1103,7 +1120,7 @@ private:
                     desc.zoneHiKey      = rk.hiKey;
                     desc.outputBus      = rk.outputBus;   // -1 if the region had no dysekt_output_bus opcode
                     desc.showInMixer    = rk.showInMixer;
-                    break;   // first matching region wins (matches Step 3c's rule)
+                    break;   // last matching region wins (see comment above)
                 }
             }
         }
