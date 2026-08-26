@@ -1399,19 +1399,16 @@ void DysektProcessor::handleCommand (const Command& cmd)
                     {
                         s.outputBus = juce::jlimit (0, 15, (int) val);
                         if (!skipLock) s.lockMask |= kLockOutputBus;
-                        // Routing a slice off Main is a strong enough signal
-                        // that it needs its own mixer fader — surface it
-                        // automatically rather than making the user also
-                        // remember to pin it (e.g. right after the drum-kit
-                        // auto-routing prompt assigns buses 1-15). Only ever
-                        // turns this on, never off — a slice explicitly
-                        // hidden via FieldShowInMixer stays hidden only as
-                        // long as it's back on Main; rerouting it off Main
-                        // again re-shows it, which matches "this slice now
-                        // needs attention" rather than fighting a user's
-                        // earlier explicit hide.
-                        if (s.outputBus != 0)
-                            s.showInMixer = true;
+                        // MIX visibility is user-controlled only, via the
+                        // MIX toggle (FieldShowInMixer below) — routing a
+                        // slice off Main no longer implicitly shows it in
+                        // the mixer (previously it did, on the reasoning
+                        // that a custom bus "needs its own fader"; in
+                        // practice this meant every zone in an auto-routed
+                        // drum kit — buses 1-15 assigned round-robin by the
+                        // drum-kit-detected prompt — showed a mixer row
+                        // whether or not MIX was ever touched, which is not
+                        // the wanted behaviour).
                         // SFZ-PLAYER only: a "zone" as the user thinks of it
                         // (one key range) is actually one Slice PER KEY in
                         // that range (see SoundFontLoader's per-note
@@ -1433,7 +1430,6 @@ void DysektProcessor::handleCommand (const Command& cmd)
                                     continue;
                                 sib.outputBus = s.outputBus;
                                 if (!skipLock) sib.lockMask |= kLockOutputBus;
-                                if (sib.outputBus != 0) sib.showInMixer = true;
                             }
                         }
                         break;
@@ -3323,7 +3319,11 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     if (desc.outputBus >= 0)
                     {
                         sliceManager2.getSlice (tailIdx).outputBus = desc.outputBus;
-                        if (desc.outputBus != 0 || desc.showInMixer)
+                        // MIX visibility is user-controlled only (the
+                        // dysekt_show_in_mixer opcode) — routing off Main no
+                        // longer implicitly pins a slice into the mixer, see
+                        // the pass-2 comment below for why this changed.
+                        if (desc.showInMixer)
                             sliceManager2.getSlice (tailIdx).showInMixer = true;
                     }
                 }
@@ -3354,12 +3354,17 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 if (pin.outputBus >= 0)
                     sliceManager2.getSlice (pin.sliceIdx).outputBus = pin.outputBus;
 
-                // MIX pin: either the zone's own manual override
-                // (SampleZone::showInMixer) or the existing auto-pin for
-                // any zone routed off Main — see PendingZonePin's doc
-                // comment above and SampleZone::showInMixer's own comment
-                // for why this is an OR, never a replacement.
-                if (pin.showInMixer || pin.outputBus > 0)
+                // MIX pin: driven solely by the zone's own manual toggle
+                // (SampleZone::showInMixer / SliceControlBar's MIX cell).
+                // Previously this also auto-pinned any zone routed off Main
+                // (pin.outputBus > 0) on the reasoning that a custom bus
+                // "needs its own fader" — but that meant every zone in an
+                // auto-routed drum kit (buses 1-15 assigned round-robin by
+                // the drum-kit-detected prompt) showed a mixer row whether
+                // or not the user ever touched MIX, which is not the wanted
+                // behaviour: a zone should appear in the mixer only when MIX
+                // is explicitly SHOWN, output bus routing notwithstanding.
+                if (pin.showInMixer)
                     sliceManager2.getSlice (pin.sliceIdx).showInMixer = true;
             }
 
