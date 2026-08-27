@@ -351,6 +351,14 @@ private:
     // duplicating that hover/selection resolution logic here.
     juce::Label  zoneTagLabel;
 
+    // PREVIEW/AUDITIONING badge for whatever zoneTagLabel is currently
+    // showing — the other half of the title row MultisamplerZoneLcd used
+    // to draw internally (see MultisamplerZoneLcd::isShowingPreview()/
+    // isShowingAuditioning()). Sits immediately right of zoneTagLabel;
+    // blank and effectively invisible whenever neither flag is set. Kept
+    // in sync from refreshZoneLcdDisplay() alongside zoneTagLabel.
+    juce::Label  zoneBadgeLabel;
+
     // Toolbar promotion of the right-click zone-map "Edit Layer" submenu
     // (see ZoneMapView::showZoneContextMenu) — lets the user reach a buried
     // layer without needing to right-click the exact stack of tiles first.
@@ -395,7 +403,14 @@ private:
     juce::Uuid  hoveredZoneId = juce::Uuid::null();     // mirrors ZoneMapView::hoverZoneId; juce::Uuid::null() when the cursor isn't over a zone
 
     static constexpr int kEngineSyncDebounceMs = 300;
-    static constexpr int kHeaderH    = 32;
+
+    // Bumped from 32 — the header row now also carries zoneTagLabel/
+    // zoneBadgeLabel (the title text/badge that used to live inside
+    // MultisamplerZoneLcd's own title row) alongside titleLabel and the
+    // toolbar buttons, and those buttons now render with the LookAndFeel's
+    // taller font tier (see DysektLookAndFeel::drawButtonText's h<34
+    // bracket) — both need the extra height to read comfortably.
+    static constexpr int kHeaderH    = 40;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultisamplerEditor)
 };

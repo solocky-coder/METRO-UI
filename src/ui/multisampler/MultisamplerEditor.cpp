@@ -81,8 +81,31 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     };
 
     configureStaticLabel (titleLabel, "MULTISAMPLER");
-    titleLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    // Bumped 13->17 per feedback on the annotated screenshot — the section
+    // title read too small next to the rest of the (now taller, kHeaderH
+    // 32->40) header row.
+    titleLabel.setFont (juce::FontOptions (17.0f, juce::Font::bold));
     addAndMakeVisible (titleLabel);
+
+    // zoneTagLabel/zoneBadgeLabel start blank — refreshZoneLcdDisplay()
+    // (called at the end of this constructor) populates them from
+    // zoneLcd.getZoneTitleText()/isShowingPreview()/isShowingAuditioning()
+    // the same way it already does for zoneLcd itself.
+    configureStaticLabel (zoneTagLabel, {});
+    // Right-justified within its fixed-width slot (set in resized()) so
+    // the text itself hugs the toolbar cluster it now sits beside, rather
+    // than starting flush against the empty header space to its left.
+    zoneTagLabel.setJustificationType (juce::Justification::centredRight);
+    // Bumped 12.5->15 alongside the reposition in resized() — sitting next
+    // to the toolbar cluster now instead of trailing off in the empty
+    // middle of the header, it needed to read as prominently as the
+    // buttons beside it.
+    zoneTagLabel.setFont (juce::FontOptions (15.0f, juce::Font::bold));
+    addAndMakeVisible (zoneTagLabel);
+
+    configureStaticLabel (zoneBadgeLabel, {});
+    zoneBadgeLabel.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    addAndMakeVisible (zoneBadgeLabel);
 
     addAndMakeVisible (editLayerCombo);
     editLayerCombo.setTextWhenNothingSelected ("EDIT LAYER");
@@ -165,6 +188,22 @@ void MultisamplerEditor::resized()
     addZoneButton.setBounds (header.removeFromRight (84));
     header.removeFromRight (4);
     editLayerCombo.setBounds (header.removeFromRight (150));
+
+    // zoneTagLabel/zoneBadgeLabel sit immediately left of the toolbar
+    // cluster (editLayerCombo onward) rather than stretching across the
+    // whole gap after titleLabel — per feedback on the annotated
+    // screenshot, floating the tag alone at the far left (trailing off
+    // into empty space before the buttons) read as disconnected from the
+    // rest of the toolbar it actually describes. zoneBadgeLabel (the
+    // PREVIEW/AUDITIONING badge) gets a small fixed slot right against the
+    // combo; zoneTagLabel ("ZONE NN   name") takes a fixed width against
+    // that, right-aligned so it reads as attached to the toolbar even when
+    // the zone name is short. Whatever's left between titleLabel and this
+    // cluster is intentionally blank header background.
+    header.removeFromRight (8);
+    zoneBadgeLabel.setBounds (header.removeFromRight (90));
+    header.removeFromRight (6);
+    zoneTagLabel.setBounds (header.removeFromRight (240));
 
     r.removeFromTop (6);
     zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
@@ -821,6 +860,8 @@ void MultisamplerEditor::refreshZoneLcdDisplay()
     {
         zoneLcd.clearZone();
         zoneLcd.setEditable (false);
+        zoneTagLabel.setText ({}, juce::dontSendNotification);
+        zoneBadgeLabel.setText ({}, juce::dontSendNotification);
         return;
     }
 
@@ -830,6 +871,28 @@ void MultisamplerEditor::refreshZoneLcdDisplay()
     // multi-selection — but never a hover preview (matches
     // MultisamplerZoneLcd::setEditable's doc comment contract).
     zoneLcd.setEditable (! isPreview && ! selectedIds.empty());
+
+    // zoneTagLabel/zoneBadgeLabel mirror exactly what zoneLcd's own title
+    // row used to draw internally — sourced from zoneLcd itself (rather
+    // than re-deriving displayIndex/isPreview here) so there's a single
+    // place (setZoneForDisplay's snapshot) that owns that formatting.
+    zoneTagLabel.setText (zoneLcd.getZoneTitleText(), juce::dontSendNotification);
+
+    const auto& theme = getTheme();
+    if (zoneLcd.isShowingPreview())
+    {
+        zoneBadgeLabel.setText ("PREVIEW", juce::dontSendNotification);
+        zoneBadgeLabel.setColour (juce::Label::textColourId, theme.accent.withAlpha (0.8f));
+    }
+    else if (zoneLcd.isShowingAuditioning())
+    {
+        zoneBadgeLabel.setText ("AUDITIONING", juce::dontSendNotification);
+        zoneBadgeLabel.setColour (juce::Label::textColourId, theme.accent);
+    }
+    else
+    {
+        zoneBadgeLabel.setText ({}, juce::dontSendNotification);
+    }
 }
 
 void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field, float value)

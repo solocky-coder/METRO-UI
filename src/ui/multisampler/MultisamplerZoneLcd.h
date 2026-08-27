@@ -63,6 +63,23 @@ public:
         those and setEditable(false) alongside it. */
     void setEditable (bool shouldEdit);
 
+    /** "ZONE NN   name" for whatever setZoneForDisplay()/clearZone() last
+        set the internal snapshot to — the exact text paint() used to draw
+        in this component's own title row before that row moved out to
+        MultisamplerEditor's header toolbar (see MultisamplerEditor::
+        zoneTagLabel). Returns an empty string when nothing is currently
+        displayed (paint()'s "NO ZONE SELECTED" state); callers should
+        blank/hide their own label in that case rather than show stale
+        text. */
+    juce::String getZoneTitleText() const;
+
+    /** Mirror snapshot.isPreview/isAuditioning so MultisamplerEditor's
+        zoneBadgeLabel can reproduce the same PREVIEW/AUDITIONING badge
+        that used to be drawn on the right edge of this component's title
+        row. Both false whenever nothing is displayed. */
+    bool isShowingPreview()     const noexcept { return snapshot.valid && snapshot.isPreview; }
+    bool isShowingAuditioning() const noexcept { return snapshot.valid && snapshot.isAuditioning; }
+
     /** Scales every font size this component draws with, so its text keeps
         pace with the rest of the app's host-window-driven scaling (see
         DysektEditor::resized()'s `sf`/`si()`). 1.0 = the design-time sizes
@@ -79,11 +96,15 @@ public:
         applyZoneFieldEdit is the single place values are clamped). */
     std::function<void (MultisamplerZoneField field, float value, bool isCommit)> onFieldEdited;
 
-    // Taller than the original 76px flat-text layout — knob cells need a
-    // title row plus two full rows of knob+label+value (SliceControlBar's
-    // own psCellH is 32px per row); see MultisamplerEditor::resized(),
-    // which reads this constant when it reserves space for this component.
-    static constexpr int kPreferredHeight = 100;
+    // Taller than the original 76px flat-text layout — knob cells need two
+    // full rows of knob+label+value (SliceControlBar's own psCellH is 32px
+    // per row) plus a little breathing room; see MultisamplerEditor::
+    // resized(), which reads this constant when it reserves space for this
+    // component. No longer includes a title row's worth of height — that
+    // row (and its PREVIEW/AUDITIONING badge) moved out to
+    // MultisamplerEditor's own header toolbar (zoneTagLabel/zoneBadgeLabel),
+    // so this constant shrank by the ~20px that row used to cost.
+    static constexpr int kPreferredHeight = 80;
 
 private:
     float uiScale = 1.0f;

@@ -70,6 +70,14 @@ void MultisamplerZoneLcd::clearZone()
     repaint();
 }
 
+juce::String MultisamplerZoneLcd::getZoneTitleText() const
+{
+    if (! snapshot.valid)
+        return {};
+
+    return "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
+}
+
 void MultisamplerZoneLcd::setEditable (bool shouldEdit)
 {
     if (editable == shouldEdit) return;
@@ -285,27 +293,11 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
 
     auto content = bounds.reduced (8, 4);
 
-    // Title row — name, index, preview/auditioning badges.
-    auto titleRow = content.removeFromTop (18);
-    g.setColour (theme.foreground);
-    g.setFont (DysektLookAndFeel::makeFont (11.5f * uiScale, true));
-    juce::String title = "ZONE " + juce::String (snapshot.displayIndex + 1) + "   " + snapshot.name;
-    g.drawText (title, titleRow, juce::Justification::centredLeft);
-
-    if (snapshot.isPreview)
-    {
-        g.setColour (theme.accent.withAlpha (0.8f));
-        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
-        g.drawText ("PREVIEW", titleRow, juce::Justification::centredRight);
-    }
-    else if (snapshot.isAuditioning)
-    {
-        g.setColour (theme.accent);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f * uiScale, true));
-        g.drawText ("AUDITIONING", titleRow, juce::Justification::centredRight);
-    }
-
-    content.removeFromTop (2);
+    // Title row (name/index, PREVIEW/AUDITIONING badge) no longer drawn
+    // here — it moved out to MultisamplerEditor's header toolbar
+    // (zoneTagLabel/zoneBadgeLabel, kept in sync from getZoneTitleText()/
+    // isShowingPreview()/isShowingAuditioning() via refreshZoneLcdDisplay()).
+    // All of `content` now goes straight to the knob grid.
 
     // Two rows of knob cells — row 1 has 7 fields (mapping + tune/pan/gain),
     // row 2 has 8 (envelope/filter/routing, including the LOOP and MIX flat
