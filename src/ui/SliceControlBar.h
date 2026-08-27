@@ -75,9 +75,13 @@ public:
     // RESONANCE/GROUP appended after the original 8 fields so existing values
     // (referenced by MultisamplerEditor::applySliceControlBarFieldEdit and any
     // saved layouts) don't shift.
+    // ZoneOneShot/ZoneReverse appended after that same coverage pass for the
+    // same reason — see SliceLcdDisplay::mouseDown's MULTISAMPLER branch,
+    // the only caller that emits these two.
     enum SfzZoneField { ZoneLoKey = -100, ZoneHiKey, ZoneRoot, ZonePitch,
                         ZonePan, ZoneVolume, ZoneRelease, ZoneLoop,
-                        ZoneAttack, ZoneDecay, ZoneSustain, ZoneCutoff, ZoneResonance, ZoneGroup };
+                        ZoneAttack, ZoneDecay, ZoneSustain, ZoneCutoff, ZoneResonance, ZoneGroup,
+                        ZoneOneShot, ZoneReverse };
     struct SfzZoneCell { juce::Rectangle<int> bounds; int field; };
 private:
     void timerCallback() override;

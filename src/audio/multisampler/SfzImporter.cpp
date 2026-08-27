@@ -16,6 +16,7 @@ namespace
             "offset", "end", "loop_mode", "loop_start", "loop_end",
             "ampeg_attack", "ampeg_decay", "ampeg_sustain", "ampeg_release",
             "cutoff", "resonance", "group", "off_by", "seq_position", "seq_length",
+            "direction",
             "dysekt_zone_color", "dysekt_output_bus", "dysekt_show_in_mixer"
         };
         return s;
@@ -432,6 +433,12 @@ namespace
         }
         if (resolved.count ("loop_mode"))
             z.loopMode = loopModeFromOpcodeValue (resolved.at ("loop_mode"));
+
+        // Reverse playback — see SampleZone::reverse's doc comment. Any
+        // other `direction` value (only `forward`/`reverse` are defined by
+        // the spec) is treated as forward, same as the opcode being absent.
+        z.reverse = resolved.count ("direction")
+                        && resolved.at ("direction").trim().equalsIgnoreCase ("reverse");
 
         z.attackSeconds  = juce::jmax (0.0f, floatOpcode (resolved, "ampeg_attack", 0.005f));
         z.decaySeconds   = juce::jmax (0.0f, floatOpcode (resolved, "ampeg_decay", 0.1f));

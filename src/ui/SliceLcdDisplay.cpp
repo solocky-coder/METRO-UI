@@ -2,6 +2,7 @@
 #include "DysektLookAndFeel.h"
 #include "LcdColours.h"
 #include "UIHelpers.h"
+#include "SliceControlBar.h"
 #include "../PluginProcessor.h"
 
 // Palette and chassis rendering now live in LcdColours.h, shared with
@@ -182,6 +183,7 @@ void SliceLcdDisplay::buildDisplayData()
         data.loopMode = (z.loopMode == LoopMode::loopContinuous
                           || z.loopMode == LoopMode::loopSustain) ? 1 : 0;
         data.oneShot  = (z.loopMode == LoopMode::oneShot);
+        data.reverse  = z.reverse;
         data.muteGroup = z.group;
 
         data.filterCutoff = z.filterCutoffHz;
@@ -444,8 +446,17 @@ void SliceLcdDisplay::drawFlagsRow (juce::Graphics& g, int /*row*/)
     if (! sfzModeFlags)
         flags.push_back ({ data.globalMono ? "MONO" : "POLY",
                             data.globalMono, DysektProcessor::FieldGlobalMono, false });
-    flags.push_back ({ "STR",  data.stretchEnabled, DysektProcessor::FieldStretchEnabled, false });
-    flags.push_back ({ "TAIL", data.releaseTail,    DysektProcessor::FieldReleaseTail,    false });
+    // STR (time-stretch) and TAIL (release-tail head/tail split) are both
+    // Slicer/SFZ-PLAYER-only concepts with no SampleZone equivalent — a
+    // MULTISAMPLER zone has neither a stretch engine nor a head/tail split,
+    // so showing either flag here would just be a dead, always-off button.
+    // Omit them outright while showing MULTISAMPLER data, same reasoning
+    // as the MONO/POLY omission above, rather than draw them disabled.
+    if (! multisamplerActive)
+    {
+        flags.push_back ({ "STR",  data.stretchEnabled, DysektProcessor::FieldStretchEnabled, false });
+        flags.push_back ({ "TAIL", data.releaseTail,    DysektProcessor::FieldReleaseTail,    false });
+    }
 
     const int numFlags  = (int) flags.size();
     const int lPad      = juce::roundToInt (kLeftPad * sf);
@@ -535,16 +546,57 @@ int SliceLcdDisplay::effectiveRowH() const noexcept
 
 void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
 {
-    // MULTISAMPLER zones have no write path from this display yet (they
-    // live in MultisamplerInstrument, not sliceManager2) — every branch
-    // below pushes a Command into the Slicer/SFZ-PLAYER engines, which
-    // would silently corrupt whichever slice happens to share this index
-    // there. Read-only until a real SampleZone edit path exists.
-    if (multisamplerActive) return;
-
     if (! data.hasSlice) return;
 
     const auto pos = e.getPosition();
+
+    // MULTISAMPLER zones only get a write path for the three flags that
+    // map cleanly onto SampleZone (REV/LOOP/1SH — see
+    // onMultisamplerZoneFieldEdited's doc comment); NAME editing and the
+    // Slicer-only flags have nothing to write to and STR/TAIL aren't even
+    // drawn here (see drawFlagsRow), so this branch only ever hit-tests
+    // flagHitRects, never nameRowHitRect.
+    if (multisamplerActive)
+    {
+        for (const auto& hit : flagHitRects)
+        {
+            if (! hit.bounds.contains (pos)) continue;
+            if (onMultisamplerZoneFieldEdited == nullptr) return;
+
+            using F = DysektProcessor;
+            int scbField = 0;
+            float newValue = 0.0f;
+
+            switch (hit.fieldId)
+            {
+                case F::FieldReverse:
+                    scbField = SliceControlBar::ZoneReverse;
+                    newValue = data.reverse ? 0.0f : 1.0f;
+                    break;
+                case F::FieldLoop:
+                    // Binary toggle here, matching MultisamplerZoneLcd's own
+                    // LOOP cell (MultisamplerZoneField::loopEnabled) and
+                    // applySliceControlBarFieldEdit's ZoneLoop case — unlike
+                    // the Slicer's 3-way Off/Loop/Ping cycle below, a
+                    // SampleZone's LoopMode has no ping-pong mode to cycle
+                    // into.
+                    scbField = SliceControlBar::ZoneLoop;
+                    newValue = data.loopMode > 0 ? 0.0f : 1.0f;
+                    break;
+                case F::FieldOneShot:
+                    scbField = SliceControlBar::ZoneOneShot;
+                    newValue = data.oneShot ? 0.0f : 1.0f;
+                    break;
+                default:
+                    return;   // any other flag id has no MULTISAMPLER meaning
+            }
+
+            onMultisamplerZoneFieldEdited (multisamplerZoneIndex, scbField, newValue);
+            repaint();
+            return;
+        }
+        return;
+    }
 
     // ── NAME row: click opens inline text editor ──────────────────────────────
     if (nameRowHitRect.contains (pos))

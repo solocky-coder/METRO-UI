@@ -122,6 +122,15 @@ struct SampleZone
         (Slice::showInMixer). */
     bool showInMixer = false;
 
+    /** Reverse playback. Round-tripped through the real sfz `direction`
+        opcode (value `reverse`; the forward default is simply omitted from
+        the exported region — see SfzExporter) rather than a `dysekt_`
+        custom one, since sfizz already understands `direction=reverse`
+        natively and needs no METRO-UI-side playback handling to honour it.
+        Edited via SliceControlBar::ZoneReverse (SliceLcdDisplay's REV flag
+        — see MultisamplerEditor::applySliceControlBarFieldEdit). */
+    bool reverse = false;
+
     bool enabled = true;   ///< editor-only mute; excluded from SFZ export when false
 
     /** User-picked colour override, round-tripped through the same

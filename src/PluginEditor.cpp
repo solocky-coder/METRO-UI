@@ -57,6 +57,14 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  btn->getProperties().set ("dysektThemeKey", "button");
 
  addAndMakeVisible (sliceLcd);
+ sliceLcd.onMultisamplerZoneFieldEdited = [this] (int zoneIndex, int field, float value)
+ {
+     // Same target function as multisamplerWaveformLcd.onZoneParamEdited
+     // below — SliceLcdDisplay's REV/LOOP/1SH flags and the waveform's
+     // envelope-node drags both just report a SliceControlBar::SfzZoneField
+     // id/value pair back to whichever SampleZone is at zoneIndex.
+     multisamplerEditor.applySliceControlBarFieldEdit (zoneIndex, field, value);
+ };
  addAndMakeVisible (sliceWaveformLcd);
  addAndMakeVisible (sf2Lcd);
  addAndMakeVisible (sf2WaveformLcd);

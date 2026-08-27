@@ -30,6 +30,19 @@ public:
  // edited while showing MULTISAMPLER data — see mouseDown().
  void setMultisamplerSource (bool active, const MultisamplerInstrument* instrument, int selectedZoneIndex);
 
+ /** Fired when the REV, LOOP, or 1SH flag is clicked while showing a
+     MULTISAMPLER zone — the one write path this display has back into
+     MultisamplerInstrument (see mouseDown()'s MULTISAMPLER branch).
+     `field` is a SliceControlBar::SfzZoneField value (ZoneReverse/
+     ZoneLoop/ZoneOneShot only), matching the vocabulary
+     MultisamplerEditor::applySliceControlBarFieldEdit already speaks —
+     PluginEditor wires this straight to that function, the same way it
+     wires multisamplerWaveformLcd.onZoneParamEdited. Every other flag
+     (MONO, STR, TAIL) either doesn't apply to MULTISAMPLER zones or is
+     hidden from the strip entirely while one is shown — see
+     drawFlagsRow() — so no other field id is ever passed here. */
+ std::function<void (int zoneIndex, int field, float value)> onMultisamplerZoneFieldEdited;
+
 private:
  // ── Layout constants ──────────────────────────────────────────────────────
  static constexpr int kTotalRows = 11; // rows 0-9 data + row 10 flags

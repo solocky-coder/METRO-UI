@@ -63,6 +63,12 @@ namespace
         if (z.sampleEnd >= 0)
             out << "end=" << (juce::int64) juce::jmax ((juce::int64) 0, z.sampleEnd - 1) << "\n";
 
+        // Reverse playback — real sfz `direction` opcode, sfizz-native (see
+        // SampleZone::reverse's doc comment). Omitted for forward (the
+        // default) so a plain zone doesn't clutter the file.
+        if (z.reverse)
+            out << "direction=reverse\n";
+
         out << "loop_mode=" << loopModeToOpcodeValue (z.loopMode) << "\n";
         if (z.loopMode != LoopMode::noLoop && z.loopStart >= 0 && z.loopEnd >= 0)
             out << "loop_start=" << (juce::int64) z.loopStart
