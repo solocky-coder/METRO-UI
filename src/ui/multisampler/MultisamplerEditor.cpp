@@ -847,6 +847,22 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
         case SliceControlBar::ZonePan:     z.pan          = value; break;
         case SliceControlBar::ZoneVolume:  z.gainDb       = value; break;
         case SliceControlBar::ZoneRelease: z.releaseSeconds = value; break;
+        // Attack/Decay/Sustain were never wired here even though the
+        // Phase 4 coverage-pass enum values existed — the only caller that
+        // ever sent them (MultisamplerWaveformLcd's ADSR node drags, via
+        // commitNodes()) fell through to `default: return` below, so a
+        // dragged Attack/Decay/Sustain node silently never touched the
+        // zone at all: not applied, not marked dirty, and the MultisamplerZoneLcd
+        // knobs had nothing new to read back — which is what made the two
+        // controls look "out of sync". Release was fine because it was
+        // already one of the original 8 fields above. Clamped the same way
+        // MultisamplerEditor::applyZoneFieldEdit's identical fields are
+        // (that function is the knobs' own write path, resolved by id
+        // rather than index — see its declaration comment) so a value
+        // set from either control produces the same clamped result.
+        case SliceControlBar::ZoneAttack:  z.attackSeconds = juce::jmax (0.0f, value); break;
+        case SliceControlBar::ZoneDecay:   z.decaySeconds  = juce::jmax (0.0f, value); break;
+        case SliceControlBar::ZoneSustain: z.sustainLevel  = juce::jlimit (0.0f, 1.0f, value); break;
         case SliceControlBar::ZoneLoop:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 

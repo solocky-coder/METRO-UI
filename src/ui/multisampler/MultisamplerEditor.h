@@ -181,11 +181,13 @@ public:
         SfzZoneField) to the zone at `zoneIndex` (as returned by
         getSelectedZoneIndex()). The SCB itself no longer has any
         MULTISAMPLER-facing role (zoneLcd replaced it — see
-        applyZoneFieldEdit() below), but multisamplerWaveformLcd's envelope-
-        node dragging still speaks this same SliceControlBar::SfzZoneField
-        vocabulary (Attack/Decay/Sustain/Release only) and still forwards
-        here unconditionally — see its onZoneParamEdited wiring in
-        PluginEditor.cpp. No-op if zoneIndex is out of range. */
+        applyZoneFieldEdit() below), but two other components still speak
+        this same SliceControlBar::SfzZoneField vocabulary and forward here
+        unconditionally: multisamplerWaveformLcd's envelope-node dragging
+        (Attack/Decay/Sustain/Release — see its onZoneParamEdited wiring in
+        PluginEditor.cpp) and sliceLcd's REV/LOOP/1SH flags (Reverse/Loop/
+        OneShot — see SliceLcdDisplay::onMultisamplerZoneFieldEdited's
+        wiring, same file). No-op if zoneIndex is out of range. */
     void applySliceControlBarFieldEdit (int zoneIndex, int field, float value);
 
     /** Applies one zoneLcd field edit (see MultisamplerZoneField) to the
