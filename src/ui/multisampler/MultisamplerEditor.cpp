@@ -92,14 +92,14 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     // zoneLcd.getZoneTitleText()/isShowingPreview()/isShowingAuditioning()
     // the same way it already does for zoneLcd itself.
     configureStaticLabel (zoneTagLabel, {});
-    // Right-justified within its fixed-width slot (set in resized()) so
-    // the text itself hugs the toolbar cluster it now sits beside, rather
-    // than starting flush against the empty header space to its left.
-    zoneTagLabel.setJustificationType (juce::Justification::centredRight);
-    // Bumped 12.5->15 alongside the reposition in resized() — sitting next
-    // to the toolbar cluster now instead of trailing off in the empty
-    // middle of the header, it needed to read as prominently as the
-    // buttons beside it.
+    // Centred within its slot (set in resized()), which now floats in the
+    // middle of the header's blank gap rather than hugging the toolbar —
+    // per feedback on the annotated screenshot, sitting flush against the
+    // toolbar read as disconnected from the title on the opposite side.
+    zoneTagLabel.setJustificationType (juce::Justification::centred);
+    // Bumped 12.5->15 alongside the reposition in resized() — floating
+    // alone in the header now instead of tucked beside the toolbar, it
+    // needed to read as prominently as the buttons across from it.
     zoneTagLabel.setFont (juce::FontOptions (15.0f, juce::Font::bold));
     addAndMakeVisible (zoneTagLabel);
 
@@ -189,21 +189,19 @@ void MultisamplerEditor::resized()
     header.removeFromRight (4);
     editLayerCombo.setBounds (header.removeFromRight (150));
 
-    // zoneTagLabel/zoneBadgeLabel sit immediately left of the toolbar
-    // cluster (editLayerCombo onward) rather than stretching across the
-    // whole gap after titleLabel — per feedback on the annotated
-    // screenshot, floating the tag alone at the far left (trailing off
-    // into empty space before the buttons) read as disconnected from the
-    // rest of the toolbar it actually describes. zoneBadgeLabel (the
-    // PREVIEW/AUDITIONING badge) gets a small fixed slot right against the
-    // combo; zoneTagLabel ("ZONE NN   name") takes a fixed width against
-    // that, right-aligned so it reads as attached to the toolbar even when
-    // the zone name is short. Whatever's left between titleLabel and this
-    // cluster is intentionally blank header background.
+    // zoneBadgeLabel (the PREVIEW/AUDITIONING badge) keeps a small fixed
+    // slot right against the combo, since it's contextual to editing.
     header.removeFromRight (8);
     zoneBadgeLabel.setBounds (header.removeFromRight (90));
     header.removeFromRight (6);
-    zoneTagLabel.setBounds (header.removeFromRight (240));
+
+    // zoneTagLabel ("ZONE NN   name") is centred in whatever's left of the
+    // header between titleLabel and the toolbar cluster — per feedback on
+    // the annotated screenshot, it previously sat flush against the
+    // toolbar and read as disconnected from the title on the other side.
+    // Centring it in the blank gap ties it visually to the header as a
+    // whole instead of to either end.
+    zoneTagLabel.setBounds (header.withSizeKeepingCentre (240, header.getHeight()));
 
     r.removeFromTop (6);
     zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
