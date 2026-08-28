@@ -29,5 +29,14 @@ enum class MultisamplerZoneField
     resonance,
     group,
     outputBus,
-    showInMixer
+    showInMixer,
+    eq1Freq,
+    eq1Gain,
+    eq1Bw,
+    eq2Freq,
+    eq2Gain,
+    eq2Bw,
+    eq3Freq,
+    eq3Gain,
+    eq3Bw
 };

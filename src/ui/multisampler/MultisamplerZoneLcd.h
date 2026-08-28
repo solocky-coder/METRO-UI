@@ -96,15 +96,16 @@ public:
         applyZoneFieldEdit is the single place values are clamped). */
     std::function<void (MultisamplerZoneField field, float value, bool isCommit)> onFieldEdited;
 
-    // Taller than the original 76px flat-text layout — knob cells need two
-    // full rows of knob+label+value (SliceControlBar's own psCellH is 32px
-    // per row) plus a little breathing room; see MultisamplerEditor::
+    // Taller than the original 76px flat-text layout — knob cells need
+    // three full rows of knob+label+value (SliceControlBar's own psCellH is
+    // 32px per row) plus a little breathing room; see MultisamplerEditor::
     // resized(), which reads this constant when it reserves space for this
     // component. No longer includes a title row's worth of height — that
     // row (and its PREVIEW/AUDITIONING badge) moved out to
     // MultisamplerEditor's own header toolbar (zoneTagLabel/zoneBadgeLabel),
-    // so this constant shrank by the ~20px that row used to cost.
-    static constexpr int kPreferredHeight = 80;
+    // so this constant shrank by the ~20px that row used to cost. Grew from
+    // 80 (two rows) to 120 (three rows) when the EQ1/EQ2/EQ3 row was added.
+    static constexpr int kPreferredHeight = 120;
 
 private:
     float uiScale = 1.0f;
@@ -120,6 +121,9 @@ private:
         bool loopOn = false;
         bool showInMixer = false;
         float filterCutoffHz = 20000.0f, filterResonance = 0.0f;
+        float eq1Freq = 100.0f, eq1Gain = 0.0f, eq1Bw = 1.0f;
+        float eq2Freq = 1000.0f, eq2Gain = 0.0f, eq2Bw = 1.0f;
+        float eq3Freq = 8000.0f, eq3Gain = 0.0f, eq3Bw = 1.0f;
         bool isPreview = false;
         bool isAuditioning = false;
     } snapshot;

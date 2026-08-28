@@ -1020,6 +1020,36 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             // Matches SampleZone::filterResonance's own documented 0..1 range.
             z.filterResonance = juce::jlimit (0.0f, 1.0f, value);
             break;
+        case MultisamplerZoneField::eq1Freq:
+            // Matches SampleZone::eq1Freq's own documented range.
+            z.eq1Freq = juce::jlimit (20.0f, 1000.0f, value);
+            break;
+        case MultisamplerZoneField::eq1Gain:
+            z.eq1Gain = juce::jlimit (-24.0f, 24.0f, value);
+            break;
+        case MultisamplerZoneField::eq1Bw:
+            z.eq1Bw = juce::jlimit (0.1f, 4.0f, value);
+            break;
+        case MultisamplerZoneField::eq2Freq:
+            // Matches SampleZone::eq2Freq's own documented range.
+            z.eq2Freq = juce::jlimit (100.0f, 10000.0f, value);
+            break;
+        case MultisamplerZoneField::eq2Gain:
+            z.eq2Gain = juce::jlimit (-24.0f, 24.0f, value);
+            break;
+        case MultisamplerZoneField::eq2Bw:
+            z.eq2Bw = juce::jlimit (0.1f, 4.0f, value);
+            break;
+        case MultisamplerZoneField::eq3Freq:
+            // Matches SampleZone::eq3Freq's own documented range.
+            z.eq3Freq = juce::jlimit (1000.0f, 20000.0f, value);
+            break;
+        case MultisamplerZoneField::eq3Gain:
+            z.eq3Gain = juce::jlimit (-24.0f, 24.0f, value);
+            break;
+        case MultisamplerZoneField::eq3Bw:
+            z.eq3Bw = juce::jlimit (0.1f, 4.0f, value);
+            break;
         case MultisamplerZoneField::outputBus:
             // 0 = Main, 1-15 = Aux — matches SampleZone::outputBus's own
             // documented range and SfzDrumKitBusApplier/

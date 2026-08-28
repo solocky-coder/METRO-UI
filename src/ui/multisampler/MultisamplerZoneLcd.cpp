@@ -57,6 +57,15 @@ void MultisamplerZoneLcd::setZoneForDisplay (const SampleZone* zone, int display
     snapshot.loopOn         = zone->loopMode != LoopMode::noLoop;
     snapshot.filterCutoffHz = zone->filterCutoffHz;
     snapshot.filterResonance = zone->filterResonance;
+    snapshot.eq1Freq = zone->eq1Freq;
+    snapshot.eq1Gain = zone->eq1Gain;
+    snapshot.eq1Bw   = zone->eq1Bw;
+    snapshot.eq2Freq = zone->eq2Freq;
+    snapshot.eq2Gain = zone->eq2Gain;
+    snapshot.eq2Bw   = zone->eq2Bw;
+    snapshot.eq3Freq = zone->eq3Freq;
+    snapshot.eq3Gain = zone->eq3Gain;
+    snapshot.eq3Bw   = zone->eq3Bw;
     snapshot.showInMixer    = zone->showInMixer;
     snapshot.isPreview      = isPreview;
     snapshot.isAuditioning  = isAuditioning;
@@ -107,6 +116,15 @@ juce::String MultisamplerZoneLcd::labelFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::resonance:   return "RES";
         case MultisamplerZoneField::outputBus:   return "OUT";
         case MultisamplerZoneField::showInMixer: return "MIX";
+        case MultisamplerZoneField::eq1Freq:     return "EQ1 F";
+        case MultisamplerZoneField::eq1Gain:     return "EQ1 G";
+        case MultisamplerZoneField::eq1Bw:       return "EQ1 BW";
+        case MultisamplerZoneField::eq2Freq:     return "EQ2 F";
+        case MultisamplerZoneField::eq2Gain:     return "EQ2 G";
+        case MultisamplerZoneField::eq2Bw:       return "EQ2 BW";
+        case MultisamplerZoneField::eq3Freq:     return "EQ3 F";
+        case MultisamplerZoneField::eq3Gain:     return "EQ3 G";
+        case MultisamplerZoneField::eq3Bw:       return "EQ3 BW";
     }
     return {};
 }
@@ -131,6 +149,15 @@ float MultisamplerZoneLcd::getFieldValue (MultisamplerZoneField field) const
         case MultisamplerZoneField::resonance:   return snapshot.filterResonance;
         case MultisamplerZoneField::outputBus:   return (float) snapshot.outputBus;
         case MultisamplerZoneField::showInMixer: return snapshot.showInMixer ? 1.0f : 0.0f;
+        case MultisamplerZoneField::eq1Freq:     return snapshot.eq1Freq;
+        case MultisamplerZoneField::eq1Gain:     return snapshot.eq1Gain;
+        case MultisamplerZoneField::eq1Bw:       return snapshot.eq1Bw;
+        case MultisamplerZoneField::eq2Freq:     return snapshot.eq2Freq;
+        case MultisamplerZoneField::eq2Gain:     return snapshot.eq2Gain;
+        case MultisamplerZoneField::eq2Bw:       return snapshot.eq2Bw;
+        case MultisamplerZoneField::eq3Freq:     return snapshot.eq3Freq;
+        case MultisamplerZoneField::eq3Gain:     return snapshot.eq3Gain;
+        case MultisamplerZoneField::eq3Bw:       return snapshot.eq3Bw;
     }
     return 0.0f;
 }
@@ -165,6 +192,30 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         // (0 = Main, 1-15 = Aux).
         case MultisamplerZoneField::outputBus: return juce::jlimit (0.0f, 1.0f, v / 15.0f);
         case MultisamplerZoneField::showInMixer: return v; // unused — MIX draws as a toggle, not a knob
+        // Per-zone EQ — freq bands use the same log-frequency mapping as
+        // `cutoff` above (each over its own documented range from
+        // SampleZone.h); gain/bandwidth are linear over their documented
+        // ranges, same idea as `tune`/`pan` above.
+        case MultisamplerZoneField::eq1Freq:
+            return juce::jlimit (0.0f, 1.0f,
+                (std::log2 (juce::jmax (20.0f, v)) - std::log2 (20.0f))
+                    / (std::log2 (1000.0f) - std::log2 (20.0f)));
+        case MultisamplerZoneField::eq2Freq:
+            return juce::jlimit (0.0f, 1.0f,
+                (std::log2 (juce::jmax (100.0f, v)) - std::log2 (100.0f))
+                    / (std::log2 (10000.0f) - std::log2 (100.0f)));
+        case MultisamplerZoneField::eq3Freq:
+            return juce::jlimit (0.0f, 1.0f,
+                (std::log2 (juce::jmax (1000.0f, v)) - std::log2 (1000.0f))
+                    / (std::log2 (20000.0f) - std::log2 (1000.0f)));
+        case MultisamplerZoneField::eq1Gain:
+        case MultisamplerZoneField::eq2Gain:
+        case MultisamplerZoneField::eq3Gain:
+            return juce::jlimit (0.0f, 1.0f, (v + 24.0f) / 48.0f);
+        case MultisamplerZoneField::eq1Bw:
+        case MultisamplerZoneField::eq2Bw:
+        case MultisamplerZoneField::eq3Bw:
+            return juce::jlimit (0.0f, 1.0f, (v - 0.1f) / 3.9f);
     }
     return 0.5f;
 }
@@ -192,6 +243,15 @@ float MultisamplerZoneLcd::defaultValueFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::resonance:   return 0.0f;
         case MultisamplerZoneField::outputBus:   return 0.0f;   // Main
         case MultisamplerZoneField::showInMixer: return 0.0f;   // hidden
+        case MultisamplerZoneField::eq1Freq:     return 100.0f;
+        case MultisamplerZoneField::eq1Gain:     return 0.0f;
+        case MultisamplerZoneField::eq1Bw:       return 1.0f;
+        case MultisamplerZoneField::eq2Freq:     return 1000.0f;
+        case MultisamplerZoneField::eq2Gain:     return 0.0f;
+        case MultisamplerZoneField::eq2Bw:       return 1.0f;
+        case MultisamplerZoneField::eq3Freq:     return 8000.0f;
+        case MultisamplerZoneField::eq3Gain:     return 0.0f;
+        case MultisamplerZoneField::eq3Bw:       return 1.0f;
     }
     return 0.0f;
 }
@@ -221,6 +281,18 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::loopEnabled: scale = 0.0f;   break; // toggle, not a drag
         case MultisamplerZoneField::outputBus:   scale = 0.25f;  break; // ~4px per bus step
         case MultisamplerZoneField::showInMixer: scale = 0.0f;   break; // toggle, not a drag
+        // Scaled to each field's own documented range (see SampleZone.h) —
+        // roughly the same "full sweep over ~150-400px" feel as cutoff/pan
+        // above, proportioned to how wide each range is.
+        case MultisamplerZoneField::eq1Freq:     scale = 5.0f;   break; // 20..1000 Hz
+        case MultisamplerZoneField::eq2Freq:     scale = 25.0f;  break; // 100..10000 Hz
+        case MultisamplerZoneField::eq3Freq:     scale = 50.0f;  break; // 1000..20000 Hz
+        case MultisamplerZoneField::eq1Gain:
+        case MultisamplerZoneField::eq2Gain:
+        case MultisamplerZoneField::eq3Gain:     scale = 0.2f;   break; // -24..+24 dB
+        case MultisamplerZoneField::eq1Bw:
+        case MultisamplerZoneField::eq2Bw:
+        case MultisamplerZoneField::eq3Bw:       scale = 0.03f;  break; // 0.1..4.0 octaves
     }
     return fineMode ? scale * kFineModeScale : scale;
 }
@@ -257,6 +329,27 @@ juce::String MultisamplerZoneLcd::formatFieldValue (MultisamplerZoneField field)
             return snapshot.outputBus == 0 ? juce::String ("MAIN")
                                             : "AUX " + juce::String (snapshot.outputBus);
         case MultisamplerZoneField::showInMixer: return snapshot.showInMixer ? "SHOWN" : "HIDDEN";
+        case MultisamplerZoneField::eq1Freq:
+            return snapshot.eq1Freq >= 1000.0f
+                       ? juce::String (snapshot.eq1Freq / 1000.0f, 1) + "kHz"
+                       : juce::String (snapshot.eq1Freq, 0) + "Hz";
+        case MultisamplerZoneField::eq2Freq:
+            return snapshot.eq2Freq >= 1000.0f
+                       ? juce::String (snapshot.eq2Freq / 1000.0f, 1) + "kHz"
+                       : juce::String (snapshot.eq2Freq, 0) + "Hz";
+        case MultisamplerZoneField::eq3Freq:
+            return snapshot.eq3Freq >= 1000.0f
+                       ? juce::String (snapshot.eq3Freq / 1000.0f, 1) + "kHz"
+                       : juce::String (snapshot.eq3Freq, 0) + "Hz";
+        case MultisamplerZoneField::eq1Gain:
+            return (snapshot.eq1Gain >= 0.0f ? "+" : "") + juce::String (snapshot.eq1Gain, 1) + "dB";
+        case MultisamplerZoneField::eq2Gain:
+            return (snapshot.eq2Gain >= 0.0f ? "+" : "") + juce::String (snapshot.eq2Gain, 1) + "dB";
+        case MultisamplerZoneField::eq3Gain:
+            return (snapshot.eq3Gain >= 0.0f ? "+" : "") + juce::String (snapshot.eq3Gain, 1) + "dB";
+        case MultisamplerZoneField::eq1Bw: return juce::String (snapshot.eq1Bw, 2);
+        case MultisamplerZoneField::eq2Bw: return juce::String (snapshot.eq2Bw, 2);
+        case MultisamplerZoneField::eq3Bw: return juce::String (snapshot.eq3Bw, 2);
     }
     return {};
 }
@@ -299,12 +392,12 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     // isShowingPreview()/isShowingAuditioning() via refreshZoneLcdDisplay()).
     // All of `content` now goes straight to the knob grid.
 
-    // Two rows of knob cells — row 1 has 7 fields (mapping + tune/pan/gain),
-    // row 2 has 8 (envelope/filter/routing, including the LOOP and MIX flat
-    // toggles) — matching SliceControlBar's own knob-row layouts (drawKnobCell
-    // in a straight horizontal run) instead of the old cramped 4/4/6 text-cell
-    // split.
-    const int rowH = content.getHeight() / 2;
+    // Three rows of knob cells — row 1 has 7 fields (mapping + tune/pan/gain),
+    // row 2 has 9 (envelope/filter/routing, including the LOOP and MIX flat
+    // toggles), row 3 has 9 (the EQ1/EQ2/EQ3 band controls) — matching
+    // SliceControlBar's own knob-row layouts (drawKnobCell in a straight
+    // horizontal run) instead of the old cramped 4/4/6 text-cell split.
+    const int rowH = content.getHeight() / 3;
 
     auto layoutRow = [&] (juce::Rectangle<int> row, std::initializer_list<MultisamplerZoneField> fields)
     {
@@ -325,12 +418,18 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
                  MultisamplerZoneField::rootKey, MultisamplerZoneField::group,
                  MultisamplerZoneField::tune, MultisamplerZoneField::pan,
                  MultisamplerZoneField::gain });
-    layoutRow (content,
+    layoutRow (content.removeFromTop (rowH),
                { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
                  MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
                  MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
                  MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus,
                  MultisamplerZoneField::showInMixer });
+    layoutRow (content,
+               { MultisamplerZoneField::eq1Freq, MultisamplerZoneField::eq1Gain,
+                 MultisamplerZoneField::eq1Bw, MultisamplerZoneField::eq2Freq,
+                 MultisamplerZoneField::eq2Gain, MultisamplerZoneField::eq2Bw,
+                 MultisamplerZoneField::eq3Freq, MultisamplerZoneField::eq3Gain,
+                 MultisamplerZoneField::eq3Bw });
 }
 
 void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field)
@@ -613,6 +712,15 @@ void MultisamplerZoneLcd::applyDrag (MultisamplerZoneField field, float rawValue
         case MultisamplerZoneField::resonance:   snapshot.filterResonance = rawValue; break;
         case MultisamplerZoneField::outputBus:   snapshot.outputBus = juce::jlimit (0, 15, juce::roundToInt (rawValue)); break;
         case MultisamplerZoneField::showInMixer: snapshot.showInMixer = rawValue > 0.5f; break;
+        case MultisamplerZoneField::eq1Freq:     snapshot.eq1Freq = rawValue; break;
+        case MultisamplerZoneField::eq1Gain:     snapshot.eq1Gain = rawValue; break;
+        case MultisamplerZoneField::eq1Bw:       snapshot.eq1Bw   = rawValue; break;
+        case MultisamplerZoneField::eq2Freq:     snapshot.eq2Freq = rawValue; break;
+        case MultisamplerZoneField::eq2Gain:     snapshot.eq2Gain = rawValue; break;
+        case MultisamplerZoneField::eq2Bw:       snapshot.eq2Bw   = rawValue; break;
+        case MultisamplerZoneField::eq3Freq:     snapshot.eq3Freq = rawValue; break;
+        case MultisamplerZoneField::eq3Gain:     snapshot.eq3Gain = rawValue; break;
+        case MultisamplerZoneField::eq3Bw:       snapshot.eq3Bw   = rawValue; break;
     }
 
     repaint();

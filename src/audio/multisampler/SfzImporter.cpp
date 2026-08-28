@@ -17,6 +17,8 @@ namespace
             "ampeg_attack", "ampeg_decay", "ampeg_sustain", "ampeg_release",
             "cutoff", "resonance", "group", "off_by", "seq_position", "seq_length",
             "direction",
+            "eq1_freq", "eq1_gain", "eq1_bw", "eq2_freq", "eq2_gain", "eq2_bw",
+            "eq3_freq", "eq3_gain", "eq3_bw",
             "dysekt_zone_color", "dysekt_output_bus", "dysekt_show_in_mixer"
         };
         return s;
@@ -449,6 +451,18 @@ namespace
         // sfz `resonance` is a dB peak (typically 0..40dB); the native model
         // keeps a normalised 0..1 for its filter UI, so remap here.
         z.filterResonance = juce::jlimit (0.0f, 1.0f, floatOpcode (resolved, "resonance", 0.0f) / 40.0f);
+
+        // Per-zone 3-band EQ — see SampleZone::eq1Freq's doc comment for why
+        // these are the real sfz opcodes rather than dysekt_-prefixed ones.
+        z.eq1Freq = floatOpcode (resolved, "eq1_freq", 100.0f);
+        z.eq1Gain = floatOpcode (resolved, "eq1_gain", 0.0f);
+        z.eq1Bw   = floatOpcode (resolved, "eq1_bw",   1.0f);
+        z.eq2Freq = floatOpcode (resolved, "eq2_freq", 1000.0f);
+        z.eq2Gain = floatOpcode (resolved, "eq2_gain", 0.0f);
+        z.eq2Bw   = floatOpcode (resolved, "eq2_bw",   1.0f);
+        z.eq3Freq = floatOpcode (resolved, "eq3_freq", 8000.0f);
+        z.eq3Gain = floatOpcode (resolved, "eq3_gain", 0.0f);
+        z.eq3Bw   = floatOpcode (resolved, "eq3_bw",   1.0f);
 
         // Custom colour override — see SfzExporter for the write side.
         // Opcode keys are already lowercased by the tokenizer (see the

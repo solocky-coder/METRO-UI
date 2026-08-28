@@ -91,6 +91,25 @@ struct SampleZone
     float filterCutoffHz  = 20000.0f;
     float filterResonance = 0.0f;   ///< 0..1, exported as sfz `resonance` (dB, 0..40)
 
+    /** Per-zone 3-band EQ: low shelf (eq1), mid parametric (eq2), high shelf
+        (eq3). Round-tripped through the real sfz `eq1_freq`/`eq1_gain`/
+        `eq1_bw` opcodes (and `eq2_*`/`eq3_*`) — sfizz understands these
+        natively, same reasoning as SampleZone::reverse's `direction` opcode,
+        so no dysekt_-prefixed custom opcode is needed. `Bw` is bandwidth in
+        octaves (sfz's own unit for this opcode). Edited via
+        MultisamplerZoneField::eq1Freq/eq1Gain/eq1Bw (and eq2/eq3) —
+        MultisamplerZoneLcd's EQ1/EQ2/EQ3 row — see
+        MultisamplerEditor::applyZoneFieldEdit. */
+    float eq1Freq = 100.0f;    ///< 20..1000 Hz, low-shelf corner frequency
+    float eq1Gain = 0.0f;      ///< -24..+24 dB
+    float eq1Bw   = 1.0f;      ///< 0.1..4.0 octaves
+    float eq2Freq = 1000.0f;   ///< 100..10000 Hz, mid-band centre frequency
+    float eq2Gain = 0.0f;      ///< -24..+24 dB
+    float eq2Bw   = 1.0f;      ///< 0.1..4.0 octaves
+    float eq3Freq = 8000.0f;   ///< 1000..20000 Hz, high-shelf corner frequency
+    float eq3Gain = 0.0f;      ///< -24..+24 dB
+    float eq3Bw   = 1.0f;      ///< 0.1..4.0 octaves
+
     // ── Voicing ──────────────────────────────────────────────────────────
     int group            = 0;   ///< sfz `group` — 0 means "no group"
     int offBy             = 0;   ///< sfz `off_by` — choke: silences notes in `group`

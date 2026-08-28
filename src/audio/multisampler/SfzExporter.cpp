@@ -84,6 +84,23 @@ namespace
         if (z.filterResonance > 0.0f)
             out << "resonance=" << juce::String (z.filterResonance * 40.0f, 2) << "\n";
 
+        // Per-zone 3-band EQ — see SampleZone::eq1Freq's doc comment. Each
+        // band is only written when it differs from its struct default, same
+        // "don't clutter a plain zone's region" reasoning as cutoff/resonance
+        // above.
+        if (z.eq1Freq != 100.0f || z.eq1Gain != 0.0f || z.eq1Bw != 1.0f)
+            out << "eq1_freq=" << juce::String (z.eq1Freq, 1)
+                << " eq1_gain=" << juce::String (z.eq1Gain, 2)
+                << " eq1_bw=" << juce::String (z.eq1Bw, 2) << "\n";
+        if (z.eq2Freq != 1000.0f || z.eq2Gain != 0.0f || z.eq2Bw != 1.0f)
+            out << "eq2_freq=" << juce::String (z.eq2Freq, 1)
+                << " eq2_gain=" << juce::String (z.eq2Gain, 2)
+                << " eq2_bw=" << juce::String (z.eq2Bw, 2) << "\n";
+        if (z.eq3Freq != 8000.0f || z.eq3Gain != 0.0f || z.eq3Bw != 1.0f)
+            out << "eq3_freq=" << juce::String (z.eq3Freq, 1)
+                << " eq3_gain=" << juce::String (z.eq3Gain, 2)
+                << " eq3_bw=" << juce::String (z.eq3Bw, 2) << "\n";
+
         if (z.group != 0)      out << "group=" << z.group << "\n";
         if (z.offBy != 0)      out << "off_by=" << z.offBy << "\n";
         if (z.sequenceLength > 1)
