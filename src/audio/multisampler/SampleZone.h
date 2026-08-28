@@ -75,6 +75,16 @@ struct SampleZone
     bool reverse      = false;
     bool enabled      = true;
 
+    // ── Round-robin sequencing (sfz seq_position / seq_length) ────────────
+    // sequenceLength == 1 (the default) means "no round robin" — the zone
+    // always plays. sequenceLength > 1 groups this zone with any other zone
+    // sharing the same key/velocity range into a `sequenceLength`-deep
+    // round-robin cycle, and sequencePosition (1-based) is this zone's slot
+    // in that cycle. See MultisamplerInstrument::validate() for the range
+    // check (sequencePosition must be within 1..sequenceLength).
+    int  sequencePosition = 1;
+    int  sequenceLength   = 1;
+
     bool hasCustomColour = false;
     juce::uint32 customColourArgb = 0xFF000000;
 
@@ -85,3 +95,86 @@ struct SampleZone
     bool velocityInRange (int velocity) const noexcept { return velocity >= lowVelocity && velocity <= highVelocity; }
     bool matches (int midiNote, int velocity) const noexcept { return enabled && keyInRange (midiNote) && velocityInRange (velocity); }
 };
+
+// =============================================================================
+//  Sample-range resolution
+//  ─────────────────────────────────────────────────────────────────────────
+//  Shared by the UI (SliceLcdDisplay, MultisamplerWaveformLcd,
+//  AddZoneTrimOverlay — trim/waveform display) and by anything reading a
+//  zone's start/end against a decoded file's actual frame count.
+//  SampleZone::sampleStart/sampleEnd (and, by the same convention, an
+//  AddZoneTrimOverlay trim seed) use "-1 == full length" for the end point;
+//  this normalises that, plus any out-of-range or reversed values, into a
+//  concrete, always-valid [start, end) pair.
+// =============================================================================
+
+struct SampleRange
+{
+    int64_t start = 0;
+    int64_t end   = 0;   ///< exclusive
+
+    int64_t length() const noexcept { return end > start ? end - start : 0; }
+};
+
+/** Clamps `start`/`end` (SFZ convention: end < 0 means "unset" -> full
+    sample length) into a valid [0, totalFrames) range. Reversed or
+    degenerate input still yields at least one playable frame, as long as
+    `totalFrames` allows it. `totalFrames <= 0` (e.g. a preview before the
+    file has finished decoding) resolves to an empty range rather than
+    asserting or dividing by zero. */
+inline SampleRange resolveSampleRange (int64_t start, int64_t end, int64_t totalFrames) noexcept
+{
+    if (totalFrames <= 0)
+        return {};
+
+    if (end < 0)
+        end = totalFrames;
+
+    start = juce::jlimit ((int64_t) 0, totalFrames, start);
+    end   = juce::jlimit ((int64_t) 0, totalFrames, end);
+
+    if (end <= start)
+    {
+        if (start < totalFrames)
+        {
+            end = start + 1;
+        }
+        else if (start > 0)
+        {
+            start -= 1;
+            end = start + 1;
+        }
+    }
+
+    return { start, end };
+}
+
+/** Convenience overload: resolves a zone's own sampleStart/sampleEnd. */
+inline SampleRange resolveSampleRange (const SampleZone& zone, int64_t totalFrames) noexcept
+{
+    return resolveSampleRange (zone.sampleStart, zone.sampleEnd, totalFrames);
+}
+
+// =============================================================================
+//  LoopMode <-> SFZ loop_mode= opcode value
+// =============================================================================
+
+inline juce::String loopModeToOpcodeValue (LoopMode mode) noexcept
+{
+    switch (mode)
+    {
+        case LoopMode::oneShot:        return "one_shot";
+        case LoopMode::loopContinuous: return "loop_continuous";
+        case LoopMode::loopSustain:    return "loop_sustain";
+        case LoopMode::noLoop:
+        default:                       return "no_loop";
+    }
+}
+
+inline LoopMode loopModeFromOpcodeValue (const juce::String& value) noexcept
+{
+    if (value == "one_shot")        return LoopMode::oneShot;
+    if (value == "loop_continuous") return LoopMode::loopContinuous;
+    if (value == "loop_sustain")    return LoopMode::loopSustain;
+    return LoopMode::noLoop;
+}
