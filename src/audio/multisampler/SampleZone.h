@@ -71,7 +71,7 @@ struct SampleZone
     int  group        = 0;
     int  offBy        = 0;
     int  outputBus    = 1;
-    bool showInMixer  = true;
+    bool showInMixer  = false;
     bool reverse      = false;
     bool enabled      = true;
 

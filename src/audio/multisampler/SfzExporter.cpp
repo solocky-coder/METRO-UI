@@ -114,8 +114,16 @@ namespace
         //    sfz files (see SfzPlayerDropdownPanel.cpp). ─────────────────
         if (z.hasCustomColour)
             out << "dysekt_zone_color=" << juce::Colour (z.customColourArgb).toString() << "\n";
-        if (! z.showInMixer)
-            out << "dysekt_show_in_mixer=0\n";
+        // showInMixer now defaults to hidden (SampleZone::showInMixer), so
+        // only the SHOWN exception needs an explicit opcode — mirrors the
+        // PendingZonePin pass-2 logic in PluginProcessor.cpp, which only
+        // ever promotes a zone to true on reimport and never forces false.
+        // Writing the opposite branch here (as before) meant a zone the
+        // user explicitly turned ON would export nothing, reimport against
+        // the (now-correct) hidden-by-default struct value, and silently
+        // flip back to hidden on the next engine resync.
+        if (z.showInMixer)
+            out << "dysekt_show_in_mixer=1\n";
         if (z.reverse)
             out << "dysekt_reverse=1\n";
 
