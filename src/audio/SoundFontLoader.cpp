@@ -343,21 +343,9 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
         if (outputBus >= 0)
             rk.outputBus = juce::jlimit (0, 15, outputBus);
 
-        // dysekt_show_in_mixer — same value-based scan as dysekt_output_bus
-        // above. This USED to be a bare containsIgnoreCase("dysekt_show_in_
-        // mixer=") presence check, which is wrong regardless of which way
-        // SfzExporter writes the opcode: a region carrying an explicit
-        // "dysekt_show_in_mixer=0" (hidden) still CONTAINS the opcode name,
-        // so the old check read it back as showInMixer=true — the exact
-        // opposite of what was just written. This is the actual root cause
-        // of MIX toggles "not sticking": performEngineSync()'s debounced
-        // resync round-trips every edit through this parser (not
-        // SfzImporter.cpp — see SoundFontLoadTarget::SfzPlayer2 in
-        // performEngineSync()), so a hidden zone would flip back to shown
-        // the moment any edit anywhere triggered the next resync. Matches
-        // SampleZone::showInMixer's hidden-by-default convention: absent or
-        // zero means hidden, any nonzero value means shown.
-        rk.showInMixer = scanIntOpcode (chunk, "dysekt_show_in_mixer") > 0;
+        // dysekt_show_in_mixer — presence (not value) is what matters, same
+        // as SfzImporter's read side; SfzExporter only ever writes "=1".
+        rk.showInMixer = chunk.containsIgnoreCase ("dysekt_show_in_mixer=");
 
         result.push_back (rk);
     }

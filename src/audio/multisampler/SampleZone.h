@@ -2,7 +2,13 @@
 // =============================================================================
 //  SampleZone.h  —  One mapped sample region in a MultisamplerInstrument
 //  ─────────────────────────────────────────────────────────────────────────
-//  Extended with native per-zone 3-Band Parametric EQ fields matching SFZ opcodes.
+//  This is the native, editable representation of a single <region>. It is
+//  intentionally a plain-data struct (no logic) so it can be freely copied,
+//  diffed for undo/redo, and serialized without any engine dependency.
+//
+//  Field ranges intentionally mirror the SFZ opcodes they round-trip with
+//  (see SfzImporter.h / SfzExporter.h for the supported subset) so mapping
+//  values never need lossy rescaling on import or export.
 // =============================================================================
 
 #include <juce_core/juce_core.h>
@@ -11,30 +17,62 @@
 #include <vector>
 #include <utility>
 
+/** Mirrors the SFZ `loop_mode` opcode's four values exactly, so import and
+    export never need to guess at an equivalence. */
 enum class LoopMode
 {
-    noLoop,
-    oneShot,
-    loopContinuous,
-    loopSustain
+    noLoop,          ///< loop_mode=no_loop        (default)
+    oneShot,         ///< loop_mode=one_shot
+    loopContinuous,  ///< loop_mode=loop_continuous
+    loopSustain      ///< loop_mode=loop_sustain
 };
 
+inline juce::String loopModeToOpcodeValue (LoopMode m)
+{
+    switch (m)
+    {
+        case LoopMode::oneShot:         return "one_shot";
+        case LoopMode::loopContinuous:  return "loop_continuous";
+        case LoopMode::loopSustain:     return "loop_sustain";
+        case LoopMode::noLoop:
+        default:                        return "no_loop";
+    }
+}
+
+inline LoopMode loopModeFromOpcodeValue (const juce::String& v)
+{
+    const auto s = v.trim().toLowerCase();
+    if (s == "one_shot")        return LoopMode::oneShot;
+    if (s == "loop_continuous") return LoopMode::loopContinuous;
+    if (s == "loop_sustain")    return LoopMode::loopSustain;
+    return LoopMode::noLoop;
+}
+
+// -----------------------------------------------------------------------------
 struct SampleZone
 {
+    /** Stable identity — selection, undo/redo, and sfizz region updates key
+        off this rather than the zone's index in MultisamplerInstrument::zones,
+        since that index shifts whenever an earlier zone is added or removed. */
     juce::Uuid id;
+
+    /** Absolute path at authoring time. Bundles (.metrokit) additionally store
+        a bundle-relative path in InstrumentSerializer; this field is the
+        resolved, playable location on this machine (see relink handling in
+        MultisamplerInstrument::relinkSample). */
     juce::File sampleFile;
 
     // ── Mapping ──────────────────────────────────────────────────────────
-    int lowKey       = 0;
-    int highKey      = 127;
-    int rootKey      = 60;
-    int lowVelocity  = 1;
+    int lowKey      = 0;
+    int highKey     = 127;
+    int rootKey     = 60;
+    int lowVelocity = 1;
     int highVelocity = 127;
 
     // ── Tuning / level ───────────────────────────────────────────────────
-    float tuneCents  = 0.0f;   ///< -1200 .. +1200 (sfz tune)
-    float gainDb     = 0.0f;   ///< sfz volume
-    float pan        = 0.0f;   ///< -1 (L) .. +1 (R), sfz pan is -100..100
+    float tuneCents = 0.0f;   ///< -1200 .. +1200 (sfz `tune`, extended range)
+    float gainDb    = 0.0f;   ///< sfz `volume`
+    float pan       = 0.0f;   ///< -1 (L) .. +1 (R), sfz `pan` is -100..100
 
     // ── Sample region ────────────────────────────────────────────────────
     int64_t sampleStart = 0;
@@ -43,138 +81,127 @@ struct SampleZone
     int64_t loopEnd     = -1;
     LoopMode loopMode   = LoopMode::noLoop;
 
-    // ── Envelopes ────────────────────────────────────────────────────────
-    float attackSeconds  = 0.001f;
-    float decaySeconds   = 0.0f;
-    float sustainLevel   = 1.0f;   ///< 0..1 linear
-    float releaseSeconds = 0.05f;
+    // ── Amp envelope ─────────────────────────────────────────────────────
+    float attackSeconds  = 0.005f;
+    float decaySeconds   = 0.1f;
+    float sustainLevel   = 1.0f;   ///< 0..1
+    float releaseSeconds = 0.1f;
 
-    // ── Filter (Lowpass) ─────────────────────────────────────────────────
+    // ── Filter ───────────────────────────────────────────────────────────
     float filterCutoffHz  = 20000.0f;
-    float filterResonance = 0.0f;
+    float filterResonance = 0.0f;   ///< 0..1, exported as sfz `resonance` (dB, 0..40)
 
-    // ── Per-Zone 3-Band Parametric EQ (sfz eq1_*, eq2_*, eq3_*) ──────────
-    bool  eqEnabled = true;
-    float eq1Freq   = 80.0f;    ///< Low-shelf frequency (Hz): 20..1000, sfz eq1_freq
-    float eq1Gain   = 0.0f;     ///< Low-shelf gain (dB): -24..+24, sfz eq1_gain
-    float eq1Bw     = 1.0f;     ///< Low-shelf bandwidth/slope, sfz eq1_bw
+    // ── Voicing ──────────────────────────────────────────────────────────
+    int group            = 0;   ///< sfz `group` — 0 means "no group"
+    int offBy             = 0;   ///< sfz `off_by` — choke: silences notes in `group`
+    int sequencePosition  = 0;   ///< sfz `seq_position`
+    int sequenceLength    = 0;   ///< sfz `seq_length` — 0/1 means "no round robin"
 
-    float eq2Freq   = 1000.0f;  ///< Mid peak frequency (Hz): 100..10000, sfz eq2_freq
-    float eq2Gain   = 0.0f;     ///< Mid peak gain (dB): -24..+24, sfz eq2_gain
-    float eq2Bw     = 1.0f;     ///< Mid peak bandwidth/Q (octaves): 0.1..8.0, sfz eq2_bw
+    /** Output routing for this zone: 0 = Main, 1-15 = Aux N. Round-tripped
+        through the `dysekt_output_bus` custom opcode (same pattern as
+        `dysekt_zone_color` — see SfzImporter/SfzExporter) so it survives
+        save/reload and MultisamplerEditor::performEngineSync()'s
+        export/reimport cycle instead of only ever living on the derived
+        sliceManager2 copy. Edited via MultisamplerZoneField::outputBus
+        (MultisamplerZoneLcd's OUT cell) or MultisamplerEditor::
+        autoAssignOutputBuses() (the drum-kit auto-routing prompt). */
+    int outputBus = 0;
 
-    float eq3Freq   = 8000.0f;  ///< High-shelf frequency (Hz): 1000..20000, sfz eq3_freq
-    float eq3Gain   = 0.0f;     ///< High-shelf gain (dB): -24..+24, sfz eq3_gain
-    float eq3Bw     = 1.0f;     ///< High-shelf bandwidth/slope, sfz eq3_bw
+    /** Manual "pin to mixer" override, independent of outputBus. A zone
+        routed to an Aux bus already gets its own MixerPanel row
+        automatically (see PluginProcessor.cpp's PendingZonePin handling),
+        but a zone left on Main has no way to get a row of its own without
+        this — e.g. wanting to automate/monitor one drum-kit voice's gain
+        without actually splitting it onto an Aux bus. Round-tripped through
+        the `dysekt_show_in_mixer` custom opcode (same pattern as
+        `dysekt_output_bus` — see SfzImporter/SfzExporter) and, on reimport,
+        OR'd with the outputBus!=0 auto-pin rather than replacing it, so
+        turning this off never hides a zone that's routed off Main. Edited
+        via MultisamplerZoneField::showInMixer (MultisamplerZoneLcd's MIX
+        cell) — mirrors SliceControlBar's own per-slice MIX toggle
+        (Slice::showInMixer). */
+    bool showInMixer = false;
 
-    // ── Voice grouping & output routing ──────────────────────────────────
-    int  group        = 0;
-    int  offBy        = 0;
-    int  outputBus    = 1;
-    bool showInMixer  = false;
-    bool reverse      = false;
-    bool enabled      = true;
+    /** Reverse playback. Round-tripped through the real sfz `direction`
+        opcode (value `reverse`; the forward default is simply omitted from
+        the exported region — see SfzExporter) rather than a `dysekt_`
+        custom one, since sfizz already understands `direction=reverse`
+        natively and needs no METRO-UI-side playback handling to honour it.
+        Edited via SliceControlBar::ZoneReverse (SliceLcdDisplay's REV flag
+        — see MultisamplerEditor::applySliceControlBarFieldEdit). */
+    bool reverse = false;
 
-    // ── Round-robin sequencing (sfz seq_position / seq_length) ────────────
-    // sequenceLength == 1 (the default) means "no round robin" — the zone
-    // always plays. sequenceLength > 1 groups this zone with any other zone
-    // sharing the same key/velocity range into a `sequenceLength`-deep
-    // round-robin cycle, and sequencePosition (1-based) is this zone's slot
-    // in that cycle. See MultisamplerInstrument::validate() for the range
-    // check (sequencePosition must be within 1..sequenceLength).
-    int  sequencePosition = 1;
-    int  sequenceLength   = 1;
+    bool enabled = true;   ///< editor-only mute; excluded from SFZ export when false
 
+    /** User-picked colour override, round-tripped through the same
+        `dysekt_zone_color` custom opcode (see SfzImporter's opcode table
+        and SfzExporter). When false, the zone's colour is purely derived from its
+        palette index (SfzZoneColours::zoneColour) — see ZoneMapView::
+        rebuildLayout() and MultisamplerEditor::toKeyzones(), which both
+        prefer this field over the index-derived colour whenever it's set. */
     bool hasCustomColour = false;
-    juce::uint32 customColourArgb = 0xFF000000;
+    juce::uint32 customColourArgb = 0xFF000000;   ///< only meaningful when hasCustomColour
 
+    /** Opcodes read on import that fall outside the documented supported
+        subset (see SfzImporter). Preserved verbatim and re-emitted on export
+        so a save/reload cycle doesn't silently discard authoring the user
+        did in another editor. Never interpreted by METRO-UI itself. */
     std::vector<std::pair<juce::String, juce::String>> extraOpcodes;
 
-    bool hasMissingSample() const { return sampleFile == juce::File() || ! sampleFile.existsAsFile(); }
-    bool keyInRange (int midiNote) const noexcept { return midiNote >= lowKey && midiNote <= highKey; }
-    bool velocityInRange (int velocity) const noexcept { return velocity >= lowVelocity && velocity <= highVelocity; }
-    bool matches (int midiNote, int velocity) const noexcept { return enabled && keyInRange (midiNote) && velocityInRange (velocity); }
+    bool hasMissingSample() const
+    {
+        return sampleFile == juce::File() || ! sampleFile.existsAsFile();
+    }
+
+    bool keyInRange (int midiNote) const noexcept
+    {
+        return midiNote >= lowKey && midiNote <= highKey;
+    }
+
+    bool velocityInRange (int velocity) const noexcept
+    {
+        return velocity >= lowVelocity && velocity <= highVelocity;
+    }
+
+    /** True if this zone would ever sound for the given note/velocity pair. */
+    bool matches (int midiNote, int velocity) const noexcept
+    {
+        return enabled && keyInRange (midiNote) && velocityInRange (velocity);
+    }
 };
 
-// =============================================================================
-//  Sample-range resolution
-//  ─────────────────────────────────────────────────────────────────────────
-//  Shared by the UI (SliceLcdDisplay, MultisamplerWaveformLcd,
-//  AddZoneTrimOverlay — trim/waveform display) and by anything reading a
-//  zone's start/end against a decoded file's actual frame count.
-//  SampleZone::sampleStart/sampleEnd (and, by the same convention, an
-//  AddZoneTrimOverlay trim seed) use "-1 == full length" for the end point;
-//  this normalises that, plus any out-of-range or reversed values, into a
-//  concrete, always-valid [start, end) pair.
-// =============================================================================
-
-struct SampleRange
+/** A resolved, clamped [start, end) playback range against a known
+    totalFrames — see SampleZone::sampleStart/sampleEnd's doc comments for
+    the half-open convention this normalises to. Any display or engine code
+    reading a zone's sample range should go through resolveSampleRange()
+    rather than re-deriving this by hand, so a malformed/out-of-range import
+    can never produce a negative-length or out-of-bounds interval anywhere
+    a zone is shown or played (SliceWaveformLcd, SliceLcdDisplay,
+    AddZoneTrimOverlay's preview-clamp on reopen, etc.) */
+struct ResolvedSampleRange
 {
     int64_t start = 0;
-    int64_t end   = 0;   ///< exclusive
+    int64_t end   = 0;   // exclusive
 
-    int64_t length() const noexcept { return end > start ? end - start : 0; }
+    int64_t length() const noexcept { return end - start; }
 };
 
-/** Clamps `start`/`end` (SFZ convention: end < 0 means "unset" -> full
-    sample length) into a valid [0, totalFrames) range. Reversed or
-    degenerate input still yields at least one playable frame, as long as
-    `totalFrames` allows it. `totalFrames <= 0` (e.g. a preview before the
-    file has finished decoding) resolves to an empty range rather than
-    asserting or dividing by zero. */
-inline SampleRange resolveSampleRange (int64_t start, int64_t end, int64_t totalFrames) noexcept
+/** totalFrames <= 0 resolves to an empty {0, 0} range rather than asserting —
+    callers (typically UI code reacting to a not-yet-decoded preview) are
+    expected to treat length() == 0 as "nothing to show yet". */
+inline ResolvedSampleRange resolveSampleRange (int64_t sampleStart, int64_t sampleEnd,
+                                                int64_t totalFrames) noexcept
 {
     if (totalFrames <= 0)
         return {};
 
-    if (end < 0)
-        end = totalFrames;
-
-    start = juce::jlimit ((int64_t) 0, totalFrames, start);
-    end   = juce::jlimit ((int64_t) 0, totalFrames, end);
-
-    if (end <= start)
-    {
-        if (start < totalFrames)
-        {
-            end = start + 1;
-        }
-        else if (start > 0)
-        {
-            start -= 1;
-            end = start + 1;
-        }
-    }
-
+    const int64_t resolvedEnd = sampleEnd < 0 ? totalFrames : sampleEnd;
+    const int64_t start = juce::jlimit<int64_t> (0, totalFrames - 1, sampleStart);
+    const int64_t end   = juce::jlimit<int64_t> (start + 1, totalFrames, resolvedEnd);
     return { start, end };
 }
 
-/** Convenience overload: resolves a zone's own sampleStart/sampleEnd. */
-inline SampleRange resolveSampleRange (const SampleZone& zone, int64_t totalFrames) noexcept
+inline ResolvedSampleRange resolveSampleRange (const SampleZone& z, int64_t totalFrames) noexcept
 {
-    return resolveSampleRange (zone.sampleStart, zone.sampleEnd, totalFrames);
-}
-
-// =============================================================================
-//  LoopMode <-> SFZ loop_mode= opcode value
-// =============================================================================
-
-inline juce::String loopModeToOpcodeValue (LoopMode mode) noexcept
-{
-    switch (mode)
-    {
-        case LoopMode::oneShot:        return "one_shot";
-        case LoopMode::loopContinuous: return "loop_continuous";
-        case LoopMode::loopSustain:    return "loop_sustain";
-        case LoopMode::noLoop:
-        default:                       return "no_loop";
-    }
-}
-
-inline LoopMode loopModeFromOpcodeValue (const juce::String& value) noexcept
-{
-    if (value == "one_shot")        return LoopMode::oneShot;
-    if (value == "loop_continuous") return LoopMode::loopContinuous;
-    if (value == "loop_sustain")    return LoopMode::loopSustain;
-    return LoopMode::noLoop;
+    return resolveSampleRange (z.sampleStart, z.sampleEnd, totalFrames);
 }

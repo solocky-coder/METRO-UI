@@ -2,172 +2,157 @@
 
 namespace
 {
-    juce::String resolveSamplePath (const SampleZone& z, const juce::File& destinationFile,
-                                     const SfzExporter::Options& options)
+    juce::String samplePathFor (const SampleZone& z, const juce::File& destinationFile, bool relative)
     {
         if (z.sampleFile == juce::File())
             return {};
 
-        if (options.useRelativeSamplePaths && destinationFile != juce::File())
-            return z.sampleFile.getRelativePathFrom (destinationFile.getParentDirectory())
-                               .replaceCharacter ('\\', '/');
-
+        if (relative && destinationFile != juce::File())
+        {
+            const auto rel = z.sampleFile.getRelativePathFrom (destinationFile.getParentDirectory());
+            return rel.replaceCharacter ('\\', '/');
+        }
         return z.sampleFile.getFullPathName().replaceCharacter ('\\', '/');
     }
 
-    void appendOpcode (juce::String& out, const juce::String& key, const juce::String& value)
-    {
-        if (value.containsChar (' '))
-            out << key << "=\"" << value << "\"\n";
-        else
-            out << key << "=" << value << "\n";
-    }
-
-    /** Emits one fully-resolved <region> for `z`. See SfzExporter.h and
-        SfzImporter.cpp for the shared conventions this mirrors: SFZ's
-        `end`/`loop_end` are the last INCLUDED frame (one less than the
-        native model's exclusive sampleEnd/loopEnd), `pan` is written on
-        SFZ's -100..100 scale (native model is -1..+1), and `resonance` is
-        written on a 0..40 (dB-ish) scale matching this project's existing
-        filter opcode convention. */
     void appendRegion (juce::String& out, const SampleZone& z, const juce::File& destinationFile,
-                        const SfzExporter::Options& options)
+                        const SfzExporter::Options& opts, int transposeSemitones, float extraGainDb,
+                        float extraTuneCents)
     {
         out << "<region>\n";
 
-        const auto samplePath = resolveSamplePath (z, destinationFile, options);
+        const auto samplePath = samplePathFor (z, destinationFile, opts.useRelativeSamplePaths);
         if (samplePath.isNotEmpty())
-            appendOpcode (out, "sample", samplePath);
+            // NOTE: intentionally unquoted. The SFZ format has no quoting
+            // syntax for opcode values -- sfizz's real parser does not strip
+            // surrounding quote characters, it takes the value literally.
+            // sample= is always emitted alone on its own line, so a path
+            // containing spaces is unambiguous without quoting. A previous
+            // regression wrapped paths containing a space in `"..."` via a
+            // quoteIfNeeded() helper -- DYSEKT's own importer (SfzImporter.cpp)
+            // happily parses that back out, masking the bug in-app, but
+            // sfizz treats the quote characters as literal filename bytes,
+            // fails to resolve the sample, and drops the region entirely
+            // (sfizz_get_num_regions() == 0 for the whole file). Do not
+            // reintroduce quoting here.
+            out << "sample=" << samplePath << "\n";
 
-        // ── Mapping ──────────────────────────────────────────────────────
         out << "lokey=" << z.lowKey << " hikey=" << z.highKey
             << " pitch_keycenter=" << z.rootKey << "\n";
         out << "lovel=" << z.lowVelocity << " hivel=" << z.highVelocity << "\n";
 
-        // ── Tuning / level ──────────────────────────────────────────────
-        if (z.tuneCents != 0.0f) out << "tune="   << juce::String (z.tuneCents, 2) << "\n";
-        if (z.gainDb    != 0.0f) out << "volume=" << juce::String (z.gainDb, 2)    << "\n";
-        if (z.pan       != 0.0f) out << "pan="    << juce::String (z.pan * 100.0f, 2) << "\n";
+        // Instrument-level transpose/gain are baked into each region here —
+        // see SfzExporter.h for why the model doesn't try to express a
+        // separate global scope in the generated file.
+        const float tune = z.tuneCents + extraTuneCents;
+        if (tune != 0.0f)
+            out << "tune=" << juce::String (tune, 2) << "\n";
+        if (transposeSemitones != 0)
+            out << "transpose=" << transposeSemitones << "\n";
 
-        // ── Sample region — see file-header comment re: the -1 endpoint
-        //    convention shared with SfzImporter.cpp. ─────────────────────
-        if (z.sampleStart > 0)
+        const float volume = z.gainDb + extraGainDb;
+        if (volume != 0.0f)
+            out << "volume=" << juce::String (volume, 2) << "\n";
+        if (z.pan != 0.0f)
+            out << "pan=" << juce::String (z.pan * 100.0f, 1) << "\n";
+
+        // Native [start, end) -> SFZ inclusive end; see SfzImporter.cpp's
+        // matching +1 on the way back in for why this conversion exists.
+        if (z.sampleStart != 0)
             out << "offset=" << (juce::int64) z.sampleStart << "\n";
         if (z.sampleEnd >= 0)
-            out << "end=" << (juce::int64) (z.sampleEnd - 1) << "\n";
+            out << "end=" << (juce::int64) juce::jmax ((juce::int64) 0, z.sampleEnd - 1) << "\n";
 
-        if (z.loopMode != LoopMode::noLoop)
-            out << "loop_mode=" << loopModeToOpcodeValue (z.loopMode) << "\n";
-        if (z.loopStart >= 0 && z.loopEnd > z.loopStart)
-        {
-            out << "loop_start=" << (juce::int64) z.loopStart << "\n";
-            out << "loop_end="   << (juce::int64) (z.loopEnd - 1) << "\n";
-        }
+        // Reverse playback — real sfz `direction` opcode, sfizz-native (see
+        // SampleZone::reverse's doc comment). Omitted for forward (the
+        // default) so a plain zone doesn't clutter the file.
+        if (z.reverse)
+            out << "direction=reverse\n";
 
-        // ── Envelope ────────────────────────────────────────────────────
-        out << "ampeg_attack="  << juce::String (z.attackSeconds, 4) << "\n";
-        out << "ampeg_decay="   << juce::String (z.decaySeconds, 4) << "\n";
-        out << "ampeg_sustain=" << juce::String (z.sustainLevel * 100.0f, 2) << "\n";
-        out << "ampeg_release=" << juce::String (z.releaseSeconds, 4) << "\n";
+        out << "loop_mode=" << loopModeToOpcodeValue (z.loopMode) << "\n";
+        if (z.loopMode != LoopMode::noLoop && z.loopStart >= 0 && z.loopEnd >= 0)
+            out << "loop_start=" << (juce::int64) z.loopStart
+                << " loop_end=" << (juce::int64) juce::jmax ((juce::int64) 0, z.loopEnd - 1) << "\n";
 
-        // ── Filter (Lowpass) — only written when actually engaged, i.e.
-        //    off its wide-open default, so a flat/untouched zone doesn't
-        //    clutter every region with opcodes at their default value. ───
+        out << "ampeg_attack=" << juce::String (z.attackSeconds, 4)
+            << " ampeg_decay=" << juce::String (z.decaySeconds, 4)
+            << " ampeg_sustain=" << juce::String (z.sustainLevel * 100.0f, 2)
+            << " ampeg_release=" << juce::String (z.releaseSeconds, 4) << "\n";
+
         if (z.filterCutoffHz < 20000.0f)
             out << "cutoff=" << juce::String (z.filterCutoffHz, 1) << "\n";
         if (z.filterResonance > 0.0f)
             out << "resonance=" << juce::String (z.filterResonance * 40.0f, 2) << "\n";
 
-        // ── Per-Zone 3-Band Parametric EQ (sfz eq1_*, eq2_*, eq3_*) ──────
-        // Same "only if it does something" gating as the filter above —
-        // written only when a band has actually been moved off its default.
-        if (z.eqEnabled)
-        {
-            if (z.eq1Gain != 0.0f || z.eq1Freq != 80.0f)
-                out << "eq1_freq=" << juce::String (z.eq1Freq, 1)
-                    << " eq1_gain=" << juce::String (z.eq1Gain, 2)
-                    << " eq1_bw="   << juce::String (z.eq1Bw, 2) << "\n";
-
-            if (z.eq2Gain != 0.0f || z.eq2Freq != 1000.0f)
-                out << "eq2_freq=" << juce::String (z.eq2Freq, 1)
-                    << " eq2_gain=" << juce::String (z.eq2Gain, 2)
-                    << " eq2_bw="   << juce::String (z.eq2Bw, 2) << "\n";
-
-            if (z.eq3Gain != 0.0f || z.eq3Freq != 8000.0f)
-                out << "eq3_freq=" << juce::String (z.eq3Freq, 1)
-                    << " eq3_gain=" << juce::String (z.eq3Gain, 2)
-                    << " eq3_bw="   << juce::String (z.eq3Bw, 2) << "\n";
-        }
-
-        // ── Voice grouping / output routing / round-robin sequencing ────
-        if (z.group != 0)     out << "group="  << z.group  << "\n";
-        if (z.offBy != 0)     out << "off_by=" << z.offBy  << "\n";
-        if (z.outputBus != 1) out << "output="  << z.outputBus << "\n";
+        if (z.group != 0)      out << "group=" << z.group << "\n";
+        if (z.offBy != 0)      out << "off_by=" << z.offBy << "\n";
         if (z.sequenceLength > 1)
-        {
-            out << "seq_position=" << z.sequencePosition << "\n";
-            out << "seq_length="   << z.sequenceLength   << "\n";
-        }
+            out << "seq_position=" << z.sequencePosition << " seq_length=" << z.sequenceLength << "\n";
 
-        // ── DYSEKT-native extensions — dysekt_zone_color matches the
-        //    existing convention already used for the ZONES engine's own
-        //    sfz files (see SfzPlayerDropdownPanel.cpp). ─────────────────
+        // Custom colour override — written as juce::Colour::toString()
+        // (an 8-digit ARGB hex string) via the dysekt_zone_color custom
+        // opcode; see SfzImporter for the read side. Omitted entirely when unset
+        // so a zone with no override doesn't pick up a colour on reload
+        // that the user never actually chose.
         if (z.hasCustomColour)
             out << "dysekt_zone_color=" << juce::Colour (z.customColourArgb).toString() << "\n";
-        // showInMixer now defaults to hidden (SampleZone::showInMixer), so
-        // only the SHOWN exception needs an explicit opcode — mirrors the
-        // PendingZonePin pass-2 logic in PluginProcessor.cpp, which only
-        // ever promotes a zone to true on reimport and never forces false.
-        // Writing the opposite branch here (as before) meant a zone the
-        // user explicitly turned ON would export nothing, reimport against
-        // the (now-correct) hidden-by-default struct value, and silently
-        // flip back to hidden on the next engine resync.
+
+        // Output-bus override — see SfzImporter for the read side. Omitted
+        // for bus 0 (Main) so unrouted zones don't clutter the file, same
+        // reasoning as the colour override above.
+        if (z.outputBus != 0)
+            out << "dysekt_output_bus=" << z.outputBus << "\n";
+
+        // Manual mixer-pin override — see SampleZone::showInMixer's doc
+        // comment. Omitted when false so a plain Main-bus zone doesn't pick
+        // up a mixer row it never asked for on reload.
         if (z.showInMixer)
             out << "dysekt_show_in_mixer=1\n";
-        if (z.reverse)
-            out << "dysekt_reverse=1\n";
 
-        // ── Opcodes preserved verbatim from a prior import, outside the
-        //    natively-understood subset. ──────────────────────────────────
-        for (const auto& [key, value] : z.extraOpcodes)
-            appendOpcode (out, key, value);
+        for (const auto& [k, v] : z.extraOpcodes)
+            out << k << "=" << v << "\n";
 
         out << "\n";
     }
 }
 
-juce::String SfzExporter::render (const MultisamplerInstrument& instrument, const juce::File& destinationFile,
+juce::String SfzExporter::render (const MultisamplerInstrument& instrument,
+                                   const juce::File& destinationFile,
                                    Options options)
 {
     juce::String out;
-
-    // <curve>/<effect>/<master>/<midi> content the importer can't represent
-    // natively — carried through unchanged rather than interpreted (see
-    // MultisamplerInstrument::rawExtraHeaders's doc comment).
-    for (const auto& header : instrument.rawExtraHeaders)
-    {
-        out << header;
-        if (! header.endsWithChar ('\n'))
-            out << "\n";
-        out << "\n";
-    }
+    // ASCII-only header comment. The previous version of this line used a
+    // literal em-dash (U+2014), which, embedded in a narrow string literal
+    // and compiled without an explicit UTF-8 source-charset flag on MSVC,
+    // can get mangled into an invalid byte sequence -- corrupting the very
+    // first line of every generated .sfz file and causing sfizz_load_file()
+    // to see regions=0 (or fail outright) on every MULTISAMPLER load. Same
+    // failure class already fixed once elsewhere in this file (see the
+    // em-dash/Windows-1252 SFZ-header fix); this line was added afterward
+    // and reintroduced it. Plain hyphen avoids the whole risk regardless of
+    // compiler/source-encoding settings.
+    out << "// Generated by METRO-UI Multisampler - do not edit by hand;\n"
+        << "// re-export after editing " << instrument.name << " instead.\n\n";
 
     for (const auto& z : instrument.zones)
-    {
-        // Only disabled (muted) zones are skipped — see this file's header
-        // comment. There's no SFZ opcode for "disabled", so this is the
-        // only way to represent it; re-importing an exported file therefore
-        // can't recover a zone that was disabled at export time.
-        if (! z.enabled)
-            continue;
+        if (z.enabled)
+            appendRegion (out, z, destinationFile, options,
+                          instrument.transposeSemitones, instrument.masterGainDb,
+                          instrument.fineTuneCents);
 
-        appendRegion (out, z, destinationFile, options);
-    }
+    // Re-emit <curve>/<effect>/<master>/<midi> (etc.) content captured
+    // verbatim on import — see MultisamplerInstrument::rawExtraHeaders and
+    // SfzImporter's extractRawHeaderBlocks(). Appended after the regions so
+    // a file that round-trips through MULTISAMPLER doesn't lose this
+    // content, even though nothing here can edit it.
+    for (const auto& block : instrument.rawExtraHeaders)
+        out << block << "\n\n";
 
     return out;
 }
 
-bool SfzExporter::exportToFile (const MultisamplerInstrument& instrument, const juce::File& destinationFile,
+bool SfzExporter::exportToFile (const MultisamplerInstrument& instrument,
+                                 const juce::File& destinationFile,
                                  Options options)
 {
     const auto text = render (instrument, destinationFile, options);
