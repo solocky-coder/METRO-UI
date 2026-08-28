@@ -448,7 +448,7 @@ namespace
             if (currentKind != HeaderKind::other)
                 return;
 
-            instrument.rawExtraHeaders.add (otherHeaderLines.joinIntoString ("\n"));
+            instrument.rawExtraHeaders.push_back (otherHeaderLines.joinIntoString ("\n"));
 
             SfzImporter::Warning w;
             w.kind = SfzImporter::Warning::Kind::unsupportedHeader;
