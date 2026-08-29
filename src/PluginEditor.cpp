@@ -1613,6 +1613,15 @@ void DysektEditor::resized()
  const int kFX = area.getX() + si (kMargin);
  const int kFW = area.getWidth() - si (kMargin) * 2;
 
+ // multisamplerEditor's own header row centres its zoneTagLabel beneath
+ // this DualLcdControlFrame (centreCol, still in scope from above) — it's
+ // a sibling panel with no way to see centreCol itself, so hand it the
+ // x-centre already converted into multisamplerEditor's own coordinate
+ // space (kFX is multisamplerEditor's left edge — see its setBounds()
+ // call below). Runs every layout pass like syncMultisamplerDisplay()
+ // above, so it self-corrects on any resize regardless of what triggered it.
+ multisamplerEditor.setControlFrameCentreX (centreCol.getX() + centreCol.getWidth() / 2 - kFX);
+
  area.removeFromBottom (si (kMargin));
 
  // Panel slot: open for mixer, or for the normal (non-init) browser.

@@ -57,6 +57,23 @@ public:
         zoneLcd.setUiScale (newScale);
     }
 
+    /** PluginEditor calls this every layout pass with the x-centre of the
+        DualLcdControlFrame directly above this panel, converted into this
+        component's own coordinate space (i.e. already offset by this
+        panel's left edge / kFrameX). zoneTagLabel centres itself under
+        that point instead of under whatever header space is left over
+        from the toolbar buttons — see resized()'s comment on why those
+        two aren't the same x once the button cluster on the right isn't
+        symmetric with titleLabel on the left. */
+    void setControlFrameCentreX (int xInOwnCoords)
+    {
+        if (controlFrameCentreX != xInOwnCoords)
+        {
+            controlFrameCentreX = xInOwnCoords;
+            resized();
+        }
+    }
+
     /** Replaces the instrument outright (e.g. loading a .metrokit — Phase 4).
         Triggers an immediate (non-debounced) engine resync by default. Pass
         syncEngine=false when the caller already knows the live engine is
@@ -409,6 +426,16 @@ private:
     // too narrow to have room for the gap it marks. See resized()'s comment
     // on why that gap exists.
     int toolbarDividerX = -4;
+
+    // x-centre, in this component's own coordinate space, of the
+    // DualLcdControlFrame (the DYSEKT-SF logo/tab panel between the two
+    // side LCDs) one row up — supplied by PluginEditor::resized() every
+    // layout pass via setControlFrameCentreX() below, since this panel has
+    // no way to know that frame's position on its own (it's a sibling, not
+    // an ancestor/descendant). -1 until PluginEditor has laid out at least
+    // once, which resized() treats as "no target yet, fall back to
+    // centring in the leftover header gap".
+    int controlFrameCentreX = -1;
 
     static constexpr int kEngineSyncDebounceMs = 300;
 

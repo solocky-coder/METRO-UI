@@ -242,12 +242,21 @@ void MultisamplerEditor::resized()
 
     header.removeFromRight (6);
 
-    // zoneTagLabel ("ZONE NN   name") stays centred in whatever's left of
-    // the header between titleLabel and whatever's actually showing in the
-    // toolbar cluster today — so it re-centres itself as the combo/badge
-    // above collapse and reappear, rather than drifting toward one fixed
-    // slot the way it did when every slot was reserved unconditionally.
-    zoneTagLabel.setBounds (header.withSizeKeepingCentre (240, header.getHeight()));
+    // zoneTagLabel ("ZONE NN   name") centres directly beneath the
+    // DualLcdControlFrame (DYSEKT-SF logo/tab panel) one row up, not in
+    // whatever header space happens to be left over from the toolbar
+    // buttons — those two points only coincide when the button cluster on
+    // the right happens to be exactly as wide as titleLabel on the left,
+    // which is a coincidence, not something this layout should depend on.
+    // controlFrameCentreX (supplied by PluginEditor::setControlFrameCentreX
+    // every layout pass) is -1 on the very first layout, before
+    // PluginEditor has had a chance to call it — fall back to the old
+    // "centre in the leftover gap" behaviour rather than collapsing the
+    // label to a zero/negative-width rectangle.
+    const int tagCentreX = controlFrameCentreX >= 0
+                                ? juce::jlimit (header.getX() + 120, juce::jmax (header.getX() + 120, header.getRight() - 120), controlFrameCentreX)
+                                : header.getCentreX();
+    zoneTagLabel.setBounds (juce::Rectangle<int> (240, header.getHeight()).withCentre ({ tagCentreX, header.getCentreY() }));
 
     r.removeFromTop (6);
     zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
