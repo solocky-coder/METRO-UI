@@ -165,6 +165,16 @@ void MultisamplerEditor::paint (juce::Graphics& g)
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH, 4.0f, bounds.getWidth() - 4.0f);
 
+    // Hairline between the zone-context toolbar cluster (EDIT LAYER/ADD
+    // ZONE) and the file-operations cluster (IMPORT SFZ/EXPORT SFZ/NEW) —
+    // see resized()'s comment. Keeps the six-control block from reading as
+    // one undifferentiated row now that centring alone isn't doing that job.
+    if (toolbarDividerX > 0)
+    {
+        g.setColour (theme.separator.withAlpha (0.6f));
+        g.drawVerticalLine (toolbarDividerX, 8.0f, (float) kHeaderH - 8.0f);
+    }
+
     if (dirty)
     {
         g.setColour (theme.accent);
@@ -178,29 +188,65 @@ void MultisamplerEditor::resized()
 
     auto header = r.removeFromTop (kHeaderH - 6);
     titleLabel.setBounds (header.removeFromLeft (140));
+
+    // File-operations cluster (IMPORT SFZ/EXPORT SFZ/NEW) — always visible,
+    // always in this order, rightmost in the header.
     header.removeFromRight (4);
     newButton.setBounds    (header.removeFromRight (60));
     header.removeFromRight (4);
     exportButton.setBounds (header.removeFromRight (90));
     header.removeFromRight (4);
     importButton.setBounds (header.removeFromRight (90));
-    header.removeFromRight (4);
-    addZoneButton.setBounds (header.removeFromRight (84));
-    header.removeFromRight (4);
-    editLayerCombo.setBounds (header.removeFromRight (150));
 
-    // zoneBadgeLabel (the PREVIEW/AUDITIONING badge) keeps a small fixed
-    // slot right against the combo, since it's contextual to editing.
-    header.removeFromRight (8);
-    zoneBadgeLabel.setBounds (header.removeFromRight (90));
+    // Wider gap (was a flat 4px, same as every other button-to-button gap)
+    // between the file-operations cluster above and the zone-context
+    // cluster below — six same-weight controls sitting shoulder to
+    // shoulder read as one undifferentiated block regardless of how well
+    // zoneTagLabel itself was centred. Widening the gap and marking it
+    // with paint()'s hairline (toolbarDividerX) groups the two clusters
+    // instead of listing every toolbar control at the same visual weight.
+    header.removeFromRight (10);
+    toolbarDividerX = header.getRight();
+    header.removeFromRight (10);
+
+    addZoneButton.setBounds (header.removeFromRight (84));
+
+    // editLayerCombo only costs header width while it actually has
+    // something to offer — most selected zones aren't part of an
+    // overlapping stack, so reserving its 150px+gap unconditionally was
+    // the single biggest contributor to how crowded this row read even
+    // after zoneTagLabel was centred. Collapse it to nothing when disabled
+    // instead, same treatment as zoneBadgeLabel below.
+    if (editLayerCombo.isEnabled())
+    {
+        header.removeFromRight (4);
+        editLayerCombo.setBounds (header.removeFromRight (150));
+    }
+    else
+    {
+        editLayerCombo.setBounds ({});
+    }
+
+    // zoneBadgeLabel (the PREVIEW/AUDITIONING badge) is the exception, not
+    // the rule — blank almost all the time — so it shouldn't cost a fixed
+    // 90px of header width whenever it has nothing to show.
+    if (zoneBadgeLabel.getText().isNotEmpty())
+    {
+        header.removeFromRight (8);
+        zoneBadgeLabel.setBounds (header.removeFromRight (90));
+    }
+    else
+    {
+        zoneBadgeLabel.setBounds ({});
+    }
+
     header.removeFromRight (6);
 
-    // zoneTagLabel ("ZONE NN   name") is centred in whatever's left of the
-    // header between titleLabel and the toolbar cluster — per feedback on
-    // the annotated screenshot, it previously sat flush against the
-    // toolbar and read as disconnected from the title on the other side.
-    // Centring it in the blank gap ties it visually to the header as a
-    // whole instead of to either end.
+    // zoneTagLabel ("ZONE NN   name") stays centred in whatever's left of
+    // the header between titleLabel and whatever's actually showing in the
+    // toolbar cluster today — so it re-centres itself as the combo/badge
+    // above collapse and reappear, rather than drifting toward one fixed
+    // slot the way it did when every slot was reserved unconditionally.
     zoneTagLabel.setBounds (header.withSizeKeepingCentre (240, header.getHeight()));
 
     r.removeFromTop (6);

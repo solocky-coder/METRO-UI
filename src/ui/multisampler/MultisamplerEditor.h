@@ -402,6 +402,14 @@ private:
                                                          // selected zone, or the auto-elected top layer of a multi-selection
     juce::Uuid  hoveredZoneId = juce::Uuid::null();     // mirrors ZoneMapView::hoverZoneId; juce::Uuid::null() when the cursor isn't over a zone
 
+    // X position (in this component's own coordinates) of the hairline
+    // paint() draws between the zone-context cluster (EDIT LAYER/ADD ZONE)
+    // and the file-operations cluster (IMPORT SFZ/EXPORT SFZ/NEW) — set by
+    // resized() every layout pass, -4 (off-screen) whenever the header is
+    // too narrow to have room for the gap it marks. See resized()'s comment
+    // on why that gap exists.
+    int toolbarDividerX = -4;
+
     static constexpr int kEngineSyncDebounceMs = 300;
 
     // Bumped from 32 — the header row now also carries zoneTagLabel/
