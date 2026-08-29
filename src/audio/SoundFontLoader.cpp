@@ -1048,25 +1048,57 @@ private:
         // binary SHDR chunk, with no per-region key-range data to match
         // against; SF2 instruments fall back to one-shot slices until a
         // proper multi-region SF2 parser exists.
+        //
+        // NOTE on loop coordinates (fixes "loop then fades while held"):
+        // rl.loopStart/loopEnd are raw sample-frame offsets within the
+        // REGION'S OWN SOURCE .wav FILE. desc.startSample/endSample are
+        // offsets into the CONCATENATED RENDER BUFFER — i.e. sfizz's live
+        // *performance* of the note (attack, kNoteDurationSec of sustain
+        // that sfizz already looped internally while rendering, then a
+        // forced note-off + kReleaseSec release tail), not a copy of the
+        // source file. These two coordinate spaces have no relationship to
+        // each other, so `desc.startSample + rl.loopStart` used to land on
+        // an essentially arbitrary offset inside the render — often
+        // straddling the sustain→release boundary. Because that offset
+        // still usually passed the `bufEnd < desc.endSample` sanity check,
+        // VoicePool's native infinite loop (see the head/tail split in
+        // PluginProcessor.cpp) ended up repeatedly cycling through part of
+        // the baked release/fade-out tail, which sounds exactly like
+        // "loop, then fade out" on a loop even while the note is still
+        // held, instead of a clean sustain loop.
+        //
+        // Fix: for this baked-performance buffer, the only sample range
+        // that's actually safe to loop forever is the sustain phase sfizz
+        // rendered before the forced note-off — i.e. everything in this
+        // note's render except the trailing kReleaseSec release tail.
+        // rl.loopStart/loopEnd are only used here to decide WHETHER a
+        // region defines a sustain loop at all (loopEnd > loopStart),
+        // never as literal offsets into this buffer.
         if ((target == SoundFontLoadTarget::SfzPlayer2 || target == SoundFontLoadTarget::SfPlayer)
             && file.getFileExtension().toLowerCase() == ".sfz")
         {
             const auto regionLoops = parseSfzPerRegionLoopPoints (file);
+            const int  releaseSamples = (int) (sampleRate * SfzConst::kReleaseSec);
+
             for (auto& desc : payload->slices)
             {
                 for (const auto& rl : regionLoops)
                 {
                     if (desc.midiNote < rl.loKey || desc.midiNote > rl.hiKey)
                         continue;
+                    if (rl.loopEnd <= rl.loopStart)
+                        break;   // region matched but defines no real loop
 
-                    // rl.loopStart/loopEnd are raw offsets within this
-                    // region's own source sample, not the concat buffer —
-                    // map them the same way Step 3b does for the SFZ case.
-                    const int sliceOffset = desc.startSample;
-                    const int bufStart    = sliceOffset + rl.loopStart;
-                    const int bufEnd      = sliceOffset + rl.loopEnd;
+                    const int noteLen = desc.endSample - desc.startSample;
 
-                    if (bufEnd < desc.endSample)
+                    // Loop the sustain portion of the render only — stop
+                    // short of the baked release tail so the native
+                    // infinite loop never plays back into a fade.
+                    const int bufStart = desc.startSample;
+                    const int bufEnd   = desc.endSample
+                                        - juce::jmin (releaseSamples, noteLen - 1);
+
+                    if (bufEnd > bufStart)
                     {
                         desc.loopStart = bufStart;
                         desc.loopEnd   = bufEnd;
