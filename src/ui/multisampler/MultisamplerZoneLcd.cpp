@@ -506,14 +506,16 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
     const bool hoveredNow  = editable && (cellIdx == hoveredCellIdx);
     const bool draggingNow = haveActiveDrag && activeField == field;
 
-    // Knob radius used to be capped at a flat 10px regardless of how much
-    // room the cell actually had — with 7 cells spread across the LCD's
-    // full width, most cells had far more width than a 10px knob + label
-    // could ever use. Scale off the smaller of the two cell dimensions
-    // instead of height alone, and raise the cap so the knob actually grows
-    // into the space it's given rather than leaving it blank.
-    const int knobR  = juce::roundToInt (juce::jlimit (10.0f, 18.0f,
-                            juce::jmin (r.getHeight() * 0.42f, r.getWidth() * 0.16f)) * uiScale);
+    // Knob radius matches SliceControlBar::psKnobR exactly (kKnobR * scale)
+    // instead of a per-cell dynamic size — this LCD's knobs sat next to the
+    // SCB's own knobs often enough (same instrument, same session) that a
+    // different radius read as an inconsistency rather than a deliberate
+    // layout choice. SCB derives its scale from getHeight()/72 (paintSf);
+    // this component's uiScale is set from the same global UI-scale value
+    // PluginEditor passes everywhere else (see MultisamplerEditor::
+    // setUiScale), so the two stay numerically equal without this
+    // component needing to know anything about the SCB's own height.
+    const int knobR  = juce::roundToInt ((float) kKnobR * uiScale);
     const int knobCX = r.getX() + knobR + juce::roundToInt (4.0f * uiScale);
     const int knobCY = r.getY() + r.getHeight() / 2;
 

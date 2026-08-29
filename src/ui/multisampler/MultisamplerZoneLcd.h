@@ -108,6 +108,10 @@ public:
     static constexpr int kPreferredHeight = 120;
 
 private:
+    // Same base knob radius as SliceControlBar::kKnobR — see drawKnobField()
+    // in the .cpp for why this used to be a per-cell dynamic size instead.
+    static constexpr int kKnobR = 9;
+
     float uiScale = 1.0f;
 
     struct Snapshot
