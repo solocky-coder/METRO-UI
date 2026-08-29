@@ -459,9 +459,13 @@ void MultisamplerZoneLcd::drawKnobArc (juce::Graphics& g, int cx, int cy, int r,
 {
     const auto& theme = getTheme();
 
+    // Hover ring: same radius offset (r+3.5) and stroke (1.2f) as
+    // SliceControlBar::drawKnob's hover ring — was r+3.0, close enough to
+    // pass at a glance but visibly a different ring size next to an actual
+    // SCB knob at the same radius.
     if (hovered && ! dragging)
     {
-        const float fr2 = (float) r + 3.0f;
+        const float fr2 = (float) r + 3.5f;
         g.setColour (theme.accent.withAlpha (0.18f));
         g.drawEllipse ((float) cx - fr2, (float) cy - fr2, fr2 * 2.0f, fr2 * 2.0f, 1.2f);
     }
@@ -474,21 +478,30 @@ void MultisamplerZoneLcd::drawKnobArc (juce::Graphics& g, int cx, int cy, int r,
     g.setColour (theme.darkBar.brighter (0.22f));
     g.strokePath (track, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
+    // Resting/editable alpha (0.55) matches SliceControlBar::drawKnob's own
+    // default arcCol for an unarmed/unmapped/unlocked knob
+    // (base.withAlpha(0.55f)) — was 0.7f, visibly brighter than the same
+    // knob drawn on the SCB even at identical radius and normVal. Disabled
+    // (not editable) keeps the same proportional dimming it had before
+    // relative to the corrected resting value.
     const juce::Colour arcCol = dragging ? theme.accent
-                                          : editable ? theme.accent.withAlpha (0.7f)
-                                                     : theme.accent.withAlpha (0.4f);
+                                          : editable ? theme.accent.withAlpha (0.55f)
+                                                     : theme.accent.withAlpha (0.32f);
 
     juce::Path arc;
     arc.addCentredArc (fcx, fcy, fr, fr, 0.0f, kKnobStart, angle, true);
     g.setColour (arcCol);
-    g.strokePath (arc, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    // Stroke width matches SliceControlBar::drawKnob's arc (2.2f) — was 2.0f.
+    g.strokePath (arc, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     const float lineAngle = angle - juce::MathConstants<float>::halfPi;
     const float lineR = fr - 2.5f;
     g.setColour (arcCol.brighter (0.15f));
     g.drawLine (fcx, fcy, fcx + lineR * std::cos (lineAngle), fcy + lineR * std::sin (lineAngle), 1.5f);
 
-    g.setColour (theme.foreground.withAlpha (editable ? 0.35f : 0.2f));
+    // Centre dot alpha matches SliceControlBar::drawKnob's default (unlocked)
+    // dot (foreground.withAlpha(0.25f)) — was 0.35f for the editable case.
+    g.setColour (theme.foreground.withAlpha (editable ? 0.25f : 0.15f));
     g.fillEllipse (fcx - 2.0f, fcy - 2.0f, 4.0f, 4.0f);
 }
 
@@ -524,11 +537,18 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
     const int textX = knobCX + knobR + juce::roundToInt (8.0f * uiScale);
     const int textW = juce::jmax (0, r.getRight() - textX);
 
-    g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
+    // Label/value alphas match SliceControlBar::drawKnobCell's own default
+    // (unlocked, non-ADSR) cell: label foreground.withAlpha(0.42f), value
+    // foreground.withAlpha(0.38f) — this component previously used 0.55f/
+    // full-opacity for its "editable" state, which is actually brighter
+    // than SCB's ordinary knob text and only matched SCB's LOCKED-highlight
+    // brightness by coincidence. Disabled (not editable) keeps the same
+    // proportional dimming it had before relative to the corrected values.
+    g.setColour (editable ? theme.foreground.withAlpha (0.42f) : theme.foreground.withAlpha (0.24f));
     g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
     g.drawText (labelFor (field), textX, r.getY(), textW, r.getHeight() / 2, juce::Justification::centredLeft);
 
-    g.setColour (editable ? theme.foreground : theme.foreground.withAlpha (0.6f));
+    g.setColour (editable ? theme.foreground.withAlpha (0.38f) : theme.foreground.withAlpha (0.22f));
     g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
     g.drawText (formatFieldValue (field), textX, r.getY() + r.getHeight() / 2,
                 textW, r.getHeight() - r.getHeight() / 2, juce::Justification::centredLeft);
