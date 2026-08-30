@@ -118,6 +118,21 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
         return;
     }
 
+    // DYSEKT-METRO opt-in — unlike the default fill path below, this one
+    // actually reads the button's own buttonColourId/buttonOnColourId
+    // rather than the app-wide theme accent, so callers with per-button
+    // roles (M/S/R's amber/gold/red) render as distinct solid tiles
+    // instead of collapsing to one colour. Square corners, no highlight
+    // brightening — the colour itself carries the state.
+    if (button.getProperties().getWithDefault ("flatFill", false))
+    {
+        auto roleFill = toggled ? button.findColour (juce::TextButton::buttonOnColourId)
+                                 : button.findColour (juce::TextButton::buttonColourId);
+        g.setColour (roleFill);
+        g.fillRect (bounds);
+        return;
+    }
+
     auto fill = isDown        ? getTheme().accent
               : toggled       ? getTheme().accent
               : isHighlighted ? getTheme().buttonHover

@@ -1864,12 +1864,17 @@ private:
         g.saveState();
         g.reduceClipRegion (clipGridBounds);
 
-        // Tinted band across all track rows
-        g.setColour (getTheme().accent.withAlpha (0.06f));
-        g.fillRect (lx, (float)clipGridBounds.getY(),
-                    rx - lx, (float)clipGridBounds.getHeight());
-        // Side lines
-        g.setColour (getTheme().accent.withAlpha (0.45f));
+        // DYSEKT-METRO pass: no translucent wash across the track rows — a
+        // solid fill there would just hide every clip underneath it, and a
+        // wash is the one thing this pass is meant to remove. The loop
+        // range instead reads as a solid accent ribbon along the very top
+        // of the grid plus full-opacity boundary lines, rather than a
+        // colour tint over the whole timeline.
+        const auto& theme = getTheme();
+        g.setColour (theme.accent);
+        g.fillRect (lx, (float)clipGridBounds.getY(), rx - lx, 4.0f);
+
+        g.setColour (theme.accent);
         g.drawVerticalLine ((int)lx,
                             (float)clipGridBounds.getY(),
                             (float)clipGridBounds.getBottom());
@@ -1890,11 +1895,12 @@ private:
         g.saveState();
         g.reduceClipRegion (clipGridBounds);
 
+        // DYSEKT-METRO pass: solid outline only — a solid fill would hide
+        // the clips being selected, so the rectangle reads via a
+        // full-opacity border instead of a wash-plus-border combo.
         const auto& theme = getTheme();
-        g.setColour (theme.accent.withAlpha (0.14f));
-        g.fillRect (rubberBandRect);
-        g.setColour (theme.accent.withAlpha (0.75f));
-        g.drawRect (rubberBandRect, 1);
+        g.setColour (theme.accent);
+        g.drawRect (rubberBandRect, 2);
 
         g.restoreState();
     }
@@ -1914,11 +1920,14 @@ private:
         g.saveState();
         g.reduceClipRegion (clipGridBounds);
 
+        // DYSEKT-METRO pass: solid accent-colour block rather than a
+        // translucent fill + border — since it's landing in previously
+        // empty space there's nothing underneath to preserve, and using
+        // the accent colour (instead of the target track's own colour)
+        // is what marks this as "still a preview", not translucency.
         const auto& theme = getTheme();
-        g.setColour (theme.accent.withAlpha (0.20f));
+        g.setColour (theme.accent);
         g.fillRect (r);
-        g.setColour (theme.accent.withAlpha (0.85f));
-        g.drawRect (r, 1);
 
         g.restoreState();
     }
@@ -1939,16 +1948,17 @@ private:
         g.saveState();
         g.reduceClipRegion (clipGridBounds);
 
-        // Row background — a quiet layered surface keeps empty timeline space readable.
+        // DYSEKT-METRO pass: rows no longer lean on a barely-visible
+        // brightness alternation — every row is one flat colour, and the
+        // "seam" between tracks is a solid dark gap rather than a 1px
+        // hairline, so the row boundaries read clearly even at a glance.
+        // Selected row is a flat tinted fill, not an alpha wash over the
+        // base colour.
         const auto& theme = getTheme();
-        g.setColour (isSel ? theme.accent.withAlpha (0.10f)
-                           : (i % 2 == 0 ? theme.waveformBg.brighter (0.012f)
-                                         : theme.waveformBg));
-        g.fillRect (rowR);
-
-        // Separator
-        g.setColour (theme.separator);
-        g.fillRect (rowR.getX(), rowR.getBottom() - 1, rowR.getWidth(), 1);
+        g.setColour (isSel ? theme.accent.darker (0.7f) : theme.waveformBg);
+        g.fillRect (rowR.withTrimmedBottom (2));
+        g.setColour (juce::Colour (0xFF000000));
+        g.fillRect (rowR.withTop (rowR.getBottom() - 2));
 
         // Vertical grid lines
         paintGridLines (g, rowR);
@@ -2012,48 +2022,37 @@ private:
         const auto clipR = clipRectForClip (i, ci);
         if (! clipGridBounds.intersects (clipR)) return;
 
-        const juce::Colour base = muted
-            ? info.colour.withSaturation (0.08f).withBrightness (0.22f)
+        // DYSEKT-METRO pass: clips are solid flat tiles now — full-opacity
+        // track colour, square corners (fillRect, not a 0-radius rounded
+        // rect), no border and no left accent bar. Muted gets its own
+        // desaturated tile colour rather than a lowered-alpha version of
+        // the same colour, since a translucent tile reads as "half a tile"
+        // once every other clip on the canvas is solid.
+        const juce::Colour tile = muted
+            ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
             : info.colour;
 
-        // Flat fill — no gradient, square corners
-        g.setColour (base.withAlpha (muted ? 0.16f : 0.42f));
-        g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f);
+        g.setColour (tile);
+        g.fillRect (clipR.reduced (1, 1));
 
-        // Border — brighter when selected
+        // Selection reads as a single accent-colour edge line rather than a
+        // brightened outline — an outline implies "this shape has a
+        // border", which doesn't fit tiles that otherwise have none.
         if (isSel)
         {
-            g.setColour (base.brighter (0.7f).withAlpha (0.95f));
-            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 1.5f);
+            g.setColour (getTheme().accent);
+            g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
         }
-        else
-        {
-            g.setColour (base.withAlpha (muted ? 0.28f : 0.6f));
-            g.drawRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f, 1.f);
-        }
-
-        // Mute hatch
-        if (muted)
-        {
-            g.setColour (juce::Colours::black.withAlpha (0.38f));
-            g.fillRoundedRectangle (clipR.toFloat().reduced (1.f, 1.f), 0.0f);
-        }
-
-        // Left accent bar (flat, no rounding — replaces the old top strip)
-        const float accentW = 3.f;
-        g.setColour (base.withAlpha (muted ? 0.24f : 0.90f));
-        g.fillRect (clipR.getX() + 1.f, clipR.getY() + 1.f,
-                    accentW, (float)clipR.getHeight() - 2.f);
 
         // Track name
         if (trackH >= 20)
         {
             g.setFont (juce::Font (juce::jmin (11.f, (float)trackH * 0.22f), juce::Font::bold));
-            g.setColour (muted ? getTheme().foreground.withAlpha (0.35f)
-                               : juce::Colours::white.withAlpha (0.88f));
+            g.setColour (muted ? juce::Colours::white.withAlpha (0.45f)
+                               : juce::Colours::white.withAlpha (0.92f));
             g.drawText (info.name,
-                        clipR.getX() + 5 + (int)accentW, clipR.getY() + 2,
-                        juce::jmax (0, clipR.getWidth() - 24 - (int)accentW),
+                        clipR.getX() + 6, clipR.getY() + 2,
+                        juce::jmax (0, clipR.getWidth() - 26),
                         juce::jmax (0, (int)(trackH * 0.38f)),
                         juce::Justification::centredLeft, true);
         }
@@ -2069,38 +2068,36 @@ private:
                 case TrackType::SfPlayer:       badge = "SF"; break;
             }
             g.setFont (juce::Font (8.f));
-            g.setColour (base.withAlpha (0.55f));
+            g.setColour (juce::Colours::white.withAlpha (0.55f));
             g.drawText (badge,
                         clipR.getRight() - 22, clipR.getY() + 2,
                         20, 12,
                         juce::Justification::centredRight, false);
         }
 
-        // Resize handle — full opacity once selected; a low-opacity preview
-        // fades in on hover for unselected clips so the cursor and the
-        // visual affordance arrive together, instead of the cursor
-        // changing with nothing to back it up.
+        // Resize handle — solid, no alpha layering. Selected clips get a
+        // full-strength handle; unselected clips get it only on hover, so
+        // the cursor change and the visual affordance still arrive
+        // together, just via a colour swap rather than a fade-in.
         const bool isHoverHandle = (! isSel && i == hoverTrack && ci == hoverClip);
         if (isSel || isHoverHandle)
         {
-            const juce::Rectangle<float> handleR (
-                clipR.toFloat().reduced (1.f, 1.f)
-                    .withLeft ((float)(clipR.getRight() - 8)));
-            const float fillA = isSel ? 0.4f  : 0.16f;
-            const float dotA  = isSel ? 0.45f : 0.20f;
-            g.setColour (base.withAlpha (fillA));
-            g.fillRoundedRectangle(handleR, 0.0f);
-            g.setColour (base.brighter (0.5f).withAlpha (dotA));
-            const float cx = handleR.getCentreX();
+            const juce::Rectangle<int> handleR (
+                clipR.reduced (1, 1).withLeft (clipR.getRight() - 8));
+            g.setColour (isSel ? juce::Colours::black.withAlpha (0.35f)
+                               : juce::Colours::black.withAlpha (0.18f));
+            g.fillRect (handleR);
+            g.setColour (juce::Colours::white.withAlpha (isSel ? 0.55f : 0.30f));
+            const float cx = (float) handleR.getCentreX();
             for (int dot = 0; dot < 3; ++dot)
             {
                 const float dy = handleR.getY() + handleR.getHeight() * (0.25f + dot * 0.25f);
-                g.fillEllipse (cx - 1.f, dy - 1.f, 2.f, 2.f);
+                g.fillRect (juce::Rectangle<float> (2.f, 2.f).withCentre ({ cx, dy }));
             }
         }
 
         // Mini note preview
-        paintNotePreview (g, i, ci, clipR, base, muted);
+        paintNotePreview (g, i, ci, clipR, tile, muted);
     }
 
     void paintNotePreview (juce::Graphics& g, int trackIdx, int clipIdx,

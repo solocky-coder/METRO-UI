@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
 #include "DysektLookAndFeel.h"
+#include <cmath>
 
 //==============================================================================
 //  TrackInspector — compact, selected-track control surface docked to the left
@@ -20,16 +21,15 @@ class TrackInspector : public juce::Component,
 public:
     explicit TrackInspector (SequencerEngine& sequencer) : engine (sequencer)
     {
-        // DYSEKT-SF border pass: M/S/R are flat cyan-outline buttons now
-        // (matching the SF panel's chrome) instead of filled amber/yellow/
-        // red swatches — the colour argument to configureButton is unused
-        // for flatOutline buttons (see drawButtonText) but kept so callers
-        // don't need two separate helpers.
+        // DYSEKT-METRO pass: M/S/R go back to filled swatches, but flat —
+        // solid tile per button, sharp corners, no cyan-outline chrome.
+        // Each keeps its own accent (amber/gold/red) so the row still reads
+        // as three distinct controls rather than three cyan copies.
         configureButton (muteButton,    "M", juce::Colour (0xffc99140));
         configureButton (soloButton,    "S", juce::Colour (0xffd1b34c));
         configureButton (recordButton,  "R", juce::Colour (0xffd95454));
         for (auto* b : { &muteButton, &soloButton, &recordButton })
-            b->getProperties().set ("flatOutline", true);
+            b->getProperties().set ("flatFill", true);
 
         channelBox.setVisible (false);
         for (int channel = 1; channel <= 16; ++channel)
@@ -217,20 +217,21 @@ public:
 
         const auto info = engine.getTrackInfo (selectedTrack);
         auto card = content.removeFromTop (52).toFloat();
-        // DYSEKT-SF border pass: flat, squared, full-opacity cyan hairline —
-        // no fill and no left accent stripe, matching the outlined-box
-        // language of the SF panel's own chassis instead of the old
-        // rounded/filled/tinted-edge card.
+        // DYSEKT-METRO pass: solid flat accent tile — no hairline, no
+        // rounding, no alpha wash. Title/subtitle switch to on-accent text
+        // (near-black over the bright accent fill) instead of the theme's
+        // usual off-white foreground, since foreground-on-accent doesn't
+        // have enough contrast once the card is a full-strength solid.
         g.setColour (theme.accent);
-        g.drawRect (card.reduced (0.5f), 1.0f);
+        g.fillRect (card);
 
         auto title = card.toNearestInt().withTrimmedLeft (16).reduced (0, 7).removeFromTop (19);
-        g.setColour (theme.foreground);
+        g.setColour (theme.accent.darker (0.75f));
         g.setFont (DysektLookAndFeel::makeFont (15.0f, true));
         g.drawFittedText (info.name.toUpperCase(), title, juce::Justification::centredLeft, 1);
 
         auto subtitle = card.toNearestInt().withTrimmedLeft (16).withTrimmedTop (29).removeFromTop (13);
-        g.setColour (theme.foreground.withAlpha (0.55f));
+        g.setColour (theme.accent.darker (0.55f));
         g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
         g.drawText (trackTypeName (info.type), subtitle, juce::Justification::centredLeft, false);
 
@@ -258,8 +259,50 @@ private:
     //  the active theme rather than a hardcoded colour, so the strip matches
     //  whichever skin is active. Selected per-slider via "mockupPan".
     //==========================================================================
+    // DYSEKT-METRO pass: the groove is a tapered wedge rather than a flat
+    // bar — thin at the "quiet"/edge end, thick at the "loud"/centre end —
+    // so the taper itself communicates level, not just the fill length.
+    // VOLUME tapers thin→thick left→right (single ramp, since VOLUME only
+    // has one direction of travel away from silence). PAN tapers thin at
+    // centre to thick at both edges (symmetric, since panning hard either
+    // way is equally "more extreme"), matching VOLUME's visual language
+    // instead of just staying a flat bar. Both keep sharp corners and the
+    // zero-tick; the thumb becomes a slim rectangle, not a rounded capsule.
     struct MockupSliderLnF : public juce::LookAndFeel_V4
     {
+        static constexpr float kThinHalf  = 1.0f;   // half-height at the wedge's thin end
+        static constexpr float kThickHalf = 7.0f;   // half-height at the wedge's thick end
+
+        // Half-height of the wedge at horizontal position t (0..1 across the groove).
+        static float halfHeightAt (float t, bool isPan)
+        {
+            if (! isPan)
+                return kThinHalf + (kThickHalf - kThinHalf) * juce::jlimit (0.0f, 1.0f, t);
+
+            // Symmetric: thin at centre (t=0.5), thick at both edges.
+            const float distFromCentre = std::abs (t - 0.5f) * 2.0f;
+            return kThinHalf + (kThickHalf - kThinHalf) * juce::jlimit (0.0f, 1.0f, distFromCentre);
+        }
+
+        // Builds the wedge outline between two x positions (in local slider
+        // pixels) as a closed path, so the base groove and the accent fill
+        // are cut from literally the same taper and never look mismatched.
+        static juce::Path wedgeSegment (float x0, float x1, int x, int width, float centreY, bool isPan)
+        {
+            juce::Path p;
+            if (x1 <= x0) return p;
+            const float t0 = (x0 - (float) x) / (float) width;
+            const float t1 = (x1 - (float) x) / (float) width;
+            const float h0 = halfHeightAt (t0, isPan);
+            const float h1 = halfHeightAt (t1, isPan);
+            p.startNewSubPath (x0, centreY - h0);
+            p.lineTo (x1, centreY - h1);
+            p.lineTo (x1, centreY + h1);
+            p.lineTo (x0, centreY + h0);
+            p.closeSubPath();
+            return p;
+        }
+
         void drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                                 float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
                                 const juce::Slider::SliderStyle, juce::Slider& slider) override
@@ -275,31 +318,29 @@ private:
             const float zeroT  = range > 0.0 ? (float) ((0.0 - slider.getMinimum()) / range) : 0.5f;
             const float zeroX  = (float) x + zeroT * (float) width;
 
-            // Groove
-            const juce::Rectangle<float> groove ((float) x, centreY - 1.5f, (float) width, 3.0f);
-            g.setColour (juce::Colour (0xFF181D22));
-            g.fillRoundedRectangle (groove, 1.5f);
+            // Base wedge — full width, dark
+            g.setColour (juce::Colour (0xFF1A1A1A));
+            g.fillPath (wedgeSegment ((float) x, (float) (x + width), x, width, centreY, isPan));
 
-            // Fill: left-anchored for VOLUME, centre-anchored for PAN
-            const float fillX0 = isPan ? juce::jmin (zeroX, sliderPos) : groove.getX();
+            // Accent fill wedge: left-anchored for VOLUME, centre-anchored for PAN.
+            // Sampled from the same wedgeSegment() so the taper always lines
+            // up exactly with the base, whatever the fill span turns out to be.
+            const float fillX0 = isPan ? juce::jmin (zeroX, sliderPos) : (float) x;
             const float fillX1 = isPan ? juce::jmax (zeroX, sliderPos) : sliderPos;
-            const float fillW  = juce::jlimit (0.0f, groove.getWidth(), fillX1 - fillX0);
-            if (fillW > 0.5f)
+            if (fillX1 > fillX0 + 0.5f)
             {
                 g.setColour (accent);
-                g.fillRoundedRectangle ({ fillX0, groove.getY(), fillW, groove.getHeight() }, 1.5f);
+                g.fillPath (wedgeSegment (fillX0, fillX1, x, width, centreY, isPan));
             }
 
             // Zero tick
             g.setColour (juce::Colours::white.withAlpha (0.30f));
-            g.fillRect (juce::Rectangle<float> (1.0f, 9.0f).withCentre ({ zeroX, centreY }));
+            g.fillRect (juce::Rectangle<float> (1.0f, 10.0f).withCentre ({ zeroX, centreY }));
 
-            // Thumb — flat capsule, no glow
-            const juce::Rectangle<float> thumb (8.0f, (float) height - 2.0f);
-            g.setColour (accent);
-            g.fillRoundedRectangle (thumb.withCentre ({ sliderPos, centreY }), 4.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.35f));
-            g.drawRoundedRectangle (thumb.withCentre ({ sliderPos, centreY }), 4.0f, 1.0f);
+            // Thumb — slim flat rectangle, sharp corners, no glow
+            const juce::Rectangle<float> thumb (3.0f, (float) height - 2.0f);
+            g.setColour (juce::Colours::white);
+            g.fillRect (thumb.withCentre ({ sliderPos, centreY }));
         }
     };
 
@@ -313,14 +354,22 @@ private:
 
     bool hasTrack() const { return juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()); }
 
+    // DYSEKT-METRO pass: M/S/R stay three distinct accent colours (amber /
+    // gold / red) — that per-button colour is a functional cue, not just
+    // decoration — but move from an alpha-tinted outline to a solid flat
+    // fill so they read as tiles rather than translucent chips. Off-state
+    // is a dimmed solid fill (not a wash) so the button never looks empty;
+    // on-state is the full accent colour with a colour-matched dark label
+    // instead of white, since white-on-saturated reads muddy at full
+    // opacity for the lighter (gold) swatch in particular.
     void configureButton (juce::TextButton& button, const juce::String& text, juce::Colour colour)
     {
         button.setButtonText (text);
         button.setClickingTogglesState (true);
-        button.setColour (juce::TextButton::buttonColourId,   colour.withAlpha (0.16f));
-        button.setColour (juce::TextButton::buttonOnColourId, colour.withAlpha (0.62f));
-        button.setColour (juce::TextButton::textColourOffId,  colour.brighter (0.25f));
-        button.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+        button.setColour (juce::TextButton::buttonColourId,   colour.darker (0.55f));
+        button.setColour (juce::TextButton::buttonOnColourId, colour);
+        button.setColour (juce::TextButton::textColourOffId,  colour.brighter (0.35f));
+        button.setColour (juce::TextButton::textColourOnId,   colour.darker (0.75f));
         addAndMakeVisible (button);
     }
 
