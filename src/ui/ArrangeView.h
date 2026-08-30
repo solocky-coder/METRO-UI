@@ -1935,7 +1935,6 @@ private:
     void paintOneTrack (juce::Graphics& g, int i) const
     {
         const auto info  = engine.getTrackInfo (i);
-        const bool isSel = (i == selectedTrack);
         const bool muted = ! info.enabled;
 
         const juce::Rectangle<int> rowR (
@@ -1952,10 +1951,13 @@ private:
         // brightness alternation — every row is one flat colour, and the
         // "seam" between tracks is a solid dark gap rather than a 1px
         // hairline, so the row boundaries read clearly even at a glance.
-        // Selected row is a flat tinted fill, not an alpha wash over the
-        // base colour.
+        // Row background stays neutral regardless of track selection — a
+        // whole-row tint (even the old subtle alpha wash) reads as "this
+        // whole row, including empty grid space, is highlighted", when
+        // only the clip itself should carry that signal. See paintClip's
+        // accent-line treatment for the actual selection indicator.
         const auto& theme = getTheme();
-        g.setColour (isSel ? theme.accent.darker (0.7f) : theme.waveformBg);
+        g.setColour (theme.waveformBg);
         g.fillRect (rowR.withTrimmedBottom (2));
         g.setColour (juce::Colour (0xFF000000));
         g.fillRect (rowR.withTop (rowR.getBottom() - 2));
