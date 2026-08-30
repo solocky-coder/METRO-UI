@@ -56,6 +56,23 @@ public:
     /** No zone to show — draws the empty-state treatment. */
     void clearZone();
 
+    /** Whether the OUT (output bus) field is shown at all. MultisamplerEditor
+        calls this once, at construction, with the inverse of
+        (processor.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+        — see MultisamplerEditor's constructor. In the standalone build, only
+        the processor's Main bus ever reaches a physical output (there's no
+        multi-channel device routing UI in standalone/), so an AUX 1–15
+        choice there is a dead end: audio is rendered but never heard, yet
+        the OUT knob would still look fully functional and the choice would
+        still persist in the saved patch. Rather than lock the control
+        read-only (which still leaves a dead, confusing knob on screen), the
+        field is excluded from the layout entirely and the row reflows to
+        fill the gap — see paint()'s layoutRow() calls. Plugin builds
+        (VST3/AU/etc.) always pass true here since a host can route AUX
+        buses freely. Defaults to true so this component shows OUT unless
+        explicitly told otherwise. */
+    void setOutputBusVisible (bool shouldShow);
+
     /** Whether the currently-displayed zone accepts drag/click edits. Must
         only be true when the displayed zone IS the selected zone (see
         MultisamplerEditor::resized()'s displayIndex/editable resolution in
@@ -173,6 +190,12 @@ private:
     } snapshot;
 
     bool editable = false;
+
+    // See setOutputBusVisible()'s doc comment above. true (OUT shown) until
+    // MultisamplerEditor says otherwise — matches this component's existing
+    // "editable until told otherwise doesn't apply, but visible does" default
+    // posture for every other field, which is never conditionally hidden.
+    bool outputBusVisible = true;
 
     struct Cell { juce::Rectangle<int> bounds; MultisamplerZoneField field; };
     std::vector<Cell> cells;

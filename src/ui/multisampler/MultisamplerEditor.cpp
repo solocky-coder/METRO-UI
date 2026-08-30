@@ -145,6 +145,21 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         showMidiLearnMenu (field, screenPos);
     };
     zoneLcd.setMidiLearnManager (&processor.midiLearn);
+
+    // OUT (output bus) only makes sense to show where something can act on
+    // an AUX 1–15 choice. In a real DAW host, any bus can be routed
+    // freely, but the standalone build hard-caps its audio device to 2
+    // output channels and only ever pulls the processor's Main bus into
+    // the callback (see standalone/MainWindow.h) — so AUX 1–15 there is a
+    // dead end: audio renders internally but never reaches a speaker. Set
+    // once at construction (wrapperType doesn't change for the lifetime of
+    // an editor instance) via JUCE's own wrapperType, the same mechanism
+    // used elsewhere in this app to distinguish standalone from a hosted
+    // plugin. See MultisamplerZoneLcd::setOutputBusVisible()'s doc comment
+    // for why this removes the field from the layout rather than just
+    // disabling it.
+    zoneLcd.setOutputBusVisible (processor.wrapperType != juce::AudioProcessor::wrapperType_Standalone);
+
     refreshZoneLcdDisplay();   // starts empty — nothing selected/hovered yet
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet

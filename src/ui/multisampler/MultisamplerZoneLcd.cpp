@@ -95,6 +95,13 @@ void MultisamplerZoneLcd::setEditable (bool shouldEdit)
     repaint();
 }
 
+void MultisamplerZoneLcd::setOutputBusVisible (bool shouldShow)
+{
+    if (outputBusVisible == shouldShow) return;
+    outputBusVisible = shouldShow;
+    repaint();
+}
+
 // ── Field metadata ───────────────────────────────────────────────────────
 
 juce::String MultisamplerZoneLcd::labelFor (MultisamplerZoneField field) const
@@ -452,12 +459,19 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
 
     // Three rows of knob cells — row 1 has 7 fields (mapping + tune/pan/gain),
     // row 2 has 9 (envelope/filter/routing, including the LOOP and MIX flat
-    // toggles), row 3 has 9 (the EQ1/EQ2/EQ3 band controls) — matching
+    // toggles) or 8 when OUT is excluded (see outputBusVisible below), row 3
+    // has 9 (the EQ1/EQ2/EQ3 band controls) — matching
     // SliceControlBar's own knob-row layouts (drawKnobCell in a straight
     // horizontal run) instead of the old cramped 4/4/6 text-cell split.
     const int rowH = content.getHeight() / 3;
 
-    auto layoutRow = [&] (juce::Rectangle<int> row, std::initializer_list<MultisamplerZoneField> fields)
+    // Takes a vector rather than an initializer_list so row 2 below can be
+    // built conditionally (OUT dropped entirely when !outputBusVisible,
+    // rather than left in the list and merely skipped — the row's cellW
+    // divides by however many fields actually get passed in, so dropping
+    // OUT here is also what makes the remaining fields reflow to fill the
+    // gap instead of leaving a blank cell where it used to sit).
+    auto layoutRow = [&] (juce::Rectangle<int> row, const std::vector<MultisamplerZoneField>& fields)
     {
         const int n = (int) fields.size();
         const int cellW = row.getWidth() / juce::jmax (1, n);
@@ -476,12 +490,22 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
                  MultisamplerZoneField::rootKey,
                  MultisamplerZoneField::tune, MultisamplerZoneField::pan,
                  MultisamplerZoneField::gain });
-    layoutRow (content.removeFromTop (rowH),
-               { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
-                 MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
-                 MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
-                 MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus,
-                 MultisamplerZoneField::showInMixer });
+
+    // OUT is only meaningful when something downstream can actually honour
+    // an AUX 1–15 choice — see setOutputBusVisible()'s doc comment in the
+    // header for why the standalone build can't. Everything else in this
+    // row is unconditional.
+    std::vector<MultisamplerZoneField> row2 {
+        MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
+        MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
+        MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
+        MultisamplerZoneField::resonance
+    };
+    if (outputBusVisible)
+        row2.push_back (MultisamplerZoneField::outputBus);
+    row2.push_back (MultisamplerZoneField::showInMixer);
+    layoutRow (content.removeFromTop (rowH), row2);
+
     layoutRow (content,
                { MultisamplerZoneField::eq1Freq, MultisamplerZoneField::eq1Gain,
                  MultisamplerZoneField::eq1Bw, MultisamplerZoneField::eq2Freq,
