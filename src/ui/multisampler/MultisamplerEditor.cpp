@@ -188,6 +188,7 @@ void MultisamplerEditor::resized()
     auto r = getLocalBounds().reduced (6);
 
     auto header = r.removeFromTop (kHeaderH - 6);
+    const auto headerFull = header;   // full-width row, before left/right consumption below
     titleLabel.setBounds (header.removeFromLeft (140));
     header.removeFromRight (4);
     newButton.setBounds    (header.removeFromRight (60));
@@ -206,13 +207,25 @@ void MultisamplerEditor::resized()
     zoneBadgeLabel.setBounds (header.removeFromRight (90));
     header.removeFromRight (6);
 
-    // zoneTagLabel ("ZONE NN   name") is centred in whatever's left of the
-    // header between titleLabel and the toolbar cluster — per feedback on
-    // the annotated screenshot, it previously sat flush against the
-    // toolbar and read as disconnected from the title on the other side.
-    // Centring it in the blank gap ties it visually to the header as a
-    // whole instead of to either end.
-    zoneTagLabel.setBounds (header.withSizeKeepingCentre (240, header.getHeight()));
+    // zoneTagLabel ("ZONE NN   name") centres itself on controlFrameCentreX
+    // — the x-centre of the DualLcdControlFrame one row up, supplied by
+    // PluginEditor every layout pass via setControlFrameCentreX() — so it
+    // reads as tied to that frame rather than to this header's own,
+    // asymmetric left/right toolbar clusters. Clamped against the FULL
+    // header row (headerFull), not the leftover gap between clusters,
+    // since the leftover gap is exactly the wrong-answer this replaces —
+    // clamping to it would just reproduce the old off-centre behaviour on
+    // any window narrow enough for the target point to fall near a
+    // button. Falls back to centring in the full header only until
+    // PluginEditor has laid out at least once (controlFrameCentreX == -1).
+    constexpr int kZoneTagW = 240;
+    const int fallbackCentreX = headerFull.getCentreX();
+    int tagCentreX = (controlFrameCentreX >= 0) ? controlFrameCentreX : fallbackCentreX;
+    tagCentreX = juce::jlimit (headerFull.getX() + kZoneTagW / 2,
+                                headerFull.getRight() - kZoneTagW / 2,
+                                tagCentreX);
+    zoneTagLabel.setBounds (juce::Rectangle<int> (kZoneTagW, headerFull.getHeight())
+                                 .withCentre ({ tagCentreX, headerFull.getCentreY() }));
 
     r.removeFromTop (6);
     zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
