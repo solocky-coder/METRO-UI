@@ -1010,7 +1010,22 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             z.rootKey = juce::jlimit (0, 127, juce::roundToInt (value));
             break;
         case MultisamplerZoneField::group:
-            z.group = juce::jmax (0, juce::roundToInt (value));
+            // GROUP/OFF BY controls removed from the UI entirely — see
+            // MultisamplerZoneLcd.cpp's layoutRow comment. group/offBy were
+            // never wired to real choke behaviour in VoicePool (confirmed:
+            // SoundFontLoader never reads them when building playback
+            // slices), so this was a knob that could drift to arbitrary
+            // values (no upper clamp existed) and audibly do nothing.
+            // The enum slot is deliberately left in place, not deleted --
+            // removing it would renumber every later field's MIDI Learn
+            // slot index (kMidiLearnNumSlots is derived from this enum's
+            // integer values) and silently remap any user's existing
+            // learned CCs to the wrong control. Left as a no-op instead:
+            // MIDI Learn can still "arm" this slot, but nothing happens on
+            // incoming CC, matching there being no visible control to
+            // reflect a change anyway. z.group itself is untouched here so
+            // any value read from an externally-authored SFZ file (via
+            // SfzImporter) still round-trips correctly on export.
             break;
         case MultisamplerZoneField::tune:
             // Matches SampleZone::tuneCents' own documented range.
@@ -1139,12 +1154,9 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
 {
     const int slot = midiLearnSlotFor (field);
     const bool mapped = processor.midiLearn.isMapped (slot);
-    const bool armedHere = (processor.midiLearn.getArmedSlot() == slot);
 
     juce::PopupMenu menu;
-    menu.addItem (1, armedHere ? "Re-arm MIDI Learn" : "Learn MIDI CC");
-    if (armedHere)
-        menu.addItem (3, "Cancel MIDI Learn");
+    menu.addItem (1, "Learn MIDI CC");
     if (mapped)
         menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (slot) + ")");
 
@@ -1164,7 +1176,6 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
         {
             if (result == 1)      { processor.midiLearn.armLearn (slot);      zoneLcd.repaint(); }
             else if (result == 2) { processor.midiLearn.clearMapping (slot);  zoneLcd.repaint(); }
-            else if (result == 3) { processor.midiLearn.cancelLearn();        zoneLcd.repaint(); }
         });
 }
 

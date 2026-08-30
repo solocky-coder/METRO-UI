@@ -473,7 +473,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
 
     layoutRow (content.removeFromTop (rowH),
                { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
-                 MultisamplerZoneField::rootKey, MultisamplerZoneField::group,
+                 MultisamplerZoneField::rootKey,
                  MultisamplerZoneField::tune, MultisamplerZoneField::pan,
                  MultisamplerZoneField::gain });
     layoutRow (content.removeFromTop (rowH),
@@ -497,29 +497,6 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
     // cell's own index for the hover/drag comparisons below.
     const int idx = (int) cells.size() - 1;
 
-    const int  slot   = midiLearnSlotFor (field);
-    const bool armed  = (midiLearn != nullptr) && (midiLearn->getArmedSlot() == slot);
-
-    // ── Active MIDI Learn highlight ──────────────────────────────────────
-    // Same pulsating fill+border treatment SliceControlBar::drawKnobCell
-    // uses for an armed field, so "waiting for a CC" reads identically in
-    // both the Slicer and the Multisampler. There's no shared pulsePhase
-    // member here (unlike SliceControlBar's Timer-driven one) — this component
-    // repaints continuously anyway while MULTISAMPLER is on screen (driven by
-    // MultisamplerEditor's 30 Hz midiLearnPoller, see pollMidiLearnCc()), so a
-    // phase derived straight from wall-clock time animates smoothly with no
-    // extra state to track or reset on arm.
-    if (armed)
-    {
-        const double nowMs = juce::Time::getMillisecondCounterHiRes();
-        const float pulsePhase = (float) std::fmod (nowMs * 0.0012, 1.0); // ~1.2 Hz
-        const float pulse = 0.5f + 0.5f * std::sin (pulsePhase * juce::MathConstants<float>::twoPi);
-        g.setColour (getTheme().accent.withAlpha (0.08f + 0.10f * pulse));
-        g.fillRect (bounds.toFloat());
-        g.setColour (getTheme().accent.withAlpha (0.55f + 0.45f * pulse));
-        g.drawRect (bounds.toFloat().reduced (0.5f), 1.0f + 1.0f * pulse);
-    }
-
     if (field == MultisamplerZoneField::loopEnabled)
         drawLoopToggleCell (g, bounds, idx);
     else if (field == MultisamplerZoneField::showInMixer)
@@ -535,7 +512,9 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
     // method's doc comment); until then this silently draws nothing.
     if (midiLearn != nullptr)
     {
+        const int slot   = midiLearnSlotFor (field);
         const bool mapped = midiLearn->isMapped (slot);
+        const bool armed  = midiLearn->getArmedSlot() == slot;
         if (mapped || armed)
         {
             g.setFont (DysektLookAndFeel::makeMonoFont (8.0f * uiScale));
