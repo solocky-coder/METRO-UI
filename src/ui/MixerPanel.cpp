@@ -75,7 +75,7 @@ namespace
                 for (int prev : out)
                 {
                     const auto& p = snap2.slices[(size_t) prev];
-                    if (p.zoneLoKey == s.zoneLoKey && p.zoneHiKey == s.zoneHiKey)
+                    if (sfzSlicesShareZone (p, s))
                     {
                         alreadySeen = true;
                         break;
@@ -1500,7 +1500,7 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
                 for (int i = 0; i < snap2.numSlices; ++i)
                 {
                     const auto& sib = snap2.slices[(size_t) i];
-                    if (sib.zoneLoKey != sl.zoneLoKey || sib.zoneHiKey != sl.zoneHiKey)
+                    if (! sfzSlicesShareZone (sib, sl))
                         continue;
                     if (i < 0 || i >= kMaxMeterSlices)
                         continue;

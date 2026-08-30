@@ -1396,7 +1396,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                             {
                                 if (i == sel) continue;
                                 auto& sib = sm.getSlice (i);
-                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                if (! sfzSlicesShareZone (sib, s))
                                     continue;
                                 sib.volume = s.volume;
                                 if (!skipLock) sib.lockMask |= kLockVolume;
@@ -1436,7 +1436,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                             {
                                 if (i == sel) continue;
                                 auto& sib = sm.getSlice (i);
-                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                if (! sfzSlicesShareZone (sib, s))
                                     continue;
                                 sib.outputBus = s.outputBus;
                                 if (!skipLock) sib.lockMask |= kLockOutputBus;
@@ -1453,7 +1453,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                             {
                                 if (i == sel) continue;
                                 auto& sib = sm.getSlice (i);
-                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                if (! sfzSlicesShareZone (sib, s))
                                     continue;
                                 sib.showInMixer = s.showInMixer;
                             }
@@ -1473,7 +1473,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                             {
                                 if (i == sel) continue;
                                 auto& sib = sm.getSlice (i);
-                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                if (! sfzSlicesShareZone (sib, s))
                                     continue;
                                 sib.pan = s.pan;
                                 if (!skipLock) sib.lockMask |= kLockPan;
@@ -3292,6 +3292,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 uint32_t colourArgb;
                 int      zoneLoKey;
                 int      zoneHiKey;
+                int      zoneRegionIdx; // true region identity — see Slice::zoneRegionIdx
                 int      outputBus;   // -1 = unset — see SfzSliceDescriptor::outputBus
                 bool     showInMixer; // manual pin override — see SfzSliceDescriptor::showInMixer
             };
@@ -3314,7 +3315,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // No (valid) loop region for this note — plain one-shot slice.
                     int idx = sliceManager2.createSlice (desc.startSample, desc.endSample);
                     if (idx >= 0)
-                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
+                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.zoneRegionIdx, desc.outputBus, desc.showInMixer });
                     continue;
                 }
 
@@ -3351,7 +3352,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SliceControlBar.cpp.
                     sliceManager2.getSlice (tailIdx).loopMode = 1;   // forward loop, whole-slice
 
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.zoneRegionIdx, desc.outputBus, desc.showInMixer });
 
                     // Head + tail belong to the same zone — same colour on
                     // both so the loop-split doesn't look like two zones.
@@ -3365,6 +3366,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // head in case anything ever iterates slices by zone.
                     sliceManager2.getSlice (tailIdx).zoneLoKey = desc.zoneLoKey;
                     sliceManager2.getSlice (tailIdx).zoneHiKey = desc.zoneHiKey;
+                    sliceManager2.getSlice (tailIdx).zoneRegionIdx = desc.zoneRegionIdx;
 
                     // Same reasoning again for output bus — the tail plays
                     // as part of the same note as the head (via
@@ -3386,7 +3388,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 {
                     // Tail creation failed (cap reached) — fall back to a
                     // plain one-shot head so the note still plays something.
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.zoneRegionIdx, desc.outputBus, desc.showInMixer });
                 }
             }
 
@@ -3401,6 +3403,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     sliceManager2.getSlice (pin.sliceIdx).colour = juce::Colour (pin.colourArgb);
                 sliceManager2.getSlice (pin.sliceIdx).zoneLoKey = pin.zoneLoKey;
                 sliceManager2.getSlice (pin.sliceIdx).zoneHiKey = pin.zoneHiKey;
+                sliceManager2.getSlice (pin.sliceIdx).zoneRegionIdx = pin.zoneRegionIdx;
 
                 // -1 means the matched <region> had no dysekt_output_bus
                 // opcode (or no region matched at all) — leave Slice's own

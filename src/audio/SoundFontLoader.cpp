@@ -1094,23 +1094,7 @@ private:
                     // Loop the sustain portion of the render only — stop
                     // short of the baked release tail so the native
                     // infinite loop never plays back into a fade.
-                    //
-                    // Also skip a short margin at the very start of the
-                    // render before the loop begins. Two reasons:
-                    //   1. PluginProcessor.cpp's head/tail split requires
-                    //      loopStart > startSample (a zero-length "attack
-                    //      head" slice isn't valid) — setting loopStart
-                    //      == startSample here made hasLoop evaluate false
-                    //      for every note, silently falling back to a
-                    //      plain one-shot with NO loop at all.
-                    //   2. Without the skip, the loop would replay the
-                    //      render's own attack transient every cycle
-                    //      instead of just looping the settled sustain.
-                    constexpr float kLoopAttackSkipSec = 0.015f;   // 15ms
-                    const int attackSkip = juce::jmax (1, (int) (sampleRate * kLoopAttackSkipSec));
-
-                    const int bufStart = desc.startSample
-                                        + juce::jmin (attackSkip, noteLen - 1);
+                    const int bufStart = desc.startSample;
                     const int bufEnd   = desc.endSample
                                         - juce::jmin (releaseSamples, noteLen - 1);
 
@@ -1166,6 +1150,7 @@ private:
                     desc.zoneColourArgb = SfzZoneColours::zoneColourArgb (i);
                     desc.zoneLoKey      = rk.loKey;
                     desc.zoneHiKey      = rk.hiKey;
+                    desc.zoneRegionIdx  = i;
                     desc.outputBus      = rk.outputBus;   // -1 if the region had no dysekt_output_bus opcode
                     desc.showInMixer    = rk.showInMixer;
                     break;   // last matching region wins (see comment above)

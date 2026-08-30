@@ -107,6 +107,24 @@ struct Slice
     int      zoneLoKey      = -1;
     int      zoneHiKey      = -1;
 
+    // The actual identity of the <region> block a slice was expanded from
+    // (its index in file order, matching SfzZoneColours::zoneColourArgb's
+    // own indexing) -- NOT derived from zoneLoKey/zoneHiKey. Two distinct
+    // regions can legitimately share an identical key range (e.g. two
+    // different articulations mapped to the same keys, or a mute/choke-
+    // group companion zone), and before this field existed, every sibling-
+    // matching site above keyed only on (zoneLoKey, zoneHiKey) -- so an
+    // edit to one such zone (MIX/OUT/volume/pan) silently applied to the
+    // OTHER, unrelated zone too, and the mixer's collectVisibleSfzZones()
+    // collapsed both zones' MIX-shown rows into one. -1 for every Slicer
+    // slice and any SFZ-PLAYER slice built outside the normal zone-load
+    // path, same as zoneLoKey/zoneHiKey -- callers must treat -1 as "no
+    // real zone identity" and fall back to the old key-range-only match
+    // (see each sibling-matching site's own comment) so pre-existing saved
+    // instruments (serialized before this field existed) keep their old
+    // behaviour rather than silently ungrouping into one row per slice.
+    int      zoneRegionIdx  = -1;
+
     /** -1 = no chain. Otherwise, the index of a slice to retrigger (looping)
      *  the instant this one-shot slice's voice naturally reaches its end.
      *  Used exclusively by the SFZ-PLAYER engine to approximate SFZ
@@ -139,3 +157,23 @@ struct Slice
         return juce::Colour (kPal[juce::Random::getSystemRandom().nextInt (32)]);
     }() };
 };
+
+// True "is this the same SFZ-PLAYER zone" test for sibling-matching sites
+// (bulk MIX/OUT/volume/pan propagation in PluginProcessor.cpp, and
+// MixerPanel's row-collapsing dedupe) -- previously every one of those
+// sites matched on (zoneLoKey, zoneHiKey) alone, which silently merged two
+// *different* zones that happened to share an identical key range (see
+// Slice::zoneRegionIdx's doc comment). Falls back to the old key-range-only
+// match when either side lacks a region index, so pre-existing behaviour
+// is preserved for non-SFZ slices and for zones read from a session saved
+// before zoneRegionIdx existed.
+inline bool sfzSlicesShareZone (const Slice& a, const Slice& b)
+{
+    if (a.zoneLoKey < 0 || b.zoneLoKey < 0) return false;
+    if (a.zoneLoKey != b.zoneLoKey || a.zoneHiKey != b.zoneHiKey) return false;
+
+    if (a.zoneRegionIdx >= 0 && b.zoneRegionIdx >= 0)
+        return a.zoneRegionIdx == b.zoneRegionIdx;
+
+    return true;   // legacy fallback: key-range match is all we have
+}
