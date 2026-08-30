@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <array>
 #include <atomic>
+#include "ui/multisampler/MultisamplerZoneField.h"
 
 /**
  *  MidiLearnManager  v5
@@ -27,7 +28,13 @@
  *  armedSlot — std::atomic<int>. UI thread writes; audio thread reads.
  */
 
-static constexpr int kMidiLearnNumSlots = 36;  // slots 0-31 (existing) + 32-35 (SfzPlayer ADSR)
+// Derived, not hand-maintained: Multisampler's slot range (kMidiLearnSlotBase
+// onward — see MultisamplerZoneField.h) is the highest one in use, so the
+// total slot count is just one past its end. This is exactly the class of
+// bug a hardcoded literal caused previously (a stale count silently left
+// newly-added fields with no slot at all) — see the METRO-UI Multisampler
+// Implementation Plan's incident writeup for Fix #1.
+static constexpr int kMidiLearnNumSlots = kMidiLearnSlotCount;
 
 class MidiLearnManager
 {

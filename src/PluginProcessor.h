@@ -19,6 +19,12 @@
 #include "audio/SfzPlayer.h"
 #include "UndoManager.h"
 #include "MidiLearnManager.h"
+// Included explicitly (not just relied on transitively via MidiLearnManager.h
+// above) because the static_assert right after SliceParamField below names
+// kMidiLearnSlotBase directly. It's a free constant, not a member of
+// MultisamplerZoneField — do not qualify it as
+// MultisamplerZoneField::kMidiLearnSlotBase.
+#include "ui/multisampler/MultisamplerZoneField.h"
 #include "CrashLogger.h"
 #include "params/ParamIds.h"
 #include "params/ParamLayout.h"
@@ -151,7 +157,6 @@ public:
         FieldHold   = 29,      // 29 - per-slice AHDSR hold time (seconds)
         FieldZoom   = 30,      // 30 - waveform zoom level
         FieldScroll = 31,      // 31 - waveform scroll position
-        FieldGlobalMono = 30,  // 30 - global Poly/Mono switch (bool)
         // SfzPlayer ADSR — slots 32-35
         FieldSfzAttack  = 32,  // 32 - sfizz ampeg_attack  (seconds, 0-30)
         FieldSfzDecay   = 33,  // 33 - sfizz ampeg_decay   (seconds, 0-30)
@@ -176,7 +181,28 @@ public:
         FieldEqHighGain   = 49,  // dB  -18..+18
         // v25: per-slice mixer track visibility
         FieldShowInMixer  = 50,  // bool - whether this slice gets its own MixerPanel row
+        // Dedicated slot — previously aliased onto FieldZoom (30), which
+        // silently let one physical CC/knob drive both the waveform zoom
+        // and the global Poly/Mono switch at once. See the METRO-UI
+        // Multisampler Implementation Plan's incident writeup for Fix #2.
+        FieldGlobalMono = 51,  // 51 - global Poly/Mono switch (bool)
     };
+
+    // kMidiLearnSlotBase (MultisamplerZoneField.h, included transitively via
+    // MidiLearnManager.h above) must sit strictly above every slot assigned
+    // in the enum just above, or a Multisampler field would alias a Slicer/
+    // SFZ-Player field the exact same way FieldGlobalMono aliased FieldZoom
+    // until Fix #2. This can't be written as
+    // `kMidiLearnSlotBase == FieldGlobalMono + 1` and have kMidiLearnSlotBase
+    // itself be *derived* from FieldGlobalMono — kMidiLearnSlotBase lives in
+    // a header included before this enum exists, so it has no way to see
+    // FieldGlobalMono while it's being defined; it has to stay a literal
+    // (currently 52). What this assert buys instead: whoever adds a new
+    // slot above 51 here and forgets to also raise kMidiLearnSlotBase gets a
+    // compile error at this line, not a silent aliasing bug discovered later.
+    static_assert (kMidiLearnSlotBase > FieldGlobalMono,
+                   "kMidiLearnSlotBase (MultisamplerZoneField.h) must be raised "
+                   "above the new highest Slicer/SFZ-Player MIDI Learn slot");
 
     // ── Command types ─────────────────────────────────────────────────────────
     enum CommandType
@@ -627,6 +653,40 @@ public:
     } zonePreview3;
 
     MidiLearnManager midiLearn;
+
+    /** MIDI Learn staging for Multisampler fields — audio thread writes,
+     *  MultisamplerEditor's message-thread poller reads. One entry per
+     *  MultisamplerZoneField (index == static_cast<int>(field), NOT the
+     *  MidiLearnManager slot number — subtract kMidiLearnSlotBase from a
+     *  slot before indexing these).
+     *
+     *  Unlike the SFZ-PLAYER ADSR/reverb/master-knob CC handling in
+     *  processMidi() below (which calls straight into sfzPlayer's plain
+     *  atomic setters from the audio thread), a Multisampler field can't
+     *  apply itself directly: MultisamplerEditor::applyZoneFieldEdit() is
+     *  GUI-thread-only (mutates instrument.zones, arms a juce::Timer, fires
+     *  std::function callbacks) — none of that is real-time-safe. So
+     *  processMidi() stages the computed value here instead; see
+     *  MultisamplerEditor::pollMidiLearnCc()/applyMidiLearnCc() for the
+     *  read/apply side, running on a dedicated 30 Hz juce::Timer.
+     *
+     *  msMidiLearnRelDelta accumulates (audio thread adds via a
+     *  compare-exchange loop — std::atomic<float> has no fetch_add before
+     *  C++20) between polls; the poller drains it with an exchange-to-zero
+     *  so a burst of encoder turns between two ticks sums correctly rather
+     *  than only the last message landing. msMidiLearnAbsValue/
+     *  msMidiLearnAbsDirty are a simple "latest value + dirty flag" pair
+     *  for absolute knobs — the poller test-and-clears the flag so an
+     *  unchanged value isn't reapplied every tick.
+     *
+     *  Left default-constructed here, not brace-initialized — std::atomic's
+     *  default constructor doesn't guarantee a zeroed value before C++20,
+     *  same reasoning MidiLearnManager's own atomic arrays follow. Zeroed
+     *  explicitly in the constructor body instead (see DysektProcessor::
+     *  DysektProcessor()). */
+    std::array<std::atomic<float>, (size_t) MultisamplerZoneField::kCount> msMidiLearnRelDelta;
+    std::array<std::atomic<float>, (size_t) MultisamplerZoneField::kCount> msMidiLearnAbsValue;
+    std::array<std::atomic<bool>,  (size_t) MultisamplerZoneField::kCount> msMidiLearnAbsDirty;
 
     // ── SF2 player (SF-PLAYER, ch3 default) ──────────────────────────────────
     SfzPlayer sfzPlayer;

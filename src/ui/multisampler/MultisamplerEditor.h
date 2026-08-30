@@ -217,6 +217,15 @@ public:
         (commit) split. No-op if nothing is currently selected/editable. */
     void applyZoneFieldEdit (MultisamplerZoneField field, float value, bool isCommit);
 
+    /** Shows the right-click "Learn MIDI CC" / "Clear" popup for one
+        zoneLcd field cell — hooked to zoneLcd.onFieldLearnMenuRequested in
+        the constructor. Mirrors SliceControlBar::showMidiLearnMenu, minus
+        its "Open MIDI Learn Dialog..." item (that dialog lists every
+        mapped field across the whole plugin already, including these —
+        see gSlotParamNames in MidiLearnDialog.cpp — so it isn't specific
+        to this menu the way Learn/Clear are). */
+    void showMidiLearnMenu (MultisamplerZoneField field, juce::Point<int> screenPos);
+
     /** Auto-assigns output buses 1-15 (round-robin, top-to-bottom zones[]
         order) to the first `numZones` zones — used by the drum-kit
         auto-routing confirm prompt (PluginEditor::offerDrumKitAutoRouting)
@@ -270,6 +279,56 @@ public:
 
 private:
     void timerCallback() override;   // fires once, kEngineSyncDebounceMs after the last edit
+
+    // ── MIDI Learn CC application (Multisampler) ────────────────────────
+    // processMidi() (PluginProcessor.cpp) can't call applyZoneFieldEdit()
+    // directly from the audio thread — that method mutates instrument.zones,
+    // calls std::function callbacks, and arms a juce::Timer, none of which
+    // are real-time-safe. So it stages the computed CC value into
+    // processor.msMidiLearnRelDelta/msMidiLearnAbsValue/msMidiLearnAbsDirty
+    // (lock-free atomics), and this editor drains them on a steady
+    // message-thread poll instead. Same split SliceControlBar's own
+    // always-on 30 Hz timer uses for CC-driven marker repaints, just with
+    // an apply step added since Multisampler fields, unlike a Slicer
+    // marker, have no atomic-only representation to poll for display alone.
+
+    /** Drains processor's msMidiLearn* staging arrays (one entry per
+        MultisamplerZoneField) and applies whatever changed via
+        applyMidiLearnCc(). Also repaints zoneLcd unconditionally so its
+        CC-label overlay reflects an armed->mapped transition or a manual
+        clear even on a tick where nothing else changed — same "always
+        poll, cheap to repaint" reasoning SliceControlBar's own timer uses.
+        Runs on the message thread via midiLearnPoller (30 Hz, started in
+        the constructor / stopped in the destructor). */
+    void pollMidiLearnCc();
+
+    /** Applies one field's learned CC to the currently-inspected zone.
+        ccValue is a normalised 0..1 absolute value when isRelative is
+        false, or a raw signed step count (same convention PluginProcessor's
+        own relative-encoder decode uses elsewhere) when isRelative is true.
+        No-op if nothing is currently selected/editable — mirrors
+        applyZoneFieldEdit()'s own guard, since this ultimately calls that. */
+    void applyMidiLearnCc (MultisamplerZoneField field, float ccValue, bool isRelative);
+
+    /** Reads a field's current native value directly from the live model
+        (instrument.zones, keyed by inspectedZoneId) rather than zoneLcd's
+        display snapshot, which can lag until its next repaint. Used by
+        applyMidiLearnCc() as the base value for relative-encoder deltas.
+        Returns 0.0f if nothing is currently selected/editable. */
+    float getLiveFieldValue (MultisamplerZoneField field) const;
+
+    // Separate nested Timer, not a second base-class inheritance — a class
+    // can only privately inherit juce::Timer once, and this needs its own
+    // fixed 30 Hz poll independent of the debounced one-shot engine-sync
+    // Timer this class already privately inherits above.
+    struct MidiLearnPoller : private juce::Timer
+    {
+        explicit MidiLearnPoller (MultisamplerEditor& ownerToUse) : owner (ownerToUse) {}
+        void start() { startTimerHz (30); }
+        void stop()  { stopTimer(); }
+        void timerCallback() override { owner.pollMidiLearnCc(); }
+        MultisamplerEditor& owner;
+    } midiLearnPoller { *this };
 
     void scheduleEngineSync();       // (re)start the debounce timer
     // isFreshLoad: true when called right after setInstrument() wholesale-swapped

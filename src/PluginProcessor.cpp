@@ -237,6 +237,16 @@ DysektProcessor::DysektProcessor()
     filterResParam    = apvts.getRawParameterValue (ParamIds::defaultFilterRes);
     sliceStartParam  = apvts.getRawParameterValue (ParamIds::sliceStart);
     sliceEndParam    = apvts.getRawParameterValue (ParamIds::sliceEnd);
+
+    // Multisampler MIDI Learn staging arrays — zeroed explicitly rather than
+    // brace-initialized in the header (see their doc comment in
+    // PluginProcessor.h for why: std::atomic's default constructor doesn't
+    // guarantee a zeroed value before C++20). Mirrors MidiLearnManager's
+    // own constructor, which zeroes its atomic arrays the same way.
+    for (auto& a : msMidiLearnRelDelta) a.store (0.0f, std::memory_order_relaxed);
+    for (auto& a : msMidiLearnAbsValue) a.store (0.0f, std::memory_order_relaxed);
+    for (auto& a : msMidiLearnAbsDirty) a.store (false, std::memory_order_relaxed);
+
     publishUiSliceSnapshot();
 
     // SF2-PLAYER (sfzPlayer) is multi-timbral: per-preset channel routing is
@@ -1887,6 +1897,21 @@ void DysektProcessor::handleCommand (const Command& cmd)
     }
 }
 
+// Adds `delta` to `target` atomically. std::atomic<float>::fetch_add isn't
+// available until C++20, so this uses the standard compare-exchange-loop
+// workaround — needed by the Multisampler MIDI Learn relative-CC staging in
+// processMidi() below (msMidiLearnRelDelta), which multiple CC messages in
+// the same buffer must accumulate into rather than overwrite.
+static inline void atomicAddFloat (std::atomic<float>& target, float delta) noexcept
+{
+    float oldVal = target.load (std::memory_order_relaxed);
+    float newVal = oldVal + delta;
+    while (! target.compare_exchange_weak (oldVal, newVal,
+                                            std::memory_order_relaxed,
+                                            std::memory_order_relaxed))
+        newVal = oldVal + delta;
+}
+
 void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
 {
     // ── MIDI channel routing ──────────────────────────────────────────────────
@@ -2185,6 +2210,36 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
                         default: break;
                     }
                     uiSnapshotDirty.store (true, std::memory_order_release);
+                    continue;
+                }
+
+                // ── Multisampler MIDI Learn CC — staged for the GUI-thread ───
+                // poller (MultisamplerEditor::pollMidiLearnCc()), not applied
+                // here. Unlike the SFZ-PLAYER branches just above (which call
+                // straight into sfzPlayer's plain atomic setters), a
+                // Multisampler field can only be written via
+                // MultisamplerEditor::applyZoneFieldEdit() — a GUI-thread-only
+                // method (mutates instrument.zones, arms a juce::Timer, fires
+                // std::function callbacks) — so the audio thread stages the
+                // computed value instead of applying it directly. See
+                // msMidiLearnRelDelta/msMidiLearnAbsValue/msMidiLearnAbsDirty's
+                // doc comment in PluginProcessor.h for the full picture.
+                if (isMultisamplerMidiLearnSlot (outFieldId))
+                {
+                    const int msIdx = outFieldId - kMidiLearnSlotBase;   // 0..kCount-1
+                    if (outIsRelative)
+                    {
+                        // Accumulates across every CC message between two
+                        // poller ticks — see atomicAddFloat's own comment for
+                        // why this needs a compare-exchange loop rather than
+                        // fetch_add.
+                        atomicAddFloat (msMidiLearnRelDelta[(size_t) msIdx], outNorm);
+                    }
+                    else
+                    {
+                        msMidiLearnAbsValue[(size_t) msIdx].store (outNorm, std::memory_order_relaxed);
+                        msMidiLearnAbsDirty[(size_t) msIdx].store (true,    std::memory_order_relaxed);
+                    }
                     continue;
                 }
 

@@ -140,13 +140,24 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     {
         applyZoneFieldEdit (field, value, isCommit);
     };
+    zoneLcd.onFieldLearnMenuRequested = [this] (MultisamplerZoneField field, juce::Point<int> screenPos)
+    {
+        showMidiLearnMenu (field, screenPos);
+    };
+    zoneLcd.setMidiLearnManager (&processor.midiLearn);
     refreshZoneLcdDisplay();   // starts empty — nothing selected/hovered yet
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
+
+    // Steady 30 Hz poll for CC values processMidi() stages into
+    // processor.msMidiLearn* — see pollMidiLearnCc()'s doc comment in the
+    // header for why the audio thread can't just apply them itself.
+    midiLearnPoller.start();
 }
 
 MultisamplerEditor::~MultisamplerEditor()
 {
+    midiLearnPoller.stop();
     stopTimer();
 }
 
@@ -1096,6 +1107,8 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
                 }
             }
             break;
+        case MultisamplerZoneField::kCount:
+            break;   // sentinel, never a real field — see its doc comment
     }
 
     // Live-drag frames (isCommit == false) update the model so the zone map
@@ -1115,6 +1128,166 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
 
     refreshZoneLcdDisplay();
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
+}
+
+// =============================================================================
+// MIDI Learn (Multisampler) — showMidiLearnMenu / pollMidiLearnCc /
+// applyMidiLearnCc / getLiveFieldValue
+// =============================================================================
+
+void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::Point<int> screenPos)
+{
+    const int slot = midiLearnSlotFor (field);
+    const bool mapped = processor.midiLearn.isMapped (slot);
+
+    juce::PopupMenu menu;
+    menu.addItem (1, "Learn MIDI CC");
+    if (mapped)
+        menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (slot) + ")");
+
+    // No "Open MIDI Learn Dialog..." item here, unlike SliceControlBar's
+    // version of this menu — that dialog already lists every mapped field
+    // plugin-wide, including these (see gSlotParamNames in
+    // MidiLearnDialog.cpp), so it isn't specific to this one field's menu.
+
+    auto* topLvl = getTopLevelComponent();
+    const float ms = DysektLookAndFeel::getMenuScale();
+    menu.showMenuAsync (
+        juce::PopupMenu::Options()
+            .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
+            .withParentComponent (topLvl)
+            .withStandardItemHeight ((int) (24 * ms)),
+        [this, slot] (int result)
+        {
+            if (result == 1)      { processor.midiLearn.armLearn (slot);      zoneLcd.repaint(); }
+            else if (result == 2) { processor.midiLearn.clearMapping (slot);  zoneLcd.repaint(); }
+        });
+}
+
+void MultisamplerEditor::pollMidiLearnCc()
+{
+    // Cheap and unconditional so an armed->mapped transition or a manual
+    // Clear (from showMidiLearnMenu above) shows up promptly even on a
+    // tick where nothing else here changed — same reasoning SliceControlBar's
+    // own always-on 30 Hz timer uses for its CC-label repaints.
+    zoneLcd.repaint();
+
+    for (int i = 0; i < (int) MultisamplerZoneField::kCount; ++i)
+    {
+        const auto field = static_cast<MultisamplerZoneField> (i);
+
+        // Absolute: test-and-clear the dirty flag so a value that hasn't
+        // changed since the last poll isn't reapplied every tick.
+        const bool absDirty = processor.msMidiLearnAbsDirty[(size_t) i]
+                                   .exchange (false, std::memory_order_relaxed);
+        if (absDirty)
+        {
+            const float norm = processor.msMidiLearnAbsValue[(size_t) i]
+                                    .load (std::memory_order_relaxed);
+            applyMidiLearnCc (field, norm, /*isRelative=*/false);
+        }
+
+        // Relative: drain (exchange-to-zero) whatever delta accumulated
+        // across every CC message since the last poll, so rapid encoder
+        // turns between two 30 Hz ticks sum correctly instead of only the
+        // last one landing.
+        const float relDelta = processor.msMidiLearnRelDelta[(size_t) i]
+                                    .exchange (0.0f, std::memory_order_relaxed);
+        if (relDelta != 0.0f)
+            applyMidiLearnCc (field, relDelta, /*isRelative=*/true);
+    }
+}
+
+void MultisamplerEditor::applyMidiLearnCc (MultisamplerZoneField field, float ccValue, bool isRelative)
+{
+    if (inspectedZoneId == juce::Uuid::null())
+        return;   // nothing selected/editable — mirrors applyZoneFieldEdit's own guard
+
+    if (field == MultisamplerZoneField::loopEnabled || field == MultisamplerZoneField::showInMixer)
+    {
+        // Toggle fields: absolute CC >= 0.5 sets on, < 0.5 sets off; a
+        // relative encoder click of either polarity just flips the current
+        // state — same "click = toggle" semantics zoneLcd::mouseDown uses
+        // for a direct click on these two cells.
+        const bool newState = isRelative ? ! (getLiveFieldValue (field) > 0.5f)
+                                          : (ccValue > 0.5f);
+        applyZoneFieldEdit (field, newState ? 1.0f : 0.0f, /*isCommit=*/true);
+        return;
+    }
+
+    float nativeVal;
+    if (isRelative)
+    {
+        // ccValue is a raw signed step count here (same convention
+        // PluginProcessor::processMidi()'s other relative-encoder branches
+        // decode via MidiLearnManager::processCc). Scale it by the same
+        // per-field increment zoneLcd's own mouse-drag path uses per pixel,
+        // off the single shared table (MultisamplerZoneLcd::
+        // relCcSensitivityFor), so a knob feels the same size turning a
+        // physical encoder as dragging it one pixel with the mouse.
+        const float sens = MultisamplerZoneLcd::relCcSensitivityFor (field);
+        nativeVal = getLiveFieldValue (field) + ccValue * sens;
+    }
+    else
+    {
+        nativeVal = MultisamplerZoneLcd::nativeFromNorm (field, ccValue);
+    }
+
+    // isCommit = true on every applied CC tick, not just gesture-end: a
+    // continuous mouse drag has a clear mouseUp to distinguish live frames
+    // from the final commit, but successive ticks from a physical encoder
+    // have no equivalent "gesture end" signal. scheduleEngineSync()'s own
+    // debounce (kEngineSyncDebounceMs) already collapses a rapid run of
+    // these into a single actual engine sync once the encoder goes quiet —
+    // same pattern PluginProcessor's relative-encoder path already relies
+    // on for the Slicer/SFZ-Player side (see FieldSliceStart's relative
+    // branch, which commits via handleCommand every buffer rather than
+    // batching to a single deferred commit).
+    applyZoneFieldEdit (field, nativeVal, /*isCommit=*/true);
+}
+
+float MultisamplerEditor::getLiveFieldValue (MultisamplerZoneField field) const
+{
+    if (inspectedZoneId == juce::Uuid::null())
+        return 0.0f;
+
+    const SampleZone* zonePtr = nullptr;
+    for (auto& z : instrument.zones)
+        if (z.id == inspectedZoneId) { zonePtr = &z; break; }
+    if (zonePtr == nullptr)
+        return 0.0f;
+
+    const auto& z = *zonePtr;
+    switch (field)
+    {
+        case MultisamplerZoneField::lowKey:      return (float) z.lowKey;
+        case MultisamplerZoneField::highKey:     return (float) z.highKey;
+        case MultisamplerZoneField::rootKey:     return (float) z.rootKey;
+        case MultisamplerZoneField::tune:        return z.tuneCents;
+        case MultisamplerZoneField::pan:         return z.pan;
+        case MultisamplerZoneField::gain:        return z.gainDb;
+        case MultisamplerZoneField::attack:      return z.attackSeconds;
+        case MultisamplerZoneField::decay:       return z.decaySeconds;
+        case MultisamplerZoneField::sustain:     return z.sustainLevel;
+        case MultisamplerZoneField::release:     return z.releaseSeconds;
+        case MultisamplerZoneField::loopEnabled: return z.loopMode != LoopMode::noLoop ? 1.0f : 0.0f;
+        case MultisamplerZoneField::cutoff:      return z.filterCutoffHz;
+        case MultisamplerZoneField::resonance:   return z.filterResonance;
+        case MultisamplerZoneField::group:       return (float) z.group;
+        case MultisamplerZoneField::outputBus:   return (float) z.outputBus;
+        case MultisamplerZoneField::showInMixer: return z.showInMixer ? 1.0f : 0.0f;
+        case MultisamplerZoneField::eq1Freq:     return z.eq1Freq;
+        case MultisamplerZoneField::eq1Gain:     return z.eq1Gain;
+        case MultisamplerZoneField::eq1Bw:       return z.eq1Bw;
+        case MultisamplerZoneField::eq2Freq:     return z.eq2Freq;
+        case MultisamplerZoneField::eq2Gain:     return z.eq2Gain;
+        case MultisamplerZoneField::eq2Bw:       return z.eq2Bw;
+        case MultisamplerZoneField::eq3Freq:     return z.eq3Freq;
+        case MultisamplerZoneField::eq3Gain:     return z.eq3Gain;
+        case MultisamplerZoneField::eq3Bw:       return z.eq3Bw;
+        case MultisamplerZoneField::kCount:      break;   // sentinel, never a real field
+    }
+    return 0.0f;
 }
 
 // Drum-kit auto-routing (PluginEditor::offerDrumKitAutoRouting). Assigns

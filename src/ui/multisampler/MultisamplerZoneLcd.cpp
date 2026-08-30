@@ -1,6 +1,7 @@
 #include "MultisamplerZoneLcd.h"
 #include "../DysektLookAndFeel.h"
 #include "../UIHelpers.h"
+#include "../../MidiLearnManager.h"
 #include <cmath>
 
 namespace
@@ -125,6 +126,7 @@ juce::String MultisamplerZoneLcd::labelFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::eq3Freq:     return "EQ3 F";
         case MultisamplerZoneField::eq3Gain:     return "EQ3 G";
         case MultisamplerZoneField::eq3Bw:       return "EQ3 BW";
+        case MultisamplerZoneField::kCount:      break;   // sentinel, never a real field
     }
     return {};
 }
@@ -158,6 +160,7 @@ float MultisamplerZoneLcd::getFieldValue (MultisamplerZoneField field) const
         case MultisamplerZoneField::eq3Freq:     return snapshot.eq3Freq;
         case MultisamplerZoneField::eq3Gain:     return snapshot.eq3Gain;
         case MultisamplerZoneField::eq3Bw:       return snapshot.eq3Bw;
+        case MultisamplerZoneField::kCount:      break;   // sentinel, never a real field
     }
     return 0.0f;
 }
@@ -216,8 +219,60 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         case MultisamplerZoneField::eq2Bw:
         case MultisamplerZoneField::eq3Bw:
             return juce::jlimit (0.0f, 1.0f, (v - 0.1f) / 3.9f);
+        case MultisamplerZoneField::kCount:
+            break;   // sentinel, never a real field
     }
     return 0.5f;
+}
+
+// Algebraic inverse of normForField() above, case for case — kept as its own
+// function (not a "pass a flag to invert" branch bolted onto normForField)
+// since normForField needs an instance (getFieldValue()) and this doesn't;
+// see its doc comment in the header for why that split matters for
+// MultisamplerEditor::applyMidiLearnCc()'s absolute-CC case.
+float MultisamplerZoneLcd::nativeFromNorm (MultisamplerZoneField field, float norm) noexcept
+{
+    norm = juce::jlimit (0.0f, 1.0f, norm);
+    switch (field)
+    {
+        case MultisamplerZoneField::lowKey:
+        case MultisamplerZoneField::highKey:
+        case MultisamplerZoneField::rootKey:   return norm * 127.0f;
+        case MultisamplerZoneField::group:     return norm * 32.0f;
+        case MultisamplerZoneField::tune:      return norm * 2400.0f - 1200.0f;
+        case MultisamplerZoneField::pan:       return norm * 2.0f - 1.0f;
+        case MultisamplerZoneField::gain:      return norm * 124.0f - 100.0f;
+        case MultisamplerZoneField::attack:    return norm * 2.0f;
+        case MultisamplerZoneField::decay:     return norm * 5.0f;
+        case MultisamplerZoneField::sustain:   return norm;
+        case MultisamplerZoneField::release:   return norm * 5.0f;
+        case MultisamplerZoneField::cutoff:
+            return std::exp2 (std::log2 (20.0f) + norm * (std::log2 (20000.0f) - std::log2 (20.0f)));
+        case MultisamplerZoneField::resonance: return norm;
+        // Toggles — never reach this path; MultisamplerEditor::
+        // applyMidiLearnCc() handles loopEnabled/showInMixer itself before
+        // calling here. Returned as a harmless passthrough, not asserted,
+        // in case a future caller queries them for some other reason.
+        case MultisamplerZoneField::loopEnabled:   return norm;
+        case MultisamplerZoneField::outputBus:     return norm * 15.0f;
+        case MultisamplerZoneField::showInMixer:   return norm;
+        case MultisamplerZoneField::eq1Freq:
+            return std::exp2 (std::log2 (20.0f) + norm * (std::log2 (1000.0f) - std::log2 (20.0f)));
+        case MultisamplerZoneField::eq2Freq:
+            return std::exp2 (std::log2 (100.0f) + norm * (std::log2 (10000.0f) - std::log2 (100.0f)));
+        case MultisamplerZoneField::eq3Freq:
+            return std::exp2 (std::log2 (1000.0f) + norm * (std::log2 (20000.0f) - std::log2 (1000.0f)));
+        case MultisamplerZoneField::eq1Gain:
+        case MultisamplerZoneField::eq2Gain:
+        case MultisamplerZoneField::eq3Gain:
+            return norm * 48.0f - 24.0f;
+        case MultisamplerZoneField::eq1Bw:
+        case MultisamplerZoneField::eq2Bw:
+        case MultisamplerZoneField::eq3Bw:
+            return norm * 3.9f + 0.1f;
+        case MultisamplerZoneField::kCount: break;   // sentinel, never a real field
+    }
+    return norm;
 }
 
 // Double-click reset targets — matches the model's own struct defaults in
@@ -252,6 +307,7 @@ float MultisamplerZoneLcd::defaultValueFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::eq3Freq:     return 8000.0f;
         case MultisamplerZoneField::eq3Gain:     return 0.0f;
         case MultisamplerZoneField::eq3Bw:       return 1.0f;
+        case MultisamplerZoneField::kCount:      break;   // sentinel, never a real field
     }
     return 0.0f;
 }
@@ -260,7 +316,7 @@ float MultisamplerZoneLcd::defaultValueFor (MultisamplerZoneField field) const
 // SliceControlBar::mouseDrag already used for the old SCB zone cells (see
 // its ZonePan/ZoneVolume/etc. branches), carried over so drag feel doesn't
 // change for anyone used to the old bar.
-float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineMode) const
+float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineMode) noexcept
 {
     float scale = 1.0f;
     switch (field)
@@ -293,6 +349,7 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::eq1Bw:
         case MultisamplerZoneField::eq2Bw:
         case MultisamplerZoneField::eq3Bw:       scale = 0.03f;  break; // 0.1..4.0 octaves
+        case MultisamplerZoneField::kCount:      break;   // sentinel, never a real field
     }
     return fineMode ? scale * kFineModeScale : scale;
 }
@@ -350,6 +407,7 @@ juce::String MultisamplerZoneLcd::formatFieldValue (MultisamplerZoneField field)
         case MultisamplerZoneField::eq1Bw: return juce::String (snapshot.eq1Bw, 2);
         case MultisamplerZoneField::eq2Bw: return juce::String (snapshot.eq2Bw, 2);
         case MultisamplerZoneField::eq3Bw: return juce::String (snapshot.eq3Bw, 2);
+        case MultisamplerZoneField::kCount: break;   // sentinel, never a real field
     }
     return {};
 }
@@ -445,6 +503,29 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
         drawMixerToggleCell (g, bounds, idx);
     else
         drawKnobField (g, bounds, field, idx);
+
+    // ── MIDI Learn CC label overlay ──────────────────────────────────────
+    // Drawn one level up, after the dispatch above, rather than threaded
+    // into drawKnobField/drawLoopToggleCell/drawMixerToggleCell individually
+    // — every field type gets it uniformly from one place. midiLearn is
+    // null until MultisamplerEditor calls setMidiLearnManager() (see that
+    // method's doc comment); until then this silently draws nothing.
+    if (midiLearn != nullptr)
+    {
+        const int slot   = midiLearnSlotFor (field);
+        const bool mapped = midiLearn->isMapped (slot);
+        const bool armed  = midiLearn->getArmedSlot() == slot;
+        if (mapped || armed)
+        {
+            g.setFont (DysektLookAndFeel::makeMonoFont (8.0f * uiScale));
+            g.setColour (armed ? getTheme().accent
+                                : getTheme().foreground.withAlpha (0.6f));
+            g.drawText (armed ? juce::String ("LEARN") : midiLearn->getLabelText (slot),
+                        bounds.removeFromTop (juce::roundToInt (10.0f * uiScale))
+                              .reduced (juce::roundToInt (2.0f * uiScale), 0),
+                        juce::Justification::topRight);
+        }
+    }
 }
 
 // =============================================================================
@@ -642,6 +723,19 @@ void MultisamplerZoneLcd::mouseDown (const juce::MouseEvent& e)
     {
         if (! cell.bounds.contains (e.getPosition())) continue;
 
+        if (e.mods.isPopupMenu())
+        {
+            // Right-click anywhere on a field cell arms/clears MIDI Learn —
+            // same right-click-to-learn convention SliceControlBar's own
+            // knob cells use. No drag/toggle gesture to worry about here,
+            // unlike the left-click branches below: a right-click never
+            // starts a drag or flips a toggle, so this returns before any
+            // of that logic runs, whichever field type was hit.
+            if (onFieldLearnMenuRequested)
+                onFieldLearnMenuRequested (cell.field, e.getScreenPosition());
+            return;
+        }
+
         if (cell.field == MultisamplerZoneField::loopEnabled)
         {
             // Click toggles immediately — no drag gesture for a boolean.
@@ -743,6 +837,7 @@ void MultisamplerZoneLcd::applyDrag (MultisamplerZoneField field, float rawValue
         case MultisamplerZoneField::eq3Freq:     snapshot.eq3Freq = rawValue; break;
         case MultisamplerZoneField::eq3Gain:     snapshot.eq3Gain = rawValue; break;
         case MultisamplerZoneField::eq3Bw:       snapshot.eq3Bw   = rawValue; break;
+        case MultisamplerZoneField::kCount:      break;   // sentinel, never a real field
     }
 
     repaint();

@@ -41,6 +41,51 @@ static const char* const gSlotParamNames[kMidiLearnNumSlots] = {
     "SF-Player Decay",       // 33
     "SF-Player Sustain",     // 34
     "SF-Player Release",     // 35
+    "",                      // 36 SF-Player Reverb Size   — not listed here (right-click only, like 37-44 below)
+    "",                      // 37 SF-Player Reverb Damp
+    "",                      // 38 SF-Player Reverb Width
+    "",                      // 39 SF-Player Reverb Mix
+    "",                      // 40 SF-Player Reverb Freeze
+    "",                      // 41 SF-Player Volume
+    "",                      // 42 SF-Player Transpose
+    "",                      // 43 SF-Player Pan
+    "",                      // 44 SF-Player Fine Tune
+    "",                      // 45 EQ Low Gain
+    "",                      // 46 EQ Mid Gain
+    "",                      // 47 EQ Mid Freq
+    "",                      // 48 EQ Mid Q
+    "",                      // 49 EQ High Gain
+    "",                      // 50 Show In Mixer
+    "Global Mono",           // 51 — previously invisible here: it was aliased
+                             //      onto slot 30 (Zoom), so querying this
+                             //      table for it always returned "Zoom"
+                             //      instead. Fix #2 gave it its own slot and,
+                             //      with that, its own name.
+    "MS Low Key",             // 52 MultisamplerZoneField::lowKey
+    "MS High Key",            // 53 highKey
+    "MS Root Key",            // 54 rootKey
+    "MS Tune",                // 55 tune
+    "MS Pan",                 // 56 pan
+    "MS Gain",                // 57 gain
+    "MS Attack",              // 58 attack
+    "MS Decay",               // 59 decay
+    "MS Sustain",             // 60 sustain
+    "MS Release",             // 61 release
+    "MS Loop",                // 62 loopEnabled
+    "MS Filter Cutoff",       // 63 cutoff
+    "MS Filter Resonance",    // 64 resonance
+    "MS Group",               // 65 group
+    "MS Output Bus",          // 66 outputBus
+    "MS Show In Mixer",       // 67 showInMixer
+    "MS EQ1 Freq",            // 68 eq1Freq
+    "MS EQ1 Gain",            // 69 eq1Gain
+    "MS EQ1 Bandwidth",       // 70 eq1Bw
+    "MS EQ2 Freq",            // 71 eq2Freq
+    "MS EQ2 Gain",            // 72 eq2Gain
+    "MS EQ2 Bandwidth",       // 73 eq2Bw
+    "MS EQ3 Freq",            // 74 eq3Freq
+    "MS EQ3 Gain",            // 75 eq3Gain
+    "MS EQ3 Bandwidth",       // 76 eq3Bw
 };
 
 static juce::String getSlotParameterName (int fieldId)

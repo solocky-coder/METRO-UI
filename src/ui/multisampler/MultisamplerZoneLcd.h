@@ -22,6 +22,8 @@
 #include "MultisamplerZoneField.h"
 #include "../../audio/multisampler/SampleZone.h"
 
+class MidiLearnManager;   // see setMidiLearnManager() below — pointer only, no full include needed
+
 class MultisamplerZoneLcd : public juce::Component
 {
 public:
@@ -96,6 +98,44 @@ public:
         applyZoneFieldEdit is the single place values are clamped). */
     std::function<void (MultisamplerZoneField field, float value, bool isCommit)> onFieldEdited;
 
+    /** Fired on a right-click over a field cell — MultisamplerEditor hooks
+        this to show a "Learn MIDI CC" / "Clear" popup menu (see its
+        showMidiLearnMenu()), the same right-click-to-learn convention
+        SliceControlBar's own knob cells use. screenPos is the click point
+        in screen coordinates, ready to hand straight to
+        juce::PopupMenu::Options::withTargetScreenArea(). */
+    std::function<void (MultisamplerZoneField field, juce::Point<int> screenPos)> onFieldLearnMenuRequested;
+
+    /** Injects the processor's MidiLearnManager so this component can draw
+        a mapped-CC label on each field cell (see drawCell()'s CC-label
+        overlay). Optional — components elsewhere in this app already reach
+        directly into MidiLearnManager from paint() for this exact purpose
+        (see SliceControlBar's own paint()), so this isn't a break from the
+        "never owns or mutates a SampleZone" rule above: MidiLearnManager
+        isn't zone data, it's processor-owned atomic state that's always
+        safe to read from the UI thread. Call once, before the first
+        paint() — cells simply show no CC label until this is set. */
+    void setMidiLearnManager (const MidiLearnManager* manager) noexcept { midiLearn = manager; }
+
+    /** Same per-field increment mouseDrag() applies per pixel of drag (see
+        dragScaleFor) — exposed statically so MultisamplerEditor's MIDI
+        Learn CC handling (applyMidiLearnCc()) can give a relative encoder
+        click the same-size nudge as a one-pixel mouse drag, off the same
+        single table rather than a second copy that could drift from it. */
+    static float relCcSensitivityFor (MultisamplerZoneField field) noexcept
+    {
+        return dragScaleFor (field, false);
+    }
+
+    /** Inverse of the value -> 0..1 mapping normForField() uses to place a
+        field's current value on its knob arc — maps a normalised (0..1)
+        absolute MIDI Learn CC back to that field's native units. Static,
+        unlike normForField(): it's a pure range conversion, not "where does
+        THIS zone's current value sit", so it doesn't need an instance or a
+        current value to invert. Used by MultisamplerEditor::
+        applyMidiLearnCc() for absolute CC mapping. */
+    static float nativeFromNorm (MultisamplerZoneField field, float norm) noexcept;
+
     // Taller than the original 76px flat-text layout — knob cells need
     // three full rows of knob+label+value (SliceControlBar's own psCellH is
     // 32px per row) plus a little breathing room; see MultisamplerEditor::
@@ -147,9 +187,17 @@ private:
     int   dragStartY = 0;
     bool  dragMoved = false;
 
+    // MIDI Learn state, injected via setMidiLearnManager() — see its doc
+    // comment above. nullptr until MultisamplerEditor calls it.
+    const MidiLearnManager* midiLearn = nullptr;
+
     float getFieldValue (MultisamplerZoneField field) const;
     float defaultValueFor (MultisamplerZoneField field) const;
-    float dragScaleFor (MultisamplerZoneField field, bool fineMode) const;
+    // Static: doesn't touch `this` (fineMode scaling uses a file-local
+    // constant, not instance state) — kept as an otherwise-ordinary private
+    // helper, just callable without an instance so relCcSensitivityFor()
+    // above can reach it.
+    static float dragScaleFor (MultisamplerZoneField field, bool fineMode) noexcept;
     juce::String formatFieldValue (MultisamplerZoneField field) const;
     juce::String labelFor (MultisamplerZoneField field) const;
 
