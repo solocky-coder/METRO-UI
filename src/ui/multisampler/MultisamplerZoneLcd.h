@@ -24,7 +24,8 @@
 
 class MidiLearnManager;   // see setMidiLearnManager() below — pointer only, no full include needed
 
-class MultisamplerZoneLcd : public juce::Component
+class MultisamplerZoneLcd : public juce::Component,
+                             private juce::Timer
 {
 public:
     MultisamplerZoneLcd();
@@ -213,6 +214,15 @@ private:
     // MIDI Learn state, injected via setMidiLearnManager() — see its doc
     // comment above. nullptr until MultisamplerEditor calls it.
     const MidiLearnManager* midiLearn = nullptr;
+
+    // Pulsating arm-highlight, identical treatment to SliceControlBar's
+    // (see SliceControlBar::timerCallback()/pulsePhase and its use in
+    // drawKnobCell) — a ~1.2 Hz sine-driven alpha/stroke pulse on whichever
+    // cell is currently armed for MIDI Learn. timerCallback() below just
+    // advances the phase and repaints while something is armed; the actual
+    // frame is drawn in drawCell().
+    void timerCallback() override;
+    float pulsePhase = 0.0f;
 
     float getFieldValue (MultisamplerZoneField field) const;
     float defaultValueFor (MultisamplerZoneField field) const;
