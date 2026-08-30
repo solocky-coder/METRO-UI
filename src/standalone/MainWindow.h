@@ -51,6 +51,23 @@ public:
 
         // ── Plugin processor + editor ─────────────────────────────────────
         processor = std::make_unique<DysektProcessor>();
+
+        // This app boots through its own DysektApplication/MainWindow (see
+        // Main.cpp) rather than JUCE's built-in standalone scaffolding
+        // (juce_audio_plugin_client's createPluginFilterOfType), which is
+        // the only place AudioProcessor::wrapperType normally gets set.
+        // Because this path bypasses that, wrapperType would otherwise sit
+        // at its default wrapperType_Undefined forever — never equal to
+        // wrapperType_Standalone — even though this genuinely is the
+        // standalone build. UI code such as MultisamplerEditor (see its
+        // constructor) reads wrapperType to decide what only makes sense in
+        // a real DAW host (e.g. AUX 1-15 output routing, which this
+        // standalone's 2-channel device can't reach — see this file's
+        // numOutputChannelsNeeded above), so this must be set before the
+        // editor is constructed just below, mirroring what JUCE's own
+        // standalone wrapper does for us in the normal (non-custom) case.
+        processor->wrapperType = juce::AudioProcessor::wrapperType_Standalone;
+
         processor->prepareToPlay (44100.0, 512);
 
         editor = std::make_unique<DysektEditor> (*processor);
