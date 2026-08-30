@@ -2061,6 +2061,15 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
 
  if (mods.isCommandDown()) return false;
 
+ // Esc cancels an in-progress MIDI Learn (armed, waiting for a CC) before
+ // any other Esc behaviour below — takes priority since it's a modal-ish
+ // "waiting for input" state. Covers both the Slicer/SF2-Player field
+ // learn (SliceControlBar) and the Multisampler zone field learn
+ // (MultisamplerEditor) since both arm/disarm the same shared
+ // processor.midiLearn.armedSlot.
+ if (code == juce::KeyPress::escapeKey && processor.midiLearn.isArmed())
+ { processor.midiLearn.cancelLearn(); repaint(); return true; }
+
  if (code == juce::KeyPress::escapeKey && shortcutsPanel.isVisible())
  { toggleShortcutsPanel(); return true; }
 

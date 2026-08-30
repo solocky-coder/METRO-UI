@@ -71,6 +71,13 @@ public:
     int  getArmedSlot() const noexcept   { return armedSlot.load (std::memory_order_relaxed); }
     bool isArmed()      const noexcept   { return armedSlot.load (std::memory_order_relaxed) >= 0; }
 
+    // Disarms whichever slot is currently waiting for a CC, without touching
+    // any existing mapping. Distinct from clearMapping()/clearAll(), which
+    // remove a learned CC — this only backs out of an in-progress learn (e.g.
+    // user pressed Esc, or right-clicked "Cancel MIDI Learn"). Safe to call
+    // when nothing is armed.
+    void cancelLearn() noexcept { armedSlot.store (-1, std::memory_order_relaxed); }
+
     void clearMapping (int fieldId) noexcept
     {
         if (fieldId >= 0 && fieldId < kMidiLearnNumSlots)

@@ -1139,9 +1139,12 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
 {
     const int slot = midiLearnSlotFor (field);
     const bool mapped = processor.midiLearn.isMapped (slot);
+    const bool armedHere = (processor.midiLearn.getArmedSlot() == slot);
 
     juce::PopupMenu menu;
-    menu.addItem (1, "Learn MIDI CC");
+    menu.addItem (1, armedHere ? "Re-arm MIDI Learn" : "Learn MIDI CC");
+    if (armedHere)
+        menu.addItem (3, "Cancel MIDI Learn");
     if (mapped)
         menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (slot) + ")");
 
@@ -1161,6 +1164,7 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
         {
             if (result == 1)      { processor.midiLearn.armLearn (slot);      zoneLcd.repaint(); }
             else if (result == 2) { processor.midiLearn.clearMapping (slot);  zoneLcd.repaint(); }
+            else if (result == 3) { processor.midiLearn.cancelLearn();        zoneLcd.repaint(); }
         });
 }
 

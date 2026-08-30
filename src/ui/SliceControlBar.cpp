@@ -869,8 +869,11 @@ void SliceControlBar::drawMidiLearnCell (juce::Graphics& g, int x, int y,
 void SliceControlBar::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos)
 {
  const bool mapped = processor.midiLearn.isMapped (fieldId);
+ const bool armedHere = (processor.midiLearn.getArmedSlot() == fieldId);
  juce::PopupMenu menu;
- menu.addItem (1, "Learn MIDI CC");
+ menu.addItem (1, armedHere ? "Re-arm MIDI Learn" : "Learn MIDI CC");
+ if (armedHere)
+ menu.addItem (3, "Cancel MIDI Learn");
  if (mapped)
  menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (fieldId) + ")");
 
@@ -887,6 +890,7 @@ void SliceControlBar::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos
  [this, fieldId] (int result) {
  if (result == 1) { processor.midiLearn.armLearn (fieldId); repaint(); }
  else if (result == 2) { processor.midiLearn.clearMapping (fieldId); repaint(); }
+ else if (result == 3) { processor.midiLearn.cancelLearn(); repaint(); }
  else if (result == 1000)
  {
  if (auto* editor = findParentComponentOfClass<DysektEditor>())
