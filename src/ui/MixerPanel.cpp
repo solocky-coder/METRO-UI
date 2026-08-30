@@ -587,10 +587,10 @@ void MixerPanel::drawHeader (juce::Graphics& g) const
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH - 1, 0.f, (float) getWidth());
 
-    // Slice column
+    // Track column
     g.setFont (DysektLookAndFeel::makeFont (12.0f));
     g.setColour (theme.accent.withAlpha (0.5f));
-    g.drawText ("SLICE", 10, 0, kNameColW - 10, kHeaderH, juce::Justification::centredLeft);
+    g.drawText ("TRACK", 10, 0, kNameColW - 10, kHeaderH, juce::Justification::centredLeft);
 
     // Knob column headers
     const char* labels[kNumCols] = { "GAIN", "PAN", "FCUT", "PRES", "MUTE GRP", "CHRO", "LEGATO", "OUT" };
@@ -725,40 +725,51 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
     const auto& snap  = processor.getUiSliceSnapshot();
     const auto& sl    = snap.slices[(size_t) idx];
 
+    // ── Row separation ────────────────────────────────────────────────────
+    // Each track gets its own 1px seam of base background top and bottom
+    // (rgIns/rgH below) so adjacent rows read as distinct bars rather than
+    // a continuous striped list, plus a bright top+bottom border so the
+    // boundary is unambiguous even between two unselected, same-colour rows.
+    const int rgIns = ry + 1;
+    const int rgH   = kRowH - 2;
+
     // Row background
     if (selected)
     {
         g.setColour (theme.accent.withAlpha (0.06f));
-        g.fillRect (2, ry, getWidth() - 2, kRowH);
+        g.fillRect (2, rgIns, getWidth() - 2, rgH);
         g.setColour (theme.accent.withAlpha (0.55f));
-        g.fillRect (0, ry, 2, kRowH);
+        g.fillRect (0, rgIns, 2, rgH);
     }
     else if (idx % 2 == 1)
     {
-        g.setColour (juce::Colour (0xFF000000).withAlpha (0.12f));
-        g.fillRect (0, ry, getWidth(), kRowH);
+        g.setColour (juce::Colour (0xFF000000).withAlpha (0.16f));
+        g.fillRect (0, rgIns, getWidth(), rgH);
     }
 
     // ── Full-lane slice colour tint ──────────────────────────────────────
     // Subtle wash across the entire row so each slice is immediately
     // identifiable at a glance, matching the waveform lane colours.
     g.setColour (sl.colour.withAlpha (selected ? 0.34f : 0.24f));
-    g.fillRect (kNameColW, ry, getWidth() - kNameColW, kRowH);
+    g.fillRect (kNameColW, rgIns, getWidth() - kNameColW, rgH);
 
-    // Row bottom divider
-    g.setColour (theme.separator.withAlpha (0.35f));
-    g.drawHorizontalLine (ry + kRowH - 1, (float) kNameColW * 0.3f, (float) getWidth());
+    // Row borders — top AND bottom, brighter than before, full width, so
+    // each track reads as its own bounded bar rather than a stripe.
+    g.setColour (theme.separator.withAlpha (0.55f));
+    g.drawHorizontalLine (ry, 0.f, (float) getWidth());
+    g.drawHorizontalLine (ry + kRowH - 1, 0.f, (float) getWidth());
 
     // ── Slice name column — tinted with slice colour ─────────────────────
     const juce::Colour dot = sl.colour;
 
-    // Colour bar on left edge (thicker, more visible than old dot)
-    g.setColour (dot.withAlpha (0.85f));
-    g.fillRect (0, ry, 3, kRowH);
+    // Colour bar on left edge (thicker, more visible than old dot — doubles
+    // as the row's own identity stripe now that borders are stronger)
+    g.setColour (dot.withAlpha (0.9f));
+    g.fillRect (0, rgIns, 4, rgH);
 
     // Colour tint on name column background
     g.setColour (dot.withAlpha (0.13f));
-    g.fillRect (3, ry, kNameColW - 4, kRowH);
+    g.fillRect (4, rgIns, kNameColW - 5, rgH);
 
     // Slice number / custom name
     g.setFont (DysektLookAndFeel::makeFont (14.0f));
@@ -939,10 +950,18 @@ void MixerPanel::drawMasterRow (juce::Graphics& g, int ry) const
 {
     const auto& theme = getTheme();
 
-    g.setColour (theme.accent.withAlpha (0.03f));
-    g.fillRect (0, ry, getWidth(), kMasterH);
-    g.setColour (theme.accent.withAlpha (0.12f));
-    g.drawHorizontalLine (ry, 0.f, (float) getWidth());
+    // Small extra gap above MASTER (on top of the shared 1px inset below)
+    // so it visually breaks from the track list rather than continuing it.
+    const int rgIns = ry + 2;
+    const int rgH   = kMasterH - 3;
+
+    g.setColour (theme.accent.withAlpha (0.05f));
+    g.fillRect (0, rgIns, getWidth(), rgH);
+    g.setColour (theme.accent.withAlpha (0.45f));
+    g.drawHorizontalLine (ry + 1, 0.f, (float) getWidth());
+    g.drawHorizontalLine (ry + kMasterH - 1, 0.f, (float) getWidth());
+    g.setColour (theme.accent.withAlpha (0.9f));
+    g.fillRect (0, rgIns, 4, rgH);
 
     // Label
     g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
@@ -1037,10 +1056,13 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
     const auto& theme = getTheme();
 
     // Background — slightly different tint to distinguish from master
+    const int rgIns = ry + 1;
+    const int rgH   = kSf2RowH - 2;
     g.setColour (theme.accent.withAlpha (0.06f));
-    g.fillRect (0, ry, getWidth(), kSf2RowH);
-    g.setColour (theme.accent.withAlpha (0.18f));
+    g.fillRect (0, rgIns, getWidth(), rgH);
+    g.setColour (theme.accent.withAlpha (0.4f));
     g.drawHorizontalLine (ry, 0.f, (float) getWidth());
+    g.drawHorizontalLine (ry + kSf2RowH - 1, 0.f, (float) getWidth());
 
     // Label — this row is bound to processor.sfzPlayer, the .sf2-only engine
     // used by the SF2-PLAYER tab (it was previously mislabeled "SFZ-PLAYER",
@@ -1136,10 +1158,12 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
     const auto& theme = getTheme();
 
     // Background — alternating shade, slightly indented to read as a sub-row
+    const int rgIns = ry + 1;
+    const int rgH   = kSf2ChRowH - 2;
     const bool even = (channel % 2 == 0);
     g.setColour (even ? theme.darkBar.brighter (0.04f)
                       : theme.darkBar.brighter (0.02f));
-    g.fillRect (0, ry, getWidth(), kSf2ChRowH);
+    g.fillRect (0, rgIns, getWidth(), rgH);
 
     // Left indent stripe using a colour derived from the channel number
     static const juce::Colour kChanPalette[] = {
@@ -1150,12 +1174,14 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
     };
     const juce::Colour chCol = kChanPalette[channel % (int) std::size (kChanPalette)];
 
-    g.setColour (chCol.withAlpha (0.7f));
-    g.fillRect (0, ry, 3, kSf2ChRowH);
+    g.setColour (chCol.withAlpha (0.8f));
+    g.fillRect (0, rgIns, 3, rgH);
 
-    // Separator line at top
-    g.setColour (theme.separator.withAlpha (0.25f));
+    // Separator lines top + bottom, brighter than before, so sub-rows read
+    // as their own bounded strip under the parent MULTISAMPLER/SF2 row.
+    g.setColour (theme.separator.withAlpha (0.4f));
     g.drawHorizontalLine (ry, 0.f, (float) getWidth());
+    g.drawHorizontalLine (ry + kSf2ChRowH - 1, 0.f, (float) getWidth());
 
     const int kcy = ry + kSf2ChRowH / 2;
 
@@ -1271,27 +1297,32 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  SFZ-Player row (sfzPlayer2 — the real .sfz-file engine)
+//  Multisampler row (sfzPlayer2 — the real .sfz-file engine)
 // ─────────────────────────────────────────────────────────────────────────────
 // This row is what makes the mixer automatically grow a track the moment a
-// .sfz file is loaded in the SFZ-Player tab: sfz2TotalH() (and therefore
+// .sfz file is loaded in the Multisampler tab: sfz2TotalH() (and therefore
 // this row's very presence) is driven directly off processor.sfzPlayer2's
 // loaded state, so no explicit "add mixer track" step is ever needed.
+// (Label shown to the user is "MULTISAMPLER" — was "SFZ-PLAYER" prior to the
+// v27 rename; sfzPlayer2/drawSfz2Row/etc. keep their old internal names.)
 void MixerPanel::drawSfz2Row (juce::Graphics& g, int ry) const
 {
     const auto& theme = getTheme();
 
     // Background — same treatment as the SF2-PLAYER row, tinted to distinguish
     // it from Master.
+    const int rgIns = ry + 1;
+    const int rgH   = kSf2RowH - 2;
     g.setColour (theme.accent.withAlpha (0.06f));
-    g.fillRect (0, ry, getWidth(), kSf2RowH);
-    g.setColour (theme.accent.withAlpha (0.18f));
+    g.fillRect (0, rgIns, getWidth(), rgH);
+    g.setColour (theme.accent.withAlpha (0.4f));
     g.drawHorizontalLine (ry, 0.f, (float) getWidth());
+    g.drawHorizontalLine (ry + kSf2RowH - 1, 0.f, (float) getWidth());
 
     // Label
     g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
     g.setColour (theme.accent.withAlpha (0.75f));
-    g.drawText ("SFZ-PLAYER", 10, ry, kNameColW - 10, kSf2RowH, juce::Justification::centredLeft);
+    g.drawText ("MULTISAMPLER", 10, ry, kNameColW - 10, kSf2RowH, juce::Justification::centredLeft);
 
     const int kcy    = ry + kSf2RowH / 2;
     const float volLin = processor.sfzPlayer2.getVolume();
@@ -1384,16 +1415,19 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
     const auto& sl = snap2.slices[(size_t) zoneIdx];
 
     // Background — alternating shade, matching drawSf2ChannelRow's treatment.
+    const int rgIns = ry + 1;
+    const int rgH   = kSf2ChRowH - 2;
     const bool even = (zoneIdx % 2 == 0);
     g.setColour (even ? theme.darkBar.brighter (0.04f)
                       : theme.darkBar.brighter (0.02f));
-    g.fillRect (0, ry, getWidth(), kSf2ChRowH);
+    g.fillRect (0, rgIns, getWidth(), rgH);
 
-    g.setColour (theme.accent.withAlpha (0.5f));
-    g.fillRect (0, ry, 3, kSf2ChRowH);
+    g.setColour (theme.accent.withAlpha (0.6f));
+    g.fillRect (0, rgIns, 3, rgH);
 
-    g.setColour (theme.separator.withAlpha (0.25f));
+    g.setColour (theme.separator.withAlpha (0.4f));
     g.drawHorizontalLine (ry, 0.f, (float) getWidth());
+    g.drawHorizontalLine (ry + kSf2ChRowH - 1, 0.f, (float) getWidth());
 
     const int kcy = ry + kSf2ChRowH / 2;
 
