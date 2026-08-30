@@ -162,11 +162,20 @@ void SliceControlBar::timerCallback()
 void SliceControlBar::updateMidiLearnPulse()
 {
     // Timer is always running (started in constructor for real-time CC repaint).
-    // Just reset pulse phase when arming so the blink starts cleanly.
-    // Also keep requesting repaints during the 300ms arrow fade-out window.
-    if (processor.midiLearn.isArmed())
+    // Reset pulse phase only on the transition INTO armed (edge-triggered via
+    // wasArmed), not on every call while still armed — this is called every
+    // ~33ms from DysektEditor::timerCallback(), and re-zeroing pulsePhase
+    // unconditionally on every one of those ticks was fighting this class's
+    // own timerCallback() (which advances pulsePhase a small step per tick,
+    // see its "Advance pulse at ~1.2 Hz" comment above) — pulsePhase never
+    // got anywhere before being stomped back to 0, so the "pulse" just sat
+    // at a near-constant partial alpha instead of animating.
+    const bool isArmedNow = processor.midiLearn.isArmed();
+    if (isArmedNow && ! wasArmed)
         pulsePhase = 0.0f;
+    wasArmed = isArmedNow;
 
+    // Also keep requesting repaints during the 300ms arrow fade-out window.
     const int lastMs  = processor.markerRelLastMs.load (std::memory_order_relaxed);
     const int elapsed = (int) juce::Time::getMillisecondCounter() - lastMs;
     if (processor.markerRelDir.load (std::memory_order_relaxed) != 0 && elapsed < 300)
