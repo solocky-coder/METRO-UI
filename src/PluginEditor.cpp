@@ -1215,17 +1215,6 @@ void DysektEditor::toggleThemeEditor()
  setTheme (t);
  processor.sliceManager.setSlicePalette (t.slicePalette);
  repaint();
-#if DYSEKT_STANDALONE
- // repaint() on the main editor only cascades to its own component
- // tree. pianoRollPanel and slotWindow are separate native
- // DocumentWindows sitting on the desktop, so they need to be told
- // explicitly or they stay stale while the theme editor is open.
- // refreshTheme() (not just repaint()) matters for pianoRollPanel:
- // its toolbar buttons cache their colours via setColour(), which
- // isn't re-read from getTheme() on every paint like everything else.
- pianoRollPanel.refreshTheme();
- slotWindow.repaint();
-#endif
  };
 
  themeEditorPanel->onThemeSaved = [this] (const juce::String& name)
@@ -1233,10 +1222,6 @@ void DysektEditor::toggleThemeEditor()
  processor.sliceManager.setSlicePalette (getTheme().slicePalette);
  saveUserSettings (name);
  repaint();
-#if DYSEKT_STANDALONE
- pianoRollPanel.refreshTheme();
- slotWindow.repaint();
-#endif
  };
 
  themeEditorPanel->onDismiss = [this] { toggleThemeEditor(); };
@@ -2075,6 +2060,15 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
  { DysektProcessor::Command c; c.type = DysektProcessor::CmdUndo; processor.pushCommand (c); return true; }
 
  if (mods.isCommandDown()) return false;
+
+ // Esc cancels an in-progress MIDI Learn (armed, waiting for a CC) before
+ // any other Esc behaviour below — takes priority since it's a modal-ish
+ // "waiting for input" state. Covers both the Slicer/SF2-Player field
+ // learn (SliceControlBar) and the Multisampler zone field learn
+ // (MultisamplerEditor) since both arm/disarm the same shared
+ // processor.midiLearn.armedSlot.
+ if (code == juce::KeyPress::escapeKey && processor.midiLearn.isArmed())
+ { processor.midiLearn.cancelLearn(); repaint(); return true; }
 
  if (code == juce::KeyPress::escapeKey && shortcutsPanel.isVisible())
  { toggleShortcutsPanel(); return true; }

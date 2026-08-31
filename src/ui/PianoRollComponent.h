@@ -108,29 +108,6 @@ public:
     }
 
     void setSnapTicks  (int64_t ticks) { snapTicks = ticks; }
-
-    // ── Theme refresh ─────────────────────────────────────────────────────
-    // Everything painted directly in paint()/drawXxx() below reads getTheme()
-    // fresh every frame, so a plain repaint() is enough for that. But the
-    // toolbar buttons' colours are set via juce::Component::setColour(), which
-    // JUCE caches on the component rather than re-querying — those need to be
-    // re-applied explicitly whenever the theme changes. Call this (in addition
-    // to repaint()) any time setTheme() is called elsewhere in the app.
-    void refreshTheme()
-    {
-        applyToolButtonColours (btnSelect);
-        applyToolButtonColours (btnDraw);
-        applyToolButtonColours (btnErase);
-        applyToolButtonColours (btnSplit);
-        applyToolButtonColours (btnGlue);
-        applyToolButtonColours (btnUndo);
-        applyToolButtonColours (btnRedo);
-        applyToolButtonColours (btnZoomFit);
-        updateToolbarButtons();   // re-applies the active/inactive tint on top
-        repaint();
-        velocityLane.repaint();
-    }
-
     void setActiveTool (Tool t)
     {
         currentTool = t;
@@ -166,7 +143,7 @@ public:
     //==========================================================================
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (getTheme().waveformBg);
+        g.fillAll (juce::Colour (0xFF060608));
         drawToolbar  (g);
         drawRuler    (g);
         drawKeyboard (g);
@@ -1257,7 +1234,10 @@ private:
             b.setButtonText (label);
             b.setTooltip (tip);
             b.setClickingTogglesState (false);
-            applyToolButtonColours (b);
+            b.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xFF141820));
+            b.setColour (juce::TextButton::buttonOnColourId, juce::Colour::fromFloatRGBA (0.25f,0.85f,0.85f,0.9f));
+            b.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xFF9AAABB));
+            b.setColour (juce::TextButton::textColourOnId,   juce::Colour (0xFF000000));
             addAndMakeVisible (b);
         };
 
@@ -1307,17 +1287,6 @@ private:
         btnZoomFit.setBounds (r.removeFromLeft (bw));
     }
 
-    // Sets a plain juce::TextButton's colours from the current theme. Shared
-    // by buildToolbar() (initial setup) and refreshTheme() (re-applied on
-    // every theme change) so the two never drift apart.
-    void applyToolButtonColours (juce::TextButton& b)
-    {
-        b.setColour (juce::TextButton::buttonColourId,   getTheme().button);
-        b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent.withAlpha (0.9f));
-        b.setColour (juce::TextButton::textColourOffId,  getTheme().foreground.withAlpha (0.85f));
-        b.setColour (juce::TextButton::textColourOnId,   juce::Colour (0xFF000000)); // readable on any bright accent fill
-    }
-
     void updateToolbarButtons()
     {
         struct { juce::TextButton* btn; Tool tool; } pairs[] = {
@@ -1332,8 +1301,8 @@ private:
             const bool active = currentTool == p.tool;
             p.btn->setToggleState (active, juce::dontSendNotification);
             p.btn->setColour (juce::TextButton::buttonColourId,
-                active ? getTheme().accent.withAlpha (0.25f)
-                       : getTheme().button);
+                active ? juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.25f)
+                       : juce::Colour (0xFF141820));
         }
     }
 
@@ -1397,9 +1366,9 @@ private:
                 g.setColour (juce::Colours::black.withAlpha (0.55f));
                 g.fillRect (getLocalBounds());
                 const auto box = dialogBox();
-                g.setColour (getTheme().darkBar);
+                g.setColour (juce::Colour (0xFF1A2030));
                 g.fillRoundedRectangle (box.toFloat(), 0.0f);
-                g.setColour (getTheme().accent.withAlpha (0.7f));
+                g.setColour (juce::Colour (0xFF3A8FCC).withAlpha (0.7f));
                 g.drawRoundedRectangle (box.toFloat().reduced (0.5f), 0.0f, 1.5f);
                 g.setFont (14.0f);
                 g.setColour (juce::Colours::white);
@@ -1488,26 +1457,26 @@ private:
     //==========================================================================
     void drawToolbar (juce::Graphics& g)
     {
-        g.setColour (getTheme().darkBar);
+        g.setColour (juce::Colour (0xFF10131A));
         g.fillRect (toolbarBounds);
-        g.setColour (getTheme().separator);
+        g.setColour (juce::Colour (0xFF26303B));
         g.fillRect (toolbarBounds.withTrimmedTop (toolbarBounds.getHeight() - 1));
 
         // Editor identity stays visible even when this is detached from Arrange.
         g.setFont (DysektLookAndFeel::makeMonoFont (10.f));
-        g.setColour (getTheme().accent);
+        g.setColour (juce::Colour (0xFF75D7D1));
         g.drawText ("PIANO ROLL", toolbarBounds.getX() + 9, toolbarBounds.getY(),
                     84, toolbarBounds.getHeight(), juce::Justification::centredLeft, false);
-        g.setColour (getTheme().separator);
+        g.setColour (juce::Colour (0xFF2A3440));
         g.drawVerticalLine (96, (float) toolbarBounds.getY() + 7.f,
                             (float) toolbarBounds.getBottom() - 7.f);
     }
 
     void drawRuler (juce::Graphics& g)
     {
-        g.setColour (getTheme().header);
+        g.setColour (juce::Colour (0xFF0D0D14));
         g.fillRect (rulerBounds);
-        g.setColour (getTheme().darkBar);
+        g.setColour (juce::Colour (0xFF1C2028));
         g.fillRect (rulerBounds.withTrimmedLeft (kKeysW));
 
         // Loop region tint
@@ -1515,9 +1484,9 @@ private:
         {
             const float lx = tickToX (loopStartTick);
             const float rx = tickToX (loopEndTick);
-            g.setColour (getTheme().accent.withAlpha (0.15f));
+            g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.15f));
             g.fillRect (lx, (float)rulerBounds.getY(), rx - lx, (float)rulerBounds.getHeight());
-            g.setColour (getTheme().accent.withAlpha (0.6f));
+            g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.6f));
             g.drawVerticalLine ((int)lx, (float)rulerBounds.getY(), (float)rulerBounds.getBottom());
             g.drawVerticalLine ((int)rx, (float)rulerBounds.getY(), (float)rulerBounds.getBottom());
         }
@@ -1535,7 +1504,7 @@ private:
             const bool isBeat = (t % (int64_t)MidiClip::kPPQ == 0);
             const bool isBar  = (t % (int64_t)ticksPerBar == 0);
             if (! isBeat && ! isBar) continue;
-            g.setColour (isBar ? getTheme().separator : getTheme().gridLine);
+            g.setColour (isBar ? juce::Colour (0xFF2A3040) : juce::Colour (0xFF1C2230));
             g.drawVerticalLine ((int)x, (float)rulerBounds.getY(), (float)rulerBounds.getBottom());
         }
 
@@ -1544,7 +1513,7 @@ private:
         {
             const float x = tickToX (bar * (int64_t) ticksPerBar);
             if (x < kKeysW) continue;
-            g.setColour (getTheme().foreground.withAlpha (0.7f));
+            g.setColour (juce::Colour (0xFF8090A0));
             g.drawText (juce::String (bar + 1), (int)x + 2, rulerBounds.getY(),
                         40, kRulerH, juce::Justification::centredLeft, false);
         }
@@ -1606,14 +1575,14 @@ private:
         }
 
         // Separator line
-        g.setColour (getTheme().separator);
+        g.setColour (juce::Colour (0xFF2A3040));
         g.drawVerticalLine (keysBounds.getRight() - 1,
                             (float)keysBounds.getY(), (float)keysBounds.getBottom());
     }
 
     void drawGrid (juce::Graphics& g)
     {
-        g.setColour (getTheme().waveformBg);
+        g.setColour (juce::Colour (0xFF0B0E14));
         g.fillRect (gridBounds);
 
         const int top = yToNote (kRulerH + kToolbarH);
@@ -1625,12 +1594,12 @@ private:
             const float y = noteToY (note);
             if (isBlackKey (note))
             {
-                g.setColour (getTheme().darkBar);
+                g.setColour (juce::Colour (0xFF0E121A));
                 g.fillRect ((float)gridBounds.getX(), y, (float)gridBounds.getWidth(), (float)noteRowH);
             }
             if ((note % 12) == 0)
             {
-                g.setColour (getTheme().separator.withAlpha (0.42f));
+                g.setColour (juce::Colour::fromFloatRGBA (0.22f, 0.28f, 0.36f, 0.42f));
                 g.fillRect ((float)gridBounds.getX(), y, (float)gridBounds.getWidth(), 0.75f);
             }
         }
@@ -1644,14 +1613,14 @@ private:
             const float x = tickToX (beat * (int64_t) tpb);
             if (x < gridBounds.getX()) continue;
             const bool isBar = (beat % 4 == 0);
-            g.setColour (isBar ? getTheme().separator : getTheme().gridLine);
+            g.setColour (isBar ? juce::Colour (0xFF354252) : juce::Colour (0xFF1B2330));
             g.drawVerticalLine ((int)x, (float)gridBounds.getY(), (float)gridBounds.getBottom());
         }
 
         // Sub-beat grid (snap grid)
         if (snapTicks > 0 && pixelsPerTick * snapTicks > 4.0)
         {
-            g.setColour (getTheme().gridLine.withAlpha (0.5f));
+            g.setColour (juce::Colour::fromFloatRGBA (0.20f, 0.25f, 0.34f, 0.28f));
             const int64_t startSnap = (int64_t)(scrollX / (pixelsPerTick * snapTicks)) * snapTicks;
             for (int64_t t = startSnap; tickToX(t) < gridBounds.getRight(); t += snapTicks)
             {
@@ -1672,7 +1641,7 @@ private:
         const float clipEndX = tickToX (clipInfo.lengthTicks);
         if (clipEndX >= gridBounds.getX() && clipEndX <= gridBounds.getRight())
         {
-            g.setColour (getTheme().lockActive.withAlpha (0.5f));
+            g.setColour (juce::Colour::fromFloatRGBA (0.8f, 0.3f, 0.1f, 0.5f));
             g.drawVerticalLine ((int)clipEndX, (float)gridBounds.getY(), (float)gridBounds.getBottom());
         }
     }
@@ -1682,9 +1651,9 @@ private:
         if (loopStartTick < 0 || loopEndTick <= loopStartTick) return;
         const float lx = tickToX (loopStartTick);
         const float rx = tickToX (loopEndTick);
-        g.setColour (getTheme().accent.withAlpha (0.06f));
+        g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.06f));
         g.fillRect (juce::Rectangle<float>(lx, (float)gridBounds.getY(), rx - lx, (float)gridBounds.getHeight()));
-        g.setColour (getTheme().accent.withAlpha (0.35f));
+        g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.35f));
         g.drawVerticalLine ((int)lx, (float)gridBounds.getY(), (float)gridBounds.getBottom());
         g.drawVerticalLine ((int)rx, (float)gridBounds.getY(), (float)gridBounds.getBottom());
     }
@@ -1709,7 +1678,7 @@ private:
 
             const bool sel = selectedNotes.contains (i);
             const auto baseCol = sel
-                ? getTheme().accent
+                ? juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 1.0f)
                 : trackInfo.colour.withAlpha (0.88f);
 
             // Note body
@@ -1769,9 +1738,9 @@ private:
             juce::jmin (rubberBandStart.y, rubberBandEnd.y),
             juce::jmax (rubberBandStart.x, rubberBandEnd.x),
             juce::jmax (rubberBandStart.y, rubberBandEnd.y));
-        g.setColour (getTheme().accent.withAlpha (0.12f));
+        g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.12f));
         g.fillRect (rb);
-        g.setColour (getTheme().accent.withAlpha (0.7f));
+        g.setColour (juce::Colour::fromFloatRGBA (0.25f, 0.85f, 0.85f, 0.7f));
         g.drawRect (rb, 1);
     }
 

@@ -652,6 +652,100 @@ public:
         std::atomic<int>  playEnd       { -1 };
     } zonePreview3;
 
+    // =========================================================================
+    //  Multisampler "Add Zone" trim-preview chromatic audition
+    //  ─────────────────────────────────────────────────────────────────────
+    //  Lets AddZoneTrimOverlay (Add Zone step 1, and "Trim Sample" on an
+    //  existing zone — see that class's header comment) be auditioned
+    //  chromatically while the dialog is open, WITHOUT touching the live
+    //  instrument (sliceManager2, the multisampler's own zones, sfzPlayer2's
+    //  engine state) — same separation AddZoneTrimOverlay itself keeps.
+    //  Modeled on zonePreview3 above (SF2-PLAYER's click-to-audition voice)
+    //  but polyphonic and pitch-shifted: root is always fixed at MIDI note
+    //  60, independent of whatever rootKey the user ends up picking in the
+    //  AddZoneOverlay step that follows — auditioning here is about the
+    //  *sample*, not the eventual zone mapping.
+    //
+    //  trimAuditionActive gates two things: whether processMidi() redirects
+    //  note-on/off to this instead of dispatching them normally (while a
+    //  modal Add Zone/Trim Sample dialog is open, physical MIDI input has no
+    //  other sensible destination), and whether processBlock's mixing block
+    //  below does anything. MultisamplerEditor flips it on when the overlay
+    //  opens and off (via resetTrimAudition()) when it closes.
+    // =========================================================================
+
+    /** Audio-thread-only (touched only inside processMidi()/processBlock,
+     *  never from the UI thread — same convention as previewDemoNoteNumber
+     *  above). note == -1 means the slot is free. */
+    struct TrimAuditionVoice
+    {
+        int    note      = -1;
+        double position  = 0.0;    // fractional source-frame read position
+        double ratio     = 1.0;    // playback rate, pow(2, (note-60)/12)
+        bool   releasing = false;  // true once a note-off starts the fade below
+        float  gain      = 1.0f;   // ramps to 0 over the fade while releasing
+    };
+    static constexpr int kMaxTrimAuditionVoices = 8;
+    std::array<TrimAuditionVoice, kMaxTrimAuditionVoices> trimAuditionVoices;
+
+    std::atomic<bool>    trimAuditionActive      { false };
+    std::atomic<int64_t> trimAuditionRegionStart { 0 };
+    std::atomic<int64_t> trimAuditionRegionEnd   { 0 };
+
+    /** Absolute source-frame position of the trim-audition playhead, for
+     *  AddZoneTrimOverlay to draw over its waveform while a note is
+     *  sounding. -1 means nothing is currently audible (no voice active, or
+     *  trimAuditionActive is false). Updated once per block in
+     *  processBlock's mixing section below, after every active voice's
+     *  position has advanced for that block — takes the first active
+     *  voice's position (index order in trimAuditionVoices), same
+     *  single-voice simplification zonePreview3.playPosition above uses for
+     *  its own preview: this is an audition aid, not a performance
+     *  instrument, so one followable playhead is enough even though
+     *  trimAuditionVoices is technically polyphonic. MultisamplerEditor
+     *  polls this (trimAuditionPlayheadPoller, 30 Hz) and pushes it into
+     *  AddZoneTrimOverlay::setPlayheadFrame() while the overlay is open —
+     *  AddZoneTrimOverlay itself never reads this directly, keeping it
+     *  decoupled from DysektProcessor (see its class comment). */
+    std::atomic<int64_t> trimAuditionPlayheadFrame { -1 };
+
+    /** Holds AddZoneTrimOverlay's currently-decoded preview buffer, published
+     *  via applyDecodedSample() -- same real-time-safe snapshot swap
+     *  sampleData2/sampleData3 use (see SampleData::applyDecodedSample()'s
+     *  doc comment). Read at the file's own native sample rate (see
+     *  AddZoneTrimOverlay.h's "Frame domain" note) -- trimAuditionSampleRate
+     *  is stored alongside for anything that ever needs it; playback itself
+     *  advances in *source* frames via each voice's `ratio`, so it doesn't
+     *  need the rate directly. NOTE: the mixing block below deliberately
+     *  reads through getSnapshot() and this struct's own buffer, never
+     *  through SampleData's getInterpolatedSample()/getBuffer() -- those
+     *  read the `liveView` raw pointer, which applyDecodedSample()/clear()
+     *  update unsynchronized and are therefore only safe to call from the
+     *  same thread (here: the message thread). getSnapshot() is the one
+     *  real-time-safe cross-thread accessor. */
+    SampleData trimAuditionSample;
+    std::atomic<double> trimAuditionSampleRate { 44100.0 };
+
+    /** Called once from the message thread when AddZoneTrimOverlay closes
+     *  (both the Cancel/click-outside and confirmed paths -- see
+     *  MultisamplerEditor::beginAddZoneTrim()/beginTrimExistingZone()).
+     *  Stops audition dispatch immediately (trimAuditionActive = false, so
+     *  processMidi() stops redirecting notes and processBlock's mixing
+     *  block starts silently draining/discarding instead of rendering --
+     *  see that block's own comment for why voice cleanup itself happens
+     *  there, audio-thread-side, rather than here) and clears the preview
+     *  sample so a stale buffer from a file the overlay has moved on from
+     *  can never linger. */
+    void resetTrimAudition();
+
+private:
+    /** Applies one trim-audition note-on/off. Audio-thread-only -- called
+     *  from processMidi() for real MIDI input while trimAuditionActive.
+     *  Root is always MIDI note 60 (see this section's header comment for
+     *  why). */
+    void applyTrimAuditionNote (int note, bool on);
+
+public:
     MidiLearnManager midiLearn;
 
     /** MIDI Learn staging for Multisampler fields — audio thread writes,

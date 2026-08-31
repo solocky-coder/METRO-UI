@@ -1,5 +1,7 @@
 #include "MultisamplerEditor.h"
 #include "../../PluginProcessor.h"
+#include "../../PluginEditor.h"   // DysektEditor — needed for findParentComponentOfClass<DysektEditor>()
+                                   // in showMidiLearnMenu's "Open MIDI Learn Dialog..." item below
 #include "../DysektLookAndFeel.h"
 #include "../SliceControlBar.h"
 #include "../../audio/multisampler/SfzImporter.h"
@@ -145,6 +147,21 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         showMidiLearnMenu (field, screenPos);
     };
     zoneLcd.setMidiLearnManager (&processor.midiLearn);
+
+    // OUT (output bus) only makes sense to show where something can act on
+    // an AUX 1–15 choice. In a real DAW host, any bus can be routed
+    // freely, but the standalone build hard-caps its audio device to 2
+    // output channels and only ever pulls the processor's Main bus into
+    // the callback (see standalone/MainWindow.h) — so AUX 1–15 there is a
+    // dead end: audio renders internally but never reaches a speaker. Set
+    // once at construction (wrapperType doesn't change for the lifetime of
+    // an editor instance) via JUCE's own wrapperType, the same mechanism
+    // used elsewhere in this app to distinguish standalone from a hosted
+    // plugin. See MultisamplerZoneLcd::setOutputBusVisible()'s doc comment
+    // for why this removes the field from the layout rather than just
+    // disabling it.
+    zoneLcd.setOutputBusVisible (processor.wrapperType != juce::AudioProcessor::wrapperType_Standalone);
+
     refreshZoneLcdDisplay();   // starts empty — nothing selected/hovered yet
 
     refreshInspectorFromSelection();   // starts disabled — nothing selected yet
@@ -158,6 +175,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
 MultisamplerEditor::~MultisamplerEditor()
 {
     midiLearnPoller.stop();
+    trimAuditionPlayheadPoller.stop();
     stopTimer();
 }
 
@@ -188,6 +206,7 @@ void MultisamplerEditor::resized()
     auto r = getLocalBounds().reduced (6);
 
     auto header = r.removeFromTop (kHeaderH - 6);
+    const auto headerFull = header;   // full-width row, before left/right consumption below
     titleLabel.setBounds (header.removeFromLeft (140));
     header.removeFromRight (4);
     newButton.setBounds    (header.removeFromRight (60));
@@ -206,13 +225,25 @@ void MultisamplerEditor::resized()
     zoneBadgeLabel.setBounds (header.removeFromRight (90));
     header.removeFromRight (6);
 
-    // zoneTagLabel ("ZONE NN   name") is centred in whatever's left of the
-    // header between titleLabel and the toolbar cluster — per feedback on
-    // the annotated screenshot, it previously sat flush against the
-    // toolbar and read as disconnected from the title on the other side.
-    // Centring it in the blank gap ties it visually to the header as a
-    // whole instead of to either end.
-    zoneTagLabel.setBounds (header.withSizeKeepingCentre (240, header.getHeight()));
+    // zoneTagLabel ("ZONE NN   name") centres itself on controlFrameCentreX
+    // — the x-centre of the DualLcdControlFrame one row up, supplied by
+    // PluginEditor every layout pass via setControlFrameCentreX() — so it
+    // reads as tied to that frame rather than to this header's own,
+    // asymmetric left/right toolbar clusters. Clamped against the FULL
+    // header row (headerFull), not the leftover gap between clusters,
+    // since the leftover gap is exactly the wrong-answer this replaces —
+    // clamping to it would just reproduce the old off-centre behaviour on
+    // any window narrow enough for the target point to fall near a
+    // button. Falls back to centring in the full header only until
+    // PluginEditor has laid out at least once (controlFrameCentreX == -1).
+    constexpr int kZoneTagW = 240;
+    const int fallbackCentreX = headerFull.getCentreX();
+    int tagCentreX = (controlFrameCentreX >= 0) ? controlFrameCentreX : fallbackCentreX;
+    tagCentreX = juce::jlimit (headerFull.getX() + kZoneTagW / 2,
+                                headerFull.getRight() - kZoneTagW / 2,
+                                tagCentreX);
+    zoneTagLabel.setBounds (juce::Rectangle<int> (kZoneTagW, headerFull.getHeight())
+                                 .withCentre ({ tagCentreX, headerFull.getCentreY() }));
 
     r.removeFromTop (6);
     zoneLcd.setBounds (r.removeFromTop (MultisamplerZoneLcd::kPreferredHeight));
@@ -331,8 +362,15 @@ void MultisamplerEditor::addZoneClicked()
 void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
 {
     zoneTrimOverlay = std::make_unique<AddZoneTrimOverlay> (sampleFile, processor.fileLoadPool);
+    wireZoneTrimOverlayAudition();
     zoneTrimOverlay->onResult = [this, sampleFile] (AddZoneTrimOverlay::Result result, bool confirmed)
     {
+        // Stop chromatic audition immediately — the overlay (and whatever
+        // was auditioning through it) is closing either way. See
+        // wireZoneTrimOverlayAudition()'s declaration comment.
+        processor.resetTrimAudition();
+        trimAuditionPlayheadPoller.stop();
+
         // Same deferred-reset use-after-free fix the key-mapping step below
         // uses: let onResult unwind before the overlay (currently on the
         // call stack) is destroyed.
@@ -353,6 +391,36 @@ void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
     addAndMakeVisible (*zoneTrimOverlay);
     zoneTrimOverlay->setBounds (getLocalBounds());
     zoneTrimOverlay->toFront (true);
+}
+
+void MultisamplerEditor::wireZoneTrimOverlayAudition()
+{
+    // Wires zoneTrimOverlay's chromatic-audition hooks (onSampleDecoded/
+    // onTrimChanged) to PluginProcessor's trim-audition voice pool, and
+    // starts trimAuditionPlayheadPoller so the overlay's playhead tracks
+    // playback — shared by both call sites that open the overlay
+    // (beginAddZoneTrim() for a brand-new sample, beginTrimExistingZone()
+    // for "Trim Sample" on an existing zone). See PluginProcessor.h's
+    // trimAuditionActive doc comment for why this stays independent of the
+    // live instrument. Chromatic audition itself is physical-MIDI-only now
+    // (see processMidi()'s trimAuditionActive branch) — there's no
+    // on-screen keyboard here for this class to wire a note callback to.
+    jassert (zoneTrimOverlay != nullptr);
+
+    processor.trimAuditionActive.store (true, std::memory_order_relaxed);
+
+    zoneTrimOverlay->onSampleDecoded = [this] (SampleData::SnapshotPtr decoded, double sourceSampleRate)
+    {
+        processor.trimAuditionSample.applyDecodedSample (std::move (decoded));
+        processor.trimAuditionSampleRate.store (sourceSampleRate, std::memory_order_relaxed);
+    };
+    zoneTrimOverlay->onTrimChanged = [this] (int64_t start, int64_t end)
+    {
+        processor.trimAuditionRegionStart.store (start, std::memory_order_relaxed);
+        processor.trimAuditionRegionEnd.store   (end,   std::memory_order_relaxed);
+    };
+
+    trimAuditionPlayheadPoller.start();
 }
 
 void MultisamplerEditor::beginAddZoneKeyMapping (const juce::File& sampleFile,
@@ -440,8 +508,14 @@ void MultisamplerEditor::beginTrimExistingZone (const juce::Uuid& zoneId)
 
     zoneTrimOverlay = std::make_unique<AddZoneTrimOverlay> (zone->sampleFile, processor.fileLoadPool,
                                                              zone->sampleStart, zone->sampleEnd);
+    wireZoneTrimOverlayAudition();
     zoneTrimOverlay->onResult = [this, zoneId] (AddZoneTrimOverlay::Result result, bool confirmed)
     {
+        // Stop chromatic audition immediately — same reasoning as
+        // beginAddZoneTrim()'s onResult.
+        processor.resetTrimAudition();
+        trimAuditionPlayheadPoller.stop();
+
         // Same deferred-reset use-after-free fix beginAddZoneTrim() uses:
         // let onResult unwind before the overlay (currently on the call
         // stack) is destroyed.
@@ -1010,7 +1084,22 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             z.rootKey = juce::jlimit (0, 127, juce::roundToInt (value));
             break;
         case MultisamplerZoneField::group:
-            z.group = juce::jmax (0, juce::roundToInt (value));
+            // GROUP/OFF BY controls removed from the UI entirely — see
+            // MultisamplerZoneLcd.cpp's layoutRow comment. group/offBy were
+            // never wired to real choke behaviour in VoicePool (confirmed:
+            // SoundFontLoader never reads them when building playback
+            // slices), so this was a knob that could drift to arbitrary
+            // values (no upper clamp existed) and audibly do nothing.
+            // The enum slot is deliberately left in place, not deleted --
+            // removing it would renumber every later field's MIDI Learn
+            // slot index (kMidiLearnNumSlots is derived from this enum's
+            // integer values) and silently remap any user's existing
+            // learned CCs to the wrong control. Left as a no-op instead:
+            // MIDI Learn can still "arm" this slot, but nothing happens on
+            // incoming CC, matching there being no visible control to
+            // reflect a change anyway. z.group itself is untouched here so
+            // any value read from an externally-authored SFZ file (via
+            // SfzImporter) still round-trips correctly on export.
             break;
         case MultisamplerZoneField::tune:
             // Matches SampleZone::tuneCents' own documented range.
@@ -1137,18 +1226,34 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
 
 void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::Point<int> screenPos)
 {
-    const int slot = midiLearnSlotFor (field);
+    const int slot   = midiLearnSlotFor (field);
     const bool mapped = processor.midiLearn.isMapped (slot);
+    const bool armed  = processor.midiLearn.getArmedSlot() == slot;
 
     juce::PopupMenu menu;
-    menu.addItem (1, "Learn MIDI CC");
+    // "Learn MIDI CC" is hidden while this exact field is already armed —
+    // reopening the menu and picking it again was previously the only
+    // same-menu affordance offered, which just re-armed the same slot to no
+    // effect and didn't read as a way out. "Cancel Learn" in its place is
+    // the discoverable, explicit way to back out, instead of relying on the
+    // Esc shortcut (see DysektEditor::keyPressed) that nothing in either
+    // menu ever mentioned.
+    if (armed)
+        menu.addItem (3, "Cancel Learn");
+    else
+        menu.addItem (1, "Learn MIDI CC");
     if (mapped)
         menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (slot) + ")");
 
-    // No "Open MIDI Learn Dialog..." item here, unlike SliceControlBar's
-    // version of this menu — that dialog already lists every mapped field
-    // plugin-wide, including these (see gSlotParamNames in
-    // MidiLearnDialog.cpp), so it isn't specific to this one field's menu.
+    // "Open MIDI Learn Dialog..." — same entry SliceControlBar's version of
+    // this menu offers. The dialog already lists every mapped field
+    // plugin-wide, including Multisampler zone fields (see gSlotParamNames
+    // in MidiLearnDialog.cpp, which has an entry for every
+    // MultisamplerZoneField slot), so this isn't adding a Multisampler-
+    // specific view — it's just parity with the Slicer's menu, on the same
+    // "M" keyboard-shortcut path (see DysektEditor::keyPressed).
+    menu.addSeparator();
+    menu.addItem (1000, "Open MIDI Learn Dialog...");
 
     auto* topLvl = getTopLevelComponent();
     const float ms = DysektLookAndFeel::getMenuScale();
@@ -1161,6 +1266,12 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
         {
             if (result == 1)      { processor.midiLearn.armLearn (slot);      zoneLcd.repaint(); }
             else if (result == 2) { processor.midiLearn.clearMapping (slot);  zoneLcd.repaint(); }
+            else if (result == 3) { processor.midiLearn.cancelLearn();        zoneLcd.repaint(); }
+            else if (result == 1000)
+            {
+                if (auto* editor = findParentComponentOfClass<DysektEditor>())
+                    editor->keyPressed (juce::KeyPress ('M', juce::ModifierKeys(), 0));
+            }
         });
 }
 
@@ -1196,6 +1307,18 @@ void MultisamplerEditor::pollMidiLearnCc()
         if (relDelta != 0.0f)
             applyMidiLearnCc (field, relDelta, /*isRelative=*/true);
     }
+}
+
+void MultisamplerEditor::pollTrimAuditionPlayhead()
+{
+    // See trimAuditionPlayheadPoller's doc comment in the header for why
+    // this exists as its own out-of-line method rather than inline in
+    // TrimAuditionPlayheadPoller::timerCallback() — that would need
+    // DysektProcessor's complete type right there in the header, where it's
+    // only forward-declared.
+    if (zoneTrimOverlay)
+        zoneTrimOverlay->setPlayheadFrame (
+            processor.trimAuditionPlayheadFrame.load (std::memory_order_relaxed));
 }
 
 void MultisamplerEditor::applyMidiLearnCc (MultisamplerZoneField field, float ccValue, bool isRelative)

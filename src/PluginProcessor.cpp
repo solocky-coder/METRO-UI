@@ -4,6 +4,7 @@
 #include "audio/AudioAnalysis.h"
 #include "audio/SoundFontLoader.h"
 #include <BinaryData.h>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -1396,7 +1397,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                             {
                                 if (i == sel) continue;
                                 auto& sib = sm.getSlice (i);
-                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                if (! sfzSlicesShareZone (sib, s))
                                     continue;
                                 sib.volume = s.volume;
                                 if (!skipLock) sib.lockMask |= kLockVolume;
@@ -1436,7 +1437,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                             {
                                 if (i == sel) continue;
                                 auto& sib = sm.getSlice (i);
-                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                if (! sfzSlicesShareZone (sib, s))
                                     continue;
                                 sib.outputBus = s.outputBus;
                                 if (!skipLock) sib.lockMask |= kLockOutputBus;
@@ -1453,7 +1454,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                             {
                                 if (i == sel) continue;
                                 auto& sib = sm.getSlice (i);
-                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                if (! sfzSlicesShareZone (sib, s))
                                     continue;
                                 sib.showInMixer = s.showInMixer;
                             }
@@ -1473,7 +1474,7 @@ void DysektProcessor::handleCommand (const Command& cmd)
                             {
                                 if (i == sel) continue;
                                 auto& sib = sm.getSlice (i);
-                                if (sib.zoneLoKey != s.zoneLoKey || sib.zoneHiKey != s.zoneHiKey)
+                                if (! sfzSlicesShareZone (sib, s))
                                     continue;
                                 sib.pan = s.pan;
                                 if (!skipLock) sib.lockMask |= kLockPan;
@@ -1912,6 +1913,73 @@ static inline void atomicAddFloat (std::atomic<float>& target, float delta) noex
         newVal = oldVal + delta;
 }
 
+// =============================================================================
+//  Multisampler "Add Zone" trim-preview chromatic audition
+//  ─────────────────────────────────────────────────────────────────────────
+//  See the trimAuditionActive doc comment in PluginProcessor.h for the full
+//  picture. applyTrimAuditionNote() is audio-thread-only, called only from
+//  processMidi() for physical MIDI input while trimAuditionActive;
+//  resetTrimAudition() below is the one message-thread door into this
+//  feature (MultisamplerEditor calls it when the overlay closes).
+// =============================================================================
+
+void DysektProcessor::applyTrimAuditionNote (int note, bool on)
+{
+    if (on)
+    {
+        // Re-trigger if this note is already sounding (e.g. a fast repeat
+        // from a MIDI controller) rather than stacking a second voice on the
+        // same pitch.
+        for (auto& v : trimAuditionVoices)
+        {
+            if (v.note == note)
+            {
+                v.position  = (double) trimAuditionRegionStart.load (std::memory_order_relaxed);
+                v.releasing = false;
+                v.gain      = 1.0f;
+                return;
+            }
+        }
+
+        TrimAuditionVoice* target = nullptr;
+        for (auto& v : trimAuditionVoices)
+        {
+            if (v.note < 0) { target = &v; break; }
+        }
+        // No free voice: this is an audition aid, not a performance
+        // instrument, so a simple oldest-slot steal is enough rather than
+        // tracking voice age.
+        if (target == nullptr)
+            target = &trimAuditionVoices.front();
+
+        target->note      = note;
+        target->position  = (double) trimAuditionRegionStart.load (std::memory_order_relaxed);
+        // Root is always MIDI 60 regardless of whatever rootKey the
+        // AddZoneOverlay step that follows ends up picking -- see this
+        // section's header comment in PluginProcessor.h.
+        target->ratio      = std::pow (2.0, (note - 60) / 12.0);
+        target->releasing  = false;
+        target->gain       = 1.0f;
+    }
+    else
+    {
+        for (auto& v : trimAuditionVoices)
+            if (v.note == note && ! v.releasing)
+                v.releasing = true;
+    }
+}
+
+void DysektProcessor::resetTrimAudition()
+{
+    // Message-thread only. Just flips the gate off and clears the preview
+    // sample -- see this section's header comment in PluginProcessor.h for
+    // why voice cleanup itself happens audio-thread-side in processBlock's
+    // mixing block rather than here (trimAuditionVoices is audio-thread-only
+    // data, same convention as previewDemoNoteNumber).
+    trimAuditionActive.store (false, std::memory_order_relaxed);
+    trimAuditionSample.clear();
+}
+
 void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
 {
     // ── MIDI channel routing ──────────────────────────────────────────────────
@@ -1925,15 +1993,48 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
     const uint32_t sfMask  = sfPlayerChannelMask.load  (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
     const uint32_t sfz2Mask = sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
     const bool inTrimMode = trimModeActive.load (std::memory_order_relaxed);
+    const bool inAddZoneTrimAudition = trimAuditionActive.load (std::memory_order_relaxed);
 
     for (const auto metadata : midi)
     {
         const auto msg = metadata.getMessage();
 
-        // Skip messages on SF-player- or SFZ-player-owned channels — they
-        // belong to one of the DY-SFP engines, not the slicer. While trimming,
-        // however, note messages must reach the unsliced audition path on every
-        // channel; controller ownership remains unchanged.
+        // ── Add Zone trim-preview chromatic audition ─────────────────────
+        // Steals every note-on/off, on every MIDI channel, ahead of the
+        // sfMask/sfz2Mask/slice dispatch below, while a modal
+        // AddZoneTrimOverlay is open (Add Zone step 1, or "Trim Sample" on
+        // an existing zone). There's no sensible "normal" destination for
+        // physical MIDI input while that dialog owns the screen, so the
+        // note plays the sample being trimmed instead of whatever's already
+        // mapped in the live instrument. Not the same gate as inTrimMode
+        // above -- that's the unrelated global Slicer trim workflow (see
+        // AddZoneTrimOverlay.h's class comment for why the two must stay
+        // separate).
+        if (inAddZoneTrimAudition && (msg.isNoteOn() || msg.isNoteOff()))
+        {
+            applyTrimAuditionNote (msg.getNoteNumber(), msg.isNoteOn());
+            continue;
+        }
+
+        // Skip NOTE messages on SF-player- or SFZ-player-owned channels —
+        // they belong to one of the DY-SFP engines, not the slicer, so the
+        // slicer must never also trigger/stop a slice for them. While
+        // trimming, note messages must still reach the unsliced audition
+        // path on every channel.
+        //
+        // Controller (CC) messages are deliberately exempt from this skip,
+        // unlike before. MIDI Learn is a channel-agnostic gesture — a knob
+        // turn identifies a parameter by CC number (and, once a slot is
+        // detect-locked, optionally by channel — see MidiLearnManager's own
+        // channelForSlot), not by which engine happens to own the channel
+        // notes are routed on. The isMultisamplerMidiLearnSlot() dispatch
+        // just below only runs for controller messages that reach here, so
+        // when a Multisampler zone's instrument sits on an sfz2Mask-owned
+        // channel (the normal case), a live CC sent on that same
+        // channel — the expected single-controller workflow — was being
+        // discarded before midiLearn.processCc() ever saw it, silently
+        // breaking Multisampler MIDI Learn end-to-end. Notes are unaffected:
+        // isNoteMessage-gated skipping below is untouched.
         if (sfMask != 0 || sfz2Mask != 0)
         {
             const int ch = msg.getChannel();   // 1-based
@@ -1942,7 +2043,7 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
             const bool isPlayerChannel = ch >= 1 && ch <= 16
                                       && (((sfMask & (1u << ch)) != 0)
                                           || ((sfz2Mask & (1u << ch)) != 0));
-            if (isPlayerChannel && (! inTrimMode || ! isNoteMessage))
+            if (isPlayerChannel && (! inTrimMode || ! isNoteMessage) && ! msg.isController())
                 continue;
         }
 
@@ -3292,6 +3393,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 uint32_t colourArgb;
                 int      zoneLoKey;
                 int      zoneHiKey;
+                int      zoneRegionIdx; // true region identity — see Slice::zoneRegionIdx
                 int      outputBus;   // -1 = unset — see SfzSliceDescriptor::outputBus
                 bool     showInMixer; // manual pin override — see SfzSliceDescriptor::showInMixer
             };
@@ -3314,7 +3416,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // No (valid) loop region for this note — plain one-shot slice.
                     int idx = sliceManager2.createSlice (desc.startSample, desc.endSample);
                     if (idx >= 0)
-                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
+                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.zoneRegionIdx, desc.outputBus, desc.showInMixer });
                     continue;
                 }
 
@@ -3351,7 +3453,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // SliceControlBar.cpp.
                     sliceManager2.getSlice (tailIdx).loopMode = 1;   // forward loop, whole-slice
 
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.zoneRegionIdx, desc.outputBus, desc.showInMixer });
 
                     // Head + tail belong to the same zone — same colour on
                     // both so the loop-split doesn't look like two zones.
@@ -3365,6 +3467,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // head in case anything ever iterates slices by zone.
                     sliceManager2.getSlice (tailIdx).zoneLoKey = desc.zoneLoKey;
                     sliceManager2.getSlice (tailIdx).zoneHiKey = desc.zoneHiKey;
+                    sliceManager2.getSlice (tailIdx).zoneRegionIdx = desc.zoneRegionIdx;
 
                     // Same reasoning again for output bus — the tail plays
                     // as part of the same note as the head (via
@@ -3386,7 +3489,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 {
                     // Tail creation failed (cap reached) — fall back to a
                     // plain one-shot head so the note still plays something.
-                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.outputBus, desc.showInMixer });
+                    pendingZonePins.push_back ({ headIdx, desc.midiNote, hasZoneColour, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.zoneRegionIdx, desc.outputBus, desc.showInMixer });
                 }
             }
 
@@ -3401,6 +3504,7 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     sliceManager2.getSlice (pin.sliceIdx).colour = juce::Colour (pin.colourArgb);
                 sliceManager2.getSlice (pin.sliceIdx).zoneLoKey = pin.zoneLoKey;
                 sliceManager2.getSlice (pin.sliceIdx).zoneHiKey = pin.zoneHiKey;
+                sliceManager2.getSlice (pin.sliceIdx).zoneRegionIdx = pin.zoneRegionIdx;
 
                 // -1 means the matched <region> had no dysekt_output_bus
                 // opcode (or no region matched at all) — leave Slice's own
@@ -3881,12 +3985,49 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // The slicer only ever sees the already-transformed live channel-1
         // input (now on the selected track's own channel, whatever it is)
         // plus recorded slicer-track playback. When the selected track isn't
-        // a slicer track, clear the transformed copy out of `midi` first so
-        // an SF2/SFZ-targeted live note can never also trigger a slice —
+        // a slicer track, clear live NOTE input out of `midi` first so an
+        // SF2/SFZ-targeted live note can never also trigger a slice —
         // slicer-track playback from OTHER tracks still comes through via
         // slicerSeqEvents regardless of what's selected.
+        //
+        // Live CONTROLLER (CC) messages are preserved through the clear,
+        // unlike before. processMidi() is where the Multisampler's own MIDI
+        // Learn CC dispatch lives (see isMultisamplerMidiLearnSlot() there),
+        // and it needs every live CC regardless of which player is
+        // targeted — a Multisampler zone's live target is essentially never
+        // LiveTargetPlayer::slicer (its zones live on the SFZ-Player
+        // engine), so a blanket midi.clear() here was discarding every live
+        // CC before processMidi() ever ran, silently breaking Multisampler
+        // MIDI Learn whenever the user wasn't specifically targeting the
+        // Slicer with live input — which is the normal case while using the
+        // Multisampler tab.
+        //
+        // Live NOTE messages are ALSO preserved through the clear while the
+        // Add Zone trim-preview overlay is open (trimAuditionActive — see
+        // processMidi()'s inAddZoneTrimAudition gate, which steals every
+        // note-on/off on every channel ahead of the sfMask/sfz2Mask/slice
+        // dispatch while that overlay owns the screen). That overlay is
+        // opened from the Multisampler tab, so selectedTarget.player is
+        // essentially never LiveTargetPlayer::slicer while it's up — the
+        // same live-target mismatch that broke CC above was also wiping out
+        // every live note before processMidi() ran, so the overlay's
+        // keyboard-preview steal never received anything. Outside the
+        // overlay, notes are cleared exactly as before — this only widens
+        // the exemption while trimAuditionActive is set.
         if (selectedTarget.player != LiveTargetPlayer::slicer)
+        {
+            const bool inAddZoneTrimAudition = trimAuditionActive.load (std::memory_order_relaxed);
+            juce::MidiBuffer preservedLiveEvents;
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (msg.isController()
+                    || (inAddZoneTrimAudition && (msg.isNoteOn() || msg.isNoteOff())))
+                    preservedLiveEvents.addEvent (msg, meta.samplePosition);
+            }
             midi.clear();
+            midi.addEvents (preservedLiveEvents, 0, buffer.getNumSamples(), 0);
+        }
         midi.addEvents (slicerSeqEvents, 0, buffer.getNumSamples(), 0);
     }
 
@@ -4401,6 +4542,91 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 {
                     zonePreview3.playPosition.store (-1, std::memory_order_relaxed);
                 }
+            }
+        }
+
+        // -- Add Zone trim-preview chromatic audition --------------------
+        // Independent of sfzPlayer/the live multisampler engine — see
+        // trimAuditionActive's doc comment in PluginProcessor.h. Reads
+        // through getSnapshot() and interpolates manually against the
+        // returned buffer rather than through SampleData's own
+        // getInterpolatedSample()/getBuffer(), which read the `liveView`
+        // raw pointer applyDecodedSample()/clear() update unsynchronized
+        // from the message thread — getSnapshot()'s atomic shared_ptr load
+        // is the one accessor safe to call from here.
+        {
+            const bool inAddZoneTrimAudition = trimAuditionActive.load (std::memory_order_relaxed);
+            if (! inAddZoneTrimAudition)
+            {
+                // No AddZoneTrimOverlay open: make sure no voice is left
+                // dangling from just before it closed.
+                for (auto& v : trimAuditionVoices)
+                    v = TrimAuditionVoice{};
+                trimAuditionPlayheadFrame.store (-1, std::memory_order_relaxed);
+            }
+            else
+            {
+                auto trimSnap = trimAuditionSample.getSnapshot();
+                const int64_t regionStart = trimAuditionRegionStart.load (std::memory_order_relaxed);
+                const int64_t regionEnd   = trimAuditionRegionEnd.load   (std::memory_order_relaxed);
+
+                if (trimSnap != nullptr && regionEnd > regionStart)
+                {
+                    const auto& src       = trimSnap->buffer;
+                    const int   srcChans  = src.getNumChannels();
+                    const int   srcLen    = src.getNumSamples();
+                    const int64_t hardEnd = juce::jmin (regionEnd, (int64_t) srcLen);
+
+                    // ~5.8ms linear release at 44.1kHz — click-free without
+                    // needing a real envelope for what's just an audition aid.
+                    constexpr float kFadeStep = 1.0f / 256.0f;
+
+                    auto interp = [&] (int ch, double pos) -> float
+                    {
+                        const int ipos = (int) pos;
+                        if (ipos < 0 || ipos >= srcLen - 1) return 0.0f;
+                        const float frac = (float) (pos - ipos);
+                        const float* d = src.getReadPointer (ch);
+                        return d[ipos] + (d[ipos + 1] - d[ipos]) * frac;
+                    };
+
+                    for (auto& v : trimAuditionVoices)
+                    {
+                        if (v.note < 0) continue;
+
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            if (v.position >= (double) hardEnd)
+                            {
+                                v.note = -1;   // ran off the end of the trimmed region
+                                break;
+                            }
+                            if (v.releasing)
+                            {
+                                v.gain -= kFadeStep;
+                                if (v.gain <= 0.0f) { v.note = -1; break; }
+                            }
+
+                            const float rawL = interp (0, v.position);
+                            const float rawR = srcChans > 1 ? interp (1, v.position) : rawL;
+
+                            if (busL[0]) busL[0][i] += rawL * v.gain;
+                            if (busR[0]) busR[0][i] += rawR * v.gain;
+
+                            v.position += v.ratio;
+                        }
+                    }
+                }
+
+                // Playhead for AddZoneTrimOverlay — see trimAuditionPlayheadFrame's
+                // doc comment in PluginProcessor.h for why this is just the first
+                // active voice rather than tracking all of them.
+                int64_t playhead = -1;
+                for (const auto& v : trimAuditionVoices)
+                {
+                    if (v.note >= 0) { playhead = (int64_t) v.position; break; }
+                }
+                trimAuditionPlayheadFrame.store (playhead, std::memory_order_relaxed);
             }
         }
 

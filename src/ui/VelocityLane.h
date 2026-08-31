@@ -1,7 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/MidiClip.h"
-#include "DysektLookAndFeel.h"
 
 //==============================================================================
 //  VelocityLane
@@ -34,19 +33,20 @@ public:
     //==========================================================================
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (getTheme().darkBar);
+        const auto bg = juce::Colour (0xFF0E1219);
+        g.fillAll (bg);
 
         // A labelled lane reads as an editing control rather than stray blocks.
-        g.setColour (getTheme().separator);
+        g.setColour (juce::Colour (0xFF2A3440));
         g.fillRect (getLocalBounds().removeFromTop (1));
         g.setFont (juce::Font (9.0f, juce::Font::bold));
-        g.setColour (getTheme().foreground.withAlpha (0.75f));
+        g.setColour (juce::Colour (0xFF8EA5B8));
         g.drawText ("VELOCITY", 7, 4, 64, 14, juce::Justification::centredLeft, false);
         g.setFont (juce::Font (8.0f));
-        g.setColour (getTheme().foreground.withAlpha (0.5f));
+        g.setColour (juce::Colour (0xFF5F7182));
         g.drawText ("127", getWidth() - 28, 4, 22, 12, juce::Justification::centredRight, false);
         g.drawText ("0",   getWidth() - 18, getHeight() - 14, 12, 10, juce::Justification::centredRight, false);
-        g.setColour (getTheme().gridLine);
+        g.setColour (juce::Colour (0xFF222C37));
         g.drawHorizontalLine (getHeight() / 2, 0.f, (float) getWidth());
 
         if (clip == nullptr) return;
@@ -63,8 +63,8 @@ public:
             const float barW = juce::jmax (2.f, (float)(n.durationTick * pixelsPerTick) - 1.f);
 
             const bool sel = (i == selectedNote);
-            g.setColour (sel ? getTheme().accent
-                             : getTheme().waveform.withAlpha (0.82f));
+            g.setColour (sel ? juce::Colour::fromFloatRGBA (0.35f, 0.88f, 0.84f, 1.0f)
+                             : juce::Colour::fromFloatRGBA (0.35f, 0.60f, 0.76f, 0.82f));
 
             g.fillRect (juce::Rectangle<float> (x, (float)(getHeight()) - barH - 2.f, barW, barH));
         }

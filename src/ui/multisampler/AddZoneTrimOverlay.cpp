@@ -65,17 +65,26 @@ public:
         std::vector<float> peakMin ((size_t) kNumDisplayPeaks, 0.0f);
         buildDisplayPeaks (decoded->buffer, totalFrames, peakMax, peakMin);
 
+        // Handed onward as an immutable SnapshotPtr (built here, on this
+        // worker thread — never on the audio thread, see
+        // SampleData::applyDecodedSample()'s doc comment) so the caller can
+        // publish it for chromatic audition via onSampleDecoded without any
+        // further copying of the PCM buffer.
+        SampleData::SnapshotPtr forAudition = std::shared_ptr<const SampleData::DecodedSample> (std::move (decoded));
+
         auto ownerCopy = owner;
         auto cancelledCopy = cancelled;
         juce::MessageManager::callAsync (
             [ownerCopy, cancelledCopy, totalFrames, nativeRate,
-             peakMax = std::move (peakMax), peakMin = std::move (peakMin)] () mutable
+             peakMax = std::move (peakMax), peakMin = std::move (peakMin),
+             forAudition = std::move (forAudition)] () mutable
             {
                 if (cancelledCopy->load (std::memory_order_relaxed))
                     return;
                 if (auto* o = ownerCopy.getComponent())
                     o->handleDecodeSuccess (totalFrames, nativeRate,
-                                            std::move (peakMax), std::move (peakMin));
+                                            std::move (peakMax), std::move (peakMin),
+                                            std::move (forAudition));
             });
 
         return jobHasFinished;
@@ -188,7 +197,8 @@ AddZoneTrimOverlay::~AddZoneTrimOverlay()
 // ── Decode callbacks (message thread) ───────────────────────────────────────
 
 void AddZoneTrimOverlay::handleDecodeSuccess (int64_t newTotalFrames, double newSourceSampleRate,
-                                               std::vector<float> peakMax, std::vector<float> peakMin)
+                                               std::vector<float> peakMax, std::vector<float> peakMin,
+                                               SampleData::SnapshotPtr decodedForAudition)
 {
     decoding         = false;
     decodeFailed     = false;
@@ -196,6 +206,9 @@ void AddZoneTrimOverlay::handleDecodeSuccess (int64_t newTotalFrames, double new
     sourceSampleRate = newSourceSampleRate;
     peaksMax         = std::move (peakMax);
     peaksMin         = std::move (peakMin);
+
+    if (onSampleDecoded)
+        onSampleDecoded (decodedForAudition, newSourceSampleRate);
 
     // Seed from the constructor args (an existing zone's current trim
     // points, when reopened via "Trim Sample" — see this class's header
@@ -233,6 +246,14 @@ void AddZoneTrimOverlay::resetTrim()
     // (first time there's anything playable) and the RESET button.
     if (onTrimChanged)
         onTrimChanged (trimStart, trimEnd);
+}
+
+void AddZoneTrimOverlay::setPlayheadFrame (int64_t frame)
+{
+    if (frame == playheadFrame)
+        return;
+    playheadFrame = frame;
+    repaint();
 }
 
 // ── Layout ───────────────────────────────────────────────────────────────
@@ -383,6 +404,22 @@ void AddZoneTrimOverlay::paint (juce::Graphics& g)
     // "toward the kept region" orientation.
     drawTrimHandleTab (g, x1, wave.getY(), true);
     drawTrimHandleTab (g, x2, wave.getY(), false);
+
+    // ── Trim-audition playhead ────────────────────────────────────────────
+    // Drawn on top of the trim handles/shading so it's always visible while
+    // a note is sounding. playheadFrame is pushed in via setPlayheadFrame()
+    // (see its doc comment in the header) — this class never reads
+    // PluginProcessor directly. A thin bright line rather than the LCD
+    // playhead's triangle-capped style (MultisamplerWaveformLcd::
+    // drawPlayhead) — this is a one-off audition aid in a modal dialog, not
+    // a persistent transport display, so the lighter treatment fits better
+    // against the trim handles already competing for attention here.
+    if (playheadFrame >= 0 && totalFrames > 0)
+    {
+        const int px = juce::jlimit (wave.getX(), wave.getRight(), frameToPixel (playheadFrame));
+        g.setColour (juce::Colours::white.withAlpha (0.85f));
+        g.drawVerticalLine (px, (float) wave.getY(), (float) wave.getBottom());
+    }
 
     // ── Readout ────────────────────────────────────────────────────────
     const auto duration = trimEnd - trimStart;
