@@ -1309,6 +1309,18 @@ void MultisamplerEditor::pollMidiLearnCc()
     }
 }
 
+void MultisamplerEditor::pollTrimAuditionPlayhead()
+{
+    // See trimAuditionPlayheadPoller's doc comment in the header for why
+    // this exists as its own out-of-line method rather than inline in
+    // TrimAuditionPlayheadPoller::timerCallback() — that would need
+    // DysektProcessor's complete type right there in the header, where it's
+    // only forward-declared.
+    if (zoneTrimOverlay)
+        zoneTrimOverlay->setPlayheadFrame (
+            processor.trimAuditionPlayheadFrame.load (std::memory_order_relaxed));
+}
+
 void MultisamplerEditor::applyMidiLearnCc (MultisamplerZoneField field, float ccValue, bool isRelative)
 {
     if (inspectedZoneId == juce::Uuid::null())

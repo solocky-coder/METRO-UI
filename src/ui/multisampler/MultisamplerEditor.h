@@ -317,6 +317,19 @@ private:
         Returns 0.0f if nothing is currently selected/editable. */
     float getLiveFieldValue (MultisamplerZoneField field) const;
 
+    /** Pushes PluginProcessor::trimAuditionPlayheadFrame into
+        zoneTrimOverlay->setPlayheadFrame(), or no-ops if zoneTrimOverlay is
+        currently null (see trimAuditionPlayheadPoller's doc comment below
+        for when that can happen). Defined in the .cpp rather than inline in
+        trimAuditionPlayheadPoller::timerCallback() below because that would
+        need DysektProcessor's complete type (to reach
+        trimAuditionPlayheadFrame through `processor`) right here in the
+        header, where it's only forward-declared — same reason
+        pollMidiLearnCc() above is a declared-here/defined-in-.cpp method
+        rather than inline in MidiLearnPoller::timerCallback(). Runs on the
+        message thread via trimAuditionPlayheadPoller (30 Hz). */
+    void pollTrimAuditionPlayhead();
+
     // Separate nested Timer, not a second base-class inheritance — a class
     // can only privately inherit juce::Timer once, and this needs its own
     // fixed 30 Hz poll independent of the debounced one-shot engine-sync
@@ -346,12 +359,7 @@ private:
         explicit TrimAuditionPlayheadPoller (MultisamplerEditor& ownerToUse) : owner (ownerToUse) {}
         void start() { startTimerHz (30); }
         void stop()  { stopTimer(); }
-        void timerCallback() override
-        {
-            if (owner.zoneTrimOverlay)
-                owner.zoneTrimOverlay->setPlayheadFrame (
-                    owner.processor.trimAuditionPlayheadFrame.load (std::memory_order_relaxed));
-        }
+        void timerCallback() override { owner.pollTrimAuditionPlayhead(); }
         MultisamplerEditor& owner;
     } trimAuditionPlayheadPoller { *this };
 
