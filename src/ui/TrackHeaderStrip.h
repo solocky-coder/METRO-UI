@@ -51,7 +51,19 @@ public:
             // Selected rows get a stronger wash so selection still reads
             // clearly, but in the track's own colour rather than the
             // generic app accent.
-            g.setColour (info.colour.withAlpha (sel ? 0.30f : 0.14f));
+            //
+            // Selected alpha raised 0.30 -> 0.62: composited over
+            // theme.header's near-opaque near-black fill just above, 0.30
+            // meant the final pixel was roughly 70% black / 30% track
+            // colour — nowhere near what the identity swatch and the
+            // TRACK COLOUR picker swatches show (both paint info.colour at
+            // full opacity, no wash), so the selected row read as a
+            // noticeably darker, desaturated version of the colour a user
+            // had just picked. 0.62 gets close to a true-colour read while
+            // still leaving enough black underneath for the name text (see
+            // below, drawn in full-opacity info.colour on top) to sit
+            // against without flattening into its own background.
+            g.setColour (info.colour.withAlpha (sel ? 0.62f : 0.14f));
             g.fillRect (rowR);
 
             // Left accent bar on the selected row, now in the track's own
