@@ -382,6 +382,15 @@ private:
         is currently missing (nothing to decode/trim). */
     void beginTrimExistingZone (const juce::Uuid& zoneId);
 
+    /** Wires zoneTrimOverlay's chromatic-audition callbacks
+        (onSampleDecoded/onTrimChanged/onAuditionNote) to PluginProcessor's
+        trim-audition voice pool and flips trimAuditionActive on. Shared by
+        beginAddZoneTrim() and beginTrimExistingZone() — both open the same
+        overlay and both want the sample being trimmed auditionable
+        chromatically for as long as the dialog is up. Call right after
+        constructing zoneTrimOverlay, before setting its onResult. */
+    void wireZoneTrimOverlayAudition();
+
     void refreshInspectorFromSelection();
 
     /** Resolves what zoneLcd should currently show — hover preview, the

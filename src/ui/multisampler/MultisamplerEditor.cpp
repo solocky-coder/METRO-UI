@@ -359,8 +359,14 @@ void MultisamplerEditor::addZoneClicked()
 void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
 {
     zoneTrimOverlay = std::make_unique<AddZoneTrimOverlay> (sampleFile, processor.fileLoadPool);
+    wireZoneTrimOverlayAudition();
     zoneTrimOverlay->onResult = [this, sampleFile] (AddZoneTrimOverlay::Result result, bool confirmed)
     {
+        // Stop chromatic audition immediately — the overlay (and whatever
+        // was auditioning through it) is closing either way. See
+        // wireZoneTrimOverlayAudition()'s declaration comment.
+        processor.resetTrimAudition();
+
         // Same deferred-reset use-after-free fix the key-mapping step below
         // uses: let onResult unwind before the overlay (currently on the
         // call stack) is destroyed.
@@ -381,6 +387,35 @@ void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
     addAndMakeVisible (*zoneTrimOverlay);
     zoneTrimOverlay->setBounds (getLocalBounds());
     zoneTrimOverlay->toFront (true);
+}
+
+void MultisamplerEditor::wireZoneTrimOverlayAudition()
+{
+    // Wires zoneTrimOverlay's chromatic-audition hooks (onSampleDecoded/
+    // onTrimChanged/onAuditionNote) to PluginProcessor's trim-audition voice
+    // pool — shared by both call sites that open the overlay
+    // (beginAddZoneTrim() for a brand-new sample, beginTrimExistingZone()
+    // for "Trim Sample" on an existing zone). See PluginProcessor.h's
+    // trimAuditionActive doc comment for why this stays independent of the
+    // live instrument.
+    jassert (zoneTrimOverlay != nullptr);
+
+    processor.trimAuditionActive.store (true, std::memory_order_relaxed);
+
+    zoneTrimOverlay->onSampleDecoded = [this] (SampleData::SnapshotPtr decoded, double sourceSampleRate)
+    {
+        processor.trimAuditionSample.applyDecodedSample (std::move (decoded));
+        processor.trimAuditionSampleRate.store (sourceSampleRate, std::memory_order_relaxed);
+    };
+    zoneTrimOverlay->onTrimChanged = [this] (int64_t start, int64_t end)
+    {
+        processor.trimAuditionRegionStart.store (start, std::memory_order_relaxed);
+        processor.trimAuditionRegionEnd.store   (end,   std::memory_order_relaxed);
+    };
+    zoneTrimOverlay->onAuditionNote = [this] (int note, bool isOn)
+    {
+        processor.triggerTrimAuditionNote (note, isOn);
+    };
 }
 
 void MultisamplerEditor::beginAddZoneKeyMapping (const juce::File& sampleFile,
@@ -468,8 +503,13 @@ void MultisamplerEditor::beginTrimExistingZone (const juce::Uuid& zoneId)
 
     zoneTrimOverlay = std::make_unique<AddZoneTrimOverlay> (zone->sampleFile, processor.fileLoadPool,
                                                              zone->sampleStart, zone->sampleEnd);
+    wireZoneTrimOverlayAudition();
     zoneTrimOverlay->onResult = [this, zoneId] (AddZoneTrimOverlay::Result result, bool confirmed)
     {
+        // Stop chromatic audition immediately — same reasoning as
+        // beginAddZoneTrim()'s onResult.
+        processor.resetTrimAudition();
+
         // Same deferred-reset use-after-free fix beginAddZoneTrim() uses:
         // let onResult unwind before the overlay (currently on the call
         // stack) is destroyed.

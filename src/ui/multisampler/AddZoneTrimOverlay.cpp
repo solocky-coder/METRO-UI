@@ -65,17 +65,26 @@ public:
         std::vector<float> peakMin ((size_t) kNumDisplayPeaks, 0.0f);
         buildDisplayPeaks (decoded->buffer, totalFrames, peakMax, peakMin);
 
+        // Handed onward as an immutable SnapshotPtr (built here, on this
+        // worker thread — never on the audio thread, see
+        // SampleData::applyDecodedSample()'s doc comment) so the caller can
+        // publish it for chromatic audition via onSampleDecoded without any
+        // further copying of the PCM buffer.
+        SampleData::SnapshotPtr forAudition = std::shared_ptr<const SampleData::DecodedSample> (std::move (decoded));
+
         auto ownerCopy = owner;
         auto cancelledCopy = cancelled;
         juce::MessageManager::callAsync (
             [ownerCopy, cancelledCopy, totalFrames, nativeRate,
-             peakMax = std::move (peakMax), peakMin = std::move (peakMin)] () mutable
+             peakMax = std::move (peakMax), peakMin = std::move (peakMin),
+             forAudition = std::move (forAudition)] () mutable
             {
                 if (cancelledCopy->load (std::memory_order_relaxed))
                     return;
                 if (auto* o = ownerCopy.getComponent())
                     o->handleDecodeSuccess (totalFrames, nativeRate,
-                                            std::move (peakMax), std::move (peakMin));
+                                            std::move (peakMax), std::move (peakMin),
+                                            std::move (forAudition));
             });
 
         return jobHasFinished;
@@ -164,6 +173,15 @@ AddZoneTrimOverlay::AddZoneTrimOverlay (const juce::File& sampleFile, juce::Thre
     nextBtn.setEnabled (false);   // enabled once decode succeeds
     addAndMakeVisible (nextBtn);
 
+    // Chromatic audition keyboard — centred on MIDI 60 (the fixed audition
+    // root; see this class's onAuditionNote doc comment), not on anything
+    // zone-specific, since no rootKey has been chosen yet at this step.
+    auditionKeyboard.setAvailableRange (36, 84);
+    auditionKeyboard.setLowestVisibleKey (48);
+    auditionKeyboard.setOctaveForMiddleC (4);
+    auditionKeyboardState.addListener (this);
+    addAndMakeVisible (auditionKeyboard);
+
     setInterceptsMouseClicks (true, true);
     setMouseCursor (juce::MouseCursor::NormalCursor);
     for (auto* b : { &resetBtn, &cancelBtn, &nextBtn })
@@ -185,10 +203,25 @@ AddZoneTrimOverlay::~AddZoneTrimOverlay()
     cancelled->store (true, std::memory_order_relaxed);
 }
 
+// ── Chromatic audition keyboard (message thread) ────────────────────────────
+
+void AddZoneTrimOverlay::handleNoteOn (juce::MidiKeyboardState*, int, int midiNoteNumber, float)
+{
+    if (onAuditionNote)
+        onAuditionNote (midiNoteNumber, true);
+}
+
+void AddZoneTrimOverlay::handleNoteOff (juce::MidiKeyboardState*, int, int midiNoteNumber, float)
+{
+    if (onAuditionNote)
+        onAuditionNote (midiNoteNumber, false);
+}
+
 // ── Decode callbacks (message thread) ───────────────────────────────────────
 
 void AddZoneTrimOverlay::handleDecodeSuccess (int64_t newTotalFrames, double newSourceSampleRate,
-                                               std::vector<float> peakMax, std::vector<float> peakMin)
+                                               std::vector<float> peakMax, std::vector<float> peakMin,
+                                               SampleData::SnapshotPtr decodedForAudition)
 {
     decoding         = false;
     decodeFailed     = false;
@@ -196,6 +229,9 @@ void AddZoneTrimOverlay::handleDecodeSuccess (int64_t newTotalFrames, double new
     sourceSampleRate = newSourceSampleRate;
     peaksMax         = std::move (peakMax);
     peaksMin         = std::move (peakMin);
+
+    if (onSampleDecoded)
+        onSampleDecoded (decodedForAudition, newSourceSampleRate);
 
     // Seed from the constructor args (an existing zone's current trim
     // points, when reopened via "Trim Sample" — see this class's header
@@ -240,7 +276,9 @@ void AddZoneTrimOverlay::resetTrim()
 juce::Rectangle<int> AddZoneTrimOverlay::dialogBox() const
 {
     const int w = juce::jmin (640, getWidth()  - 40);
-    const int h = juce::jmin (340, getHeight() - 40);
+    // +kKeyboardHeight + 12px gap over the pre-keyboard height, to fit the
+    // chromatic audition keyboard between the readout and the button row.
+    const int h = juce::jmin (340 + kKeyboardHeight + 12, getHeight() - 40);
     return { (getWidth() - w) / 2, (getHeight() - h) / 2, w, h };
 }
 
@@ -260,6 +298,9 @@ void AddZoneTrimOverlay::resized()
 
     const auto wave = waveformArea();
     readoutLabel.setBounds (wave.getX(), wave.getBottom() + 12, wave.getWidth(), 20);
+
+    auditionKeyboard.setBounds (wave.getX(), readoutLabel.getBottom() + 8,
+                                 wave.getWidth(), kKeyboardHeight);
 
     const int btnH  = 34;
     const int btnW  = 120;

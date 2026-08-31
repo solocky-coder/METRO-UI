@@ -4,6 +4,7 @@
 #include "audio/AudioAnalysis.h"
 #include "audio/SoundFontLoader.h"
 #include <BinaryData.h>
+#include <cmath>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -1912,6 +1913,82 @@ static inline void atomicAddFloat (std::atomic<float>& target, float delta) noex
         newVal = oldVal + delta;
 }
 
+// =============================================================================
+//  Multisampler "Add Zone" trim-preview chromatic audition
+//  ─────────────────────────────────────────────────────────────────────────
+//  See the trimAuditionActive doc comment in PluginProcessor.h for the full
+//  picture. applyTrimAuditionNote() is audio-thread-only; the two public
+//  entry points below are the only cross-thread doors into this feature.
+// =============================================================================
+
+void DysektProcessor::applyTrimAuditionNote (int note, bool on)
+{
+    if (on)
+    {
+        // Re-trigger if this note is already sounding (e.g. a fast repeat
+        // from the on-screen keyboard) rather than stacking a second voice
+        // on the same pitch.
+        for (auto& v : trimAuditionVoices)
+        {
+            if (v.note == note)
+            {
+                v.position  = (double) trimAuditionRegionStart.load (std::memory_order_relaxed);
+                v.releasing = false;
+                v.gain      = 1.0f;
+                return;
+            }
+        }
+
+        TrimAuditionVoice* target = nullptr;
+        for (auto& v : trimAuditionVoices)
+        {
+            if (v.note < 0) { target = &v; break; }
+        }
+        // No free voice: this is an audition aid, not a performance
+        // instrument, so a simple oldest-slot steal is enough rather than
+        // tracking voice age.
+        if (target == nullptr)
+            target = &trimAuditionVoices.front();
+
+        target->note      = note;
+        target->position  = (double) trimAuditionRegionStart.load (std::memory_order_relaxed);
+        // Root is always MIDI 60 regardless of whatever rootKey the
+        // AddZoneOverlay step that follows ends up picking -- see this
+        // section's header comment in PluginProcessor.h.
+        target->ratio      = std::pow (2.0, (note - 60) / 12.0);
+        target->releasing  = false;
+        target->gain       = 1.0f;
+    }
+    else
+    {
+        for (auto& v : trimAuditionVoices)
+            if (v.note == note && ! v.releasing)
+                v.releasing = true;
+    }
+}
+
+void DysektProcessor::triggerTrimAuditionNote (int note, bool on)
+{
+    int start1, size1, start2, size2;
+    trimAuditionFifo.prepareToWrite (1, start1, size1, start2, size2);
+    if (size1 > 0)
+        trimAuditionFifoData[(size_t) start1] = { note, on };
+    else if (size2 > 0)
+        trimAuditionFifoData[(size_t) start2] = { note, on };
+    trimAuditionFifo.finishedWrite (size1 + size2);
+}
+
+void DysektProcessor::resetTrimAudition()
+{
+    // Message-thread only. Just flips the gate off and clears the preview
+    // sample -- see this section's header comment in PluginProcessor.h for
+    // why voice cleanup itself happens audio-thread-side in processBlock's
+    // mixing block rather than here (trimAuditionVoices is audio-thread-only
+    // data, same convention as previewDemoNoteNumber).
+    trimAuditionActive.store (false, std::memory_order_relaxed);
+    trimAuditionSample.clear();
+}
+
 void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
 {
     // ── MIDI channel routing ──────────────────────────────────────────────────
@@ -1925,10 +2002,28 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
     const uint32_t sfMask  = sfPlayerChannelMask.load  (std::memory_order_relaxed) & kSf2AllowedMidiChannelMask;
     const uint32_t sfz2Mask = sfzPlayer2ChannelMask.load (std::memory_order_relaxed);
     const bool inTrimMode = trimModeActive.load (std::memory_order_relaxed);
+    const bool inAddZoneTrimAudition = trimAuditionActive.load (std::memory_order_relaxed);
 
     for (const auto metadata : midi)
     {
         const auto msg = metadata.getMessage();
+
+        // ── Add Zone trim-preview chromatic audition ─────────────────────
+        // Steals every note-on/off, on every MIDI channel, ahead of the
+        // sfMask/sfz2Mask/slice dispatch below, while a modal
+        // AddZoneTrimOverlay is open (Add Zone step 1, or "Trim Sample" on
+        // an existing zone). There's no sensible "normal" destination for
+        // physical MIDI input while that dialog owns the screen, so the
+        // note plays the sample being trimmed instead of whatever's already
+        // mapped in the live instrument. Not the same gate as inTrimMode
+        // above -- that's the unrelated global Slicer trim workflow (see
+        // AddZoneTrimOverlay.h's class comment for why the two must stay
+        // separate).
+        if (inAddZoneTrimAudition && (msg.isNoteOn() || msg.isNoteOff()))
+        {
+            applyTrimAuditionNote (msg.getNoteNumber(), msg.isNoteOn());
+            continue;
+        }
 
         // Skip messages on SF-player- or SFZ-player-owned channels — they
         // belong to one of the DY-SFP engines, not the slicer. While trimming,
@@ -4403,6 +4498,104 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 else
                 {
                     zonePreview3.playPosition.store (-1, std::memory_order_relaxed);
+                }
+            }
+        }
+
+        // -- Add Zone trim-preview chromatic audition --------------------
+        // Independent of sfzPlayer/the live multisampler engine — see
+        // trimAuditionActive's doc comment in PluginProcessor.h. Reads
+        // through getSnapshot() and interpolates manually against the
+        // returned buffer rather than through SampleData's own
+        // getInterpolatedSample()/getBuffer(), which read the `liveView`
+        // raw pointer applyDecodedSample()/clear() update unsynchronized
+        // from the message thread — getSnapshot()'s atomic shared_ptr load
+        // is the one accessor safe to call from here.
+        {
+            const bool inAddZoneTrimAudition = trimAuditionActive.load (std::memory_order_relaxed);
+            if (! inAddZoneTrimAudition)
+            {
+                // No AddZoneTrimOverlay open: make sure no voice is left
+                // dangling from just before it closed, and drop any
+                // on-screen-keyboard commands that arrived too late to
+                // matter.
+                for (auto& v : trimAuditionVoices)
+                    v = TrimAuditionVoice{};
+                int ds1, dn1, ds2, dn2;
+                trimAuditionFifo.prepareToRead (trimAuditionFifo.getNumReady(), ds1, dn1, ds2, dn2);
+                trimAuditionFifo.finishedRead (dn1 + dn2);
+            }
+            else
+            {
+                // Drain on-screen-keyboard commands queued since the last
+                // block. Physical MIDI note-on/off was already applied
+                // directly from processMidi() earlier in this call (see its
+                // inAddZoneTrimAudition branch), so anything still queued
+                // here came from the overlay's embedded keyboard.
+                int rs1, rn1, rs2, rn2;
+                trimAuditionFifo.prepareToRead (trimAuditionFifo.getNumReady(), rs1, rn1, rs2, rn2);
+                for (int i = 0; i < rn1; ++i)
+                {
+                    const auto& c = trimAuditionFifoData[(size_t) (rs1 + i)];
+                    applyTrimAuditionNote (c.note, c.on);
+                }
+                for (int i = 0; i < rn2; ++i)
+                {
+                    const auto& c = trimAuditionFifoData[(size_t) (rs2 + i)];
+                    applyTrimAuditionNote (c.note, c.on);
+                }
+                trimAuditionFifo.finishedRead (rn1 + rn2);
+
+                auto trimSnap = trimAuditionSample.getSnapshot();
+                const int64_t regionStart = trimAuditionRegionStart.load (std::memory_order_relaxed);
+                const int64_t regionEnd   = trimAuditionRegionEnd.load   (std::memory_order_relaxed);
+
+                if (trimSnap != nullptr && regionEnd > regionStart)
+                {
+                    const auto& src       = trimSnap->buffer;
+                    const int   srcChans  = src.getNumChannels();
+                    const int   srcLen    = src.getNumSamples();
+                    const int64_t hardEnd = juce::jmin (regionEnd, (int64_t) srcLen);
+
+                    // ~5.8ms linear release at 44.1kHz — click-free without
+                    // needing a real envelope for what's just an audition aid.
+                    constexpr float kFadeStep = 1.0f / 256.0f;
+
+                    auto interp = [&] (int ch, double pos) -> float
+                    {
+                        const int ipos = (int) pos;
+                        if (ipos < 0 || ipos >= srcLen - 1) return 0.0f;
+                        const float frac = (float) (pos - ipos);
+                        const float* d = src.getReadPointer (ch);
+                        return d[ipos] + (d[ipos + 1] - d[ipos]) * frac;
+                    };
+
+                    for (auto& v : trimAuditionVoices)
+                    {
+                        if (v.note < 0) continue;
+
+                        for (int i = 0; i < numSamples; ++i)
+                        {
+                            if (v.position >= (double) hardEnd)
+                            {
+                                v.note = -1;   // ran off the end of the trimmed region
+                                break;
+                            }
+                            if (v.releasing)
+                            {
+                                v.gain -= kFadeStep;
+                                if (v.gain <= 0.0f) { v.note = -1; break; }
+                            }
+
+                            const float rawL = interp (0, v.position);
+                            const float rawR = srcChans > 1 ? interp (1, v.position) : rawL;
+
+                            if (busL[0]) busL[0][i] += rawL * v.gain;
+                            if (busR[0]) busR[0][i] += rawR * v.gain;
+
+                            v.position += v.ratio;
+                        }
+                    }
                 }
             }
         }
