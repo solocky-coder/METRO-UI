@@ -350,8 +350,8 @@ public:
 
         auto metaArea = idRow.removeFromTop (14);
         juce::String typeTag = trackTypeName (info.type);
-        auto badgeW = juce::jmin (metaArea.getWidth() - 4,
-                                   DysektLookAndFeel::makeFont (8.5f, true).getStringWidth (typeTag) + 12);
+        const int badgeW = juce::jmin (metaArea.getWidth() - 4,
+            juce::GlyphArrangement::getStringWidthInt (DysektLookAndFeel::makeFont (8.5f, true), typeTag) + 12);
         auto badgeR = metaArea.removeFromLeft (badgeW);
         g.setColour (theme.button);
         g.fillRect (badgeR);
