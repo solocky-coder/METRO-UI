@@ -2025,10 +2025,25 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
             continue;
         }
 
-        // Skip messages on SF-player- or SFZ-player-owned channels — they
-        // belong to one of the DY-SFP engines, not the slicer. While trimming,
-        // however, note messages must reach the unsliced audition path on every
-        // channel; controller ownership remains unchanged.
+        // Skip NOTE messages on SF-player- or SFZ-player-owned channels —
+        // they belong to one of the DY-SFP engines, not the slicer, so the
+        // slicer must never also trigger/stop a slice for them. While
+        // trimming, note messages must still reach the unsliced audition
+        // path on every channel.
+        //
+        // Controller (CC) messages are deliberately exempt from this skip,
+        // unlike before. MIDI Learn is a channel-agnostic gesture — a knob
+        // turn identifies a parameter by CC number (and, once a slot is
+        // detect-locked, optionally by channel — see MidiLearnManager's own
+        // channelForSlot), not by which engine happens to own the channel
+        // notes are routed on. The isMultisamplerMidiLearnSlot() dispatch
+        // just below only runs for controller messages that reach here, so
+        // when a Multisampler zone's instrument sits on an sfz2Mask-owned
+        // channel (the normal case), a live CC sent on that same
+        // channel — the expected single-controller workflow — was being
+        // discarded before midiLearn.processCc() ever saw it, silently
+        // breaking Multisampler MIDI Learn end-to-end. Notes are unaffected:
+        // isNoteMessage-gated skipping below is untouched.
         if (sfMask != 0 || sfz2Mask != 0)
         {
             const int ch = msg.getChannel();   // 1-based
@@ -2037,7 +2052,7 @@ void DysektProcessor::processMidi (const juce::MidiBuffer& midi)
             const bool isPlayerChannel = ch >= 1 && ch <= 16
                                       && (((sfMask & (1u << ch)) != 0)
                                           || ((sfz2Mask & (1u << ch)) != 0));
-            if (isPlayerChannel && (! inTrimMode || ! isNoteMessage))
+            if (isPlayerChannel && (! inTrimMode || ! isNoteMessage) && ! msg.isController())
                 continue;
         }
 
@@ -3979,12 +3994,49 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         // The slicer only ever sees the already-transformed live channel-1
         // input (now on the selected track's own channel, whatever it is)
         // plus recorded slicer-track playback. When the selected track isn't
-        // a slicer track, clear the transformed copy out of `midi` first so
-        // an SF2/SFZ-targeted live note can never also trigger a slice —
+        // a slicer track, clear live NOTE input out of `midi` first so an
+        // SF2/SFZ-targeted live note can never also trigger a slice —
         // slicer-track playback from OTHER tracks still comes through via
         // slicerSeqEvents regardless of what's selected.
+        //
+        // Live CONTROLLER (CC) messages are preserved through the clear,
+        // unlike before. processMidi() is where the Multisampler's own MIDI
+        // Learn CC dispatch lives (see isMultisamplerMidiLearnSlot() there),
+        // and it needs every live CC regardless of which player is
+        // targeted — a Multisampler zone's live target is essentially never
+        // LiveTargetPlayer::slicer (its zones live on the SFZ-Player
+        // engine), so a blanket midi.clear() here was discarding every live
+        // CC before processMidi() ever ran, silently breaking Multisampler
+        // MIDI Learn whenever the user wasn't specifically targeting the
+        // Slicer with live input — which is the normal case while using the
+        // Multisampler tab.
+        //
+        // Live NOTE messages are ALSO preserved through the clear while the
+        // Add Zone trim-preview overlay is open (trimAuditionActive — see
+        // processMidi()'s inAddZoneTrimAudition gate, which steals every
+        // note-on/off on every channel ahead of the sfMask/sfz2Mask/slice
+        // dispatch while that overlay owns the screen). That overlay is
+        // opened from the Multisampler tab, so selectedTarget.player is
+        // essentially never LiveTargetPlayer::slicer while it's up — the
+        // same live-target mismatch that broke CC above was also wiping out
+        // every live note before processMidi() ran, so the overlay's
+        // keyboard-preview steal never received anything. Outside the
+        // overlay, notes are cleared exactly as before — this only widens
+        // the exemption while trimAuditionActive is set.
         if (selectedTarget.player != LiveTargetPlayer::slicer)
+        {
+            const bool inAddZoneTrimAudition = trimAuditionActive.load (std::memory_order_relaxed);
+            juce::MidiBuffer preservedLiveEvents;
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if (msg.isController()
+                    || (inAddZoneTrimAudition && (msg.isNoteOn() || msg.isNoteOff())))
+                    preservedLiveEvents.addEvent (msg, meta.samplePosition);
+            }
             midi.clear();
+            midi.addEvents (preservedLiveEvents, 0, buffer.getNumSamples(), 0);
+        }
         midi.addEvents (slicerSeqEvents, 0, buffer.getNumSamples(), 0);
     }
 

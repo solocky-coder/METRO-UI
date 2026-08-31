@@ -869,8 +869,19 @@ void SliceControlBar::drawMidiLearnCell (juce::Graphics& g, int x, int y,
 void SliceControlBar::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos)
 {
  const bool mapped = processor.midiLearn.isMapped (fieldId);
+ const bool armed  = processor.midiLearn.getArmedSlot() == fieldId;
  juce::PopupMenu menu;
- menu.addItem (1, "Learn MIDI CC");
+ // "Learn MIDI CC" is hidden while this exact field is already armed —
+ // reopening the menu and picking it again previously just re-armed the
+ // same slot with no visible effect, and wasn't a way out. "Cancel Learn"
+ // in its place is the discoverable, explicit way to back out, instead of
+ // relying on the Esc shortcut (see DysektEditor::keyPressed) that
+ // nothing in this menu ever mentioned. Mirrored in MultisamplerEditor::
+ // showMidiLearnMenu for the Multisampler's own version of this menu.
+ if (armed)
+     menu.addItem (3, "Cancel Learn");
+ else
+     menu.addItem (1, "Learn MIDI CC");
  if (mapped)
  menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (fieldId) + ")");
 
@@ -887,6 +898,7 @@ void SliceControlBar::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos
  [this, fieldId] (int result) {
  if (result == 1) { processor.midiLearn.armLearn (fieldId); repaint(); }
  else if (result == 2) { processor.midiLearn.clearMapping (fieldId); repaint(); }
+ else if (result == 3) { processor.midiLearn.cancelLearn(); repaint(); }
  else if (result == 1000)
  {
  if (auto* editor = findParentComponentOfClass<DysektEditor>())

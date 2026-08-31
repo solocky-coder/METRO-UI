@@ -1220,11 +1220,22 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
 
 void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::Point<int> screenPos)
 {
-    const int slot = midiLearnSlotFor (field);
+    const int slot   = midiLearnSlotFor (field);
     const bool mapped = processor.midiLearn.isMapped (slot);
+    const bool armed  = processor.midiLearn.getArmedSlot() == slot;
 
     juce::PopupMenu menu;
-    menu.addItem (1, "Learn MIDI CC");
+    // "Learn MIDI CC" is hidden while this exact field is already armed —
+    // reopening the menu and picking it again was previously the only
+    // same-menu affordance offered, which just re-armed the same slot to no
+    // effect and didn't read as a way out. "Cancel Learn" in its place is
+    // the discoverable, explicit way to back out, instead of relying on the
+    // Esc shortcut (see DysektEditor::keyPressed) that nothing in either
+    // menu ever mentioned.
+    if (armed)
+        menu.addItem (3, "Cancel Learn");
+    else
+        menu.addItem (1, "Learn MIDI CC");
     if (mapped)
         menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (slot) + ")");
 
@@ -1244,6 +1255,7 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
         {
             if (result == 1)      { processor.midiLearn.armLearn (slot);      zoneLcd.repaint(); }
             else if (result == 2) { processor.midiLearn.clearMapping (slot);  zoneLcd.repaint(); }
+            else if (result == 3) { processor.midiLearn.cancelLearn();        zoneLcd.repaint(); }
         });
 }
 
