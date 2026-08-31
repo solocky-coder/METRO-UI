@@ -44,7 +44,17 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xFF080A0D));
+        g.fillAll (getTheme().background);
+    }
+
+    // Forwards to the child components whose colours are cached via
+    // setColour() rather than read live in paint() — see
+    // PianoRollComponent::refreshTheme()'s doc comment. Call this (in
+    // addition to repaint()) whenever the app's theme changes.
+    void refreshTheme()
+    {
+        pianoRoll.refreshTheme();
+        repaint();
     }
 
     void syncSnap()
@@ -160,6 +170,13 @@ public:
     void setActiveTool (PianoRollComponent::Tool t)   { panel.setActiveTool (t); }
     SequencerTrackInfo getTrackInfo (int i) const     { return panel.getTrackInfo (i); }
     void syncSnap()                                    { panel.syncSnap(); }
+
+    // Forwards to PianoRollPanel — see PianoRollComponent::refreshTheme()'s
+    // doc comment. This window sits outside the main plugin editor's
+    // component tree (it's a separate native DocumentWindow), so nothing
+    // repaints it automatically when the app's theme changes; the caller
+    // must invoke this explicitly alongside its own repaint().
+    void refreshTheme()                                { panel.refreshTheme(); }
 
     void onSliceChromaticToggled (int si, bool en, int ch,
                                   const juce::String& name, juce::Colour col)

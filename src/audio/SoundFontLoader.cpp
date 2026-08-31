@@ -1150,7 +1150,6 @@ private:
                     desc.zoneColourArgb = SfzZoneColours::zoneColourArgb (i);
                     desc.zoneLoKey      = rk.loKey;
                     desc.zoneHiKey      = rk.hiKey;
-                    desc.zoneRegionIdx  = i;
                     desc.outputBus      = rk.outputBus;   // -1 if the region had no dysekt_output_bus opcode
                     desc.showInMixer    = rk.showInMixer;
                     break;   // last matching region wins (see comment above)

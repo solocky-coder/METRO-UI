@@ -40,7 +40,6 @@
 #include <memory>
 #include <atomic>
 #include "../DysektLookAndFeel.h"
-#include "../../audio/SampleData.h"
 
 class AddZoneTrimOverlay : public juce::Component
 {
@@ -104,34 +103,11 @@ public:
      *  in either case. */
     std::function<void (int64_t start, int64_t end)> onTrimChanged;
 
-    /** Fired once, right after a successful decode, with the full decoded
-     *  buffer (not just the display peaks kept for the waveform) so the
-     *  caller can publish it somewhere real-time-readable for chromatic
-     *  audition -- see PluginProcessor::trimAuditionSample. Never fires on
-     *  decode failure. The SnapshotPtr is already an immutable, fully-built
-     *  payload (see SampleData::applyDecodedSample()'s doc comment) built
-     *  on the decode job's worker thread, so handing it straight to
-     *  applyDecodedSample() from the caller's message-thread lambda is
-     *  real-time-safe with no further copying. */
-    std::function<void (SampleData::SnapshotPtr decoded, double sourceSampleRate)> onSampleDecoded;
-
-    /** Pushes the trim-audition playhead position (absolute source frame,
-     *  or -1 when nothing is currently sounding) for this component to draw
-     *  over the waveform. Called by MultisamplerEditor at ~30 Hz while this
-     *  overlay is open, polling PluginProcessor::trimAuditionPlayheadFrame —
-     *  this class never reads that atomic (or anything else on
-     *  DysektProcessor) directly, same separation as the rest of this
-     *  class's callback-based design (see class comment). No-op (just
-     *  stores + repaints if changed) while decoding/failed, same as every
-     *  other display update here. */
-    void setPlayheadFrame (int64_t frame);
-
     // Called by the background decode job via MessageManager::callAsync —
     // public only so the .cpp's ThreadPoolJob subclass can reach them;
     // not part of the public API a caller should use.
     void handleDecodeSuccess (int64_t totalFrames, double sourceSampleRate,
-                               std::vector<float> peakMax, std::vector<float> peakMin,
-                               SampleData::SnapshotPtr decodedForAudition);
+                               std::vector<float> peakMax, std::vector<float> peakMin);
     void handleDecodeFailure (const juce::String& errorMessage);
 
 private:
@@ -173,11 +149,6 @@ private:
 
     int64_t trimStart = 0;
     int64_t trimEnd   = 0;   // exclusive
-
-    // Absolute source frame of the currently-sounding audition voice, or -1
-    // — see setPlayheadFrame()'s doc comment above. Drawn over the waveform
-    // in paint() whenever >= 0.
-    int64_t playheadFrame = -1;
 
     enum class Handle { none, in, out };
     Handle activeDrag  = Handle::none;

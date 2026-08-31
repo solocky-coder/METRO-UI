@@ -317,19 +317,6 @@ private:
         Returns 0.0f if nothing is currently selected/editable. */
     float getLiveFieldValue (MultisamplerZoneField field) const;
 
-    /** Pushes PluginProcessor::trimAuditionPlayheadFrame into
-        zoneTrimOverlay->setPlayheadFrame(), or no-ops if zoneTrimOverlay is
-        currently null (see trimAuditionPlayheadPoller's doc comment below
-        for when that can happen). Defined in the .cpp rather than inline in
-        trimAuditionPlayheadPoller::timerCallback() below because that would
-        need DysektProcessor's complete type (to reach
-        trimAuditionPlayheadFrame through `processor`) right here in the
-        header, where it's only forward-declared — same reason
-        pollMidiLearnCc() above is a declared-here/defined-in-.cpp method
-        rather than inline in MidiLearnPoller::timerCallback(). Runs on the
-        message thread via trimAuditionPlayheadPoller (30 Hz). */
-    void pollTrimAuditionPlayhead();
-
     // Separate nested Timer, not a second base-class inheritance — a class
     // can only privately inherit juce::Timer once, and this needs its own
     // fixed 30 Hz poll independent of the debounced one-shot engine-sync
@@ -342,26 +329,6 @@ private:
         void timerCallback() override { owner.pollMidiLearnCc(); }
         MultisamplerEditor& owner;
     } midiLearnPoller { *this };
-
-    // Same shape as MidiLearnPoller above, its own separate nested Timer —
-    // pushes PluginProcessor::trimAuditionPlayheadFrame into
-    // zoneTrimOverlay->setPlayheadFrame() at 30 Hz while the overlay is
-    // open, so the trim-audition playhead moves smoothly without
-    // AddZoneTrimOverlay ever touching the processor directly (see that
-    // class's design comment). Started in wireZoneTrimOverlayAudition();
-    // stopped wherever the overlay closes (both onResult lambdas,
-    // alongside processor.resetTrimAudition()) and in the destructor as a
-    // safety net. No-ops harmlessly if zoneTrimOverlay is null on a given
-    // tick — can happen for one tick right after start() if the overlay's
-    // deferred-reset callAsync from a previous close hasn't run yet.
-    struct TrimAuditionPlayheadPoller : private juce::Timer
-    {
-        explicit TrimAuditionPlayheadPoller (MultisamplerEditor& ownerToUse) : owner (ownerToUse) {}
-        void start() { startTimerHz (30); }
-        void stop()  { stopTimer(); }
-        void timerCallback() override { owner.pollTrimAuditionPlayhead(); }
-        MultisamplerEditor& owner;
-    } trimAuditionPlayheadPoller { *this };
 
     void scheduleEngineSync();       // (re)start the debounce timer
     // isFreshLoad: true when called right after setInstrument() wholesale-swapped
@@ -414,18 +381,6 @@ private:
         to collect, the zone is already mapped. No-op if the zone's sample
         is currently missing (nothing to decode/trim). */
     void beginTrimExistingZone (const juce::Uuid& zoneId);
-
-    /** Wires zoneTrimOverlay's chromatic-audition callbacks
-        (onSampleDecoded/onTrimChanged) to PluginProcessor's trim-audition
-        voice pool, flips trimAuditionActive on, and starts
-        trimAuditionPlayheadPoller. Shared by beginAddZoneTrim() and
-        beginTrimExistingZone() — both open the same overlay and both want
-        the sample being trimmed auditionable chromatically (via physical
-        MIDI — see PluginProcessor::processMidi()'s trimAuditionActive
-        branch) with a live playhead for as long as the dialog is up. Call
-        right after constructing zoneTrimOverlay, before setting its
-        onResult. */
-    void wireZoneTrimOverlayAudition();
 
     void refreshInspectorFromSelection();
 

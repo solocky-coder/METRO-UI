@@ -869,19 +869,8 @@ void SliceControlBar::drawMidiLearnCell (juce::Graphics& g, int x, int y,
 void SliceControlBar::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos)
 {
  const bool mapped = processor.midiLearn.isMapped (fieldId);
- const bool armed  = processor.midiLearn.getArmedSlot() == fieldId;
  juce::PopupMenu menu;
- // "Learn MIDI CC" is hidden while this exact field is already armed —
- // reopening the menu and picking it again previously just re-armed the
- // same slot with no visible effect, and wasn't a way out. "Cancel Learn"
- // in its place is the discoverable, explicit way to back out, instead of
- // relying on the Esc shortcut (see DysektEditor::keyPressed) that
- // nothing in this menu ever mentioned. Mirrored in MultisamplerEditor::
- // showMidiLearnMenu for the Multisampler's own version of this menu.
- if (armed)
-     menu.addItem (3, "Cancel Learn");
- else
-     menu.addItem (1, "Learn MIDI CC");
+ menu.addItem (1, "Learn MIDI CC");
  if (mapped)
  menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (fieldId) + ")");
 
@@ -898,7 +887,6 @@ void SliceControlBar::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos
  [this, fieldId] (int result) {
  if (result == 1) { processor.midiLearn.armLearn (fieldId); repaint(); }
  else if (result == 2) { processor.midiLearn.clearMapping (fieldId); repaint(); }
- else if (result == 3) { processor.midiLearn.cancelLearn(); repaint(); }
  else if (result == 1000)
  {
  if (auto* editor = findParentComponentOfClass<DysektEditor>())
@@ -1476,18 +1464,16 @@ void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int w
         // the original 8 read-only-until-now fields — see SliceLcdDisplay's/
         // SliceWaveformLcd's "no write path from here into SampleZone yet"
         // comments, which this closes for these six.
-        // GROUP removed (see MultisamplerEditor::applyZoneFieldEdit's
-        // group-case comment) — group/offBy were never wired to real choke
-        // behaviour, and this knob had no upper clamp at all.
         juce::String (z.attackSec, 3) + "s", juce::String (z.decaySec, 3) + "s",
         juce::String (juce::roundToInt (z.sustainLevel * 100.0f)) + "%",
         (z.filterCutoffHz >= 1000.0f ? juce::String (z.filterCutoffHz / 1000.0f, 1) + "k"
                                       : juce::String (juce::roundToInt (z.filterCutoffHz)) + "Hz"),
-        juce::String (juce::roundToInt (z.filterResonance * 100.0f)) + "%" };
+        juce::String (juce::roundToInt (z.filterResonance * 100.0f)) + "%",
+        z.group > 0 ? juce::String (z.group) : "--" };
     const char* labels[] = { "loKey", "hiKey", "ROOT", "PITCH", "PAN", "VOLUME", "RELEASE", "LOOP",
-                             "ATTACK", "DECAY", "SUSTAIN", "CUTOFF", "RESO" };
+                             "ATTACK", "DECAY", "SUSTAIN", "CUTOFF", "RESO", "GROUP" };
     const int fields[] = { ZoneLoKey, ZoneHiKey, ZoneRoot, ZonePitch, ZonePan, ZoneVolume, ZoneRelease, ZoneLoop,
-                           ZoneAttack, ZoneDecay, ZoneSustain, ZoneCutoff, ZoneResonance };
+                           ZoneAttack, ZoneDecay, ZoneSustain, ZoneCutoff, ZoneResonance, ZoneGroup };
     static_assert (sizeof (values) / sizeof (values[0]) == sizeof (fields) / sizeof (fields[0]),
                   "values/labels/fields must stay in lockstep");
     const int numFields = (int) (sizeof (fields) / sizeof (fields[0]));

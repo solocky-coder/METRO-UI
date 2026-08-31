@@ -22,22 +22,6 @@ namespace
 MultisamplerZoneLcd::MultisamplerZoneLcd()
 {
     setInterceptsMouseClicks (true, true);
-
-    // Always running, same as SliceControlBar's constructor — timerCallback()
-    // below only actually repaints while something is armed, so this is
-    // cheap the rest of the time.
-    startTimerHz (30);
-}
-
-void MultisamplerZoneLcd::timerCallback()
-{
-    // Advance pulse at ~1.2 Hz (full cycle every ~0.85s) — identical rate to
-    // SliceControlBar::timerCallback().
-    pulsePhase += 1.0f / (30.0f / 1.2f);
-    if (pulsePhase >= 1.0f) pulsePhase -= 1.0f;
-
-    if (midiLearn != nullptr && midiLearn->isArmed())
-        repaint();
 }
 
 // ── Display ──────────────────────────────────────────────────────────────
@@ -108,13 +92,6 @@ void MultisamplerZoneLcd::setEditable (bool shouldEdit)
 {
     if (editable == shouldEdit) return;
     editable = shouldEdit;
-    repaint();
-}
-
-void MultisamplerZoneLcd::setOutputBusVisible (bool shouldShow)
-{
-    if (outputBusVisible == shouldShow) return;
-    outputBusVisible = shouldShow;
     repaint();
 }
 
@@ -475,19 +452,12 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
 
     // Three rows of knob cells — row 1 has 7 fields (mapping + tune/pan/gain),
     // row 2 has 9 (envelope/filter/routing, including the LOOP and MIX flat
-    // toggles) or 8 when OUT is excluded (see outputBusVisible below), row 3
-    // has 9 (the EQ1/EQ2/EQ3 band controls) — matching
+    // toggles), row 3 has 9 (the EQ1/EQ2/EQ3 band controls) — matching
     // SliceControlBar's own knob-row layouts (drawKnobCell in a straight
     // horizontal run) instead of the old cramped 4/4/6 text-cell split.
     const int rowH = content.getHeight() / 3;
 
-    // Takes a vector rather than an initializer_list so row 2 below can be
-    // built conditionally (OUT dropped entirely when !outputBusVisible,
-    // rather than left in the list and merely skipped — the row's cellW
-    // divides by however many fields actually get passed in, so dropping
-    // OUT here is also what makes the remaining fields reflow to fill the
-    // gap instead of leaving a blank cell where it used to sit).
-    auto layoutRow = [&] (juce::Rectangle<int> row, const std::vector<MultisamplerZoneField>& fields)
+    auto layoutRow = [&] (juce::Rectangle<int> row, std::initializer_list<MultisamplerZoneField> fields)
     {
         const int n = (int) fields.size();
         const int cellW = row.getWidth() / juce::jmax (1, n);
@@ -503,25 +473,15 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
 
     layoutRow (content.removeFromTop (rowH),
                { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
-                 MultisamplerZoneField::rootKey,
+                 MultisamplerZoneField::rootKey, MultisamplerZoneField::group,
                  MultisamplerZoneField::tune, MultisamplerZoneField::pan,
                  MultisamplerZoneField::gain });
-
-    // OUT is only meaningful when something downstream can actually honour
-    // an AUX 1–15 choice — see setOutputBusVisible()'s doc comment in the
-    // header for why the standalone build can't. Everything else in this
-    // row is unconditional.
-    std::vector<MultisamplerZoneField> row2 {
-        MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
-        MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
-        MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
-        MultisamplerZoneField::resonance
-    };
-    if (outputBusVisible)
-        row2.push_back (MultisamplerZoneField::outputBus);
-    row2.push_back (MultisamplerZoneField::showInMixer);
-    layoutRow (content.removeFromTop (rowH), row2);
-
+    layoutRow (content.removeFromTop (rowH),
+               { MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
+                 MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
+                 MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
+                 MultisamplerZoneField::resonance, MultisamplerZoneField::outputBus,
+                 MultisamplerZoneField::showInMixer });
     layoutRow (content,
                { MultisamplerZoneField::eq1Freq, MultisamplerZoneField::eq1Gain,
                  MultisamplerZoneField::eq1Bw, MultisamplerZoneField::eq2Freq,
@@ -537,30 +497,6 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
     // cell's own index for the hover/drag comparisons below.
     const int idx = (int) cells.size() - 1;
 
-    // midiLearn is null until MultisamplerEditor calls setMidiLearnManager()
-    // (see that method's doc comment); until then armed/mapped are both
-    // false and this whole block is a no-op.
-    const int  slot   = midiLearn != nullptr ? midiLearnSlotFor (field) : -1;
-    const bool mapped = midiLearn != nullptr && midiLearn->isMapped (slot);
-    const bool armed   = midiLearn != nullptr && midiLearn->getArmedSlot() == slot;
-
-    // ── Pulsating arm-highlight frame ──────────────────────────────────────
-    // Drawn first, as a background wash + border across the whole cell,
-    // before the knob/toggle content on top of it — identical treatment to
-    // SliceControlBar::drawKnobCell's armed block (same alpha ranges, same
-    // sine-driven stroke width, same flat square-cornered rect rather than
-    // rounded), just expressed against this cell's Rectangle instead of raw
-    // x/y/cellW/cellH.
-    if (armed)
-    {
-        const float pulse = 0.5f + 0.5f * std::sin (pulsePhase * juce::MathConstants<float>::twoPi);
-        auto fb = bounds.toFloat();
-        g.setColour (getTheme().accent.withAlpha (0.08f + 0.10f * pulse));
-        g.fillRect (fb);
-        g.setColour (getTheme().accent.withAlpha (0.55f + 0.45f * pulse));
-        g.drawRect (fb.reduced (0.5f), 1.0f + 1.0f * pulse);
-    }
-
     if (field == MultisamplerZoneField::loopEnabled)
         drawLoopToggleCell (g, bounds, idx);
     else if (field == MultisamplerZoneField::showInMixer)
@@ -571,18 +507,24 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
     // ── MIDI Learn CC label overlay ──────────────────────────────────────
     // Drawn one level up, after the dispatch above, rather than threaded
     // into drawKnobField/drawLoopToggleCell/drawMixerToggleCell individually
-    // — every field type gets it uniformly from one place. Text matches
-    // SliceControlBar's convention exactly: "ARM" while armed, the mapped
-    // CC's label text otherwise.
-    if (mapped || armed)
+    // — every field type gets it uniformly from one place. midiLearn is
+    // null until MultisamplerEditor calls setMidiLearnManager() (see that
+    // method's doc comment); until then this silently draws nothing.
+    if (midiLearn != nullptr)
     {
-        g.setFont (DysektLookAndFeel::makeMonoFont (8.0f * uiScale));
-        g.setColour (armed ? getTheme().accent
-                            : getTheme().foreground.withAlpha (0.6f));
-        g.drawText (armed ? juce::String ("ARM") : midiLearn->getLabelText (slot),
-                    bounds.removeFromTop (juce::roundToInt (10.0f * uiScale))
-                          .reduced (juce::roundToInt (2.0f * uiScale), 0),
-                    juce::Justification::topRight);
+        const int slot   = midiLearnSlotFor (field);
+        const bool mapped = midiLearn->isMapped (slot);
+        const bool armed  = midiLearn->getArmedSlot() == slot;
+        if (mapped || armed)
+        {
+            g.setFont (DysektLookAndFeel::makeMonoFont (8.0f * uiScale));
+            g.setColour (armed ? getTheme().accent
+                                : getTheme().foreground.withAlpha (0.6f));
+            g.drawText (armed ? juce::String ("LEARN") : midiLearn->getLabelText (slot),
+                        bounds.removeFromTop (juce::roundToInt (10.0f * uiScale))
+                              .reduced (juce::roundToInt (2.0f * uiScale), 0),
+                        juce::Justification::topRight);
+        }
     }
 }
 

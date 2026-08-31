@@ -131,15 +131,6 @@ struct SfzSliceDescriptor
     int zoneLoKey = -1;
     int zoneHiKey = -1;
 
-    // True region identity -- the index of the <region> block this
-    // descriptor was expanded from, in the same file-order indexing as
-    // SfzZoneColours::zoneColourArgb(). Unlike zoneLoKey/zoneHiKey, two
-    // different regions can never collide on this value even when they
-    // share an identical key range -- see Slice::zoneRegionIdx's doc
-    // comment for why that distinction matters. -1 = not stamped (non-SFZ
-    // load, or a slice built outside the normal zone-load path).
-    int zoneRegionIdx = -1;
-
     // Output-bus override carried by the <region>'s dysekt_output_bus
     // custom opcode (see SfzExporter/SfzImporter and SampleZone::outputBus).
     // -1 = "unset" (no opcode present, or not an SfzPlayer2-target load) —
