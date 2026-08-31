@@ -116,6 +116,13 @@ public:
     void setTrackVolumeDb (int i, float volumeDb);
     /** Stored on the track and persisted; not yet applied to audio output. -1..+1 */
     void setTrackPan (int i, float pan);
+    /** Message-thread only, matching SequencerTrack::colour's documented
+     *  safety model (see its declaration comment) — never call from the
+     *  audio thread. Stored and persisted like volumeDb/pan above (see
+     *  SequencerTrack::writeToStream()/readFromStream()), and read back
+     *  through getTrackInfo(). Added for TrackInspector's track-colour
+     *  swatch picker. */
+    void setTrackColour (int i, juce::Colour colour);
 
     void addMainTrack();
     void addChromaticTrack (int sliceIdx, int chromaticChannel,

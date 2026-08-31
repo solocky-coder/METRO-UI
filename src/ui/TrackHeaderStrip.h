@@ -67,7 +67,14 @@ public:
 
             // M / S / R button trio — mirrors TrackInspector's row, added here
             // so the timeline header carries the same controls per the
-            // arranger redesign brief (was mute-only before).
+            // arranger redesign brief (was mute-only before). Mute now uses
+            // the exact same accent (0xffc99140, lit when engaged) and
+            // lit-when-active convention TrackInspector's own mute button
+            // uses, replacing the previous green-when-unmuted/red-when-muted
+            // scheme — that was a second, unrelated colour language for the
+            // same control shown in two places. Solo/Record already agreed
+            // with TrackInspector's colours exactly (0xFFD1B34C / 0xFFD95454)
+            // and are unchanged.
             const int btnW  = juce::jlimit (18, 24, trackH - 10);
             const int btnH  = juce::jlimit (12, 18, trackH - 8);
             const int btnGap = 3;
@@ -76,7 +83,8 @@ public:
             const auto soloR = recR.translated (-(btnW + btnGap), 0);
             const auto muteR = soloR.translated (-(btnW + btnGap), 0);
 
-            g.setColour (info.enabled ? juce::Colour (0xFF2A8060) : juce::Colour (0xFF602020));
+            static const juce::Colour kMuteAccent (0xffc99140);
+            g.setColour (info.enabled ? kMuteAccent.darker (0.55f) : kMuteAccent);
             g.fillRoundedRectangle (muteR.toFloat(), 0.0f);
             g.setColour (info.solo ? juce::Colour (0xFFD1B34C) : theme.button);
             g.fillRoundedRectangle (soloR.toFloat(), 0.0f);
@@ -85,7 +93,7 @@ public:
 
             g.setColour (juce::Colours::white.withAlpha (0.7f));
             g.setFont (juce::Font (juce::jlimit (10.5f, 16.5f, (float)trackH * 0.22f), juce::Font::bold));
-            g.drawText (info.enabled ? "M" : "m", muteR, juce::Justification::centred, false);
+            g.drawText ("M", muteR, juce::Justification::centred, false);
             g.drawText ("S", soloR, juce::Justification::centred, false);
             g.drawText ("R", recR,  juce::Justification::centred, false);
 

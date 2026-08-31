@@ -393,6 +393,17 @@ void SequencerEngine::setTrackPan (int i, float pan)
         (*snap)[(size_t) i]->pan.store (pan, std::memory_order_relaxed);
 }
 
+void SequencerEngine::setTrackColour (int i, juce::Colour colour)
+{
+    // Plain assignment, not .store() — colour is a non-atomic juce::Colour
+    // field, safe to mutate here only because this method (like every
+    // other reader/writer of it) runs on the message thread exclusively.
+    // See SequencerTrack::colour's declaration comment.
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (i, (int) snap->size()))
+        (*snap)[(size_t) i]->colour = colour;
+}
+
 void SequencerEngine::addMainTrack()
 {
     auto current = impl->getTracks();

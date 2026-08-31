@@ -8,12 +8,52 @@
 //  TrackInspector — compact, selected-track control surface docked to the left
 //  of ArrangeView's TrackHeaderStrip.
 //
+//  Arranger inspector redesign pass. Four fixes/additions over the previous
+//  layout, all driven by real existing data (no invented state):
+//   1. Identity swatch now reads info.colour (the track's own colour) instead
+//      of theme.accent — the old version painted every track's identity card
+//      in the app's single global accent colour, so it could never actually
+//      confirm which track was selected; a purple track in the list could
+//      show a cyan card here.
+//   2. M/S/R now share one literal colour set with TrackHeaderStrip's row
+//      copy of the same controls (see that header's own comment) — Solo and
+//      Record already agreed; Mute previously used a totally different
+//      green/dark-red scheme there versus this component's amber. Both now
+//      use the same lit-when-engaged amber.
+//   3. A lightweight activity indicator next to R, reusing
+//      SequencerEngine::getMidiActivityAndClear() — the same discrete
+//      on/off proxy TrackHeaderStrip's own per-row meter already uses (see
+//      that header's comment on why it isn't true peak metering: no
+//      continuous per-track level is plumbed from SequencerEngine yet).
+//   4. PART changed from a 16-item juce::ComboBox to a 4x4 grid of number
+//      tiles — quicker to scan/click for a small fixed set than opening a
+//      menu — plus a preset name/bank/program readout using
+//      SequencerTrackInfo::preset, which existed but was never surfaced
+//      anywhere in this panel.
+//   5. A track-colour swatch picker at the bottom, backed by
+//      SequencerEngine::setTrackColour() (new — see its declaration
+//      comment). Uses a small fixed palette independent of the active
+//      UI theme, matching how track colour already works throughout this
+//      app (SequencerTrack::colour is per-track user choice, not
+//      theme-derived) and how most DAWs present a track-colour picker as a
+//      fixed swatch set regardless of chrome skin.
+//
+//  No OUTPUT/routing control here, unlike the Multisampler zone inspector
+//  this pass was modelled on — deliberately: SequencerEngine tracks don't
+//  have a per-track output bus concept at all (see the class comment below
+//  on why routing stays fixed). Adding one would be decorative, not real.
+//
 //  No MIDI Out / Monitor controls: output routing is fixed (engine owns the
 //  destination per track type) and there is no separate audio monitor path
 //  to gate — this project records MIDI only. Only SoundFont tracks expose a
 //  MIDI part/channel selector, since they alone are multi-timbral in the
 //  current instrument model — Slice and Chromatic tracks are always pinned
-//  to their fixed engine channel.
+//  to their fixed engine channel. Every SfPlayer track (SF2 preset or real
+//  .sfz instrument alike) does carry preset info, so the preset readout
+//  shows for both; only the part grid itself stays gated to real
+//  .sfz-instrument tracks — see partButtons' onClick below for why
+//  reassigning a plain SF2 preset track's channel must stay routed through
+//  the SF2-PLAYER panel's own menu instead.
 //==============================================================================
 class TrackInspector : public juce::Component,
                        private juce::Timer
@@ -24,16 +64,63 @@ public:
         // DYSEKT-METRO pass: M/S/R go back to filled swatches, but flat —
         // solid tile per button, sharp corners, no cyan-outline chrome.
         // Each keeps its own accent (amber/gold/red) so the row still reads
-        // as three distinct controls rather than three cyan copies.
+        // as three distinct controls rather than three cyan copies. Amber
+        // (0xffc99140) is shared verbatim with TrackHeaderStrip's row copy
+        // of Mute — see this class's header comment, point 2.
         configureButton (muteButton,    "M", juce::Colour (0xffc99140));
         configureButton (soloButton,    "S", juce::Colour (0xffd1b34c));
         configureButton (recordButton,  "R", juce::Colour (0xffd95454));
         for (auto* b : { &muteButton, &soloButton, &recordButton })
             b->getProperties().set ("flatFill", true);
 
-        channelBox.setVisible (false);
-        for (int channel = 1; channel <= 16; ++channel)
-            channelBox.addItem ("Part " + juce::String (channel), channel);
+        // 4x4 part-number grid, replacing the old 16-item PART dropdown —
+        // see this class's header comment, point 4. Only ever shown for
+        // real .sfz-instrument tracks (see refresh()), same gating the old
+        // ComboBox used and for the same reason: reassigning a plain SF2
+        // preset track's channel here would desync
+        // processor.sfPlayerChannelMask (see the onClick body below).
+        for (int ch = 0; ch < 16; ++ch)
+        {
+            auto* b = partButtons.add (new juce::TextButton (juce::String (ch + 1)));
+            b->setClickingTogglesState (false);   // radio-style via refresh(), not per-button toggle
+            b->setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff1c2028));
+            b->setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
+            b->setColour (juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha (0.55f));
+            b->setColour (juce::TextButton::textColourOnId,   juce::Colours::black.withAlpha (0.85f));
+            b->onClick = [this, ch]
+            {
+                if (! hasTrack()) return;
+                const auto info = engine.getTrackInfo (selectedTrack);
+                // Same call the old channelBox.onChange made — see this
+                // class's header comment for why this path is only ever
+                // reached for real .sfz-instrument tracks.
+                if (info.type == TrackType::SfPlayer && info.isSfzInstrument)
+                    engine.addSfzTrack (info.name, ch, info.colour);
+            };
+            addChildComponent (b);   // hidden until refresh() shows the grid
+        }
+
+        // Fixed swatch palette for the track-colour picker — independent of
+        // the active UI theme, see this class's header comment point 5.
+        static const juce::Colour kSwatches[] = {
+            juce::Colour (0xffff2da0), juce::Colour (0xff00ffc8),
+            juce::Colour (0xffff7020), juce::Colour (0xff3adde8),
+            juce::Colour (0xffffe040), juce::Colour (0xff8855ff),
+            juce::Colour (0xff40ff50), juce::Colour (0xff50d8ff),
+        };
+        for (auto swatchColour : kSwatches)
+        {
+            auto* b = colourButtons.add (new juce::TextButton());
+            b->setClickingTogglesState (false);
+            b->setColour (juce::TextButton::buttonColourId, swatchColour);
+            b->onClick = [this, swatchColour]
+            {
+                if (hasTrack())
+                    engine.setTrackColour (selectedTrack, swatchColour);
+                refresh();
+            };
+            addChildComponent (b);
+        }
 
         // Mockup styling: both VOLUME and PAN share one thin-groove/flat-thumb
         // vocabulary instead of two unrelated widgets. VOLUME fills from the
@@ -68,8 +155,7 @@ public:
             return value < 0.0 ? "L" + juce::String ((int) -value) : "R" + juce::String ((int) value);
         };
 
-        for (auto* control : { static_cast<juce::Component*> (&channelBox),
-                                static_cast<juce::Component*> (&volumeSlider),
+        for (auto* control : { static_cast<juce::Component*> (&volumeSlider),
                                 static_cast<juce::Component*> (&panSlider) })
             addAndMakeVisible (*control);
 
@@ -94,26 +180,6 @@ public:
         {
             if (hasTrack())
                 engine.setTrackPan (selectedTrack, (float) (panSlider.getValue() / 100.0));
-        };
-        channelBox.onChange   = [this]
-        {
-            if (! hasTrack()) return;
-            const auto info = engine.getTrackInfo (selectedTrack);
-
-            // SF2-preset tracks are reassigned exclusively through the
-            // SF2-PLAYER panel's right-click "Assign MIDI channel" menu now
-            // (Sf2InstrumentWorkspace::handleChannelAssigned) — that's the
-            // only path that keeps processor.sfPlayerChannelMask in sync,
-            // which is what actually gates whether processMidi() routes any
-            // MIDI to the SF2 engine on a given channel at all. Routing an
-            // SF2 track's channel change through here (as before) updated
-            // the track's own midiChannel/FluidSynth program but left that
-            // mask stale, so a track moved to a not-yet-enabled channel
-            // would go silent despite showing the "correct" channel — see
-            // channelBox's visibility below, which now only shows this
-            // control for real .sfz-instrument tracks in the first place.
-            if (info.type == TrackType::SfPlayer && info.isSfzInstrument)
-                engine.addSfzTrack (info.name, channelBox.getSelectedId() - 1, info.colour);
         };
 
         setControlsVisible (false);
@@ -146,13 +212,27 @@ public:
         volumeSlider.setValue (info.volumeDb, juce::dontSendNotification);
         panSlider.setValue (info.pan * 100.0, juce::dontSendNotification);
 
-        // Only real .sfz-instrument tracks use this control now. Genuine SF2
-        // preset tracks are reassigned exclusively via the SF2-PLAYER
-        // panel's right-click menu — see channelBox.onChange above for why.
-        const bool showChannelBox = info.type == TrackType::SfPlayer && info.isSfzInstrument;
-        channelBox.setVisible (showChannelBox);
-        if (showChannelBox)
-            channelBox.setSelectedId (info.midiChannel + 1, juce::dontSendNotification);
+        // Only real .sfz-instrument tracks show the part grid — see this
+        // class's header comment for why plain SF2 preset tracks stay
+        // reassignable only from the SF2-PLAYER panel's own menu.
+        showPartGrid = info.type == TrackType::SfPlayer && info.isSfzInstrument;
+        for (int ch = 0; ch < 16; ++ch)
+        {
+            auto* b = partButtons[ch];
+            b->setVisible (showPartGrid);
+            b->setToggleState (showPartGrid && info.midiChannel == ch, juce::dontSendNotification);
+        }
+
+        // Preset readout shows for every SfPlayer track, sfz or not — see
+        // this class's header comment point 4.
+        showPreset = info.type == TrackType::SfPlayer;
+        presetName = info.preset.name.isNotEmpty() ? info.preset.name : "(no preset)";
+        presetTag  = "BANK " + juce::String (info.preset.bank).paddedLeft ('0', 3)
+                   + juce::String::charToString (juce::juce_wchar (0x00B7))   // middle dot
+                   + " PGM " + juce::String (info.preset.preset).paddedLeft ('0', 3);
+
+        for (auto* b : colourButtons)
+            b->setVisible (true);
 
         resized();
         repaint();
@@ -162,33 +242,73 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (12);
-        area.removeFromTop (18); // "SELECTED TRACK" caption
-        area.removeFromTop (52); // selected-track identity card
-
-        // M/S/R button row sits a few px below the identity card. Derived
-        // from the live cursor (rather than a hardcoded literal) so it can
-        // never drift out of sync with the caption/card heights above again —
-        // that mismatch is exactly what caused the buttons to overlap the
-        // name card after the "SELECTED TRACK" caption was added.
-        const int buttonY = area.getY() + 3;
-        area.removeFromTop (31); // performance control row + breathing room
-
-        if (channelBox.isVisible())
+        if (! hasTrack())
         {
-            area.removeFromTop (10);
-            layoutField (area, channelBox);
+            for (auto* b : partButtons)   b->setBounds ({});
+            for (auto* b : colourButtons) b->setBounds ({});
+            return;
         }
 
-        area.removeFromTop (10);
-        area.removeFromTop (20); // CHANNEL heading
+        // ── Identity row ────────────────────────────────────────────────
+        area.removeFromTop (kIdentityH);
+        area.removeFromTop (kGapM);
+
+        // ── State row (M/S/R + activity dot) ───────────────────────────
+        const int buttonY = area.getY();
+        const int meterW  = 20;
+        const int buttonGap = 5;
+        const int buttonW = juce::jmax (25, (area.getWidth() - meterW - 3 * buttonGap) / 3);
+        muteButton  .setBounds (area.getX() + 0 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        soloButton  .setBounds (area.getX() + 1 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        recordButton.setBounds (area.getX() + 2 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        activityDotBounds = { area.getX() + 3 * (buttonW + buttonGap), buttonY + 6, meterW, 13 };
+        area.removeFromTop (25 + kGapL);
+
+        // ── Instrument section (SfPlayer tracks only) ──────────────────
+        const auto info = engine.getTrackInfo (selectedTrack);
+        if (info.type == TrackType::SfPlayer)
+        {
+            area.removeFromTop (kSectionLabelH + kGapS);
+
+            if (showPartGrid)
+            {
+                constexpr int cols = 4, rows = 4, gap = 2;
+                const int cellW = (area.getWidth() - (cols - 1) * gap) / cols;
+                const int cellH = 22;
+                for (int ch = 0; ch < 16; ++ch)
+                {
+                    const int col = ch % cols, row = ch / cols;
+                    partButtons[ch]->setBounds (area.getX() + col * (cellW + gap),
+                                                 area.getY() + row * (cellH + gap),
+                                                 cellW, cellH);
+                }
+                area.removeFromTop (rows * cellH + (rows - 1) * gap + kGapM);
+            }
+            else
+            {
+                for (auto* b : partButtons) b->setBounds ({});
+            }
+
+            presetRowBounds = area.removeFromTop (kPresetRowH);
+            area.removeFromTop (kGapL);
+        }
+        else
+        {
+            for (auto* b : partButtons) b->setBounds ({});
+        }
+
+        // ── Channel section ─────────────────────────────────────────────
+        area.removeFromTop (kSectionLabelH + kGapS);
         layoutField (area, volumeSlider);
         layoutField (area, panSlider);
+        area.removeFromTop (kGapL);
 
-        const int buttonW = juce::jmax (25, (getWidth() - 24 - 2 * 5) / 3);
-        constexpr int buttonGap = 5;
-        muteButton  .setBounds (12 + 0 * (buttonW + buttonGap), buttonY, buttonW, 25);
-        soloButton  .setBounds (12 + 1 * (buttonW + buttonGap), buttonY, buttonW, 25);
-        recordButton.setBounds (12 + 2 * (buttonW + buttonGap), buttonY, buttonW, 25);
+        // ── Track colour section ────────────────────────────────────────
+        area.removeFromTop (kSectionLabelH + kGapS);
+        constexpr int swatchSize = 20, swatchGap = 4;
+        for (int i = 0; i < colourButtons.size(); ++i)
+            colourButtons[i]->setBounds (area.getX() + i * (swatchSize + swatchGap), area.getY(),
+                                          swatchSize, swatchSize);
     }
 
     void paint (juce::Graphics& g) override
@@ -208,45 +328,108 @@ public:
             return;
         }
 
-        // "SELECTED TRACK" caption — same muted-caps treatment as the
-        // "CHANNEL" section label below, for visual consistency.
-        auto caption = content.removeFromTop (18);
-        g.setColour (theme.foreground.withAlpha (0.48f));
-        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
-        g.drawText ("SELECTED TRACK", caption, juce::Justification::centredLeft, false);
-
         const auto info = engine.getTrackInfo (selectedTrack);
-        auto card = content.removeFromTop (52).toFloat();
-        // DYSEKT-METRO pass: solid flat accent tile — no hairline, no
-        // rounding, no alpha wash. Title/subtitle switch to on-accent text
-        // (near-black over the bright accent fill) instead of the theme's
-        // usual off-white foreground, since foreground-on-accent doesn't
-        // have enough contrast once the card is a full-strength solid.
-        g.setColour (theme.accent);
-        g.fillRect (card);
 
-        auto title = card.toNearestInt().withTrimmedLeft (16).reduced (0, 7).removeFromTop (19);
-        g.setColour (theme.accent.darker (0.75f));
-        g.setFont (DysektLookAndFeel::makeFont (15.0f, true));
-        g.drawFittedText (info.name.toUpperCase(), title, juce::Justification::centredLeft, 1);
+        // ── Identity row: swatch + name + type badge + channel tag ─────
+        // Swatch reads info.colour — the track's OWN colour — not
+        // theme.accent. See this class's header comment, point 1.
+        auto idRow = content.removeFromTop (kIdentityH);
+        auto swatch = idRow.removeFromLeft (kIdentityH).reduced (2).toFloat();
+        g.setColour (info.colour);
+        g.fillRect (swatch);
+        g.setColour (info.colour.contrasting (0.85f));
+        g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+        g.drawText (info.name.substring (0, 1).toUpperCase(), swatch.toNearestInt(),
+                    juce::Justification::centred, false);
 
-        auto subtitle = card.toNearestInt().withTrimmedLeft (16).withTrimmedTop (29).removeFromTop (13);
-        g.setColour (theme.accent.darker (0.55f));
-        g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
-        g.drawText (trackTypeName (info.type), subtitle, juce::Justification::centredLeft, false);
+        idRow.removeFromLeft (10);
+        auto nameArea = idRow.removeFromTop (17);
+        g.setColour (theme.foreground);
+        g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+        g.drawFittedText (info.name, nameArea, juce::Justification::centredLeft, 1);
 
-        content.removeFromTop (31);
-        if (channelBox.isVisible())
+        auto metaArea = idRow.removeFromTop (14);
+        juce::String typeTag = trackTypeName (info.type);
+        auto badgeW = juce::jmin (metaArea.getWidth() - 4,
+                                   DysektLookAndFeel::makeFont (8.5f, true).getStringWidth (typeTag) + 12);
+        auto badgeR = metaArea.removeFromLeft (badgeW);
+        g.setColour (theme.button);
+        g.fillRect (badgeR);
+        g.setColour (theme.foreground.withAlpha (0.6f));
+        g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
+        g.drawText (typeTag, badgeR, juce::Justification::centred, false);
+
+        metaArea.removeFromLeft (6);
+        g.setColour (theme.foreground.withAlpha (0.4f));
+        g.setFont (DysektLookAndFeel::makeFont (8.5f, false));
+        g.drawText ("CH " + juce::String (info.midiChannel + 1), metaArea, juce::Justification::centredLeft, false);
+
+        content.removeFromTop (kGapM);
+
+        // ── State row: M/S/R already drawn by the buttons themselves;
+        // just the activity dot here, using the same discrete on/off
+        // hold-counter TrackHeaderStrip's own meter uses (see this
+        // class's header comment, point 3). ──────────────────────────
+        content.removeFromTop (25 + kGapL);
+        g.setColour (theme.foreground.withAlpha (0.3f));
+        g.setFont (DysektLookAndFeel::makeFont (8.0f, true));
+        g.drawText ("ACT", activityDotBounds.withTrimmedBottom (activityDotBounds.getHeight() - 8),
+                    juce::Justification::centredLeft, false);
+        auto dot = activityDotBounds.withTrimmedTop (8).withHeight (5).toFloat();
+        g.setColour (theme.button);
+        g.fillRect (dot);
+        if (activityHoldTicks > 0)
         {
-            content.removeFromTop (10);
-            drawFieldLabel (g, "PART", channelBox);
-            content.removeFromTop (42);
+            g.setColour (juce::Colour (0xff52c9a0));
+            g.fillRect (dot.withWidth (dot.getWidth() * 0.7f));
         }
 
-        content.removeFromTop (10);
-        sectionLabel (g, "CHANNEL", content.removeFromTop (20));
+        // ── Instrument section ───────────────────────────────────────────
+        if (info.type == TrackType::SfPlayer)
+        {
+            sectionLabel (g, "INSTRUMENT", content.removeFromTop (kSectionLabelH));
+            content.removeFromTop (kGapS);
+
+            if (showPartGrid)
+            {
+                constexpr int rows = 4, gap = 2;
+                content.removeFromTop (rows * 22 + (rows - 1) * gap + kGapM);
+            }
+
+            if (showPreset)
+            {
+                auto row = presetRowBounds;
+                g.setColour (theme.foreground.withAlpha (0.85f));
+                g.setFont (DysektLookAndFeel::makeFont (11.5f, false));
+                g.drawFittedText (presetName, row.removeFromTop (16), juce::Justification::centredLeft, 1);
+                g.setColour (theme.foreground.withAlpha (0.4f));
+                g.setFont (DysektLookAndFeel::makeFont (9.0f, false));
+                g.drawText (presetTag, row.removeFromTop (14), juce::Justification::centredLeft, false);
+            }
+            content.removeFromTop (kPresetRowH + kGapL);
+        }
+
+        // ── Channel section ───────────────────────────────────────────────
+        sectionLabel (g, "CHANNEL", content.removeFromTop (kSectionLabelH));
+        content.removeFromTop (kGapS);
         drawFieldLabel (g, "VOLUME", volumeSlider);
         drawFieldLabel (g, "PAN", panSlider);
+        content.removeFromTop (42 + 42 + kGapL);
+
+        // ── Track colour section ─────────────────────────────────────────
+        sectionLabel (g, "TRACK COLOUR", content.removeFromTop (kSectionLabelH));
+        content.removeFromTop (kGapS);
+        // Selection ring around whichever swatch matches the track's
+        // current colour exactly.
+        for (auto* b : colourButtons)
+        {
+            if (b->findColour (juce::TextButton::buttonColourId) == info.colour)
+            {
+                g.setColour (theme.foreground);
+                g.drawRect (b->getBounds().expanded (2), 1);
+                break;
+            }
+        }
     }
 
 private:
@@ -349,8 +532,27 @@ private:
 
     MockupSliderLnF  mockupSliderLnF;
     juce::TextButton muteButton, soloButton, recordButton;
-    juce::ComboBox   channelBox;
     juce::Slider     volumeSlider, panSlider;
+
+    juce::OwnedArray<juce::TextButton> partButtons;     // 16, radio-style — see refresh()
+    juce::OwnedArray<juce::TextButton> colourButtons;   // fixed palette — see constructor
+
+    bool showPartGrid = false;
+    bool showPreset   = false;
+    juce::String presetName, presetTag;
+    juce::Rectangle<int> presetRowBounds;
+    juce::Rectangle<int> activityDotBounds;
+
+    // Layout constants shared between resized() and paint() so the two
+    // never drift apart — the exact bug the old hardcoded-literal layout
+    // (see this file's git history) already caused once before.
+    static constexpr int kIdentityH     = 40;
+    static constexpr int kSectionLabelH = 16;
+    static constexpr int kPresetRowH    = 30;
+    static constexpr int kGapS = 6, kGapM = 10, kGapL = 14;
+
+    int  activityHoldTicks = 0;
+    static constexpr int kActivityHoldTicks = 3;   // same hold length TrackHeaderStrip's kHoldTicks uses
 
     bool hasTrack() const { return juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()); }
 
@@ -381,7 +583,11 @@ private:
                                 static_cast<juce::Component*> (&volumeSlider),
                                 static_cast<juce::Component*> (&panSlider) })
             control->setVisible (visible);
-        if (! visible) channelBox.setVisible (false);
+        if (! visible)
+        {
+            for (auto* b : partButtons)   b->setVisible (false);
+            for (auto* b : colourButtons) b->setVisible (false);
+        }
     }
 
     static juce::String trackTypeName (TrackType type)
@@ -416,7 +622,7 @@ private:
         g.drawText (text, bounds, juce::Justification::centredLeft);
         const float ruleY = (float) bounds.getCentreY();
         g.setColour (getTheme().separator.withAlpha (0.85f));
-        g.drawLine ((float) bounds.getX() + 56.0f, ruleY, (float) bounds.getRight(), ruleY, 1.0f);
+        g.drawLine ((float) bounds.getX() + 76.0f, ruleY, (float) bounds.getRight(), ruleY, 1.0f);
     }
 
     void timerCallback() override
@@ -429,6 +635,22 @@ private:
                 muteButton.setToggleState (shouldBeMuted, juce::dontSendNotification);
             if (soloButton.getToggleState() != info.solo)
                 soloButton.setToggleState (info.solo, juce::dontSendNotification);
+
+            // Activity indicator — same discrete hold-counter approach as
+            // TrackHeaderStrip's own per-row meter (see this class's header
+            // comment, point 3); intentionally not true peak metering.
+            bool needsRepaint = false;
+            if (engine.getMidiActivityAndClear (selectedTrack))
+            {
+                activityHoldTicks = kActivityHoldTicks;
+                needsRepaint = true;
+            }
+            else if (activityHoldTicks > 0)
+            {
+                --activityHoldTicks;
+                needsRepaint = true;
+            }
+            if (needsRepaint) repaint();
         }
     }
 
