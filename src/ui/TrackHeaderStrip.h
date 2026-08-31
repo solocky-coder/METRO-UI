@@ -83,12 +83,22 @@ public:
             const auto soloR = recR.translated (-(btnW + btnGap), 0);
             const auto muteR = soloR.translated (-(btnW + btnGap), 0);
 
-            static const juce::Colour kMuteAccent (0xffc99140);
-            g.setColour (info.enabled ? kMuteAccent.darker (0.55f) : kMuteAccent);
+            static const juce::Colour kMuteAccent  (0xffc99140);
+            static const juce::Colour kSoloAccent  (0xFFD1B34C);
+            static const juce::Colour kRecordAccent(0xFFD95454);
+            // All three off-states now use the same .darker(0.55f)-of-own-
+            // accent convention TrackInspector's configureButton() uses,
+            // matching Mute (fixed above already). Solo/Record previously
+            // fell back to theme.button (a generic UI grey) when off, which
+            // is the far more common state for both — so despite Mute
+            // already matching, Solo/Record still looked like a different
+            // colour language most of the time. Now all three literally
+            // share on/off colours with the inspector's copy.
+            g.setColour (info.enabled  ? kMuteAccent.darker (0.55f)   : kMuteAccent);
             g.fillRoundedRectangle (muteR.toFloat(), 0.0f);
-            g.setColour (info.solo ? juce::Colour (0xFFD1B34C) : theme.button);
+            g.setColour (info.solo     ? kSoloAccent                  : kSoloAccent.darker (0.55f));
             g.fillRoundedRectangle (soloR.toFloat(), 0.0f);
-            g.setColour (recordArmed ? juce::Colour (0xFFD95454) : theme.button);
+            g.setColour (recordArmed   ? kRecordAccent                : kRecordAccent.darker (0.55f));
             g.fillRoundedRectangle (recR.toFloat(), 0.0f);
 
             g.setColour (juce::Colours::white.withAlpha (0.7f));

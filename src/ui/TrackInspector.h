@@ -113,6 +113,14 @@ public:
             auto* b = colourButtons.add (new juce::TextButton());
             b->setClickingTogglesState (false);
             b->setColour (juce::TextButton::buttonColourId, swatchColour);
+            // Without this, DysektLookAndFeel::drawButtonBackground falls
+            // through to its default fill path, which ignores
+            // buttonColourId entirely and always paints theme.button (a
+            // generic UI grey) for a non-toggled, non-hovered button — the
+            // exact "all swatches render grey" bug this property fixes. See
+            // its use on muteButton/soloButton/recordButton above, and
+            // DysektLookAndFeel.cpp's own comment on the flatFill branch.
+            b->getProperties().set ("flatFill", true);
             b->onClick = [this, swatchColour]
             {
                 if (hasTrack())
