@@ -692,6 +692,23 @@ public:
     std::atomic<int64_t> trimAuditionRegionStart { 0 };
     std::atomic<int64_t> trimAuditionRegionEnd   { 0 };
 
+    /** Absolute source-frame position of the trim-audition playhead, for
+     *  AddZoneTrimOverlay to draw over its waveform while a note is
+     *  sounding. -1 means nothing is currently audible (no voice active, or
+     *  trimAuditionActive is false). Updated once per block in
+     *  processBlock's mixing section below, after every active voice's
+     *  position has advanced for that block — takes the first active
+     *  voice's position (index order in trimAuditionVoices), same
+     *  single-voice simplification zonePreview3.playPosition above uses for
+     *  its own preview: this is an audition aid, not a performance
+     *  instrument, so one followable playhead is enough even though
+     *  trimAuditionVoices is technically polyphonic. MultisamplerEditor
+     *  polls this (trimAuditionPlayheadPoller, 30 Hz) and pushes it into
+     *  AddZoneTrimOverlay::setPlayheadFrame() while the overlay is open —
+     *  AddZoneTrimOverlay itself never reads this directly, keeping it
+     *  decoupled from DysektProcessor (see its class comment). */
+    std::atomic<int64_t> trimAuditionPlayheadFrame { -1 };
+
     /** Holds AddZoneTrimOverlay's currently-decoded preview buffer, published
      *  via applyDecodedSample() -- same real-time-safe snapshot swap
      *  sampleData2/sampleData3 use (see SampleData::applyDecodedSample()'s
@@ -709,22 +726,6 @@ public:
     SampleData trimAuditionSample;
     std::atomic<double> trimAuditionSampleRate { 44100.0 };
 
-    /** On-screen-keyboard -> audio-thread note command queue. Physical MIDI
-     *  note-on/off is already on the audio thread inside processMidi() and
-     *  is applied directly there (see applyTrimAuditionNote()); this fifo is
-     *  only for AddZoneTrimOverlay's embedded juce::MidiKeyboardComponent,
-     *  whose handleNoteOn/handleNoteOff callbacks fire on the message
-     *  thread. */
-    struct TrimAuditionCommand { int note; bool on; };
-    static constexpr int kTrimAuditionFifoSize = 64;
-    juce::AbstractFifo trimAuditionFifo { kTrimAuditionFifoSize };
-    std::array<TrimAuditionCommand, kTrimAuditionFifoSize> trimAuditionFifoData;
-
-    /** Message-thread entry point for AddZoneTrimOverlay's on-screen
-     *  keyboard -- just an AbstractFifo write, safe to call from any
-     *  thread. */
-    void triggerTrimAuditionNote (int note, bool on);
-
     /** Called once from the message thread when AddZoneTrimOverlay closes
      *  (both the Cancel/click-outside and confirmed paths -- see
      *  MultisamplerEditor::beginAddZoneTrim()/beginTrimExistingZone()).
@@ -739,9 +740,9 @@ public:
 
 private:
     /** Applies one trim-audition note-on/off. Audio-thread-only -- called
-     *  from processMidi() for real MIDI input and from processBlock()'s
-     *  trimAuditionFifo drain for on-screen-keyboard clicks. Root is always
-     *  MIDI note 60 (see this section's header comment for why). */
+     *  from processMidi() for real MIDI input while trimAuditionActive.
+     *  Root is always MIDI note 60 (see this section's header comment for
+     *  why). */
     void applyTrimAuditionNote (int note, bool on);
 
 public:

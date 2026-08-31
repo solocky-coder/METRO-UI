@@ -1,5 +1,7 @@
 #include "MultisamplerEditor.h"
 #include "../../PluginProcessor.h"
+#include "../../PluginEditor.h"   // DysektEditor — needed for findParentComponentOfClass<DysektEditor>()
+                                   // in showMidiLearnMenu's "Open MIDI Learn Dialog..." item below
 #include "../DysektLookAndFeel.h"
 #include "../SliceControlBar.h"
 #include "../../audio/multisampler/SfzImporter.h"
@@ -173,6 +175,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
 MultisamplerEditor::~MultisamplerEditor()
 {
     midiLearnPoller.stop();
+    trimAuditionPlayheadPoller.stop();
     stopTimer();
 }
 
@@ -366,6 +369,7 @@ void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
         // was auditioning through it) is closing either way. See
         // wireZoneTrimOverlayAudition()'s declaration comment.
         processor.resetTrimAudition();
+        trimAuditionPlayheadPoller.stop();
 
         // Same deferred-reset use-after-free fix the key-mapping step below
         // uses: let onResult unwind before the overlay (currently on the
@@ -392,12 +396,15 @@ void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
 void MultisamplerEditor::wireZoneTrimOverlayAudition()
 {
     // Wires zoneTrimOverlay's chromatic-audition hooks (onSampleDecoded/
-    // onTrimChanged/onAuditionNote) to PluginProcessor's trim-audition voice
-    // pool — shared by both call sites that open the overlay
+    // onTrimChanged) to PluginProcessor's trim-audition voice pool, and
+    // starts trimAuditionPlayheadPoller so the overlay's playhead tracks
+    // playback — shared by both call sites that open the overlay
     // (beginAddZoneTrim() for a brand-new sample, beginTrimExistingZone()
     // for "Trim Sample" on an existing zone). See PluginProcessor.h's
     // trimAuditionActive doc comment for why this stays independent of the
-    // live instrument.
+    // live instrument. Chromatic audition itself is physical-MIDI-only now
+    // (see processMidi()'s trimAuditionActive branch) — there's no
+    // on-screen keyboard here for this class to wire a note callback to.
     jassert (zoneTrimOverlay != nullptr);
 
     processor.trimAuditionActive.store (true, std::memory_order_relaxed);
@@ -412,10 +419,8 @@ void MultisamplerEditor::wireZoneTrimOverlayAudition()
         processor.trimAuditionRegionStart.store (start, std::memory_order_relaxed);
         processor.trimAuditionRegionEnd.store   (end,   std::memory_order_relaxed);
     };
-    zoneTrimOverlay->onAuditionNote = [this] (int note, bool isOn)
-    {
-        processor.triggerTrimAuditionNote (note, isOn);
-    };
+
+    trimAuditionPlayheadPoller.start();
 }
 
 void MultisamplerEditor::beginAddZoneKeyMapping (const juce::File& sampleFile,
@@ -509,6 +514,7 @@ void MultisamplerEditor::beginTrimExistingZone (const juce::Uuid& zoneId)
         // Stop chromatic audition immediately — same reasoning as
         // beginAddZoneTrim()'s onResult.
         processor.resetTrimAudition();
+        trimAuditionPlayheadPoller.stop();
 
         // Same deferred-reset use-after-free fix beginAddZoneTrim() uses:
         // let onResult unwind before the overlay (currently on the call
@@ -1239,10 +1245,15 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
     if (mapped)
         menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (slot) + ")");
 
-    // No "Open MIDI Learn Dialog..." item here, unlike SliceControlBar's
-    // version of this menu — that dialog already lists every mapped field
-    // plugin-wide, including these (see gSlotParamNames in
-    // MidiLearnDialog.cpp), so it isn't specific to this one field's menu.
+    // "Open MIDI Learn Dialog..." — same entry SliceControlBar's version of
+    // this menu offers. The dialog already lists every mapped field
+    // plugin-wide, including Multisampler zone fields (see gSlotParamNames
+    // in MidiLearnDialog.cpp, which has an entry for every
+    // MultisamplerZoneField slot), so this isn't adding a Multisampler-
+    // specific view — it's just parity with the Slicer's menu, on the same
+    // "M" keyboard-shortcut path (see DysektEditor::keyPressed).
+    menu.addSeparator();
+    menu.addItem (1000, "Open MIDI Learn Dialog...");
 
     auto* topLvl = getTopLevelComponent();
     const float ms = DysektLookAndFeel::getMenuScale();
@@ -1256,6 +1267,11 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
             if (result == 1)      { processor.midiLearn.armLearn (slot);      zoneLcd.repaint(); }
             else if (result == 2) { processor.midiLearn.clearMapping (slot);  zoneLcd.repaint(); }
             else if (result == 3) { processor.midiLearn.cancelLearn();        zoneLcd.repaint(); }
+            else if (result == 1000)
+            {
+                if (auto* editor = findParentComponentOfClass<DysektEditor>())
+                    editor->keyPressed (juce::KeyPress ('M', juce::ModifierKeys(), 0));
+            }
         });
 }
 

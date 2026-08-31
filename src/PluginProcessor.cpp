@@ -1917,8 +1917,10 @@ static inline void atomicAddFloat (std::atomic<float>& target, float delta) noex
 //  Multisampler "Add Zone" trim-preview chromatic audition
 //  ─────────────────────────────────────────────────────────────────────────
 //  See the trimAuditionActive doc comment in PluginProcessor.h for the full
-//  picture. applyTrimAuditionNote() is audio-thread-only; the two public
-//  entry points below are the only cross-thread doors into this feature.
+//  picture. applyTrimAuditionNote() is audio-thread-only, called only from
+//  processMidi() for physical MIDI input while trimAuditionActive;
+//  resetTrimAudition() below is the one message-thread door into this
+//  feature (MultisamplerEditor calls it when the overlay closes).
 // =============================================================================
 
 void DysektProcessor::applyTrimAuditionNote (int note, bool on)
@@ -1926,8 +1928,8 @@ void DysektProcessor::applyTrimAuditionNote (int note, bool on)
     if (on)
     {
         // Re-trigger if this note is already sounding (e.g. a fast repeat
-        // from the on-screen keyboard) rather than stacking a second voice
-        // on the same pitch.
+        // from a MIDI controller) rather than stacking a second voice on the
+        // same pitch.
         for (auto& v : trimAuditionVoices)
         {
             if (v.note == note)
@@ -1965,17 +1967,6 @@ void DysektProcessor::applyTrimAuditionNote (int note, bool on)
             if (v.note == note && ! v.releasing)
                 v.releasing = true;
     }
-}
-
-void DysektProcessor::triggerTrimAuditionNote (int note, bool on)
-{
-    int start1, size1, start2, size2;
-    trimAuditionFifo.prepareToWrite (1, start1, size1, start2, size2);
-    if (size1 > 0)
-        trimAuditionFifoData[(size_t) start1] = { note, on };
-    else if (size2 > 0)
-        trimAuditionFifoData[(size_t) start2] = { note, on };
-    trimAuditionFifo.finishedWrite (size1 + size2);
 }
 
 void DysektProcessor::resetTrimAudition()
@@ -4568,36 +4559,13 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             if (! inAddZoneTrimAudition)
             {
                 // No AddZoneTrimOverlay open: make sure no voice is left
-                // dangling from just before it closed, and drop any
-                // on-screen-keyboard commands that arrived too late to
-                // matter.
+                // dangling from just before it closed.
                 for (auto& v : trimAuditionVoices)
                     v = TrimAuditionVoice{};
-                int ds1, dn1, ds2, dn2;
-                trimAuditionFifo.prepareToRead (trimAuditionFifo.getNumReady(), ds1, dn1, ds2, dn2);
-                trimAuditionFifo.finishedRead (dn1 + dn2);
+                trimAuditionPlayheadFrame.store (-1, std::memory_order_relaxed);
             }
             else
             {
-                // Drain on-screen-keyboard commands queued since the last
-                // block. Physical MIDI note-on/off was already applied
-                // directly from processMidi() earlier in this call (see its
-                // inAddZoneTrimAudition branch), so anything still queued
-                // here came from the overlay's embedded keyboard.
-                int rs1, rn1, rs2, rn2;
-                trimAuditionFifo.prepareToRead (trimAuditionFifo.getNumReady(), rs1, rn1, rs2, rn2);
-                for (int i = 0; i < rn1; ++i)
-                {
-                    const auto& c = trimAuditionFifoData[(size_t) (rs1 + i)];
-                    applyTrimAuditionNote (c.note, c.on);
-                }
-                for (int i = 0; i < rn2; ++i)
-                {
-                    const auto& c = trimAuditionFifoData[(size_t) (rs2 + i)];
-                    applyTrimAuditionNote (c.note, c.on);
-                }
-                trimAuditionFifo.finishedRead (rn1 + rn2);
-
                 auto trimSnap = trimAuditionSample.getSnapshot();
                 const int64_t regionStart = trimAuditionRegionStart.load (std::memory_order_relaxed);
                 const int64_t regionEnd   = trimAuditionRegionEnd.load   (std::memory_order_relaxed);
@@ -4649,6 +4617,16 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                         }
                     }
                 }
+
+                // Playhead for AddZoneTrimOverlay — see trimAuditionPlayheadFrame's
+                // doc comment in PluginProcessor.h for why this is just the first
+                // active voice rather than tracking all of them.
+                int64_t playhead = -1;
+                for (const auto& v : trimAuditionVoices)
+                {
+                    if (v.note >= 0) { playhead = (int64_t) v.position; break; }
+                }
+                trimAuditionPlayheadFrame.store (playhead, std::memory_order_relaxed);
             }
         }
 

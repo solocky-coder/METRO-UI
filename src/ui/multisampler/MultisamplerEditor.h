@@ -330,6 +330,31 @@ private:
         MultisamplerEditor& owner;
     } midiLearnPoller { *this };
 
+    // Same shape as MidiLearnPoller above, its own separate nested Timer —
+    // pushes PluginProcessor::trimAuditionPlayheadFrame into
+    // zoneTrimOverlay->setPlayheadFrame() at 30 Hz while the overlay is
+    // open, so the trim-audition playhead moves smoothly without
+    // AddZoneTrimOverlay ever touching the processor directly (see that
+    // class's design comment). Started in wireZoneTrimOverlayAudition();
+    // stopped wherever the overlay closes (both onResult lambdas,
+    // alongside processor.resetTrimAudition()) and in the destructor as a
+    // safety net. No-ops harmlessly if zoneTrimOverlay is null on a given
+    // tick — can happen for one tick right after start() if the overlay's
+    // deferred-reset callAsync from a previous close hasn't run yet.
+    struct TrimAuditionPlayheadPoller : private juce::Timer
+    {
+        explicit TrimAuditionPlayheadPoller (MultisamplerEditor& ownerToUse) : owner (ownerToUse) {}
+        void start() { startTimerHz (30); }
+        void stop()  { stopTimer(); }
+        void timerCallback() override
+        {
+            if (owner.zoneTrimOverlay)
+                owner.zoneTrimOverlay->setPlayheadFrame (
+                    owner.processor.trimAuditionPlayheadFrame.load (std::memory_order_relaxed));
+        }
+        MultisamplerEditor& owner;
+    } trimAuditionPlayheadPoller { *this };
+
     void scheduleEngineSync();       // (re)start the debounce timer
     // isFreshLoad: true when called right after setInstrument() wholesale-swapped
     // the model (import/New/discard) — sliceManager2 should wipe every slice
@@ -383,12 +408,15 @@ private:
     void beginTrimExistingZone (const juce::Uuid& zoneId);
 
     /** Wires zoneTrimOverlay's chromatic-audition callbacks
-        (onSampleDecoded/onTrimChanged/onAuditionNote) to PluginProcessor's
-        trim-audition voice pool and flips trimAuditionActive on. Shared by
-        beginAddZoneTrim() and beginTrimExistingZone() — both open the same
-        overlay and both want the sample being trimmed auditionable
-        chromatically for as long as the dialog is up. Call right after
-        constructing zoneTrimOverlay, before setting its onResult. */
+        (onSampleDecoded/onTrimChanged) to PluginProcessor's trim-audition
+        voice pool, flips trimAuditionActive on, and starts
+        trimAuditionPlayheadPoller. Shared by beginAddZoneTrim() and
+        beginTrimExistingZone() — both open the same overlay and both want
+        the sample being trimmed auditionable chromatically (via physical
+        MIDI — see PluginProcessor::processMidi()'s trimAuditionActive
+        branch) with a live playhead for as long as the dialog is up. Call
+        right after constructing zoneTrimOverlay, before setting its
+        onResult. */
     void wireZoneTrimOverlayAudition();
 
     void refreshInspectorFromSelection();

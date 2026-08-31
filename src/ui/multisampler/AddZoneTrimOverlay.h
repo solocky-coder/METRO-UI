@@ -35,7 +35,6 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
-#include <juce_audio_utils/juce_audio_utils.h>
 #include <cstdint>
 #include <vector>
 #include <memory>
@@ -43,8 +42,7 @@
 #include "../DysektLookAndFeel.h"
 #include "../../audio/SampleData.h"
 
-class AddZoneTrimOverlay : public juce::Component,
-                           private juce::MidiKeyboardStateListener
+class AddZoneTrimOverlay : public juce::Component
 {
 public:
     struct Result
@@ -117,13 +115,16 @@ public:
      *  real-time-safe with no further copying. */
     std::function<void (SampleData::SnapshotPtr decoded, double sourceSampleRate)> onSampleDecoded;
 
-    /** Fired by the embedded on-screen keyboard below on every note-on
-     *  (isOn == true) and note-off (isOn == false). The caller routes this
-     *  into whatever plays the chromatic audition (see
-     *  PluginProcessor::triggerTrimAuditionNote) -- this class only ever
-     *  forwards the keyboard's own note events, it never touches playback
-     *  itself, same separation as onTrimChanged/onSampleDecoded above. */
-    std::function<void (int note, bool isOn)> onAuditionNote;
+    /** Pushes the trim-audition playhead position (absolute source frame,
+     *  or -1 when nothing is currently sounding) for this component to draw
+     *  over the waveform. Called by MultisamplerEditor at ~30 Hz while this
+     *  overlay is open, polling PluginProcessor::trimAuditionPlayheadFrame —
+     *  this class never reads that atomic (or anything else on
+     *  DysektProcessor) directly, same separation as the rest of this
+     *  class's callback-based design (see class comment). No-op (just
+     *  stores + repaints if changed) while decoding/failed, same as every
+     *  other display update here. */
+    void setPlayheadFrame (int64_t frame);
 
     // Called by the background decode job via MessageManager::callAsync —
     // public only so the .cpp's ThreadPoolJob subclass can reach them;
@@ -136,17 +137,8 @@ public:
 private:
     static constexpr int kNumDisplayPeaks = 1024;
     static constexpr int kHandleHitPx     = 10;
-    static constexpr int kKeyboardHeight  = 56;
 
     class DecodeJob;
-
-    // juce::MidiKeyboardStateListener — forwards to onAuditionNote. This is
-    // the "on-screen virtual keyboard" half of chromatic auditioning; a
-    // physical/DAW-routed MIDI keyboard reaches the audition voices a
-    // different way entirely (PluginProcessor::processMidi(), while
-    // trimAuditionActive is set) and never goes through this listener.
-    void handleNoteOn  (juce::MidiKeyboardState*, int /*midiChannel*/, int midiNoteNumber, float /*velocity*/) override;
-    void handleNoteOff (juce::MidiKeyboardState*, int /*midiChannel*/, int midiNoteNumber, float /*velocity*/) override;
 
     void fire (bool confirmed);
     void resetTrim();
@@ -182,6 +174,11 @@ private:
     int64_t trimStart = 0;
     int64_t trimEnd   = 0;   // exclusive
 
+    // Absolute source frame of the currently-sounding audition voice, or -1
+    // — see setPlayheadFrame()'s doc comment above. Drawn over the waveform
+    // in paint() whenever >= 0.
+    int64_t playheadFrame = -1;
+
     enum class Handle { none, in, out };
     Handle activeDrag  = Handle::none;
     Handle hoveredHandle = Handle::none;
@@ -191,17 +188,6 @@ private:
     juce::TextButton resetBtn  { "RESET" };
     juce::TextButton cancelBtn { "CANCEL" };
     juce::TextButton nextBtn   { "NEXT" };
-
-    // Chromatic audition keyboard — always visible, even mid-decode (the
-    // caller's playback side just has nothing to play yet until
-    // onSampleDecoded fires, so early clicks are harmlessly silent). Root
-    // for auditioning is always MIDI 60 regardless of whatever rootKey
-    // gets chosen in the AddZoneOverlay step that follows — see
-    // onAuditionNote's doc comment — so the keyboard is centred on that
-    // note rather than on anything zone-specific.
-    juce::MidiKeyboardState     auditionKeyboardState;
-    juce::MidiKeyboardComponent auditionKeyboard { auditionKeyboardState,
-                                                    juce::MidiKeyboardComponent::horizontalKeyboard };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AddZoneTrimOverlay)
 };

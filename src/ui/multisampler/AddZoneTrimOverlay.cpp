@@ -173,15 +173,6 @@ AddZoneTrimOverlay::AddZoneTrimOverlay (const juce::File& sampleFile, juce::Thre
     nextBtn.setEnabled (false);   // enabled once decode succeeds
     addAndMakeVisible (nextBtn);
 
-    // Chromatic audition keyboard — centred on MIDI 60 (the fixed audition
-    // root; see this class's onAuditionNote doc comment), not on anything
-    // zone-specific, since no rootKey has been chosen yet at this step.
-    auditionKeyboard.setAvailableRange (36, 84);
-    auditionKeyboard.setLowestVisibleKey (48);
-    auditionKeyboard.setOctaveForMiddleC (4);
-    auditionKeyboardState.addListener (this);
-    addAndMakeVisible (auditionKeyboard);
-
     setInterceptsMouseClicks (true, true);
     setMouseCursor (juce::MouseCursor::NormalCursor);
     for (auto* b : { &resetBtn, &cancelBtn, &nextBtn })
@@ -201,20 +192,6 @@ AddZoneTrimOverlay::~AddZoneTrimOverlay()
     // reused) SafePointer -- belt-and-suspenders lifetime safety per the
     // implementation notes' async-decode section.
     cancelled->store (true, std::memory_order_relaxed);
-}
-
-// ── Chromatic audition keyboard (message thread) ────────────────────────────
-
-void AddZoneTrimOverlay::handleNoteOn (juce::MidiKeyboardState*, int, int midiNoteNumber, float)
-{
-    if (onAuditionNote)
-        onAuditionNote (midiNoteNumber, true);
-}
-
-void AddZoneTrimOverlay::handleNoteOff (juce::MidiKeyboardState*, int, int midiNoteNumber, float)
-{
-    if (onAuditionNote)
-        onAuditionNote (midiNoteNumber, false);
 }
 
 // ── Decode callbacks (message thread) ───────────────────────────────────────
@@ -271,14 +248,20 @@ void AddZoneTrimOverlay::resetTrim()
         onTrimChanged (trimStart, trimEnd);
 }
 
+void AddZoneTrimOverlay::setPlayheadFrame (int64_t frame)
+{
+    if (frame == playheadFrame)
+        return;
+    playheadFrame = frame;
+    repaint();
+}
+
 // ── Layout ───────────────────────────────────────────────────────────────
 
 juce::Rectangle<int> AddZoneTrimOverlay::dialogBox() const
 {
     const int w = juce::jmin (640, getWidth()  - 40);
-    // +kKeyboardHeight + 12px gap over the pre-keyboard height, to fit the
-    // chromatic audition keyboard between the readout and the button row.
-    const int h = juce::jmin (340 + kKeyboardHeight + 12, getHeight() - 40);
+    const int h = juce::jmin (340, getHeight() - 40);
     return { (getWidth() - w) / 2, (getHeight() - h) / 2, w, h };
 }
 
@@ -298,9 +281,6 @@ void AddZoneTrimOverlay::resized()
 
     const auto wave = waveformArea();
     readoutLabel.setBounds (wave.getX(), wave.getBottom() + 12, wave.getWidth(), 20);
-
-    auditionKeyboard.setBounds (wave.getX(), readoutLabel.getBottom() + 8,
-                                 wave.getWidth(), kKeyboardHeight);
 
     const int btnH  = 34;
     const int btnW  = 120;
@@ -424,6 +404,22 @@ void AddZoneTrimOverlay::paint (juce::Graphics& g)
     // "toward the kept region" orientation.
     drawTrimHandleTab (g, x1, wave.getY(), true);
     drawTrimHandleTab (g, x2, wave.getY(), false);
+
+    // ── Trim-audition playhead ────────────────────────────────────────────
+    // Drawn on top of the trim handles/shading so it's always visible while
+    // a note is sounding. playheadFrame is pushed in via setPlayheadFrame()
+    // (see its doc comment in the header) — this class never reads
+    // PluginProcessor directly. A thin bright line rather than the LCD
+    // playhead's triangle-capped style (MultisamplerWaveformLcd::
+    // drawPlayhead) — this is a one-off audition aid in a modal dialog, not
+    // a persistent transport display, so the lighter treatment fits better
+    // against the trim handles already competing for attention here.
+    if (playheadFrame >= 0 && totalFrames > 0)
+    {
+        const int px = juce::jlimit (wave.getX(), wave.getRight(), frameToPixel (playheadFrame));
+        g.setColour (juce::Colours::white.withAlpha (0.85f));
+        g.drawVerticalLine (px, (float) wave.getY(), (float) wave.getBottom());
+    }
 
     // ── Readout ────────────────────────────────────────────────────────
     const auto duration = trimEnd - trimStart;
