@@ -173,7 +173,19 @@ public:
                 engine.setTrackEnabled (selectedTrack, ! engine.getTrackInfo (selectedTrack).enabled);
             refresh();
         };
-        recordButton.onClick  = [this] { engine.setRecording (recordButton.getToggleState()); };
+        recordButton.onClick  = [this]
+        {
+            if (! hasTrack()) return;
+            // Same toggle logic TrackHeaderStrip's row R uses (see its
+            // mouseDown) — arms/disarms THIS track as the recording
+            // target, not global engine.setRecording(). That's a
+            // transport-wide on/off completely unrelated to which track
+            // is armed; wiring R to it meant the inspector's button could
+            // show "on" while a totally different track (or none) was
+            // actually armed, and clicking it didn't arm the selected
+            // track at all.
+            engine.setRecordingTrack (selectedTrack == engine.getRecordingTrackIndex() ? -1 : selectedTrack);
+        };
         soloButton.onClick    = [this]
         {
             if (hasTrack())
@@ -216,7 +228,7 @@ public:
         const auto info = engine.getTrackInfo (selectedTrack);
         muteButton.setToggleState    (! info.enabled, juce::dontSendNotification);
         soloButton.setToggleState    (info.solo, juce::dontSendNotification);
-        recordButton.setToggleState  (engine.isRecording(), juce::dontSendNotification);
+        recordButton.setToggleState  (selectedTrack == engine.getRecordingTrackIndex(), juce::dontSendNotification);
         volumeSlider.setValue (info.volumeDb, juce::dontSendNotification);
         panSlider.setValue (info.pan * 100.0, juce::dontSendNotification);
 
@@ -643,6 +655,16 @@ private:
                 muteButton.setToggleState (shouldBeMuted, juce::dontSendNotification);
             if (soloButton.getToggleState() != info.solo)
                 soloButton.setToggleState (info.solo, juce::dontSendNotification);
+
+            // Record-arm target is engine-wide state that can change out
+            // from under this component — from the row's own R button (see
+            // TrackHeaderStrip::mouseDown), or from track selection itself
+            // re-arming per getRecordingTrackIndex()'s doc comment in
+            // SequencerEngine.h — so it needs the same live poll Mute/Solo
+            // get above, not just the one-shot set in refresh().
+            const bool shouldBeArmed = selectedTrack == engine.getRecordingTrackIndex();
+            if (recordButton.getToggleState() != shouldBeArmed)
+                recordButton.setToggleState (shouldBeArmed, juce::dontSendNotification);
 
             // Activity indicator — same discrete hold-counter approach as
             // TrackHeaderStrip's own per-row meter (see this class's header
