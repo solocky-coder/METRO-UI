@@ -19,28 +19,33 @@ using namespace dysekt::metro;   // Base/Text/Accent/Transport — same chrome
 //==============================================================================
 //  TransportBar
 //
-//  Docked-transport redesign pass: this row now matches
-//  FloatingTransportBar content-for-content and colour-for-colour (same
-//  |</<</>/[]/REC/LOOP glyph cluster and per-button tints, same amber
-//  zero-padded bar.beat.tick position readout, same editable/wheel-
-//  scrollable L/R cycle locators, same BPM/GRID/LINK trio) rather than the
-//  previous unrelated BACK/PLAY/STOP/REC/LOOP text-button + plain-text BPM
-//  design. Colours come from MetroColours directly rather than
-//  DysektLookAndFeel's theme, for the same reason FloatingTransportBar.cpp
-//  does that (see its own top-of-file comment) — this row and its floating
-//  twin now share one chrome palette, so docking/undocking never changes
-//  how the transport looks, only where it lives.
+//  Docked-transport redesign pass: this bar now matches FloatingTransportBar
+//  content-for-content and colour-for-colour (same |</<</>/[]/REC/LOOP glyph
+//  cluster and per-button tints, same amber zero-padded bar.beat.tick
+//  position readout, same editable/wheel-scrollable L/R cycle locators, same
+//  BPM/GRID/LINK trio) rather than the previous unrelated
+//  BACK/PLAY/STOP/REC/LOOP text-button + plain-text BPM design. Colours come
+//  from MetroColours directly rather than DysektLookAndFeel's theme, for the
+//  same reason FloatingTransportBar.cpp does that (see its own top-of-file
+//  comment) — this bar and its floating twin now share one chrome palette,
+//  so docking/undocking never changes how the transport looks, only where
+//  it lives.
 //
-//  Deliberately still ONE row at the same fixed height ArrangeView has
-//  always reserved for it (kTransportH = 32, unchanged) — FloatingTransportBar
-//  spreads the same controls across a title strip plus a taller content row
-//  because it's a small floating panel with headroom to spare; docked, this
-//  row runs the full window width instead, so everything fits by adjusting
-//  widths and using smaller type, not by growing taller. MIXER/ARRANGER/
-//  GLOBAL EQ aren't drawn here at all — same as before, they're docked in
-//  externally via setViewButtons() (SlotWindowContent owns them) — but they
-//  now sit to the left of this same content instead of a separate title
-//  strip, which is what lets the height stay flat.
+//  Now TWO rows, mirroring FloatingTransportBar's own title-strip-plus-
+//  content-row shape (ArrangeView::kTransportH grew from 32 to 64 to fit):
+//    Row 1 — MIXER/ARRANGER/GLOBAL EQ (docked in externally via
+//            setViewButtons(), same as before) on the left, FLOAT on the
+//            right. Same 24px height as FloatingTransportBar's own title
+//            strip, so that band of chrome reads identically either way.
+//    Row 2 — the transport cluster + position readout + L/R locators,
+//            BPM/GRID/LINK pinned to the far right same as floating's own
+//            content row. Unlike the floating panel — which is sized to fit
+//            its content exactly, so its content row can just sit left-
+//            aligned after the title strip — this bar spans the full
+//            arranger width, so the transport-cluster/position/locators
+//            group is centred in whatever space is left of the right-pinned
+//            BPM/GRID/LINK block instead of hugging the left edge; otherwise
+//            it would drift toward one side as the window widens.
 //==============================================================================
 class TransportBar : public juce::Component,
                      private juce::Timer
@@ -209,45 +214,53 @@ public:
         return ((tick + snapTicks / 2) / snapTicks) * snapTicks;
     }
 
+    // Same title-strip height as FloatingTransportBar's own (MetroMetrics::
+    // grid * 3) — kept as a literal here rather than pulling in MetroMetrics
+    // for one constant, same call this class already makes for its other
+    // dimensions.
+    static constexpr int kTitleStripH = 24;
+
     //==========================================================================
     void resized() override
     {
-        auto b = getLocalBounds().reduced (4, 0);
-        const int contentH = juce::jmax (1, b.getHeight() - 4);
-        const int contentY = (getHeight() - contentH) / 2;
-        b.setY (contentY);
-        b.setHeight (contentH);
-        const int btnH    = contentH;
-        const int transBtnW = 34;   // compact — 6 of these plus everything
-                                     // else still needs to fit one 32px row
-        const int floatW  = 46;
-        const int bpmW    = 56;
-        const int snapW   = 58;
-        const int posW    = 92;     // fits "NNN.NN.NNN" at 14pt mono
-        const int locW    = 78;     // fits "L NNN.NN.NNN" at 11pt mono
-        const int linkW   = 48;
-        const int gap     = 3;
+        auto full = getLocalBounds();
 
-        // ── Far left: view switcher (Mixer / Arranger / EQ), when docked ──
+        // ── Row 1: view switcher (left) / FLOAT (right) — same 24px title-
+        // strip height as FloatingTransportBar's own. ──────────────────────
+        auto titleStrip = full.removeFromTop (kTitleStripH).reduced (4, 2);
         if (viewMixerBtn != nullptr || viewArrangeBtn != nullptr || viewEqBtn != nullptr)
         {
             constexpr int arrangeWidth = 92;
             constexpr int mixerWidth   = 70;
             constexpr int eqWidth      = 58;
-            auto left = b.removeFromLeft (mixerWidth + gap + arrangeWidth + gap + eqWidth);
+            auto left = titleStrip.removeFromLeft (mixerWidth + 3 + arrangeWidth + 3 + eqWidth);
             if (viewMixerBtn != nullptr)
                 viewMixerBtn->setBounds (left.removeFromLeft (mixerWidth));
-            left.removeFromLeft (gap);
+            left.removeFromLeft (3);
             if (viewArrangeBtn != nullptr)
                 viewArrangeBtn->setBounds (left.removeFromLeft (arrangeWidth));
-            left.removeFromLeft (gap);
+            left.removeFromLeft (3);
             if (viewEqBtn != nullptr)
                 viewEqBtn->setBounds (left.removeFromLeft (eqWidth));
-            b.removeFromLeft (gap * 3);
         }
+        floatBtn.setBounds (titleStrip.removeFromRight (46));
 
-        // ── Far right: FLOAT -> LINK -> GRID -> BPM ────────────────────────
-        floatBtn.setBounds (b.removeFromRight (floatW)); b.removeFromRight (gap * 2);
+        // ── Row 2: transport content, vertically centred in what's left ───
+        auto b = full.reduced (4, 0);
+        const int contentH = juce::jmax (1, b.getHeight() - 4);
+        b.setY (b.getY() + (b.getHeight() - contentH) / 2);
+        b.setHeight (contentH);
+        const int btnH      = contentH;
+        const int transBtnW = 36;
+        const int bpmW      = 56;
+        const int snapW     = 58;
+        const int posW      = 92;   // fits "NNN.NN.NNN" at 14pt mono
+        const int locW      = 78;   // fits "L NNN.NN.NNN" at 11pt mono
+        const int linkW     = 48;
+        const int gap       = 4;
+
+        // ── Far right: LINK -> GRID -> BPM, same right-pinned order as
+        // FloatingTransportBar's content row. ──────────────────────────────
         if (linkPtr != nullptr)
         {
             linkBtn.setBounds (b.removeFromRight (linkW));
@@ -256,12 +269,17 @@ public:
         snapCombo.setBounds (b.removeFromRight (snapW)); b.removeFromRight (gap * 2);
         bpmLabel .setBounds (b.removeFromRight (bpmW));  b.removeFromRight (gap * 2);
 
-        // ── Left of remaining space: transport cluster, position, locators —
-        // same left-to-right order as FloatingTransportBar's content row
-        // (position + transport, then L/R locators), just one row instead
-        // of stacked, and everything narrower to match. ───────────────────
+        // ── Remaining left/middle cluster — transport buttons, position,
+        // L/R locators — same left-to-right order as FloatingTransportBar's
+        // content row, but centred as a group in whatever space is left
+        // rather than left-hugged (see header comment for why). ───────────
+        const int clusterW = 6 * transBtnW + 5 * gap      // transport cluster
+                            + gap * 2 + posW               // position readout
+                            + gap * 3 + locW + gap + locW; // L/R locators
+        const int startX = b.getX() + juce::jmax (0, (b.getWidth() - clusterW) / 2);
+
         const int y = b.getY();
-        int x = b.getX();
+        int x = startX;
         for (auto* btn : { &toStartBtn, &backBtn, &playBtn, &stopBtn, &recBtn, &loopBtn })
         {
             btn->setBounds (x, y, transBtnW, btnH);
@@ -278,7 +296,12 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (Base::SurfaceAlt);
+
+        // Title-strip band, same treatment as FloatingTransportBar's own
+        // (SurfaceAlt fill already covers the whole bar, so just the
+        // dividing line beneath row 1 is needed here).
         g.setColour (Base::Border);
+        g.fillRect (juce::Rectangle<int> (0, kTitleStripH, getWidth(), 1));
         g.fillRect (getLocalBounds().removeFromBottom (1));
 
         // Locator captions, painted the same way FloatingTransportBar's

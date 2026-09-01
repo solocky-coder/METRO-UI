@@ -65,7 +65,12 @@ public:
      */
     enum class Tool { Select, Draw, Erase, Split, Glue };
 
-    static constexpr int kTransportH   = 32;
+    static constexpr int kTransportH   = 64;   // two rows now — title strip
+                                                // (view switcher/FLOAT) + the
+                                                // transport content row —
+                                                // matching FloatingTransportBar's
+                                                // own two-row layout instead of
+                                                // the old single 32px row
     static constexpr int kInspectorW   = 216;
     static constexpr int kStripW       = 196;
     static constexpr int kLeftW        = kInspectorW + kStripW;
