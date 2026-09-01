@@ -224,10 +224,18 @@ private:
         }
 
     private:
+        // Locates the wheel by measuring where the text's own two '.'
+        // separators actually fall, rather than assuming a fixed digit
+        // layout — this works whether the label carries a "L "/"R " prefix
+        // (the locator fields) or none at all (the plain position readout).
         int segmentAtX (int x) const
         {
             const auto text = getText();
             if (text.isEmpty()) return 1;
+            const int firstDot  = text.indexOfChar ('.');
+            const int secondDot = firstDot < 0 ? -1 : text.indexOfChar (firstDot + 1, '.');
+            if (firstDot < 0 || secondDot < 0) return 1;
+
             const auto f = getFont();
             const auto measure = [&f] (const juce::String& s) -> float
             {
@@ -235,14 +243,13 @@ private:
                 ga.addLineOfText (f, s, 0.0f, 0.0f);
                 return ga.getBoundingBox (0, -1, true).getWidth();
             };
-            const float totalW = measure (text);
-            const float startX = ((float) getWidth() - totalW) * 0.5f;
-            const float charW  = measure ("0");
-            if (charW <= 0.0f) return 1;
-            const int idx = (int) (((float) x - startX) / charW);
-            // "P NNN.NN.NNN": idx 0-4 = prefix+space+bar, 5-8 = '.'+beat+'.', 9+ = tick.
-            if (idx <= 4) return 0;
-            if (idx <= 8) return 1;
+            const float totalW    = measure (text);
+            const float startX    = ((float) getWidth() - totalW) * 0.5f;
+            const float firstDotX  = startX + measure (text.substring (0, firstDot));
+            const float secondDotX = startX + measure (text.substring (0, secondDot));
+            const float fx = (float) x;
+            if (fx < firstDotX)  return 0;
+            if (fx < secondDotX) return 1;
             return 2;
         }
     };
@@ -261,6 +268,7 @@ private:
  void updateLocatorsFromEditors();
  void adjustLeftLocator (int segment, int direction);
  void adjustRightLocator (int segment, int direction);
+ void adjustPlayhead (int segment, int direction);
  static juce::String formatMusicalPosition (double beats);
  static int64_t parseMusicalPosition (const juce::String& text);
 
@@ -304,7 +312,9 @@ private:
 
 
  // ── Top row: individually editable, centred L/R values ──────────────
-    juce::Label positionLabel;
+    // Wheel-scrollable like the locator fields below — see MusicalPositionLabel;
+    // scrolling over the bar/beat/tick digits nudges the playhead by that unit.
+    MusicalPositionLabel positionLabel;
     MusicalPositionLabel leftLocatorLabel;
     MusicalPositionLabel rightLocatorLabel;
  int64_t leftLocatorTick  = 0;

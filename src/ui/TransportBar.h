@@ -91,6 +91,8 @@ public:
         posLabel.setFont (DysektLookAndFeel::makeMonoFont (14.0f, true));
         posLabel.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
         posLabel.setColour (juce::Label::textColourId, Accent::Orange);
+        posLabel.setTooltip ("Playhead position — scroll over a segment to nudge it");
+        posLabel.onSegmentScroll = [this] (int segment, int direction) { adjustPlayhead (segment, direction); };
         addAndMakeVisible (posLabel);
 
         // ── L/R cycle locators — editable + segment-wheel-scrollable,
@@ -297,7 +299,7 @@ private:
                       stopBtn { "[]" }, recBtn { "REC" }, loopBtn { "LOOP" };
     juce::TextButton  floatBtn { "FLOAT" };
     juce::TextButton  linkBtn  { "LINK" };
-    juce::Label       bpmLabel, posLabel;
+    juce::Label       bpmLabel;
     juce::ComboBox    snapCombo;
 
     /** Same segment-scrollable bar.beat.tick label FloatingTransportBar's
@@ -319,10 +321,18 @@ private:
         }
 
     private:
+        // Locates the wheel by measuring where the text's own two '.'
+        // separators actually fall, rather than assuming a fixed digit
+        // layout — this works whether the label carries a "L "/"R " prefix
+        // (the locator fields) or none at all (the plain position readout).
         int segmentAtX (int x) const
         {
             const auto text = getText();
             if (text.isEmpty()) return 1;
+            const int firstDot  = text.indexOfChar ('.');
+            const int secondDot = firstDot < 0 ? -1 : text.indexOfChar (firstDot + 1, '.');
+            if (firstDot < 0 || secondDot < 0) return 1;
+
             const auto f = getFont();
             const auto measure = [&f] (const juce::String& s) -> float
             {
@@ -330,17 +340,20 @@ private:
                 ga.addLineOfText (f, s, 0.0f, 0.0f);
                 return ga.getBoundingBox (0, -1, true).getWidth();
             };
-            const float totalW = measure (text);
-            const float startX = ((float) getWidth() - totalW) * 0.5f;
-            const float charW  = measure ("0");
-            if (charW <= 0.0f) return 1;
-            const int idx = (int) (((float) x - startX) / charW);
-            if (idx <= 4) return 0;
-            if (idx <= 8) return 1;
+            const float totalW    = measure (text);
+            const float startX    = ((float) getWidth() - totalW) * 0.5f;
+            const float firstDotX  = startX + measure (text.substring (0, firstDot));
+            const float secondDotX = startX + measure (text.substring (0, secondDot));
+            const float fx = (float) x;
+            if (fx < firstDotX)  return 0;
+            if (fx < secondDotX) return 1;
             return 2;
         }
     };
 
+    // Wheel-scrollable like the locator fields below — see MusicalPositionLabel;
+    // scrolling over the bar/beat/tick digits nudges the playhead by that unit.
+    MusicalPositionLabel posLabel;
     MusicalPositionLabel leftLocatorLabel, rightLocatorLabel;
     int64_t leftLocatorTick  = 0;
     int64_t rightLocatorTick = 0;
@@ -408,6 +421,13 @@ private:
         const int64_t delta = segmentStepTicks (segment) * (int64_t) direction;
         rightLocatorTick = juce::jmax<int64_t> (leftLocatorTick + MidiClip::kPPQ, rightLocatorTick + delta);
         engine.setLoopRange (leftLocatorTick, rightLocatorTick);
+    }
+
+    void adjustPlayhead (int segment, int direction)
+    {
+        const int64_t delta   = segmentStepTicks (segment) * (int64_t) direction;
+        const int64_t newTick = juce::jmax<int64_t> (0, engine.getPlayheadTick() + delta);
+        engine.seekToTick (newTick);
     }
 
     void updateLocatorsFromEditors()

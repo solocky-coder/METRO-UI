@@ -122,6 +122,8 @@ addAndMakeVisible (*b);
     positionLabel.setFont (DysektLookAndFeel::makeMonoFont (26.0f, true));
     positionLabel.setColour (juce::Label::backgroundColourId, Base::Background);
     positionLabel.setColour (juce::Label::textColourId, Accent::Orange);
+    positionLabel.setTooltip ("Playhead position — scroll over a segment to nudge it");
+    positionLabel.onSegmentScroll = [this] (int segment, int direction) { adjustPlayhead (segment, direction); };
  addAndMakeVisible (positionLabel);
 
 
@@ -648,6 +650,14 @@ void FloatingTransportBar::adjustRightLocator (int segment, int direction)
     const int64_t delta = segmentStepTicks (segment) * (int64_t) direction;
     rightLocatorTick = juce::jmax<int64_t> (leftLocatorTick + MidiClip::kPPQ, rightLocatorTick + delta);
     engine.setLoopRange (leftLocatorTick, rightLocatorTick);
+}
+
+
+void FloatingTransportBar::adjustPlayhead (int segment, int direction)
+{
+    const int64_t delta   = segmentStepTicks (segment) * (int64_t) direction;
+    const int64_t newTick = juce::jmax<int64_t> (0, engine.getPlayheadTick() + delta);
+    engine.seekToTick (newTick);
 }
 
 
