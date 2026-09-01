@@ -136,14 +136,30 @@ public:
 
             // Track name — width trimmed to clear the M/S/R + meter cluster
             // on the right (meterR is its leftmost extent, computed above).
+            //
+            // Always theme.foreground now, not info.colour when selected.
+            // Text colour tied to the track's own colour meant certain
+            // colours (dark/muted ones, or anything close in luminance to
+            // the wash it sits on above) could render close to unreadable —
+            // exactly the failure mode this exists to avoid. theme.foreground
+            // is guaranteed legible against this UI's dark chrome regardless
+            // of which of the 8 track colours is picked; matches
+            // TrackInspector's own identity-name text, which never tied its
+            // colour to info.colour for the same reason. The wash, left
+            // accent bar, and swatch strip above already carry the "this is
+            // the track's colour" identity signal — text doesn't need to
+            // duplicate that at the cost of readability.
             const int reservedRight = rowR.getRight() - meterR.getX() + 6;
             g.setFont (juce::Font (juce::jlimit (12.0f, 16.0f, (float)trackH * 0.25f), juce::Font::bold));
-            g.setColour (sel ? info.colour : theme.foreground);
+            g.setColour (theme.foreground);
             g.drawText (info.name, rowR.getX() + 14, rowR.getY(),
                         rowR.getWidth() - reservedRight - 14,
                         trackH, juce::Justification::centredLeft, true);
 
-            // Type + channel badge
+            // Type + channel badge — same readability fix as the name above,
+            // theme.foreground at reduced alpha instead of info.colour at
+            // reduced alpha, preserving the existing dimmer-than-the-name
+            // hierarchy without the colour-contrast risk.
             if (trackH >= 32)
             {
                 juce::String badge;
@@ -154,13 +170,13 @@ public:
                     case TrackType::SfPlayer:       badge = "SF"; break;
                 }
                 g.setFont (juce::Font (juce::jlimit (9.0f, 11.0f, (float)trackH * 0.17f)));
-                g.setColour (info.colour.withAlpha (0.6f));
+                g.setColour (theme.foreground.withAlpha (0.55f));
                 g.drawText (badge, rowR.getX() + 14, rowR.getCentreY(), 26, trackH / 2,
                             juce::Justification::centredLeft, false);
 
                 if (info.type == TrackType::SfPlayer || info.type == TrackType::ChromaticSlice)
                 {
-                    g.setColour (info.colour.withAlpha (0.85f));
+                    g.setColour (theme.foreground.withAlpha (0.75f));
                     g.drawText ("CH" + juce::String (info.midiChannel + 1),
                                 rowR.getX() + 42, rowR.getCentreY(), 46, trackH / 2,
                                 juce::Justification::centredLeft, false);

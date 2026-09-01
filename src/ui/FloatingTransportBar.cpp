@@ -30,6 +30,16 @@ namespace
         b.setColour (juce::TextButton::buttonColourId, Base::Elevated);
         b.setColour (juce::TextButton::textColourOffId, Text::Secondary);
         b.setColour (juce::TextButton::textColourOnId, Base::White);
+        // Without this, DysektLookAndFeel::drawButtonBackground's default
+        // fill path (this panel never calls setLookAndFeel(), so it's
+        // subject to that LookAndFeel like everything else in the app —
+        // see PluginEditor.cpp's setDefaultLookAndFeel()) ignores
+        // buttonColourId entirely and always paints theme.button/
+        // theme.accent instead of the palette configured here. Latent bug
+        // predating the docked-transport redesign pass — surfaced by
+        // TransportBar.h now matching this file colour-for-colour, which
+        // only means anything if this file's own colours actually render.
+        b.getProperties().set ("flatFill", true);
     }
 
 
@@ -42,6 +52,7 @@ namespace
         b.setColour (juce::TextButton::buttonOnColourId, tint.withAlpha (0.32f));
         b.setColour (juce::TextButton::textColourOffId, tint.brighter (0.15f));
         b.setColour (juce::TextButton::textColourOnId, Base::White);
+        b.getProperties().set ("flatFill", true);
     }
 } // namespace
 
