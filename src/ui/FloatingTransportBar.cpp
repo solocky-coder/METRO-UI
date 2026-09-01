@@ -348,19 +348,16 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     L.titleStrip = area.removeFromTop (MetroMetrics::grid * 3);
 
     // ── Title strip: view switcher on the left, pin+dock (floating) or
-    // float (docked) grouped on the right ──────────────────────────────
+    // float (docked) grouped on the right. While docked, none of this
+    // lives in the title strip any more — the view switcher and the
+    // Float button both move down into the content row below (see there)
+    // — so the docked title strip is left empty. ───────────────────────
+    if (! docked)
     {
         auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::quarterGrid);
-        if (docked)
-        {
-            L.floatField = strip.removeFromRight (MetroMetrics::grid * 7);
-        }
-        else
-        {
-            L.dockField = strip.removeFromRight (MetroMetrics::grid * 7);
-            strip.removeFromRight (MetroMetrics::halfGrid);
-            L.pinField  = strip.removeFromRight (MetroMetrics::grid * 6);
-        }
+        L.dockField = strip.removeFromRight (MetroMetrics::grid * 7);
+        strip.removeFromRight (MetroMetrics::halfGrid);
+        L.pinField  = strip.removeFromRight (MetroMetrics::grid * 6);
         strip.removeFromLeft (MetroMetrics::grid * 6); // leave room for the drag grip / left margin
         L.mixerButtonField   = strip.removeFromLeft (MetroMetrics::grid * 6);
         strip.removeFromLeft (MetroMetrics::halfGrid);
@@ -377,15 +374,35 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
  auto row = area.removeFromTop (rowH);
 
 
- // ── Far right: BPM, grid snap, link — one row, in that order. Pinned to
- // the right edge in both modes, so it's peeled off the row first. ─────
+ // ── Docked-only: MIXER / ARRANGER / GLOBAL EQ view switcher now lives
+ // at the far left of the content row instead of the title strip above. ─
+    if (docked)
     {
-        auto right = row.removeFromRight (MetroMetrics::grid * 29);
+        L.mixerButtonField   = row.removeFromLeft (MetroMetrics::grid * 6);
+        row.removeFromLeft (MetroMetrics::halfGrid);
+        L.arrangeButtonField = row.removeFromLeft (MetroMetrics::grid * 8);
+        row.removeFromLeft (MetroMetrics::halfGrid);
+        L.eqButtonField      = row.removeFromLeft (MetroMetrics::grid * 8);
+        row.removeFromLeft (MetroMetrics::grid * 2); // gap before the centred cluster
+    }
+
+
+ // ── Far right: BPM, grid snap, Float (docked only), link — one row, in
+ // that order. Pinned to the right edge in both modes, so it's peeled
+ // off the row first. ────────────────────────────────────────────────
+    {
+        const int rightW = MetroMetrics::grid * (docked ? 37 : 29);
+        auto right = row.removeFromRight (rightW);
         L.tempoCaption = right.removeFromLeft (MetroMetrics::grid * 4);
         L.tempoField   = right.removeFromLeft (MetroMetrics::grid * 6);
         right.removeFromLeft (MetroMetrics::grid);
         L.gridField    = right.removeFromLeft (MetroMetrics::grid * 9);
         right.removeFromLeft (MetroMetrics::grid);
+        if (docked)
+        {
+            L.floatField = right.removeFromLeft (MetroMetrics::grid * 7);
+            right.removeFromLeft (MetroMetrics::grid);
+        }
         L.linkField    = right;
         row.removeFromRight (MetroMetrics::grid * 2); // gap before the pinned block
     }
