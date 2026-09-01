@@ -9,6 +9,7 @@
 #include "../metro/MetroTypography.h"
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
+#include "TransportIconButton.h"
 
 using namespace dysekt::metro;   // Base/Text/Accent/Transport — same chrome
                                   // palette FloatingTransportBar.cpp uses,
@@ -21,11 +22,12 @@ using namespace dysekt::metro;   // Base/Text/Accent/Transport — same chrome
 //
 //  Docked-transport redesign pass: this row now matches
 //  FloatingTransportBar content-for-content and colour-for-colour (same
-//  |</<</>/[]/REC/LOOP glyph cluster and per-button tints, same amber
-//  zero-padded bar.beat.tick position readout, same editable/wheel-
-//  scrollable L/R cycle locators, same BPM/GRID/LINK trio) rather than the
-//  previous unrelated BACK/PLAY/STOP/REC/LOOP text-button + plain-text BPM
-//  design. Colours come from MetroColours directly rather than
+//  vector-icon transport cluster — see TransportIconButton.h, which
+//  replaced the old |</<</>/[]/REC/LOOP ASCII-glyph TextButtons — and
+//  per-button tints, same amber zero-padded bar.beat.tick position readout,
+//  same editable/wheel-scrollable L/R cycle locators, same BPM/GRID/LINK
+//  trio) rather than the previous unrelated BACK/PLAY/STOP/REC/LOOP
+//  text-button + plain-text BPM design. Colours come from MetroColours directly rather than
 //  DysektLookAndFeel's theme, for the same reason FloatingTransportBar.cpp
 //  does that (see its own top-of-file comment) — this row and its floating
 //  twin now share one chrome palette, so docking/undocking never changes
@@ -54,15 +56,16 @@ public:
 
         // ── Transport cluster ───────────────────────────────────────────
         // Same glyphs, same order, same per-button tints as
-        // FloatingTransportBar's configureTransportButton() calls — see
-        // that function for the exact colour recipe this mirrors
-        // (Base::Surface off-fill, tint-at-32%-alpha on-fill, tint text).
-        configureTransportButton (toStartBtn, "|<",   Text::Secondary,   "Return to start");
-        configureTransportButton (backBtn,    "<<",   Text::Secondary,   "Step back one bar");
-        configureTransportButton (playBtn,    ">",    Transport::Play,   "Play");
-        configureTransportButton (stopBtn,    "[]",   Accent::Orange,    "Stop");
-        configureTransportButton (recBtn,     "REC",  Transport::Record, "Record");
-        configureTransportButton (loopBtn,    "LOOP", Accent::Cyan,      "Toggle looping");
+        // FloatingTransportBar's transport cluster — see TransportIconButton.h
+        // for the shared vector-icon glyph + hover/active-state chrome this
+        // mirrors (Base::Surface off-fill, tint-at-32%-alpha on-fill,
+        // tint-coloured icon off / white icon on).
+        toStartBtn.configure (TransportIcons::Kind::ToStart, Text::Secondary,   "Return to start");
+        backBtn.configure    (TransportIcons::Kind::Back,    Text::Secondary,   "Step back one bar");
+        playBtn.configure    (TransportIcons::Kind::Play,    Transport::Play,   "Play");
+        stopBtn.configure    (TransportIcons::Kind::Stop,    Accent::Orange,    "Stop");
+        recBtn.configure     (TransportIcons::Kind::Record,  Transport::Record, "Record");
+        loopBtn.configure    (TransportIcons::Kind::Loop,    Accent::Cyan,      "Toggle looping");
         playBtn.setClickingTogglesState (true);
         recBtn.setClickingTogglesState (true);
         loopBtn.setClickingTogglesState (true);
@@ -295,8 +298,7 @@ private:
     SequencerEngine&  engine;
     AbletonLink*      linkPtr = nullptr;
 
-    juce::TextButton  toStartBtn { "|<" }, backBtn { "<<" }, playBtn { ">" },
-                      stopBtn { "[]" }, recBtn { "REC" }, loopBtn { "LOOP" };
+    TransportIconButton toStartBtn, backBtn, playBtn, stopBtn, recBtn, loopBtn;
     juce::TextButton  floatBtn { "FLOAT" };
     juce::TextButton  linkBtn  { "LINK" };
     juce::Label       bpmLabel;
@@ -374,18 +376,6 @@ private:
         // fill path ignores buttonColourId entirely and always paints
         // theme.button/theme.accent instead — see this class's header
         // comment. Same fix TrackInspector's track-colour swatches needed.
-        b.getProperties().set ("flatFill", true);
-    }
-
-    static void configureTransportButton (juce::TextButton& b, const juce::String& text,
-                                           juce::Colour tint, const juce::String& tooltip)
-    {
-        b.setButtonText (text);
-        b.setTooltip (tooltip);
-        b.setColour (juce::TextButton::buttonColourId, Base::Surface);
-        b.setColour (juce::TextButton::buttonOnColourId, tint.withAlpha (0.32f));
-        b.setColour (juce::TextButton::textColourOffId, tint.brighter (0.15f));
-        b.setColour (juce::TextButton::textColourOnId, Base::White);
         b.getProperties().set ("flatFill", true);
     }
 

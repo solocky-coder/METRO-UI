@@ -43,17 +43,6 @@ namespace
     }
 
 
- void configureTransportButton (juce::TextButton& b, const juce::String& text,
-                                   juce::Colour tint, const juce::String& tooltip)
-    {
-        b.setButtonText (text);
-        b.setTooltip (tooltip);
-        b.setColour (juce::TextButton::buttonColourId, Base::Surface);
-        b.setColour (juce::TextButton::buttonOnColourId, tint.withAlpha (0.32f));
-        b.setColour (juce::TextButton::textColourOffId, tint.brighter (0.15f));
-        b.setColour (juce::TextButton::textColourOnId, Base::White);
-        b.getProperties().set ("flatFill", true);
-    }
 } // namespace
 
 
@@ -128,15 +117,16 @@ addAndMakeVisible (*b);
 
 
  // ── Transport cluster ────────────────────────────────────────────────
- // Use ASCII labels here: the embedded UI typeface does not include the
- // Unicode transport glyphs, which otherwise render as missing characters
- // on the detached desktop component.
- configureTransportButton (toStartButton, "|<",   Text::Secondary,   "Return to start");
- configureTransportButton (backButton,    "<<",   Text::Secondary,   "Step back one bar");
- configureTransportButton (playButton,    ">",    Transport::Play,   "Play");
- configureTransportButton (stopButton,    "[]",   Accent::Orange,    "Stop");
- configureTransportButton (recordButton,  "REC",  Transport::Record, "Record");
- configureTransportButton (cycleButton,   "LOOP", Accent::Cyan,      "Toggle looping");
+ // Vector icons via TransportIconButton — platform/typeface-independent,
+ // so no risk of missing-glyph boxes on the detached desktop component
+ // the way the old ASCII labels (this comment used to warn about) could
+ // have been if the embedded UI typeface ever changed.
+ toStartButton.configure (TransportIcons::Kind::ToStart, Text::Secondary,   "Return to start");
+ backButton.configure    (TransportIcons::Kind::Back,    Text::Secondary,   "Step back one bar");
+ playButton.configure    (TransportIcons::Kind::Play,    Transport::Play,   "Play");
+ stopButton.configure    (TransportIcons::Kind::Stop,    Accent::Orange,    "Stop");
+ recordButton.configure  (TransportIcons::Kind::Record,  Transport::Record, "Record");
+ cycleButton.configure   (TransportIcons::Kind::Loop,    Accent::Cyan,      "Toggle looping");
     playButton.setClickingTogglesState (true);
     recordButton.setClickingTogglesState (true);
     cycleButton.setClickingTogglesState (true);

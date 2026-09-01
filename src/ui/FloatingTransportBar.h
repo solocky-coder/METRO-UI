@@ -26,6 +26,7 @@
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/AbletonLink.h"
+#include "TransportIconButton.h"
 
 
 class SequencerEngine;
@@ -301,12 +302,12 @@ private:
 
 
  // ── Bottom row: transport controls ──────────────────────────────────
-    juce::TextButton toStartButton { "|<" };
-    juce::TextButton backButton    { "<<" };
-    juce::TextButton playButton    { ">" };
-    juce::TextButton stopButton    { "[]" };
-    juce::TextButton recordButton  { "REC" };
-    juce::TextButton cycleButton   { "LOOP" };
+    TransportIconButton toStartButton;
+    TransportIconButton backButton;
+    TransportIconButton playButton;
+    TransportIconButton stopButton;
+    TransportIconButton recordButton;
+    TransportIconButton cycleButton;
     juce::TextButton setLeftButton  { "SET LEFT" };
     juce::TextButton setRightButton { "SET RIGHT" };
 
