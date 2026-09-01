@@ -79,6 +79,12 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
  addAndMakeVisible (dockButton);
 
 
+ configureChrome (floatButton, "FLOAT", "Detach the transport into a floating panel");
+    floatButton.onClick = [this] { if (onFloatRequested) onFloatRequested(); };
+    floatButton.setVisible (false);   // shown only once setDocked(true) is called
+ addAndMakeVisible (floatButton);
+
+
  // ── View switcher — Mixer / Arranger / Global EQ ────────────────────────
  configureChrome (mixerButton, "MIXER", "Switch to the mixer");
  configureChrome (arrangeButton, "ARRANGER", "Switch to the arranger");
@@ -285,7 +291,11 @@ void FloatingTransportBar::mouseDown (const juce::MouseEvent& e)
  // Capture eligibility at mouse-down. Once the desktop component moves,
  // getMouseDownPosition() is expressed in its new local coordinates and
  // can no longer be used reliably to test the original title-strip hit.
-    draggingTitleStrip = isOnDesktop()
+ // isOnDesktop() alone already rules out dragging while docked (a docked
+ // instance is parented inline, never on the desktop), but check docked
+ // explicitly too — harmless belt-and-braces if a caller ever calls
+ // show() without first calling setDocked(false).
+    draggingTitleStrip = isOnDesktop() && ! docked
                       && computeLayout().titleStrip.contains (e.getPosition());
 
 
@@ -309,7 +319,7 @@ void FloatingTransportBar::mouseUp (const juce::MouseEvent&)
 
 void FloatingTransportBar::mouseDoubleClick (const juce::MouseEvent& e)
 {
- if (computeLayout().titleStrip.contains (e.getPosition()) && onDockRequested)
+ if (! docked && computeLayout().titleStrip.contains (e.getPosition()) && onDockRequested)
  onDockRequested();
 }
 
@@ -318,6 +328,17 @@ void FloatingTransportBar::mouseDoubleClick (const juce::MouseEvent& e)
 // A single transport-first row, sized to exactly what it needs — no dead
 // space above or below. Left to right: musical position + transport cluster,
 // then the editable L/R locators, then BPM / GRID / LINK on the far right.
+//
+// Docked mode reuses every field width unchanged — same content, same
+// proportions, so the bar looks identical whether it's living in its own
+// 1024px-wide floating window or stretched across an arranger that's twice
+// that width. The one thing docked mode does differently: the floating
+// window is sized to fit its content exactly, so left-anchoring position +
+// transport + locators after the title strip's margin already fills the
+// panel with no dead space. A docked host's width varies, so that same
+// left-anchored block would drift toward the left edge, leaving a growing
+// gap before the right-pinned BPM/GRID/LINK group as the host widens —
+// docked mode centres that block in whatever space is actually left instead.
 FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 {
     Layout L;
@@ -326,9 +347,20 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
     L.titleStrip = area.removeFromTop (MetroMetrics::grid * 3);
 
-    // ── Title strip: view switcher on the left, pin+dock grouped on the right ──
+    // ── Title strip: view switcher on the left, pin+dock (floating) or
+    // float (docked) grouped on the right ──────────────────────────────
     {
         auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::quarterGrid);
+        if (docked)
+        {
+            L.floatField = strip.removeFromRight (MetroMetrics::grid * 7);
+        }
+        else
+        {
+            L.dockField = strip.removeFromRight (MetroMetrics::grid * 7);
+            strip.removeFromRight (MetroMetrics::halfGrid);
+            L.pinField  = strip.removeFromRight (MetroMetrics::grid * 6);
+        }
         strip.removeFromLeft (MetroMetrics::grid * 6); // leave room for the drag grip / left margin
         L.mixerButtonField   = strip.removeFromLeft (MetroMetrics::grid * 6);
         strip.removeFromLeft (MetroMetrics::halfGrid);
@@ -345,7 +377,32 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
  auto row = area.removeFromTop (rowH);
 
 
- // ── Left: musical position + transport cluster ──────────────────────
+ // ── Far right: BPM, grid snap, link — one row, in that order. Pinned to
+ // the right edge in both modes, so it's peeled off the row first. ─────
+    {
+        auto right = row.removeFromRight (MetroMetrics::grid * 29);
+        L.tempoCaption = right.removeFromLeft (MetroMetrics::grid * 4);
+        L.tempoField   = right.removeFromLeft (MetroMetrics::grid * 6);
+        right.removeFromLeft (MetroMetrics::grid);
+        L.gridField    = right.removeFromLeft (MetroMetrics::grid * 9);
+        right.removeFromLeft (MetroMetrics::grid);
+        L.linkField    = right;
+        row.removeFromRight (MetroMetrics::grid * 2); // gap before the pinned block
+    }
+
+
+ // ── Left/middle: musical position + transport cluster + L/R locators,
+ // as one block. Centred in whatever's left of the row when docked;
+ // left-anchored (i.e. no-op offset) when floating. ─────────────────────
+    constexpr int clusterUnits = 21 + 1 + 37 + 2 + 2 + 28; // position+gap+transport+gap+gap+locators
+    if (docked)
+    {
+        const int clusterW = clusterUnits * MetroMetrics::grid;
+        const int pad = juce::jmax (0, (row.getWidth() - clusterW) / 2);
+        row.removeFromLeft (pad);
+    }
+
+
     L.positionField = row.removeFromLeft (MetroMetrics::grid * 21);
     row.removeFromLeft (MetroMetrics::grid);
     L.transportRow = row.removeFromLeft (MetroMetrics::grid * 37);
@@ -362,16 +419,6 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
     row.removeFromLeft (MetroMetrics::grid * 2);
     L.divider2 = row.getX();
-    row.removeFromLeft (MetroMetrics::grid * 2);
-
-
- // ── Far right: BPM, grid snap, link — one row, in that order ────────
-    L.tempoCaption = row.removeFromLeft (MetroMetrics::grid * 4);
-    L.tempoField   = row.removeFromLeft (MetroMetrics::grid * 6);
-    row.removeFromLeft (MetroMetrics::grid);
-    L.gridField    = row.removeFromLeft (MetroMetrics::grid * 9);
-    row.removeFromLeft (MetroMetrics::grid);
-    L.linkField    = row.removeFromLeft (MetroMetrics::grid * 8);
 
 
  return L;
@@ -383,14 +430,31 @@ void FloatingTransportBar::resized()
  const auto L = computeLayout();
 
 
- auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::quarterGrid);
-    dockButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 7));
-    strip.removeFromRight (MetroMetrics::halfGrid);
-    pinButton.setBounds (strip.removeFromRight (MetroMetrics::grid * 6));
+    if (docked)
+    {
+        floatButton.setBounds (L.floatField);
+    }
+    else
+    {
+        dockButton.setBounds (L.dockField);
+        pinButton.setBounds (L.pinField);
+    }
 
-    mixerButton.setBounds (L.mixerButtonField);
-    arrangeButton.setBounds (L.arrangeButtonField);
-    eqButton.setBounds (L.eqButtonField);
+    // While docked, the externally-owned buttons (set via setViewButtons())
+    // occupy these fields instead of this panel's own mixer/arrange/eq —
+    // setDocked()/setViewButtons() already hide whichever set isn't in use.
+    if (docked && (viewMixerBtn != nullptr || viewArrangeBtn != nullptr || viewEqBtn != nullptr))
+    {
+        if (viewMixerBtn   != nullptr) viewMixerBtn->setBounds (L.mixerButtonField);
+        if (viewArrangeBtn != nullptr) viewArrangeBtn->setBounds (L.arrangeButtonField);
+        if (viewEqBtn      != nullptr) viewEqBtn->setBounds (L.eqButtonField);
+    }
+    else
+    {
+        mixerButton.setBounds (L.mixerButtonField);
+        arrangeButton.setBounds (L.arrangeButtonField);
+        eqButton.setBounds (L.eqButtonField);
+    }
 
 
  // L/R captions sit outside their fields so the numerical values stay truly centred.
@@ -438,11 +502,16 @@ void FloatingTransportBar::paint (juce::Graphics& g)
 
 
  // Drag grip — two short bars centred in the strip, matching the mockup.
-    g.setColour (Text::Muted);
+ // Floating-only: a docked instance can't be dragged (it's parented
+ // inline, not on the desktop), so the grip would be a false affordance.
+ if (! docked)
+    {
+        g.setColour (Text::Muted);
  const auto stripCentre = L.titleStrip.getCentre();
  for (int i = 0; i < 2; ++i)
-        g.fillRoundedRectangle ((float) stripCentre.x - 23.0f, (float) stripCentre.y - 4.0f + i * 6.0f,
+            g.fillRoundedRectangle ((float) stripCentre.x - 23.0f, (float) stripCentre.y - 4.0f + i * 6.0f,
  46.0f, 3.0f, 1.5f);
+    }
 
 
  // Locator captions are painted separately so their editable values can be centred.

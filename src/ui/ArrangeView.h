@@ -1,6 +1,5 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "TransportBar.h"
 #include "FloatingTransportBar.h"
 #include "TrackHeaderStrip.h"
 #include "TrackInspector.h"
@@ -65,12 +64,12 @@ public:
      */
     enum class Tool { Select, Draw, Erase, Split, Glue };
 
-    static constexpr int kTransportH   = 64;   // two rows now — title strip
-                                                // (view switcher/FLOAT) + the
-                                                // transport content row —
-                                                // matching FloatingTransportBar's
-                                                // own two-row layout instead of
-                                                // the old single 32px row
+    static constexpr int kTransportH   = 80;   // title strip (24) + gap (16) +
+                                                // content row (40) — same
+                                                // proportions FloatingTransportBar
+                                                // uses for its own fixed-size
+                                                // window, now just stretched to
+                                                // this view's width when docked
     static constexpr int kInspectorW   = 216;
     static constexpr int kStripW       = 196;
     static constexpr int kLeftW        = kInspectorW + kStripW;
@@ -163,11 +162,16 @@ public:
           trackStrip (seq),
           inspector (seq)
     {
+        transport.setDocked (true);
         addAndMakeVisible (transport);
         addAndMakeVisible (inspector);
         addAndMakeVisible (trackStrip);
 
         transport.onFloatRequested = [this] { showFloatingTransport(); };
+        transport.onDockRequested  = [this] { dockTransport(); };
+        transport.onMixerRequested    = [this] { if (onMixerRequested)   onMixerRequested(); };
+        transport.onArrangerRequested = [this] { if (onArrangerRequested) onArrangerRequested(); };
+        transport.onGlobalEqRequested = [this] { if (onGlobalEqRequested) onGlobalEqRequested(); };
 
         // ── Horizontal scrollbar ──────────────────────────────────────────────
         hScroll.setRangeLimits (0.0, 1.0);
@@ -267,15 +271,16 @@ public:
         hScroll.removeListener (this);
         vScroll.removeListener (this);
         stopTimer();
-        if (floatingTransport != nullptr)
-            floatingTransport->hide();
+        if (transport.isFloating())
+            transport.hide();
     }
 
     //==========================================================================
     void resized() override
     {
         auto r = getLocalBounds().reduced (3);
-        transport.setBounds (r.removeFromTop (kTransportH));
+        if (! transport.isFloating())
+            transport.setBounds (r.removeFromTop (kTransportH));
 
         // Corner square between the two scrollbars
         auto cornerR = r;
@@ -820,37 +825,33 @@ public:
     //==========================================================================
     //  Floating transport
     //==========================================================================
-    /** Lazily creates (on first use) and shows the floating transport panel,
-     *  hiding the docked TransportBar while it's up. Wired to
-     *  transport.onFloatRequested. */
+    /** Undocks the transport from this view (it was a normal child component,
+     *  reserving kTransportH at the top — see resized()) and puts it on the
+     *  desktop as its own floating window instead. It's the same
+     *  FloatingTransportBar instance throughout, just reparented; see that
+     *  class's header comment. Wired to transport.onFloatRequested. */
     void showFloatingTransport()
     {
-        if (floatingTransport == nullptr)
-        {
-            floatingTransport = std::make_unique<FloatingTransportBar> (engine, linkPtr);
-            floatingTransport->onDockRequested = [this] { dockTransport(); };
-            floatingTransport->onMixerRequested   = [this] { if (onMixerRequested)   onMixerRequested(); };
-            floatingTransport->onArrangerRequested = [this] { if (onArrangerRequested) onArrangerRequested(); };
-            floatingTransport->onGlobalEqRequested = [this] { if (onGlobalEqRequested) onGlobalEqRequested(); };
-        }
-
-        transport.setVisible (false);
-        floatingTransport->show();
+        removeChildComponent (&transport);
+        transport.setDocked (false);
+        transport.show();
+        resized();   // reclaim the space the docked bar was occupying
     }
 
-    /** Hides the floating panel and restores the docked transport bar.
-     *  Wired to FloatingTransportBar::onDockRequested. */
+    /** Removes the transport from the desktop and re-docks it as a normal
+     *  child component at the top of this view. Wired to
+     *  FloatingTransportBar::onDockRequested. */
     void dockTransport()
     {
-        if (floatingTransport != nullptr)
-            floatingTransport->hide();
-
-        transport.setVisible (true);
+        transport.hide();
+        transport.setDocked (true);
+        addAndMakeVisible (transport);
+        resized();
     }
 
     /** Lets an owner (e.g. SlotWindowContent) dock extra controls — such as the
      *  Mixer / Arranger view switcher — into the far left of the transport row. */
-    TransportBar& getTransportBar() noexcept { return transport; }
+    FloatingTransportBar& getTransportBar() noexcept { return transport; }
 
     /** Fired when the floating transport's MIXER / ARRANGER / GLOBAL EQ
      *  buttons are clicked — set by the owner (e.g. SlotWindowContent) to
@@ -865,8 +866,7 @@ private:
     //==========================================================================
     SequencerEngine&      engine;
     AbletonLink*          linkPtr = nullptr;
-    TransportBar          transport;
-    std::unique_ptr<FloatingTransportBar> floatingTransport;
+    FloatingTransportBar  transport;
     TrackInspector        inspector;
     TrackHeaderStrip      trackStrip;
     ZoomableScrollBar     hScroll { false };
@@ -1062,17 +1062,16 @@ private:
     }
 
     /** Grid-quantize resolution currently selected in the GRID combo, read
-     *  live from whichever transport bar is currently showing it (floating,
-     *  if undocked; the docked TransportBar otherwise). Shared by snapTick()
+     *  live from the transport bar's GRID combo, docked or floating — same
+     *  instance either way now (see FloatingTransportBar's header comment),
+     *  so there's only ever one snap value to read. Shared by snapTick()
      *  (rounds a tick to this resolution) and paintGridLines() (draws
      *  sub-beat lines at this resolution) so the visible grid always matches
      *  what clip create/move/resize/split actually snaps to. 0 means no
-     *  snapping ("Free", docked only). */
+     *  snapping. */
     int64_t currentSnapTicks() const noexcept
     {
-        return (floatingTransport != nullptr && floatingTransport->isFloating())
-                   ? floatingTransport->getSnapTicks()
-                   : transport.getSnapTicks();
+        return transport.getSnapTicks();
     }
 
     int64_t snapTick (int64_t t) const noexcept

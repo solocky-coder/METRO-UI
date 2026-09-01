@@ -35,15 +35,33 @@ class SequencerEngine;
     FloatingTransportBar
 
 
-    Usage:
-        floatingTransport = std::make_unique<FloatingTransportBar> (engine, linkPtr);
-        floatingTransport->onDockRequested = [this] { showDocked(); undock.reset(); };
+    One component, two presentations — docked (parented inline into the host,
+    stretched to whatever width it's given, FLOAT button in the title strip)
+    and floating (a real desktop window at a fixed size, PIN/DOCK buttons
+    instead). setDocked() switches between the two; the transport content
+    itself — glyphs, colours, position readout, locators, BPM/GRID/LINK — is
+    identical either way, since it's the same computeLayout()/resized()/
+    paint() doing the drawing in both cases. This replaces the old split
+    where ArrangeView's docked bar (TransportBar) was a second, hand-mirrored
+    implementation of this one's look.
+
+    Usage — docked (e.g. ArrangeView):
+        transport.setDocked (true);
+        transport.setViewButtons (&mixerBtn, &arrangeBtn, &eqBtn);
+        transport.onFloatRequested = [this] { transport.setDocked (false); transport.show(); };
+        addAndMakeVisible (transport);   // host positions it via setBounds() as normal
+
+    Usage — floating:
+        floatingTransport->onDockRequested = [this] { floatingTransport->hide();
+                                                        floatingTransport->setDocked (true); /* re-parent */ };
         floatingTransport->show();   // adds itself to the desktop at its last position
 
-    The panel is a plain juce::Component the whole time — show()/hide() decide
-    whether it is currently living on the desktop as its own top-level window
-    or sitting invisible, so callers never juggle two different objects for
-    the docked and floating states.
+    show()/hide() decide whether the component is currently living on the
+    desktop as its own top-level window or sitting invisible; setDocked()
+    is orthogonal to that and only affects layout/chrome — the host is still
+    responsible for actually parenting/unparenting the component when
+    switching between the two (see ArrangeView::showFloatingTransport()/
+    dockTransport()).
 */
 class FloatingTransportBar final : public juce::Component,
                                    private juce::Timer
@@ -66,6 +84,63 @@ public:
 
  bool isFloating() const noexcept { return isOnDesktop(); }
 
+ /** Switches between docked chrome (FLOAT button, no drag grip, content
+     *  row centred to fill whatever width the host gives it) and floating
+     *  chrome (PIN/DOCK buttons, drag-grip title strip, content row
+     *  left-aligned to exactly fill this panel's own fixed size). Purely a
+     *  layout/painting switch — does not itself reparent the component or
+     *  touch the desktop; see this class's header comment. */
+    void setDocked (bool isDocked)
+    {
+        if (docked == isDocked) return;
+        docked = isDocked;
+        setMouseCursor (docked ? juce::MouseCursor::NormalCursor
+                                : juce::MouseCursor::DraggingHandCursor);
+        pinButton.setVisible (! docked);
+        dockButton.setVisible (! docked);
+        floatButton.setVisible (docked);
+        mixerButton.setVisible (! docked);
+        arrangeButton.setVisible (! docked);
+        eqButton.setVisible (! docked);
+        if (viewMixerBtn   != nullptr) viewMixerBtn->setVisible (docked);
+        if (viewArrangeBtn != nullptr) viewArrangeBtn->setVisible (docked);
+        if (viewEqBtn      != nullptr) viewEqBtn->setVisible (docked);
+        resized();
+        repaint();
+    }
+
+    bool isDockedMode() const noexcept { return docked; }
+
+    /** Docks (or undocks, with nullptrs) external view-switcher buttons —
+     *  e.g. ArrangeView's Mixer/Arranger/EQ toggle — into the title strip's
+     *  left side in place of this panel's own internal mixer/arrange/eq
+     *  buttons. Only takes effect while docked (see setDocked()) — while
+     *  floating, this panel always shows its own internal buttons, since a
+     *  desktop window can't share components with the main window. Ownership
+     *  of the passed buttons stays with the caller; this class only
+     *  reparents + positions them, same contract TransportBar::setViewButtons()
+     *  used to have. */
+    void setViewButtons (juce::TextButton* mixerBtn, juce::TextButton* arrangeBtn, juce::TextButton* eqBtn)
+    {
+        viewMixerBtn   = mixerBtn;
+        viewArrangeBtn = arrangeBtn;
+        viewEqBtn      = eqBtn;
+        if (viewMixerBtn   != nullptr) addAndMakeVisible (*viewMixerBtn);
+        if (viewArrangeBtn != nullptr) addAndMakeVisible (*viewArrangeBtn);
+        if (viewEqBtn      != nullptr) addAndMakeVisible (*viewEqBtn);
+        if (docked)
+        {
+            mixerButton.setVisible (false);
+            arrangeButton.setVisible (false);
+            eqButton.setVisible (false);
+        }
+        resized();
+    }
+
+    /** Fired when the docked FLOAT button is clicked. Only shown/active while
+     *  docked — see setDocked(). The host decides what "floating" means
+     *  (typically setDocked(false) followed by show()). */
+    std::function<void()> onFloatRequested;
 
  /** Grid-snap resolution selected in the GRID combo, in ticks (MidiClip::kPPQ
      *  units) — same mapping TransportBar::getSnapTicks() uses for its own
@@ -109,6 +184,7 @@ private:
     {
         juce::Rectangle<int> titleStrip;
         juce::Rectangle<int> mixerButtonField, arrangeButtonField, eqButtonField;
+        juce::Rectangle<int> pinField, dockField, floatField;   // right side of titleStrip — pin+dock while floating, float while docked
         juce::Rectangle<int> positionField;
         juce::Rectangle<int> locatorsField;
         juce::Rectangle<int> transportRow;
@@ -201,11 +277,19 @@ private:
  // ── Title strip chrome ──────────────────────────────────────────────
     juce::TextButton pinButton   { "Pin" };
     juce::TextButton dockButton  { "Dock" };
+    juce::TextButton floatButton { "Float" };   // docked-mode counterpart to pin/dock
     juce::TextButton mixerButton   { "Mixer" };
     juce::TextButton arrangeButton { "Arranger" };
     juce::TextButton eqButton      { "Global Eq" };
     juce::ComponentDragger dragger;
  bool draggingTitleStrip = false;
+ bool docked = false;
+
+ // Externally-owned view switcher, docked in via setViewButtons() — only
+ // used while docked; see that method's comment.
+ juce::TextButton* viewMixerBtn   = nullptr;
+ juce::TextButton* viewArrangeBtn = nullptr;
+ juce::TextButton* viewEqBtn      = nullptr;
 
 
  // ── Bottom row: transport controls ──────────────────────────────────
