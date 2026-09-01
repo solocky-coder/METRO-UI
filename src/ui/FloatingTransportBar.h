@@ -53,7 +53,7 @@ class SequencerEngine;
 
     Usage — floating:
         floatingTransport->onDockRequested = [this] { floatingTransport->hide();
-                                                        floatingTransport->setDocked (true); /* re-parent */ };
+                                                        floatingTransport->setDocked (true); }; // re-parent
         floatingTransport->show();   // adds itself to the desktop at its last position
 
     show()/hide() decide whether the component is currently living on the
