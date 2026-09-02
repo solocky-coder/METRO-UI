@@ -13,6 +13,8 @@ using namespace dysekt::metro; // MetroColours' Base/Text/Accent/Transport + Met
  // main-window theme is active. See ArrangeView::showFloatingTransport().
 namespace
 {
+    constexpr float transportTextSize = 26.0f; // Match the musical-position readouts.
+
  // Mirrors PluginEditor.cpp's getSettingsDir() convention (same app-data
  // folder, "DYSEKT-SF") without pulling in that file — this panel's
  // position is its own small piece of state, not part of settings.yaml.
@@ -69,6 +71,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
 
 
  configureChrome (floatButton, "FLOAT", "Detach the transport into a floating panel");
+    floatButton.getProperties().set ("transportFontSize", transportTextSize);
     floatButton.onClick = [this] { if (onFloatRequested) onFloatRequested(); };
     floatButton.setVisible (false);   // shown only once setDocked(true) is called
  addAndMakeVisible (floatButton);
@@ -80,6 +83,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
  configureChrome (eqButton, "GLOBAL EQ", "Switch to the global EQ");
  for (auto* b : { &mixerButton, &arrangeButton, &eqButton })
     {
+        b->getProperties().set ("transportFontSize", transportTextSize);
         b->setColour (juce::TextButton::textColourOffId, Base::White);
         b->setColour (juce::TextButton::textColourOnId, Base::White);
     }
@@ -93,7 +97,7 @@ addAndMakeVisible (*b);
  // ── Tempo (BPM) — lives in the far-right BPM/GRID/LINK row ─────────────
     tempoLabel.setEditable (true, true, false);
     tempoLabel.setJustificationType (juce::Justification::centred);
-    tempoLabel.setFont (DysektLookAndFeel::makeMonoFont (16.0f, true));
+    tempoLabel.setFont (DysektLookAndFeel::makeMonoFont (transportTextSize, true));
     tempoLabel.setColour (juce::Label::backgroundColourId, Base::Background);
     tempoLabel.setColour (juce::Label::textColourId, Transport::Tempo);
     tempoLabel.setTooltip ("Tempo in beats per minute (20-999)");
@@ -191,6 +195,7 @@ addAndMakeVisible (*b);
     gridCombo.addItem ("1/16", 5);
     gridCombo.addItem ("1/32", 6);
     gridCombo.setSelectedId (5, juce::dontSendNotification);
+    gridCombo.getProperties().set ("transportFontSize", transportTextSize);
     gridCombo.setColour (juce::ComboBox::backgroundColourId, Base::Elevated);
     gridCombo.setColour (juce::ComboBox::textColourId, Text::Primary);
     gridCombo.setColour (juce::ComboBox::outlineColourId, Base::Border);
@@ -201,6 +206,7 @@ addAndMakeVisible (*b);
  if (linkPtr != nullptr)
     {
  configureChrome (linkButton, "LINK", "Toggle Ableton Link");
+        linkButton.getProperties().set ("transportFontSize", transportTextSize);
         linkButton.setClickingTogglesState (true);
         linkButton.setColour (juce::TextButton::buttonOnColourId, Accent::Purple.withAlpha (0.35f));
         linkButton.onStateChange = [this] { if (linkPtr) linkPtr->setEnabled (linkButton.getToggleState()); };
@@ -568,7 +574,7 @@ void FloatingTransportBar::paint (juce::Graphics& g)
  // (shows its own name) already are — everything else reads fine without
  // a caption, which is what let row 1 shrink down to just the readouts.
     g.setColour (Text::Muted);
-    g.setFont (MetroTypography::caption());
+    g.setFont (DysektLookAndFeel::makeFont (transportTextSize));
     g.drawText ("BPM", L.tempoCaption, juce::Justification::centredLeft);
 
 
