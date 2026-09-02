@@ -214,7 +214,12 @@ addAndMakeVisible (*b);
 
  // Compact single-row transport: position + transport, locators, and
  // BPM/GRID/LINK laid out side by side (see computeLayout()).
- setSize (MetroMetrics::grid * 152, MetroMetrics::grid * 13); // widened for the larger L/R locator fields
+ // 152 -> 160: computeLayout()'s undocked rightW grew by 8 grid units
+ // (wider tempoField + roomier gaps between the BPM/GRID/LINK frames —
+ // see the comment there), so the fixed floating-window width needs the
+ // same increase or the left-anchored position/transport/locator block
+ // would get squeezed short a grid unit.
+ setSize (MetroMetrics::grid * 160, MetroMetrics::grid * 13); // widened for the larger L/R locator fields
  startTimerHz (20);
 }
 
@@ -383,17 +388,31 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
  // that order. Pinned to the right edge in both modes, so it's peeled
  // off the row first. ────────────────────────────────────────────────
     {
-        const int rightW = MetroMetrics::grid * (docked ? 37 : 29);
+        // Each of these fields gets its own rounded frameField() border
+        // (see paint(), pad = 3px on every side). A 1-grid (8px) raw gap
+        // here only leaves ~2px of clear space between two adjacent
+        // frames once both have expanded into it — not enough for their
+        // matching 4px corner radii, so the rounded corners visually
+        // collide into a pinched "hourglass" seam instead of reading as
+        // two separate boxes. Use a 2-grid gap between every framed field
+        // so the corners always clear each other with room to spare.
+        const int fieldGap = MetroMetrics::grid * 2;
+        // 9 grid units — same width as gridField — rather than 6: at
+        // tempoLabel's 16pt bold mono font, "120.00" needs more than the
+        // old 48px afforded and was getting ellipsized ("120…") instead
+        // of showing the actual value.
+        const int tempoFieldW = MetroMetrics::grid * 9;
+        const int rightW = MetroMetrics::grid * (docked ? 45 : 37);
         auto right = row.removeFromRight (rightW);
         L.tempoCaption = right.removeFromLeft (MetroMetrics::grid * 4);
-        L.tempoField   = right.removeFromLeft (MetroMetrics::grid * 6);
-        right.removeFromLeft (MetroMetrics::grid);
+        L.tempoField   = right.removeFromLeft (tempoFieldW);
+        right.removeFromLeft (fieldGap);
         L.gridField    = right.removeFromLeft (MetroMetrics::grid * 9);
-        right.removeFromLeft (MetroMetrics::grid);
+        right.removeFromLeft (fieldGap);
         if (docked)
         {
             L.floatField = right.removeFromLeft (MetroMetrics::grid * 7);
-            right.removeFromLeft (MetroMetrics::grid);
+            right.removeFromLeft (fieldGap);
         }
         L.linkField    = right;
         row.removeFromRight (MetroMetrics::grid * 2); // gap before the pinned block
