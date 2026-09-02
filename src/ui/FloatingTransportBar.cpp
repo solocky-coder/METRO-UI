@@ -162,7 +162,7 @@ addAndMakeVisible (*b);
     {
         field->setEditable (true, true, false);
         field->setJustificationType (juce::Justification::centred);
-        field->setFont (DysektLookAndFeel::makeMonoFont (13.0f));
+        field->setFont (DysektLookAndFeel::makeMonoFont (26.0f, true)); // matches positionLabel's size/weight
         field->setColour (juce::Label::backgroundColourId, Base::Background);
         field->setColour (juce::Label::textColourId, Text::Primary);
         field->setTooltip ("Cycle locator — click to type bars.beats.ticks, "
@@ -214,7 +214,7 @@ addAndMakeVisible (*b);
 
  // Compact single-row transport: position + transport, locators, and
  // BPM/GRID/LINK laid out side by side (see computeLayout()).
- setSize (MetroMetrics::grid * 128, MetroMetrics::grid * 13);
+ setSize (MetroMetrics::grid * 152, MetroMetrics::grid * 13); // widened for the larger L/R locator fields
  startTimerHz (20);
 }
 
@@ -403,7 +403,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
  // ── Left/middle: musical position + transport cluster + L/R locators,
  // as one block. Centred in whatever's left of the row when docked;
  // left-anchored (i.e. no-op offset) when floating. ─────────────────────
-    constexpr int clusterUnits = 21 + 1 + 37 + 2 + 2 + 28; // position+gap+transport+gap+gap+locators
+    constexpr int clusterUnits = 21 + 1 + 1 + 37 + 2 + 2 + 48; // position+gaps+transport+gaps+locators
     if (docked)
     {
         const int clusterW = clusterUnits * MetroMetrics::grid;
@@ -425,7 +425,11 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
 
  // ── Middle: directly writable L/R locators ───────────────────────────
-    L.locatorsField = row.removeFromLeft (MetroMetrics::grid * 28);
+    // 21 grid units per field - exactly matching positionField's width, since
+    // both now show the same 10-character bars.beats.ticks format at the
+    // same 26pt bold mono size (the old 11-grid width plus "L "/"R " prefix
+    // is gone now that the prefix moved fully to the separate caption).
+    L.locatorsField = row.removeFromLeft (MetroMetrics::grid * 48);
 
 
     row.removeFromLeft (MetroMetrics::grid * 2);
@@ -471,9 +475,9 @@ void FloatingTransportBar::resized()
  // L/R captions sit outside their fields so the numerical values stay truly centred.
  auto locators = L.locatorsField;
     locators.removeFromLeft (MetroMetrics::grid * 2);
-    leftLocatorLabel.setBounds (locators.removeFromLeft (MetroMetrics::grid * 11));
+    leftLocatorLabel.setBounds (locators.removeFromLeft (MetroMetrics::grid * 21));
     locators.removeFromLeft (MetroMetrics::grid * 2);
-    rightLocatorLabel.setBounds (locators.removeFromLeft (MetroMetrics::grid * 11));
+    rightLocatorLabel.setBounds (locators.removeFromLeft (MetroMetrics::grid * 21));
 
 
     positionLabel.setBounds (L.positionField);
@@ -546,6 +550,26 @@ void FloatingTransportBar::paint (juce::Graphics& g)
         g.drawVerticalLine (x, (float) (L.titleStrip.getBottom() + MetroMetrics::grid),
                            (float) (getHeight() - MetroMetrics::grid));
 
+ // ── Per-element frames — every functional cluster on the content row
+ // gets its own bordered box instead of relying on the thin dividers
+ // alone to imply grouping: position, transport buttons, locators, BPM,
+ // grid snap, float (docked only), link.
+    auto frameField = [&] (juce::Rectangle<int> field, int pad = 3)
+    {
+        if (field.isEmpty())
+            return;
+        g.setColour (Base::Border);
+        g.drawRoundedRectangle (field.expanded (pad).toFloat(), 4.0f, 1.0f);
+    };
+    frameField (L.positionField);
+    frameField (L.transportRow);
+    frameField (L.locatorsField);
+    frameField (L.tempoCaption.getUnion (L.tempoField));
+    frameField (L.gridField);
+ if (docked)
+        frameField (L.floatField);
+    frameField (L.linkField);
+
  // ── Tab-strip group border — wraps MIXER / ARRANGER / GLOBAL EQ in one
  // bordered group so the three read as a single switcher instead of three
  // buttons loose in open space. ──────────────────────────────────────────
@@ -555,6 +579,12 @@ void FloatingTransportBar::paint (juce::Graphics& g)
         g.setColour (Base::Border);
         g.drawRoundedRectangle (tabGroup.toFloat(), 4.0f, 1.0f);
     }
+
+    // ── Outer frame — a full border around the whole panel, so it reads as
+    // one closed, framed surface rather than bleeding into whatever sits
+    // beside or beneath it (ArrangeView's header when docked).
+    g.setColour (Base::Border);
+    g.drawRect (getLocalBounds(), 1);
 }
 
 
@@ -584,10 +614,13 @@ void FloatingTransportBar::timerCallback()
 
 
  if (! leftLocatorLabel.isBeingEdited())
-        leftLocatorLabel.setText ("L " + formatMusicalPosition ((double) leftLocatorTick / (double) MidiClip::kPPQ),
+        // No "L " prefix here - the separate muted caption in paint() supplies
+        // that, so the field shows a pure numeric value at the same
+        // width/font as positionField instead of a longer, prefixed string.
+        leftLocatorLabel.setText (formatMusicalPosition ((double) leftLocatorTick / (double) MidiClip::kPPQ),
                                   juce::dontSendNotification);
  if (! rightLocatorLabel.isBeingEdited())
-        rightLocatorLabel.setText ("R " + formatMusicalPosition ((double) rightLocatorTick / (double) MidiClip::kPPQ),
+        rightLocatorLabel.setText (formatMusicalPosition ((double) rightLocatorTick / (double) MidiClip::kPPQ),
                                    juce::dontSendNotification);
 
 
