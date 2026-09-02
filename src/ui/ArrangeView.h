@@ -1738,8 +1738,11 @@ private:
         g.fillRect (rulerBounds.getX(), rulerBounds.getBottom() - 1,
                     rulerBounds.getWidth(), 1);
 
-        // Loop region shading inside ruler
-        if (loopStart >= 0 && loopEnd > loopStart)
+        // Loop region shading inside ruler — a loop range can be set (e.g.
+        // from the transport's L/R locators) without looping actually being
+        // switched on, so this should only paint while the engine is
+        // actually looping, not merely whenever a range happens to exist.
+        if (engine.isLooping() && loopStart >= 0 && loopEnd > loopStart)
         {
             const float lx = tickToX (loopStart);
             const float rx = tickToX (loopEnd);
@@ -1859,7 +1862,10 @@ private:
 
     void paintLoopOverlay (juce::Graphics& g) const
     {
-        if (loopStart < 0 || loopEnd <= loopStart) return;
+        // A loop range can be set (e.g. from the transport's L/R locators)
+        // without looping actually being switched on — only paint this
+        // overlay while the engine is actually looping.
+        if (! engine.isLooping() || loopStart < 0 || loopEnd <= loopStart) return;
         const float lx = tickToX (loopStart);
         const float rx = tickToX (loopEnd);
 
@@ -1871,13 +1877,9 @@ private:
         // DYSEKT-METRO pass: no translucent wash across the track rows — a
         // solid fill there would just hide every clip underneath it, and a
         // wash is the one thing this pass is meant to remove. The loop
-        // range instead reads as a solid accent ribbon along the very top
-        // of the grid plus full-opacity boundary lines, rather than a
-        // colour tint over the whole timeline.
+        // range instead reads as full-opacity boundary lines at the loop's
+        // start/end, rather than a colour tint over the whole timeline.
         const auto& theme = getTheme();
-        g.setColour (theme.accent);
-        g.fillRect (lx, (float)clipGridBounds.getY(), rx - lx, 4.0f);
-
         g.setColour (theme.accent);
         g.drawVerticalLine ((int)lx,
                             (float)clipGridBounds.getY(),
@@ -2177,7 +2179,7 @@ private:
         const int x = (int)tickToX (tick);
         if (x < clipGridBounds.getX() || x > clipGridBounds.getRight()) return;
 
-        const auto playheadColour = getTheme().accent.brighter (0.38f).withAlpha (0.96f);
+        const auto playheadColour = juce::Colours::white.withAlpha (0.96f);
 
         // Line through ruler + tracks
         g.setColour (playheadColour);
