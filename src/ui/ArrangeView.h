@@ -64,12 +64,12 @@ public:
      */
     enum class Tool { Select, Draw, Erase, Split, Glue };
 
-    static constexpr int kTransportH   = 80;   // title strip (24) + gap (16) +
-                                                // content row (40) — same
-                                                // proportions FloatingTransportBar
-                                                // uses for its own fixed-size
-                                                // window, now just stretched to
-                                                // this view's width when docked
+    static constexpr int kTransportH   = 88;   // title strip (24) + gap (16) +
+                                                // content row (40) + bottom gutter (8).
+                                                // The gutter keeps child controls and
+                                                // their expanded frames inside the
+                                                // transport surface instead of sitting
+                                                // on the arranger boundary.
     static constexpr int kInspectorW   = 216;
     static constexpr int kStripW       = 196;
     static constexpr int kLeftW        = kInspectorW + kStripW;
