@@ -335,13 +335,14 @@ void FloatingTransportBar::mouseDoubleClick (const juce::MouseEvent& e)
 // Docked mode reuses every field width unchanged — same content, same
 // proportions, so the bar looks identical whether it's living in its own
 // 1024px-wide floating window or stretched across an arranger that's twice
-// that width. The one thing docked mode does differently: the floating
-// window is sized to fit its content exactly, so left-anchoring position +
-// transport + locators after the title strip's margin already fills the
-// panel with no dead space. A docked host's width varies, so that same
-// left-anchored block would drift toward the left edge, leaving a growing
-// gap before the right-pinned BPM/GRID/LINK group as the host widens —
-// docked mode centres that block in whatever space is actually left instead.
+// that width. Position + transport + locators are left-anchored right
+// after the view-switcher in both modes (the floating window is sized to
+// fit its content exactly, so this is a no-op there); a docked host's
+// width varies with whatever window/monitor it's living in, and any
+// leftover space is left where it naturally falls — pinned to the right,
+// ahead of the right-pinned BPM/GRID/LINK group — rather than split around
+// the cluster, which used to grow into a visible gap on both sides of the
+// cluster on a wide host window.
 FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 {
     Layout L;
@@ -386,7 +387,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         L.arrangeButtonField = row.removeFromLeft (MetroMetrics::grid * 13);
         row.removeFromLeft (MetroMetrics::halfGrid);
         L.eqButtonField      = row.removeFromLeft (MetroMetrics::grid * 13);
-        row.removeFromLeft (MetroMetrics::grid * 2); // gap before the centred cluster
+        row.removeFromLeft (MetroMetrics::grid * 2); // gap before the left-anchored cluster
     }
 
 
@@ -426,16 +427,14 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
 
  // ── Left/middle: musical position + transport cluster + L/R locators,
- // as one block. Centred in whatever's left of the row when docked;
- // left-anchored (i.e. no-op offset) when floating. ─────────────────────
-    constexpr int clusterUnits = 21 + 1 + 1 + 37 + 2 + 2 + 48; // position+gaps+transport+gaps+locators
-    if (docked)
-    {
-        const int clusterW = clusterUnits * MetroMetrics::grid;
-        const int pad = juce::jmax (0, (row.getWidth() - clusterW) / 2);
-        row.removeFromLeft (pad);
-    }
-
+ // as one block. Left-anchored in both modes. Docked mode used to centre
+ // this block in whatever space was left between the view-switcher
+ // (left) and the BPM/GRID/FLOAT/LINK group (right) -- fine on a narrow
+ // host window (little/no leftover space to centre into), but the pad
+ // grows with the window on a wide one, opening a gap on both sides of
+ // the cluster instead of staying put. Left-anchoring keeps the cluster
+ // snug against the view-switcher at any host width, matching floating
+ // mode's own (already left-anchored) layout. ───────────────────────
 
     L.positionField = row.removeFromLeft (MetroMetrics::grid * 21);
     row.removeFromLeft (MetroMetrics::grid);
