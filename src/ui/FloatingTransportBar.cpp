@@ -554,12 +554,23 @@ void FloatingTransportBar::paint (juce::Graphics& g)
  // gets its own bordered box instead of relying on the thin dividers
  // alone to imply grouping: position, transport buttons, locators, BPM,
  // grid snap, float (docked only), link.
+ //
+ // Clamped to a 1px-inset safe area rather than drawn from the raw
+ // expanded rect: docked height leaves zero margin below the content row
+ // (title + gap + row already sums to the full component height), so an
+ // unclamped pad could push a box's bottom edge past this component's own
+ // bounds and visually collide with whatever ArrangeView draws directly
+ // beneath it. Intersecting keeps every frame strictly inside this panel.
+    const auto safeArea = getLocalBounds().reduced (1);
     auto frameField = [&] (juce::Rectangle<int> field, int pad = 3)
     {
         if (field.isEmpty())
             return;
+        const auto box = field.expanded (pad).getIntersection (safeArea);
+        if (box.isEmpty())
+            return;
         g.setColour (Base::Border);
-        g.drawRoundedRectangle (field.expanded (pad).toFloat(), 4.0f, 1.0f);
+        g.drawRoundedRectangle (box.toFloat(), 4.0f, 1.0f);
     };
     frameField (L.positionField);
     frameField (L.transportRow);
