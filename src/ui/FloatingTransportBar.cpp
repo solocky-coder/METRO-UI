@@ -201,6 +201,29 @@ addAndMakeVisible (*b);
     gridCombo.setColour (juce::ComboBox::outlineColourId, Base::Border);
  addAndMakeVisible (gridCombo);
 
+ // Radio-button alternative to gridCombo above — same items, same ids,
+ // shown instead of the dropdown when computeLayout() finds enough spare
+ // row width for them (see gridButtonsFit). One juce::TextButton per
+ // gridCombo item, wired as a mutually-exclusive group via a shared radio
+ // group id; clicking one just forwards to gridCombo.setSelectedId() so
+ // gridCombo stays the single source of truth regardless of which control
+ // is actually visible.
+ static constexpr int kGridButtonRadioGroup = 9001;
+ static const char* const kGridButtonLabels[kNumGridOptions] = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
+ for (int i = 0; i < kNumGridOptions; ++i)
+    {
+        auto& b = gridButtons[i];
+        const int itemId = i + 1;
+        configureChrome (b, kGridButtonLabels[i], "Grid snap: " + juce::String (kGridButtonLabels[i]));
+        b.getProperties().set ("transportFontSize", transportTextSize);
+        b.setRadioGroupId (kGridButtonRadioGroup, juce::dontSendNotification);
+        b.setClickingTogglesState (true);
+        b.setColour (juce::TextButton::buttonOnColourId, Accent::Purple.withAlpha (0.35f));
+        b.onClick = [this, itemId] { gridCombo.setSelectedId (itemId, juce::sendNotificationSync); };
+ addAndMakeVisible (b);
+    }
+    gridButtons[4].setToggleState (true, juce::dontSendNotification); // 1/16, matches gridCombo's initial selection
+
 
  // ── Ableton Link ─────────────────────────────────────────────────────
  if (linkPtr != nullptr)
@@ -459,6 +482,22 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     row.removeFromLeft (MetroMetrics::grid * 2);
     L.divider2 = row.getX();
 
+    // Whatever's left of the row past this point is genuinely spare space
+    // (previously always dead — see the left-anchoring comment above). If
+    // there's enough of it to lay out the grid-snap choices as their own
+    // buttons instead of a dropdown, do that instead — same per-button
+    // width as the compact dropdown (gridField, grid*9), so each label
+    // gets equivalent room either way. Otherwise leave the space alone and
+    // keep the compact dropdown (gridField, already laid out above).
+    {
+        constexpr int perButtonW  = MetroMetrics::grid * 9;
+        constexpr int buttonGap   = MetroMetrics::halfGrid;
+        constexpr int gridButtonsW = kNumGridOptions * perButtonW + (kNumGridOptions - 1) * buttonGap;
+
+        L.gridButtonsFit = row.getWidth() >= gridButtonsW;
+        if (L.gridButtonsFit)
+            L.gridButtonsField = row.removeFromLeft (gridButtonsW);
+    }
 
  return L;
 }
@@ -519,7 +558,29 @@ void FloatingTransportBar::resized()
     setLeftButton.setVisible (false);
     setRightButton.setVisible (false);
     tempoLabel.setBounds (L.tempoField);
-    gridCombo.setBounds (L.gridField);
+
+    // Grid snap: dropdown or button row, whichever computeLayout() found
+    // room for (see gridButtonsFit there).
+    gridCombo.setVisible (! L.gridButtonsFit);
+    if (! L.gridButtonsFit)
+    {
+        gridCombo.setBounds (L.gridField);
+    }
+    else
+    {
+        auto buttons = L.gridButtonsField;
+        const int gap = MetroMetrics::halfGrid;
+        for (int i = 0; i < kNumGridOptions; ++i)
+        {
+            const int w = buttons.getWidth() / (kNumGridOptions - i);
+            gridButtons[i].setBounds (buttons.removeFromLeft (w));
+            if (i < kNumGridOptions - 1)
+                buttons.removeFromLeft (gap);
+        }
+    }
+    for (auto& b : gridButtons)
+        b.setVisible (L.gridButtonsFit);
+
  if (linkPtr != nullptr)
         linkButton.setBounds (L.linkField);
 }
@@ -608,10 +669,18 @@ void FloatingTransportBar::paint (juce::Graphics& g)
     frameField (L.transportRow);
     frameField (L.locatorsField);
     frameField (L.tempoCaption.getUnion (L.tempoField));
-    frameField (L.gridField);
+    if (! L.gridButtonsFit)
+        frameField (L.gridField);
  if (docked)
         frameField (L.floatField);
     frameField (L.linkField);
+
+    // Grid-snap button row (see gridButtonsFit) reads as one bordered group,
+    // same treatment as the MIXER/ARRANGER/GLOBAL EQ switcher below —
+    // individual buttons already carry their own chrome, so this just wraps
+    // them so they read as one control rather than six loose buttons.
+    if (L.gridButtonsFit)
+        frameField (L.gridButtonsField);
 
  // ── Tab-strip group border — wraps MIXER / ARRANGER / GLOBAL EQ in one
  // bordered group so the three read as a single switcher instead of three
@@ -673,9 +742,19 @@ void FloatingTransportBar::timerCallback()
         linkButton.setButtonText (peers > 0 ? ("LINK " + juce::String (peers)) : "LINK");
         linkButton.setToggleState (linkPtr->isEnabled(), juce::dontSendNotification);
     }
+
+ // Mirror gridCombo's current selection onto the radio-button alternative
+ // (see kNumGridOptions above) — keeps them in sync however the selection
+ // last changed, whether that was a button click, the dropdown itself, or
+ // external code calling gridCombo.setSelectedId() directly.
+ const int selectedGridId = gridCombo.getSelectedId();
+ if (selectedGridId >= 1 && selectedGridId <= kNumGridOptions)
+    {
+ auto& selectedButton = gridButtons[selectedGridId - 1];
+ if (! selectedButton.getToggleState())
+            selectedButton.setToggleState (true, juce::dontSendNotification);
+    }
 }
-
-
 void FloatingTransportBar::updateTempoFromEditor()
 {
  const float bpm = tempoLabel.getText().getFloatValue();

@@ -195,7 +195,9 @@ private:
         juce::Rectangle<int> transportRow;
         juce::Rectangle<int> setLeftButton, setRightButton;
         juce::Rectangle<int> tempoCaption, tempoField;
-        juce::Rectangle<int> gridField;
+        juce::Rectangle<int> gridField;         // compact dropdown slot — used when there isn't room for gridButtonsField
+        juce::Rectangle<int> gridButtonsField;  // wider radio-button slot — used when there is
+        bool gridButtonsFit = false;            // which of the two the row actually has room for
         juce::Rectangle<int> linkField;
  int divider0 = 0, divider1 = 0, divider2 = 0;
     };
@@ -329,6 +331,16 @@ private:
  // ── Far right: BPM, grid snap, link — one row, in that order ───────
     juce::Label      tempoLabel;
     juce::ComboBox   gridCombo;
+
+    // Same grid-snap choices as gridCombo, shown instead of it — one
+    // exclusively-toggled button per option — whenever the row has enough
+    // spare width to lay them out directly (see computeLayout()'s
+    // gridButtonsFit). gridCombo stays the single source of truth for the
+    // current selection either way (see getSnapTicks()); these buttons just
+    // set its selected id and mirror it back in timerCallback().
+    static constexpr int kNumGridOptions = 6;
+    juce::TextButton gridButtons[kNumGridOptions];
+
     juce::TextButton linkButton { "LINK" };
 
 
