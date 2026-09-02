@@ -548,11 +548,19 @@ void FloatingTransportBar::paint (juce::Graphics& g)
     }
 
 
- // Locator captions are painted separately so their editable values can be centred.
+ // Locator captions are painted in the two-grid slots immediately before
+ // their editable fields. Keep the caption rectangles two grids wide; using
+ // a translated copy of the full label bounds paints L/R over the locator
+ // values instead of inside the space reserved for them in resized().
     g.setColour (Text::Muted);
     g.setFont (MetroTypography::caption());
-    g.drawText ("L", leftLocatorLabel.getBounds().translated (-MetroMetrics::grid * 2, 0), juce::Justification::centred);
-    g.drawText ("R", rightLocatorLabel.getBounds().translated (-MetroMetrics::grid * 2, 0), juce::Justification::centred);
+ const auto captionWidth = MetroMetrics::grid * 2;
+ const auto leftCaption  = leftLocatorLabel.getBounds().withWidth (captionWidth)
+                                                .translated (-captionWidth, 0);
+ const auto rightCaption = rightLocatorLabel.getBounds().withWidth (captionWidth)
+                                                 .translated (-captionWidth, 0);
+    g.drawText ("L", leftCaption,  juce::Justification::centred);
+    g.drawText ("R", rightCaption, juce::Justification::centred);
 
 
  // BPM is the one far-right field whose value alone ("120.00") wouldn't
