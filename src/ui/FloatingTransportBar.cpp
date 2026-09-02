@@ -362,11 +362,11 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         strip.removeFromRight (MetroMetrics::halfGrid);
         L.pinField  = strip.removeFromRight (MetroMetrics::grid * 6);
         strip.removeFromLeft (MetroMetrics::grid * 6); // leave room for the drag grip / left margin
-        L.mixerButtonField   = strip.removeFromLeft (MetroMetrics::grid * 6);
+        L.mixerButtonField   = strip.removeFromLeft (MetroMetrics::grid * 8);
         strip.removeFromLeft (MetroMetrics::halfGrid);
-        L.arrangeButtonField = strip.removeFromLeft (MetroMetrics::grid * 8);
+        L.arrangeButtonField = strip.removeFromLeft (MetroMetrics::grid * 13);
         strip.removeFromLeft (MetroMetrics::halfGrid);
-        L.eqButtonField      = strip.removeFromLeft (MetroMetrics::grid * 8);
+        L.eqButtonField      = strip.removeFromLeft (MetroMetrics::grid * 13);
     }
 
     area.reduce (MetroMetrics::grid, 0);
@@ -381,11 +381,11 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
  // at the far left of the content row instead of the title strip above. ─
     if (docked)
     {
-        L.mixerButtonField   = row.removeFromLeft (MetroMetrics::grid * 6);
+        L.mixerButtonField   = row.removeFromLeft (MetroMetrics::grid * 8);
         row.removeFromLeft (MetroMetrics::halfGrid);
-        L.arrangeButtonField = row.removeFromLeft (MetroMetrics::grid * 8);
+        L.arrangeButtonField = row.removeFromLeft (MetroMetrics::grid * 13);
         row.removeFromLeft (MetroMetrics::halfGrid);
-        L.eqButtonField      = row.removeFromLeft (MetroMetrics::grid * 8);
+        L.eqButtonField      = row.removeFromLeft (MetroMetrics::grid * 13);
         row.removeFromLeft (MetroMetrics::grid * 2); // gap before the centred cluster
     }
 

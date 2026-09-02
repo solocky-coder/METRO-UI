@@ -235,7 +235,7 @@ public:
         {
             constexpr int arrangeWidth = 92;
             constexpr int mixerWidth   = 70;
-            constexpr int eqWidth      = 58;
+            constexpr int eqWidth      = 76;
             auto left = b.removeFromLeft (mixerWidth + gap + arrangeWidth + gap + eqWidth);
             if (viewMixerBtn != nullptr)
                 viewMixerBtn->setBounds (left.removeFromLeft (mixerWidth));
