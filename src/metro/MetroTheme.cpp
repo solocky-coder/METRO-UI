@@ -52,7 +52,7 @@ namespace MetroTheme
         t.accent           = kAccent;                      // Accent
         t.button           = juce::Colour (0xFF1A1A1D);    // raised chrome, still near-black
         t.buttonHover       = juce::Colour (0xFF26262A);   // one step up from button
-        t.separator        = juce::Colour (0xFF232326);    // subtle divider on black
+        t.separator        = juce::Colour (0xFF48484F);    // brighter divider on black — was 0xFF232326
 
         // Windows/Metro tile colour set — flat, single-hue swatches, no neon —
         // used for slice colours across the pad grid / mixer / waveform.

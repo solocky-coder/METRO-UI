@@ -193,7 +193,7 @@ private:
         juce::Rectangle<int> tempoCaption, tempoField;
         juce::Rectangle<int> gridField;
         juce::Rectangle<int> linkField;
- int divider1 = 0, divider2 = 0;
+ int divider0 = 0, divider1 = 0, divider2 = 0;
     };
     Layout computeLayout() const;
 

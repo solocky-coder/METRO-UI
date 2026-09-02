@@ -60,8 +60,8 @@ public:
         // for the shared vector-icon glyph + hover/active-state chrome this
         // mirrors (Base::Surface off-fill, tint-at-32%-alpha on-fill,
         // tint-coloured icon off / white icon on).
-        toStartBtn.configure (TransportIcons::Kind::ToStart, Text::Secondary,   "Return to start");
-        backBtn.configure    (TransportIcons::Kind::Back,    Text::Secondary,   "Step back one bar");
+        toStartBtn.configure (TransportIcons::Kind::ToStart, Accent::Purple,    "Return to start");
+        backBtn.configure    (TransportIcons::Kind::Back,    Accent::Yellow,    "Step back one bar");
         playBtn.configure    (TransportIcons::Kind::Play,    Transport::Play,   "Play");
         stopBtn.configure    (TransportIcons::Kind::Stop,    Accent::Orange,    "Stop");
         recBtn.configure     (TransportIcons::Kind::Record,  Transport::Record, "Record");

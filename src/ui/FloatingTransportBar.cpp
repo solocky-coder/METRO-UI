@@ -121,8 +121,8 @@ addAndMakeVisible (*b);
  // so no risk of missing-glyph boxes on the detached desktop component
  // the way the old ASCII labels (this comment used to warn about) could
  // have been if the embedded UI typeface ever changed.
- toStartButton.configure (TransportIcons::Kind::ToStart, Text::Secondary,   "Return to start");
- backButton.configure    (TransportIcons::Kind::Back,    Text::Secondary,   "Step back one bar");
+ toStartButton.configure (TransportIcons::Kind::ToStart, Accent::Purple,    "Return to start");
+ backButton.configure    (TransportIcons::Kind::Back,    Accent::Yellow,    "Step back one bar");
  playButton.configure    (TransportIcons::Kind::Play,    Transport::Play,   "Play");
  stopButton.configure    (TransportIcons::Kind::Stop,    Accent::Orange,    "Stop");
  recordButton.configure  (TransportIcons::Kind::Record,  Transport::Record, "Record");
@@ -414,6 +414,8 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
     L.positionField = row.removeFromLeft (MetroMetrics::grid * 21);
     row.removeFromLeft (MetroMetrics::grid);
+    L.divider0 = row.getX();
+    row.removeFromLeft (MetroMetrics::grid);
     L.transportRow = row.removeFromLeft (MetroMetrics::grid * 37);
 
 
@@ -540,9 +542,19 @@ void FloatingTransportBar::paint (juce::Graphics& g)
 
 
     g.setColour (Base::Border);
- for (int x : { L.divider1, L.divider2 })
+ for (int x : { L.divider0, L.divider1, L.divider2 })
         g.drawVerticalLine (x, (float) (L.titleStrip.getBottom() + MetroMetrics::grid),
                            (float) (getHeight() - MetroMetrics::grid));
+
+ // ── Tab-strip group border — wraps MIXER / ARRANGER / GLOBAL EQ in one
+ // bordered group so the three read as a single switcher instead of three
+ // buttons loose in open space. ──────────────────────────────────────────
+    if (! L.mixerButtonField.isEmpty() && ! L.eqButtonField.isEmpty())
+    {
+        auto tabGroup = L.mixerButtonField.getUnion (L.eqButtonField).expanded (3, 3);
+        g.setColour (Base::Border);
+        g.drawRoundedRectangle (tabGroup.toFloat(), 4.0f, 1.0f);
+    }
 }
 
 

@@ -16,7 +16,7 @@ inline const Colour Background{0xFF000000};   // matches MetroTheme.cpp's t.back
 inline const Colour Surface{0xFF0A0A0C};      // matches MetroTheme.cpp's t.waveformBg
 inline const Colour SurfaceAlt{0xFF121214};   // matches MetroTheme.cpp's t.darkBar
 inline const Colour Elevated{0xFF26262A};     // matches MetroTheme.cpp's t.buttonHover
-inline const Colour Border{0xFF232326};       // matches MetroTheme.cpp's t.separator
+inline const Colour Border{0xFF48484F};       // brighter divider — was 0xFF232326, matches MetroTheme.cpp's t.separator
 inline const Colour White{0xFFFFFFFF};
 inline const Colour Black{0xFF000000};
 inline const Colour Disabled{0xFF666666};
