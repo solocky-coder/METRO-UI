@@ -175,6 +175,9 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
                    : h < 22 ? 10.0f
                    : h < 28 ? 11.0f
                    : 13.0f;
+    const auto requestedSize = button.getProperties().getWithDefault ("transportFontSize", 0.0);
+    if ((double) requestedSize > 0.0)
+        fontSize = (float) (double) requestedSize;
     g.setFont (isSymbol ? juce::Font (fontSize) : makeFont (fontSize));
     g.drawText (button.getButtonText(), button.getLocalBounds().reduced (2, 0),
                 juce::Justification::centred);
@@ -322,8 +325,11 @@ void DysektLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
                 (float)(arrowCX + arrowHalf),  (float)(arrowCY - 2), 1.5f);
 }
 
-juce::Font DysektLookAndFeel::getComboBoxFont (juce::ComboBox&)
+juce::Font DysektLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 {
+    const auto requestedSize = box.getProperties().getWithDefault ("transportFontSize", 0.0);
+    if ((double) requestedSize > 0.0)
+        return makeFont ((float) (double) requestedSize);
     return makeFont (14.0f * sMenuScale);
 }
 

@@ -126,9 +126,13 @@ public:
         viewMixerBtn   = mixerBtn;
         viewArrangeBtn = arrangeBtn;
         viewEqBtn      = eqBtn;
-        if (viewMixerBtn   != nullptr) addAndMakeVisible (*viewMixerBtn);
-        if (viewArrangeBtn != nullptr) addAndMakeVisible (*viewArrangeBtn);
-        if (viewEqBtn      != nullptr) addAndMakeVisible (*viewEqBtn);
+        for (auto* button : { viewMixerBtn, viewArrangeBtn, viewEqBtn })
+        {
+            if (button == nullptr)
+                continue;
+            button->getProperties().set ("transportFontSize", 26.0);
+            addAndMakeVisible (*button);
+        }
         if (docked)
         {
             mixerButton.setVisible (false);
