@@ -102,11 +102,19 @@ public:
 
         // Fixed swatch palette for the track-colour picker — independent of
         // the active UI theme, see this class's header comment point 5.
+        // Matches the 16-colour named palette used for the Slicer's "Slice
+        // Color" menu (SliceLane.cpp / WaveformView.cpp) and the
+        // Multisampler's zone-colour menu (ZoneMapView.cpp), so a colour
+        // picked here reads the same everywhere in the app.
         static const juce::Colour kSwatches[] = {
-            juce::Colour (0xffff2da0), juce::Colour (0xff00ffc8),
-            juce::Colour (0xffff7020), juce::Colour (0xff3adde8),
-            juce::Colour (0xffffe040), juce::Colour (0xff8855ff),
-            juce::Colour (0xff40ff50), juce::Colour (0xff50d8ff),
+            juce::Colour (0xFF00C8FF), juce::Colour (0xFF00FF87),
+            juce::Colour (0xFFFFE800), juce::Colour (0xFFFF6B00),
+            juce::Colour (0xFFFF2D55), juce::Colour (0xFFFF2D9A),
+            juce::Colour (0xFFB44FFF), juce::Colour (0xFF4A80FF),
+            juce::Colour (0xFF00BFFF), juce::Colour (0xFF00FFD0),
+            juce::Colour (0xFFA8FF3E), juce::Colour (0xFFFFD700),
+            juce::Colour (0xFFFF7F50), juce::Colour (0xFFFF00FF),
+            juce::Colour (0xFFE8E8E8), juce::Colour (0xFF888888),
         };
         for (auto swatchColour : kSwatches)
         {
@@ -324,11 +332,18 @@ public:
         area.removeFromTop (kGapL);
 
         // ── Track colour section ────────────────────────────────────────
+        // 16 swatches at the old single-row spacing would need ~380px in a
+        // 192px-wide inspector column, so wrap into two rows of 8 (matches
+        // the panel width exactly: 8*20 + 7*4 = 188px).
         area.removeFromTop (kSectionLabelH + kGapS);
-        constexpr int swatchSize = 20, swatchGap = 4;
+        constexpr int swatchSize = 20, swatchGap = 4, swatchCols = 8;
         for (int i = 0; i < colourButtons.size(); ++i)
-            colourButtons[i]->setBounds (area.getX() + i * (swatchSize + swatchGap), area.getY(),
+        {
+            const int col = i % swatchCols, row = i / swatchCols;
+            colourButtons[i]->setBounds (area.getX() + col * (swatchSize + swatchGap),
+                                          area.getY() + row * (swatchSize + swatchGap),
                                           swatchSize, swatchSize);
+        }
     }
 
     void paint (juce::Graphics& g) override
@@ -437,7 +452,7 @@ public:
         content.removeFromTop (42 + 42 + kGapL);
 
         // ── Track colour section ─────────────────────────────────────────
-        sectionLabel (g, "TRACK COLOUR", content.removeFromTop (kSectionLabelH));
+        sectionLabel (g, "TRACK COLOR", content.removeFromTop (kSectionLabelH));
         content.removeFromTop (kGapS);
         // Selection ring around whichever swatch matches the track's
         // current colour exactly.
