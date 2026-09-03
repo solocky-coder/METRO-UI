@@ -107,6 +107,15 @@ addAndMakeVisible (*b);
             ed->setInputRestrictions (6, "0123456789.");
     };
     tempoLabel.onTextChange = [this] { updateTempoFromEditor(); };
+    tempoLabel.onWheelStep = [this] (int direction)
+    {
+        // Whole-BPM steps per notch — fine-grained enough to be useful,
+        // coarse enough that a single notch is a deliberate, visible
+        // change rather than a fiddly 0.01 nudge.
+        const float newBpm = juce::jlimit (20.0f, 999.0f, engine.getBpm() + (float) direction);
+        engine.setBpm (newBpm);
+        tempoLabel.setText (juce::String (newBpm, 2), juce::dontSendNotification);
+    };
  addAndMakeVisible (tempoLabel);
 
 
@@ -645,8 +654,16 @@ void FloatingTransportBar::paint (juce::Graphics& g)
  // their editable fields. Keep the caption rectangles two grids wide; using
  // a translated copy of the full label bounds paints L/R over the locator
  // values instead of inside the space reserved for them in resized().
+ //
+ // Same font as the BPM caption just to the right of these fields
+ // (transportTextSize, i.e. the same size as the numeric values
+ // themselves) rather than the much smaller MetroTypography::caption() —
+ // a single condensed capital letter at that size still fits easily
+ // inside the 16px slot (BPM fits three letters in twice that width), and
+ // matching size keeps every caption on this row reading at the same
+ // weight instead of L/R looking like an afterthought next to it.
     g.setColour (Text::Muted);
-    g.setFont (MetroTypography::caption());
+    g.setFont (DysektLookAndFeel::makeFont (transportTextSize));
  const auto captionWidth = MetroMetrics::grid * 2;
  const auto leftCaption  = leftLocatorLabel.getBounds().withWidth (captionWidth)
                                                 .translated (-captionWidth, 0);

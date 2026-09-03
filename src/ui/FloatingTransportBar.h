@@ -261,6 +261,30 @@ private:
         }
     };
 
+    /** A juce::Label that also responds to mouse-wheel scrolling, instead
+     *  of leaving the event unhandled — which is what plain juce::Label
+     *  does, since it has no wheel handling of its own — for an ancestor
+     *  Viewport (the arranger's horizontal scroll area, when docked) to
+     *  pick up and pan the timeline with instead. Used for tempoLabel so
+     *  scrolling over the BPM field adjusts the tempo rather than moving
+     *  the arranger. */
+    class WheelAdjustableLabel final : public juce::Label
+    {
+    public:
+        /** Fired on each wheel notch with a +1/-1 direction; not fired
+         *  while the label is being text-edited, so an in-progress typed
+         *  value can't be clobbered by an accidental scroll. */
+        std::function<void (int direction)> onWheelStep;
+
+        void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+        {
+            if (onWheelStep != nullptr && wheel.deltaY != 0.0f && ! isBeingEdited())
+                onWheelStep (wheel.deltaY > 0.0f ? 1 : -1);
+            else
+                Label::mouseWheelMove (e, wheel);
+        }
+    };
+
     /** Tick step for one wheel notch on a given locator segment (0=bar,
      *  1=beat, 2=tick). Bar/beat steps are exact musical units; the tick
      *  step is a coarse-enough fraction of a beat to feel deliberate rather
@@ -329,7 +353,7 @@ private:
 
 
  // ── Far right: BPM, grid snap, link — one row, in that order ───────
-    juce::Label      tempoLabel;
+    WheelAdjustableLabel tempoLabel;
     juce::ComboBox   gridCombo;
 
     // Same grid-snap choices as gridCombo, shown instead of it — one
