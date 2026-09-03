@@ -1832,13 +1832,23 @@ private:
      *  inspector, quantize buttons) has painted. Component::paintOverChildren()
      *  runs after every child paint (unlike the parent's own paint() pass, above),
      *  so this line is guaranteed to sit on top and stay visible no matter how
-     *  trackStrip's bounds line up with the header's bottom edge. */
+     *  trackStrip's bounds line up with the header's bottom edge.
+     *
+     *  Drawn 2px tall instead of 1px, straddling the boundary (1px inside the
+     *  header, 1px over trackStrip's first row) rather than sitting exactly on
+     *  it — a single 1px line landing precisely on the seam between two
+     *  similarly-dark fills (header's background above, the top track row's
+     *  background below) was imperceptible even once paint order guaranteed
+     *  it was actually being drawn. Painting a row's worth over trackStrip
+     *  visibly pushes the top track down under the line instead of letting it
+     *  sit flush against it, which is what actually makes the seam read as a
+     *  border rather than a rounding artifact. */
     void paintOverChildren (juce::Graphics& g) override
     {
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
         g.setColour (theme.separator);
-        g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 1);
+        g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
     }
 
     void paintRuler (juce::Graphics& g) const
@@ -2300,14 +2310,19 @@ private:
         const int x = (int)tickToX (tick);
         if (x < clipGridBounds.getX() || x > clipGridBounds.getRight()) return;
 
-        // The playhead should span exactly the ruler + track-grid area (the
-        // "arranger window") and no further — it used to be drawn with an
-        // explicit rulerBounds.getHeight() + clipGridBounds.getHeight() sum,
-        // which silently grows past the arranger window's actual bottom
-        // whenever the two rects aren't perfectly stacked (e.g. a gap or
-        // rounding drift between ruler and grid). Clip defensively to their
-        // union so the line can never bleed past the real window edge.
-        const auto arrangerWindow = rulerBounds.getUnion (clipGridBounds);
+        // The playhead should span the ruler plus the *actual* track content
+        // beneath it, not the full clipGridBounds rect — clipGridBounds is
+        // sized to fill whatever vertical space resized() gave the grid, which
+        // is almost always taller than engine.getNumTracks() * trackH (e.g.
+        // a single track leaves most of that rect empty). Using its full
+        // height made the line run on well past the last row whenever the
+        // track content didn't fill the view. Clamp to the shorter of the
+        // two: the actual rows-height remaining below the current scroll
+        // position, or the space clipGridBounds has available.
+        const int totalRowsH   = engine.getNumTracks() * trackH;
+        const int visibleRowsH = juce::jlimit (0, clipGridBounds.getHeight(),
+                                                totalRowsH - scrollY);
+        const auto arrangerWindow = rulerBounds.withHeight (rulerBounds.getHeight() + visibleRowsH);
         g.saveState();
         g.reduceClipRegion (arrangerWindow);
 
