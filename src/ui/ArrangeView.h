@@ -174,10 +174,15 @@ public:
         transport.onGlobalEqRequested = [this] { if (onGlobalEqRequested) onGlobalEqRequested(); };
 
         // ── Quantize buttons — same six resolutions/ids as the transport's
-        // GRID combo, radio-style like TrackInspector's partButtons (flat
-        // swatch, theme.accent on-state), just forwarding to
-        // transport.setSnapItemId() on click. ──────────────────────────────
+        // GRID combo, same radio-group approach as FloatingTransportBar's
+        // own gridButtons (radioGroupId + clickingTogglesState(true), so
+        // JUCE itself enforces exactly one active at a time — the earlier
+        // "flip the matching one on by hand" version never turned the old
+        // selection off, which is why multiple buttons could stay lit at
+        // once). Each click still just forwards to transport.setSnapItemId(),
+        // which stays the single source of truth for the actual snap value.
         {
+            static constexpr int kQuantizeButtonRadioGroup = 9101;
             static const char* const kQuantizeLabels[kNumQuantizeOptions] =
                 { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
             for (int i = 0; i < kNumQuantizeOptions; ++i)
@@ -186,7 +191,8 @@ public:
                 const int itemId = i + 1;
                 b.setButtonText (kQuantizeLabels[i]);
                 b.setTooltip ("Grid snap: " + juce::String (kQuantizeLabels[i]));
-                b.setClickingTogglesState (false);   // radio-style via timerCallback(), not per-button toggle
+                b.setRadioGroupId (kQuantizeButtonRadioGroup, juce::dontSendNotification);
+                b.setClickingTogglesState (true);
                 b.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff1c2028));
                 b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
                 b.setColour (juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha (0.55f));
@@ -307,15 +313,14 @@ public:
         if (! transport.isFloating())
             transport.setBounds (r.removeFromTop (kTransportH));
 
-        // Quantize buttons sit in the ARRANGE header, between the "ARRANGE"
-        // label (left) and "TRACKS" label (right) — see paintArrangeHeader().
-        // Laid out here (rather than computed fresh in paint()) so hit-testing
-        // and painting always agree on the same rectangle.
+        // Quantize buttons fill the header to the right of the "QUANTIZE"
+        // label — see paintArrangeHeader(). Laid out here (rather than
+        // computed fresh in paint()) so hit-testing and painting always
+        // agree on the same rectangle.
         {
             const juce::Rectangle<int> header (3, kTransportH + 3, kLeftW, kRulerH);
             auto content = header.reduced (10, 4);
-            content.removeFromLeft (58);    // reserve room for "ARRANGE"
-            content.removeFromRight (52);   // reserve room for "TRACKS"
+            content.removeFromLeft (78);    // reserve room for "QUANTIZE"
             quantizeButtonsBounds = content;
 
             const int gap = 4;
@@ -1788,14 +1793,18 @@ private:
         g.fillRect (header);
         g.setColour (theme.accent.withAlpha (0.8f));
         g.fillRect (header.getX(), header.getY(), 3, header.getHeight());
+        // "QUANTIZE" labels the button row that follows it — replaces the
+        // old "ARRANGE" caption (redundant with the window title bar, which
+        // already reads "ARRANGE ⋮ TRACKS") now that this row hosts an
+        // interactive control worth naming. Sized to match, not the small
+        // "TRACKS" caption this used to sit opposite — that caption is gone
+        // too, so the buttons now run the full width of the header instead
+        // of being squeezed between two labels.
         g.setColour (theme.foreground.withAlpha (0.92f));
         g.setFont (juce::Font (11.5f, juce::Font::bold));
-        g.drawText ("ARRANGE", header.reduced (12, 0), juce::Justification::centredLeft, false);
-        g.setColour (theme.foreground.withAlpha (0.45f));
-        g.setFont (juce::Font (9.0f));
-        g.drawText ("TRACKS", header.reduced (10, 0), juce::Justification::centredRight, false);
+        g.drawText ("QUANTIZE", header.reduced (12, 0), juce::Justification::centredLeft, false);
         // Quantize buttons (real child components, positioned in resized())
-        // fill the middle of this header — nothing else to paint there.
+        // fill the rest of this header — nothing else to paint there.
         g.setColour (theme.separator);
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 1);
     }
