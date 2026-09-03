@@ -173,6 +173,31 @@ public:
         transport.onArrangerRequested = [this] { if (onArrangerRequested) onArrangerRequested(); };
         transport.onGlobalEqRequested = [this] { if (onGlobalEqRequested) onGlobalEqRequested(); };
 
+        // ── Quantize buttons — same six resolutions/ids as the transport's
+        // GRID combo, radio-style like TrackInspector's partButtons (flat
+        // swatch, theme.accent on-state), just forwarding to
+        // transport.setSnapItemId() on click. ──────────────────────────────
+        {
+            static const char* const kQuantizeLabels[kNumQuantizeOptions] =
+                { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
+            for (int i = 0; i < kNumQuantizeOptions; ++i)
+            {
+                auto& b = quantizeButtons[i];
+                const int itemId = i + 1;
+                b.setButtonText (kQuantizeLabels[i]);
+                b.setTooltip ("Grid snap: " + juce::String (kQuantizeLabels[i]));
+                b.setClickingTogglesState (false);   // radio-style via timerCallback(), not per-button toggle
+                b.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff1c2028));
+                b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
+                b.setColour (juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha (0.55f));
+                b.setColour (juce::TextButton::textColourOnId,   juce::Colours::black.withAlpha (0.85f));
+                b.getProperties().set ("flatFill", true);
+                b.onClick = [this, itemId] { transport.setSnapItemId (itemId); };
+                addAndMakeVisible (b);
+            }
+            quantizeButtons[4].setToggleState (true, juce::dontSendNotification); // 1/16, matches transport's initial GRID selection
+        }
+
         // ── Horizontal scrollbar ──────────────────────────────────────────────
         hScroll.setRangeLimits (0.0, 1.0);
         hScroll.setCurrentRange (0.0, 0.5);
@@ -281,6 +306,27 @@ public:
         auto r = getLocalBounds().reduced (3);
         if (! transport.isFloating())
             transport.setBounds (r.removeFromTop (kTransportH));
+
+        // Quantize buttons sit in the ARRANGE header, between the "ARRANGE"
+        // label (left) and "TRACKS" label (right) — see paintArrangeHeader().
+        // Laid out here (rather than computed fresh in paint()) so hit-testing
+        // and painting always agree on the same rectangle.
+        {
+            const juce::Rectangle<int> header (3, kTransportH + 3, kLeftW, kRulerH);
+            auto content = header.reduced (10, 4);
+            content.removeFromLeft (58);    // reserve room for "ARRANGE"
+            content.removeFromRight (52);   // reserve room for "TRACKS"
+            quantizeButtonsBounds = content;
+
+            const int gap = 4;
+            const int bw  = (content.getWidth() - gap * (kNumQuantizeOptions - 1)) / kNumQuantizeOptions;
+            auto row = content;
+            for (int i = 0; i < kNumQuantizeOptions; ++i)
+            {
+                quantizeButtons[i].setBounds (row.removeFromLeft (bw));
+                row.removeFromLeft (gap);
+            }
+        }
 
         // Corner square between the two scrollbars
         auto cornerR = r;
@@ -872,6 +918,21 @@ private:
     ZoomableScrollBar     hScroll { false };
     ZoomableScrollBar     vScroll { true  };
 
+    // Quick-access quantize/grid-snap buttons, drawn in the ARRANGE header
+    // (between the "ARRANGE" and "TRACKS" labels — see paintArrangeHeader())
+    // rather than only living in the transport's GRID combo/gridButtons.
+    // Same six resolutions, same item ids, as FloatingTransportBar's
+    // gridCombo, so a click here just forwards to transport.setSnapItemId()
+    // and transport.getSnapTicks()/currentSnapTicks() stays the single
+    // source of truth for what clip create/move/resize/split actually snap
+    // to — these buttons are a second control surface for that one value,
+    // not a second value. Mirrored back from transport in timerCallback(),
+    // same "poll and mirror" approach FloatingTransportBar uses for its own
+    // gridButtons vs gridCombo.
+    static constexpr int kNumQuantizeOptions = 6;
+    juce::TextButton      quantizeButtons[kNumQuantizeOptions];
+    juce::Rectangle<int>  quantizeButtonsBounds;
+
     juce::Rectangle<int>  gridArea, rulerBounds, clipGridBounds;
     
     int      selectedTrack  = -1;
@@ -966,6 +1027,23 @@ private:
         {
             loopStart = engine.getLoopStartTick();
             loopEnd   = engine.getLoopEndTick();
+        }
+
+        // Mirror the shared grid-snap selection onto the quantize buttons —
+        // keeps them in sync however the resolution last changed, whether
+        // that was one of these buttons, the transport's own GRID combo/
+        // gridButtons, or external code calling transport.setSnapItemId()
+        // directly. Same "poll and mirror" approach FloatingTransportBar's
+        // own timerCallback uses to keep its gridButtons in sync with
+        // gridCombo — see that class's comment above gridButtons.
+        {
+            const int selectedId = transport.getSnapItemId();
+            if (selectedId >= 1 && selectedId <= kNumQuantizeOptions)
+            {
+                auto& selectedButton = quantizeButtons[selectedId - 1];
+                if (! selectedButton.getToggleState())
+                    selectedButton.setToggleState (true, juce::dontSendNotification);
+            }
         }
 
         repaint();
@@ -1716,6 +1794,8 @@ private:
         g.setColour (theme.foreground.withAlpha (0.45f));
         g.setFont (juce::Font (9.0f));
         g.drawText ("TRACKS", header.reduced (10, 0), juce::Justification::centredRight, false);
+        // Quantize buttons (real child components, positioned in resized())
+        // fill the middle of this header — nothing else to paint there.
         g.setColour (theme.separator);
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 1);
     }

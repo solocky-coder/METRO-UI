@@ -152,6 +152,20 @@ public:
      *  snapCombo, so the two controls behave identically. 0 means no snap. */
  int64_t getSnapTicks() const;
 
+ /** Item id of the currently selected grid-snap resolution — 1="1/1" through
+     *  6="1/32", the same ids gridCombo/gridButtons use internally. Lets an
+     *  external control (e.g. ArrangeView's own quantize buttons, drawn in
+     *  its ARRANGE header rather than this panel) mirror the shared snap
+     *  selection without reaching into gridCombo directly. */
+ int getSnapItemId() const noexcept { return gridCombo.getSelectedId(); }
+
+ /** Sets the grid-snap selection directly by item id (see getSnapItemId()),
+     *  same effect as picking it from gridCombo or clicking a gridButtons
+     *  entry — gridCombo stays the single source of truth either way (see
+     *  this class's header comment), so every other snap-aware control,
+     *  including ArrangeView's quantize buttons, updates in lockstep. */
+ void setSnapItemId (int itemId) { gridCombo.setSelectedId (itemId, juce::sendNotificationSync); }
+
 
  /** Fired when the user double-clicks the title strip, or presses the
         dock button — the host owns what "docking" means (e.g. re-parenting
