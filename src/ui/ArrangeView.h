@@ -1152,8 +1152,9 @@ private:
      *  live from the transport bar's GRID combo, docked or floating — same
      *  instance either way now (see FloatingTransportBar's header comment),
      *  so there's only ever one snap value to read. Shared by snapTick()
-     *  (rounds a tick to this resolution) and paintGridLines() (draws
-     *  sub-beat lines at this resolution) so the visible grid always matches
+     *  (rounds a tick to this resolution), paintRuler(), and
+     *  paintGridLines() (draws sub-beat lines at this resolution) so the
+     *  visible ruler and grid always match
      *  what clip create/move/resize/split actually snaps to. 0 means no
      *  snapping. */
     int64_t currentSnapTicks() const noexcept
@@ -1912,6 +1913,28 @@ private:
             }
         }
 
+        // Quantize increments — use the same live snap resolution as clip
+        // editing and the track grid.  These shorter marks begin at the
+        // ruler's lower edge so bars/beats remain visually dominant while
+        // the ruler still communicates the selected quantize interval.
+        const int64_t snap = currentSnapTicks();
+        if (snap > 0 && pixelsPerTick * (double) snap > 4.0)
+        {
+            const int tickHeight = juce::jmax (4, rulerBounds.getHeight() / 3);
+            const int tickTop    = rulerBounds.getBottom() - tickHeight;
+            const int64_t firstSnap = (int64_t)(scrollX / (pixelsPerTick * (double) snap)) * snap;
+
+            g.setColour (theme.gridLine.withAlpha (0.48f));
+            for (int64_t t = firstSnap; t <= total; t += snap)
+            {
+                if (t % ppq == 0) continue; // beat/bar line already drawn above
+                const int x = gx + (int)(t * pixelsPerTick - scrollX);
+                if (x > gx + gw) break;
+                if (x < gx) continue;
+                g.fillRect (x, tickTop, 1, tickHeight);
+            }
+        }
+
         // Bar numbers
         g.setFont (juce::Font (11.f, juce::Font::bold));
         const int64_t firstBar = (int64_t)(scrollX / (pixelsPerTick * barLen));
@@ -2310,34 +2333,31 @@ private:
         const int x = (int)tickToX (tick);
         if (x < clipGridBounds.getX() || x > clipGridBounds.getRight()) return;
 
-        // The playhead should span the ruler plus the *actual* track content
-        // beneath it, not the full clipGridBounds rect — clipGridBounds is
-        // sized to fill whatever vertical space resized() gave the grid, which
-        // is almost always taller than engine.getNumTracks() * trackH (e.g.
-        // a single track leaves most of that rect empty). Using its full
-        // height made the line run on well past the last row whenever the
-        // track content didn't fill the view. Clamp to the shorter of the
-        // two: the actual rows-height remaining below the current scroll
-        // position, or the space clipGridBounds has available.
+        // The playhead belongs to the track area, not the ruler. Start it at
+        // the ruler's bottom edge (clipGridBounds.getY()) and clamp it to the
+        // actual visible track rows instead of the unused remainder of the
+        // grid viewport.
         const int totalRowsH   = engine.getNumTracks() * trackH;
         const int visibleRowsH = juce::jlimit (0, clipGridBounds.getHeight(),
                                                 totalRowsH - scrollY);
-        const auto arrangerWindow = rulerBounds.withHeight (rulerBounds.getHeight() + visibleRowsH);
+        if (visibleRowsH <= 0) return;
+
+        const auto trackWindow = clipGridBounds.withHeight (visibleRowsH);
         g.saveState();
-        g.reduceClipRegion (arrangerWindow);
+        g.reduceClipRegion (trackWindow);
 
         const auto playheadColour = juce::Colours::white.withAlpha (0.96f);
 
-        // Line through ruler + tracks
+        // Line through tracks only; no pixels are painted inside the ruler.
         g.setColour (playheadColour);
-        g.fillRect (x - 1, arrangerWindow.getY(), 2, arrangerWindow.getHeight());
+        g.fillRect (x - 1, trackWindow.getY(), 2, trackWindow.getHeight());
 
-        // Small triangular cap in the ruler, apex pointing down at the line
+        // Small triangular cap at the top of the first visible track row.
         const float capW = 7.0f, capH = 6.0f;
         juce::Path cap;
-        cap.addTriangle ((float) x - capW * 0.5f, (float) rulerBounds.getY(),
-                          (float) x + capW * 0.5f, (float) rulerBounds.getY(),
-                          (float) x,               (float) rulerBounds.getY() + capH);
+        cap.addTriangle ((float) x - capW * 0.5f, (float) trackWindow.getY(),
+                          (float) x + capW * 0.5f, (float) trackWindow.getY(),
+                          (float) x,               (float) trackWindow.getY() + capH);
         g.setColour (playheadColour);
         g.fillPath (cap);
 
