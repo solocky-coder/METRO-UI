@@ -414,9 +414,11 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     }
 
 
- // ── Far right: BPM, grid snap, Float (docked only), link — one row, in
- // that order. Pinned to the right edge in both modes, so it's peeled
- // off the row first. ────────────────────────────────────────────────
+ // ── Far right: Float (docked only) + link. Just window-management
+ // controls now — BPM and grid snap moved down to sit right after the
+ // L/R locators instead (see below), since they're read/edited alongside
+ // the transport, not off on their own. Still pinned to the right edge in
+ // both modes, so peeled off the row first. ─────────────────────────────
     {
         // Each of these fields gets its own rounded frameField() border
         // (see paint(), pad = 3px on every side). A 1-grid (8px) raw gap
@@ -427,18 +429,11 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         // two separate boxes. Use a 2-grid gap between every framed field
         // so the corners always clear each other with room to spare.
         const int fieldGap = MetroMetrics::grid * 2;
-        // 9 grid units — same width as gridField — rather than 6: at
-        // tempoLabel's 16pt bold mono font, "120.00" needs more than the
-        // old 48px afforded and was getting ellipsized ("120…") instead
-        // of showing the actual value.
-        const int tempoFieldW = MetroMetrics::grid * 9;
-        const int rightW = MetroMetrics::grid * (docked ? 45 : 37);
+        // 10 grid units for LINK (11 while floating, where there's no
+        // Float button eating into the block) — enough for "LINK 3" once
+        // there are peers, not just the bare "LINK" label.
+        const int rightW = MetroMetrics::grid * (docked ? 19 : 11);
         auto right = row.removeFromRight (rightW);
-        L.tempoCaption = right.removeFromLeft (MetroMetrics::grid * 4);
-        L.tempoField   = right.removeFromLeft (tempoFieldW);
-        right.removeFromLeft (fieldGap);
-        L.gridField    = right.removeFromLeft (MetroMetrics::grid * 9);
-        right.removeFromLeft (fieldGap);
         if (docked)
         {
             L.floatField = right.removeFromLeft (MetroMetrics::grid * 7);
@@ -449,15 +444,18 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     }
 
 
- // ── Left/middle: musical position + transport cluster + L/R locators,
- // as one block. Left-anchored in both modes. Docked mode used to centre
- // this block in whatever space was left between the view-switcher
- // (left) and the BPM/GRID/FLOAT/LINK group (right) -- fine on a narrow
- // host window (little/no leftover space to centre into), but the pad
- // grows with the window on a wide one, opening a gap on both sides of
- // the cluster instead of staying put. Left-anchoring keeps the cluster
- // snug against the view-switcher at any host width, matching floating
- // mode's own (already left-anchored) layout. ───────────────────────
+ // ── Left/middle: musical position + transport cluster + L/R locators +
+ // BPM + grid snap, as one contiguous, left-anchored block — BPM directly
+ // after the locators, then the grid-snap control, in reading order with
+ // the rest of the transport instead of being split off to the far right.
+ // Left-anchored in both modes. Docked mode used to centre the
+ // position/transport/locators part of this block in whatever space was
+ // left between the view-switcher (left) and the far-right group (right)
+ // -- fine on a narrow host window (little/no leftover space to centre
+ // into), but the pad grows with the window on a wide one, opening a gap
+ // on both sides of the cluster instead of staying put. Left-anchoring
+ // keeps the whole block snug against the view-switcher at any host
+ // width, matching floating mode's own (already left-anchored) layout. ──
 
     L.positionField = row.removeFromLeft (MetroMetrics::grid * 21);
     row.removeFromLeft (MetroMetrics::grid);
@@ -481,22 +479,51 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
     row.removeFromLeft (MetroMetrics::grid * 2);
     L.divider2 = row.getX();
+    row.removeFromLeft (MetroMetrics::grid * 2);
 
-    // Whatever's left of the row past this point is genuinely spare space
+
+ // ── BPM, directly after the locators ──────────────────────────────────
+    {
+        const int fieldGap = MetroMetrics::grid * 2;
+        // 9 grid units — at tempoLabel's 16pt bold mono font, "120.00"
+        // needs more than the old 48px afforded and was getting
+        // ellipsized ("120…") instead of showing the actual value.
+        const int tempoFieldW = MetroMetrics::grid * 9;
+        L.tempoCaption = row.removeFromLeft (MetroMetrics::grid * 4);
+        L.tempoField   = row.removeFromLeft (tempoFieldW);
+        row.removeFromLeft (fieldGap);
+    }
+
+    // Whatever's left of the row past this point (up to the far-right
+    // Float/Link group peeled off above) is genuinely spare space
     // (previously always dead — see the left-anchoring comment above). If
     // there's enough of it to lay out the grid-snap choices as their own
-    // buttons instead of a dropdown, do that instead — same per-button
-    // width as the compact dropdown (gridField, grid*9), so each label
-    // gets equivalent room either way. Otherwise leave the space alone and
-    // keep the compact dropdown (gridField, already laid out above).
+    // buttons instead of a dropdown, do that instead. Sized adaptively
+    // rather than against one fixed width: a docked host is anywhere from
+    // "no wider than it needs to be" to "stretched across an ultrawide
+    // monitor", so requiring the same generous per-button width regardless
+    // of what's actually available meant a host with real (if modest)
+    // spare room — e.g. an arranger docked in a maximised window, ~330px
+    // free here — still fell back to the dropdown, just short of a fixed
+    // ~450px ask. Buttons now claim anywhere between a legible minimum and
+    // a comfortable maximum, filling whatever's actually on offer in
+    // between (see resized(), which divides gridButtonsField evenly)
+    // instead of only ever appearing at one exact width. Below the
+    // minimum, there just isn't room for six legible buttons at all, and
+    // the compact dropdown (gridField, grid*9 — same width as before) is
+    // used instead.
     {
-        constexpr int perButtonW  = MetroMetrics::grid * 9;
-        constexpr int buttonGap   = MetroMetrics::halfGrid;
-        constexpr int gridButtonsW = kNumGridOptions * perButtonW + (kNumGridOptions - 1) * buttonGap;
+        constexpr int minButtonW   = MetroMetrics::grid * 6;  // 48px — legibility floor for "1/16" etc.
+        constexpr int maxButtonW   = MetroMetrics::grid * 10; // 80px — cap so they don't sprawl on an ultrawide host
+        constexpr int buttonGap    = MetroMetrics::halfGrid;
+        constexpr int minGridButtonsW = kNumGridOptions * minButtonW + (kNumGridOptions - 1) * buttonGap;
+        constexpr int maxGridButtonsW = kNumGridOptions * maxButtonW + (kNumGridOptions - 1) * buttonGap;
 
-        L.gridButtonsFit = row.getWidth() >= gridButtonsW;
+        L.gridButtonsFit = row.getWidth() >= minGridButtonsW;
         if (L.gridButtonsFit)
-            L.gridButtonsField = row.removeFromLeft (gridButtonsW);
+            L.gridButtonsField = row.removeFromLeft (juce::jmin (row.getWidth(), maxGridButtonsW));
+        else
+            L.gridField = row.removeFromLeft (MetroMetrics::grid * 9);
     }
 
  return L;
