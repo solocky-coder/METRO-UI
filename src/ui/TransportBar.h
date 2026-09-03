@@ -132,7 +132,7 @@ public:
             {
                 ed->setColour (juce::TextEditor::backgroundColourId, Base::Elevated);
                 ed->setColour (juce::TextEditor::textColourId,       Transport::Tempo);
-                ed->setInputRestrictions (6, "0123456789.");
+                ed->setInputRestrictions (3, "0123456789");   // whole BPM only, max 999
             }
         };
         bpmLabel.onTextChange = [this]
@@ -467,7 +467,7 @@ private:
 
         if (! bpmLabel.isBeingEdited())
         {
-            juce::String s = juce::String (engine.getBpm(), 2);
+            juce::String s = juce::String ((int) std::round (engine.getBpm()));
             if (bpmLabel.getText() != s) bpmLabel.setText (s, juce::dontSendNotification);
         }
 

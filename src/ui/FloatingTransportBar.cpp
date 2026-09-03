@@ -104,7 +104,7 @@ addAndMakeVisible (*b);
     tempoLabel.onEditorShow = [this]
     {
  if (auto* ed = tempoLabel.getCurrentTextEditor())
-            ed->setInputRestrictions (6, "0123456789.");
+            ed->setInputRestrictions (3, "0123456789");   // whole BPM only, max 999
     };
     tempoLabel.onTextChange = [this] { updateTempoFromEditor(); };
     tempoLabel.onWheelStep = [this] (int direction)
@@ -114,7 +114,7 @@ addAndMakeVisible (*b);
         // change rather than a fiddly 0.01 nudge.
         const float newBpm = juce::jlimit (20.0f, 999.0f, engine.getBpm() + (float) direction);
         engine.setBpm (newBpm);
-        tempoLabel.setText (juce::String (newBpm, 2), juce::dontSendNotification);
+        tempoLabel.setText (juce::String ((int) std::round (newBpm)), juce::dontSendNotification);
     };
  addAndMakeVisible (tempoLabel);
 
@@ -763,7 +763,7 @@ void FloatingTransportBar::timerCallback()
 
 
  if (! tempoLabel.isBeingEdited())
-        tempoLabel.setText (juce::String (engine.getBpm(), 2), juce::dontSendNotification);
+        tempoLabel.setText (juce::String ((int) std::round (engine.getBpm())), juce::dontSendNotification);
 
 
     positionLabel.setText (formatMusicalPosition (engine.getPlayheadBeats()), juce::dontSendNotification);

@@ -316,9 +316,13 @@ public:
         // Quantize buttons fill the header to the right of the "QUANTIZE"
         // label — see paintArrangeHeader(). Laid out here (rather than
         // computed fresh in paint()) so hit-testing and painting always
-        // agree on the same rectangle.
+        // agree on the same rectangle. Uses arrangeHeaderBounds() rather than
+        // a fixed kTransportH + 3 offset so the row (and its buttons) slide
+        // up to sit right under the title bar when the transport is
+        // floating and no longer reserves kTransportH at the top — same
+        // vertical shift the ruler/track rows already get from r above.
         {
-            const juce::Rectangle<int> header (3, kTransportH + 3, kLeftW, kRulerH);
+            const auto header = arrangeHeaderBounds();
             auto content = header.reduced (10, 4);
             content.removeFromLeft (78);    // reserve room for "QUANTIZE"
             quantizeButtonsBounds = content;
@@ -1785,10 +1789,22 @@ private:
     //==========================================================================
     //  Painting
     //==========================================================================
+    /** Top-left rect of the ARRANGE/QUANTIZE header row, right under the
+     *  transport — kTransportH + 3 down while the transport is docked and
+     *  actually occupying that space, or just 3 (the panel's own margin)
+     *  while it's floating and has left no gap to sit below. resized() uses
+     *  this same rect to position the quantize buttons, so painting and
+     *  hit-testing never disagree about where this row is. */
+    juce::Rectangle<int> arrangeHeaderBounds() const noexcept
+    {
+        const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
+        return { 3, topY, kLeftW, kRulerH };
+    }
+
     void paintArrangeHeader (juce::Graphics& g) const
     {
         const auto& theme = getTheme();
-        const juce::Rectangle<int> header (3, kTransportH + 3, kLeftW, kRulerH);
+        const auto header = arrangeHeaderBounds();
         g.setColour (theme.header);
         g.fillRect (header);
         g.setColour (theme.accent.withAlpha (0.8f));
