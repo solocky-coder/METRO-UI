@@ -423,17 +423,11 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     }
 
 
- // ── Far right: grid snap (guaranteed compact dropdown), Float (docked
- // only), link. Grid snap lives here too, not just after BPM below,
- // because leftover space after BPM can legitimately be zero on a
- // narrower host window — if the dropdown's *only* placement were "the
- // leftover after BPM", it would simply vanish there instead of shrinking,
- // since a 0-width slot paints and hit-tests as nothing. Reserving it here
- // guarantees it always has its full compact width, however tight the
- // host is; the block below only ever *upgrades* it to a wider button row
- // when there's genuine extra room, never relies on this space existing
- // at all. Pinned to the right edge in both modes, so peeled off the row
- // first. ─────────────────────────────────────────────────────────────
+ // ── Far right: Float (docked only) + link. Just window-management
+ // controls now — BPM and grid snap moved down to sit right after the
+ // L/R locators instead (see below), since they're read/edited alongside
+ // the transport, not off on their own. Still pinned to the right edge in
+ // both modes, so peeled off the row first. ─────────────────────────────
     {
         // Each of these fields gets its own rounded frameField() border
         // (see paint(), pad = 3px on every side). A 1-grid (8px) raw gap
@@ -447,10 +441,8 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         // 10 grid units for LINK (11 while floating, where there's no
         // Float button eating into the block) — enough for "LINK 3" once
         // there are peers, not just the bare "LINK" label.
-        const int rightW = MetroMetrics::grid * (docked ? 30 : 22);
+        const int rightW = MetroMetrics::grid * (docked ? 19 : 11);
         auto right = row.removeFromRight (rightW);
-        L.gridField = right.removeFromLeft (MetroMetrics::grid * 9);
-        right.removeFromLeft (fieldGap);
         if (docked)
         {
             L.floatField = right.removeFromLeft (MetroMetrics::grid * 7);
@@ -462,17 +454,17 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
 
  // ── Left/middle: musical position + transport cluster + L/R locators +
- // BPM, as one contiguous, left-anchored block — BPM directly after the
- // locators, in reading order with the rest of the transport instead of
- // being split off to the far right. Left-anchored in both modes. Docked
- // mode used to centre the position/transport/locators part of this block
- // in whatever space was left between the view-switcher (left) and the
- // far-right group (right) -- fine on a narrow host window (little/no
- // leftover space to centre into), but the pad grows with the window on a
- // wide one, opening a gap on both sides of the cluster instead of
- // staying put. Left-anchoring keeps the whole block snug against the
- // view-switcher at any host width, matching floating mode's own
- // (already left-anchored) layout. ─────────────────────────────────────
+ // BPM + grid snap, as one contiguous, left-anchored block — BPM directly
+ // after the locators, then the grid-snap control, in reading order with
+ // the rest of the transport instead of being split off to the far right.
+ // Left-anchored in both modes. Docked mode used to centre the
+ // position/transport/locators part of this block in whatever space was
+ // left between the view-switcher (left) and the far-right group (right)
+ // -- fine on a narrow host window (little/no leftover space to centre
+ // into), but the pad grows with the window on a wide one, opening a gap
+ // on both sides of the cluster instead of staying put. Left-anchoring
+ // keeps the whole block snug against the view-switcher at any host
+ // width, matching floating mode's own (already left-anchored) layout. ──
 
     L.positionField = row.removeFromLeft (MetroMetrics::grid * 21);
     row.removeFromLeft (MetroMetrics::grid);
@@ -512,26 +504,23 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     }
 
     // Whatever's left of the row past this point (up to the far-right
-    // group peeled off above, which already guarantees gridField its
-    // compact width regardless of what happens here) is genuinely spare
-    // space — previously always dead, see the left-anchoring comment
-    // above — that can optionally *upgrade* grid snap from that
-    // guaranteed dropdown to a wider button row placed right after BPM
-    // instead. Sized adaptively rather than against one fixed width: a
-    // docked host is anywhere from "no wider than it needs to be" to
-    // "stretched across an ultrawide monitor", so requiring the same
-    // generous per-button width regardless of what's actually available
-    // meant a host with real (if modest) spare room — e.g. an arranger
-    // docked in a maximised window, ~330px free here — still fell back to
-    // the dropdown, just short of a fixed ~450px ask. Buttons now claim
-    // anywhere between a legible minimum and a comfortable maximum,
-    // filling whatever's actually on offer in between (see resized(),
-    // which divides gridButtonsField evenly) instead of only ever
-    // appearing at one exact width. Below the minimum, there just isn't
-    // room for six legible buttons here, and the guaranteed dropdown
-    // (gridField, already reserved above) is used instead — never an
-    // empty gap, since that dropdown's space was never contingent on
-    // this leftover existing in the first place.
+    // Float/Link group peeled off above) is genuinely spare space
+    // (previously always dead — see the left-anchoring comment above). If
+    // there's enough of it to lay out the grid-snap choices as their own
+    // buttons instead of a dropdown, do that instead. Sized adaptively
+    // rather than against one fixed width: a docked host is anywhere from
+    // "no wider than it needs to be" to "stretched across an ultrawide
+    // monitor", so requiring the same generous per-button width regardless
+    // of what's actually available meant a host with real (if modest)
+    // spare room — e.g. an arranger docked in a maximised window, ~330px
+    // free here — still fell back to the dropdown, just short of a fixed
+    // ~450px ask. Buttons now claim anywhere between a legible minimum and
+    // a comfortable maximum, filling whatever's actually on offer in
+    // between (see resized(), which divides gridButtonsField evenly)
+    // instead of only ever appearing at one exact width. Below the
+    // minimum, there just isn't room for six legible buttons at all, and
+    // the compact dropdown (gridField, grid*9 — same width as before) is
+    // used instead.
     {
         constexpr int minButtonW   = MetroMetrics::grid * 6;  // 48px — legibility floor for "1/16" etc.
         constexpr int maxButtonW   = MetroMetrics::grid * 10; // 80px — cap so they don't sprawl on an ultrawide host
@@ -542,6 +531,8 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         L.gridButtonsFit = row.getWidth() >= minGridButtonsW;
         if (L.gridButtonsFit)
             L.gridButtonsField = row.removeFromLeft (juce::jmin (row.getWidth(), maxGridButtonsW));
+        else
+            L.gridField = row.removeFromLeft (MetroMetrics::grid * 9);
     }
 
  return L;
