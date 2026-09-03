@@ -1821,6 +1821,22 @@ private:
         g.drawText ("QUANTIZE", header.reduced (12, 0), juce::Justification::centredLeft, false);
         // Quantize buttons (real child components, positioned in resized())
         // fill the rest of this header — nothing else to paint there.
+        // The bottom border itself is NOT drawn here — see paintOverChildren()
+        // below: trackStrip sits directly under this header, and drawing the
+        // border in this paint() pass put it underneath trackStrip's own
+        // background fill whenever their bounds touched or overlapped by a
+        // rounding pixel, making the border invisible.
+    }
+
+    /** Draws the header/track-strip separator after every child (trackStrip,
+     *  inspector, quantize buttons) has painted. Component::paintOverChildren()
+     *  runs after every child paint (unlike the parent's own paint() pass, above),
+     *  so this line is guaranteed to sit on top and stay visible no matter how
+     *  trackStrip's bounds line up with the header's bottom edge. */
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        const auto& theme = getTheme();
+        const auto header = arrangeHeaderBounds();
         g.setColour (theme.separator);
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 1);
     }
@@ -2284,12 +2300,22 @@ private:
         const int x = (int)tickToX (tick);
         if (x < clipGridBounds.getX() || x > clipGridBounds.getRight()) return;
 
+        // The playhead should span exactly the ruler + track-grid area (the
+        // "arranger window") and no further — it used to be drawn with an
+        // explicit rulerBounds.getHeight() + clipGridBounds.getHeight() sum,
+        // which silently grows past the arranger window's actual bottom
+        // whenever the two rects aren't perfectly stacked (e.g. a gap or
+        // rounding drift between ruler and grid). Clip defensively to their
+        // union so the line can never bleed past the real window edge.
+        const auto arrangerWindow = rulerBounds.getUnion (clipGridBounds);
+        g.saveState();
+        g.reduceClipRegion (arrangerWindow);
+
         const auto playheadColour = juce::Colours::white.withAlpha (0.96f);
 
         // Line through ruler + tracks
         g.setColour (playheadColour);
-        g.fillRect (x - 1, rulerBounds.getY(),
-                    2, rulerBounds.getHeight() + clipGridBounds.getHeight());
+        g.fillRect (x - 1, arrangerWindow.getY(), 2, arrangerWindow.getHeight());
 
         // Small triangular cap in the ruler, apex pointing down at the line
         const float capW = 7.0f, capH = 6.0f;
@@ -2299,6 +2325,8 @@ private:
                           (float) x,               (float) rulerBounds.getY() + capH);
         g.setColour (playheadColour);
         g.fillPath (cap);
+
+        g.restoreState();
     }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ArrangeView)
