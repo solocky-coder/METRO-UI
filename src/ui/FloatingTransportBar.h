@@ -100,12 +100,7 @@ public:
         pinButton.setVisible (! docked);
         dockButton.setVisible (! docked);
         floatButton.setVisible (docked);
-        mixerButton.setVisible (! docked);
-        arrangeButton.setVisible (! docked);
-        eqButton.setVisible (! docked);
-        if (viewMixerBtn   != nullptr) viewMixerBtn->setVisible (docked);
-        if (viewArrangeBtn != nullptr) viewArrangeBtn->setVisible (docked);
-        if (viewEqBtn      != nullptr) viewEqBtn->setVisible (docked);
+        syncViewButtons();
         resized();
         repaint();
     }
@@ -127,18 +122,9 @@ public:
         viewArrangeBtn = arrangeBtn;
         viewEqBtn      = eqBtn;
         for (auto* button : { viewMixerBtn, viewArrangeBtn, viewEqBtn })
-        {
-            if (button == nullptr)
-                continue;
-            button->getProperties().set ("transportFontSize", 26.0);
-            addAndMakeVisible (*button);
-        }
-        if (docked)
-        {
-            mixerButton.setVisible (false);
-            arrangeButton.setVisible (false);
-            eqButton.setVisible (false);
-        }
+            if (button != nullptr)
+                button->getProperties().set ("transportFontSize", 26.0);
+        syncViewButtons();
         resized();
     }
 
@@ -305,6 +291,39 @@ private:
      *  than needing hundreds of notches to move anywhere. */
     static int64_t segmentStepTicks (int segment) noexcept;
 
+
+ /** Makes the external Mixer/Arranger/GlobalEq switcher (set via
+     *  setViewButtons()) and this panel's own internal one match the
+     *  current docked flag: while docked, each non-null external button is
+     *  (re)parented into this panel via addAndMakeVisible() and the
+     *  internal buttons are hidden; while floating, external buttons are
+     *  just hidden — left parented wherever they already are, since a
+     *  floating desktop window can't host components owned by the main
+     *  window — and the internal buttons are shown instead.
+     *
+     *  Shared by setDocked() and setViewButtons() so either one calling
+     *  alone still leaves both sets of buttons in a consistent state: e.g.
+     *  re-docking after a float with no fresh setViewButtons() call still
+     *  reparents the external buttons back into this panel, rather than
+     *  merely toggling setVisible() on whatever parent they were last
+     *  shown in — which is what previously let an external button appear
+     *  at a stale position from a different layout context, doubled up
+     *  with this panel's own internal one. */
+    void syncViewButtons()
+    {
+        for (auto* button : { viewMixerBtn, viewArrangeBtn, viewEqBtn })
+        {
+            if (button == nullptr)
+                continue;
+            if (docked)
+                addAndMakeVisible (*button);
+            else
+                button->setVisible (false);
+        }
+        mixerButton.setVisible (! docked);
+        arrangeButton.setVisible (! docked);
+        eqButton.setVisible (! docked);
+    }
 
  void timerCallback() override;
  void updateTempoFromEditor();
