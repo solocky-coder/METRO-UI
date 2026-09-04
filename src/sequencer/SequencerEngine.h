@@ -266,10 +266,10 @@ public:
     void setRecordingTrack (int trackIndex) noexcept;
 
     /** Which track index currently receives recorded MIDI, -1 if none.
-     *  Today this mirrors track selection (see ArrangeView's selection
-     *  handler) rather than an independent per-track arm state — added so
-     *  TrackHeaderStrip's R button can show the real target instead of a
-     *  UI-only stand-in. */
+     *  This is independent per-track arm state — it only changes via an
+     *  explicit call to setRecordingTrack() (TrackHeaderStrip's R dot,
+     *  TrackInspector's record button, or disarm-on-close), never as a
+     *  side effect of track *selection*. */
     int getRecordingTrackIndex() const noexcept;
 
     /** Drains recorded-note events captured by the audio thread during

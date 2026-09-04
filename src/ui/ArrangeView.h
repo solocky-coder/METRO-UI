@@ -1313,7 +1313,13 @@ private:
 
         engine.setSelectedLiveChannel (liveCh);
         engine.setSelectedSfLiveChannels (mask);
-        engine.setRecordingTrack (hasSelection ? idx : -1);
+
+        // Deliberately NOT touching engine.setRecordingTrack() here. Record-arm
+        // is independent, explicit per-track state (toggled via TrackHeaderStrip's
+        // R dot or TrackInspector's record button) — it used to be silently
+        // re-pointed at whatever track got selected, so just clicking a track to
+        // inspect it would re-arm recording onto it with no warning. Selecting a
+        // track for viewing must never change what's armed to record.
 
         // Authoritative live-routing target for PluginProcessor::processBlock
         // (see SequencerEngine::getSelectedLiveTarget() / setMidiRouteMode()'s

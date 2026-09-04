@@ -222,11 +222,10 @@ public:
         else if (recR.contains (e.getPosition()) && i < kMaxTracks)
         {
             // Toggles the real recording-target track (SequencerEngine's
-            // recordingTrackIndex). Note this is also driven by track
-            // *selection* elsewhere (see ArrangeView's selection handler),
-            // so explicitly arming a track here and then selecting a
-            // different one will silently re-arm that one — decoupling
-            // "armed" from "selected" would need a change there too.
+            // recordingTrackIndex). This is independent of track *selection*
+            // — selecting a different track to inspect it does NOT move the
+            // arm (see ArrangeView::selectTrack()), so arming track 3 here
+            // and then clicking over to track 1 leaves track 3 armed.
             engine.setRecordingTrack (i == engine.getRecordingTrackIndex() ? -1 : i);
         }
         else

@@ -83,7 +83,14 @@ public:
             const auto current  = engine.getPlayheadTick();
             engine.seekToTick (juce::jmax<int64_t> (0, current - barTicks));
         };
-        playBtn.onClick = [this] { engine.play(); playBtn.setToggleState (engine.isPlaying(), juce::dontSendNotification); };
+        // Just call play() and let setClickingTogglesState's own auto-toggle
+        // (already flipped the button on by the time onClick runs) stand
+        // until the next timerCallback() tick confirms it. engine.play() only
+        // sets a pending-play atomic — isPlaying() doesn't flip true until the
+        // next processBlock() — so reading it back here was always false
+        // immediately after the click, yanking the toggle back off for one
+        // frame before the timer put it right back on.
+        playBtn.onClick = [this] { engine.play(); };
         stopBtn.onClick = [this] { engine.stop(); };
         recBtn.onStateChange  = [this] { engine.setRecording (recBtn.getToggleState()); };
         loopBtn.onStateChange = [this] { engine.setLooping   (loopBtn.getToggleState()); };

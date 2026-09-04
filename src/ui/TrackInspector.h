@@ -672,11 +672,12 @@ private:
                 soloButton.setToggleState (info.solo, juce::dontSendNotification);
 
             // Record-arm target is engine-wide state that can change out
-            // from under this component — from the row's own R button (see
-            // TrackHeaderStrip::mouseDown), or from track selection itself
-            // re-arming per getRecordingTrackIndex()'s doc comment in
-            // SequencerEngine.h — so it needs the same live poll Mute/Solo
-            // get above, not just the one-shot set in refresh().
+            // from under this component — e.g. from TrackHeaderStrip's own
+            // R button (see its mouseDown) — so it needs the same live poll
+            // Mute/Solo get above, not just the one-shot set in refresh().
+            // (It's deliberately NOT touched by track selection — see
+            // ArrangeView::selectTrack() — so this poll is just to stay in
+            // sync with the *other* arm control, not with selection.)
             const bool shouldBeArmed = selectedTrack == engine.getRecordingTrackIndex();
             if (recordButton.getToggleState() != shouldBeArmed)
                 recordButton.setToggleState (shouldBeArmed, juce::dontSendNotification);
