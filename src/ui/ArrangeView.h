@@ -1902,8 +1902,9 @@ private:
 
         // Beat ticks — same opacity+width scheme as paintGridLines (bars:
         // 2px, theme.separator at 95% alpha; beats: 1px, theme.gridLine at
-        // 28% alpha) rather than the old height-based bar/beat distinction,
-        // so the ruler and the row grid read as one system.
+        // 90% alpha) rather than the old height-based bar/beat distinction.
+        // The stronger beat contrast keeps the grid legible on the true-black
+        // Metro canvas while preserving the brighter bar hierarchy.
         if (showBeats)
         {
             const int64_t firstBeat = (int64_t)(scrollX / (pixelsPerTick * ppq));
@@ -1914,7 +1915,7 @@ private:
                 if (x < gx || x > gx + gw) continue;
                 const bool isBar = (b % 4 == 0);
                 g.setColour (isBar ? theme.separator.withAlpha (0.95f)
-                                    : theme.gridLine.withAlpha (0.28f));
+                                    : theme.gridLine.withAlpha (0.90f));
                 g.fillRect (x, rulerBounds.getY(), isBar ? 2 : 1, rulerBounds.getHeight());
             }
         }
@@ -1930,7 +1931,7 @@ private:
             const int tickTop    = rulerBounds.getBottom() - tickHeight;
             const int64_t firstSnap = (int64_t)(scrollX / (pixelsPerTick * (double) snap)) * snap;
 
-            g.setColour (theme.gridLine.withAlpha (0.48f));
+            g.setColour (theme.gridLine.withAlpha (0.68f));
             for (int64_t t = firstSnap; t <= total; t += snap)
             {
                 if (t % ppq == 0) continue; // beat/bar line already drawn above
@@ -2159,7 +2160,7 @@ private:
             if (x < rowR.getX() || x > rowR.getRight()) continue;
             const bool isBar = (b % 4 == 0);
             if (!showBeats && !isBar) continue;
-            g.setColour (isBar ? theme.separator.withAlpha (0.95f) : theme.gridLine.withAlpha (0.28f));
+            g.setColour (isBar ? theme.separator.withAlpha (0.95f) : theme.gridLine.withAlpha (0.90f));
             g.fillRect (x, rowR.getY(), isBar ? 2 : 1, rowR.getHeight() - 1);
         }
 
@@ -2170,7 +2171,7 @@ private:
         const int64_t snap = currentSnapTicks();
         if (snap > 0 && pixelsPerTick * (double) snap > 4.0)
         {
-            g.setColour (theme.gridLine.withAlpha (0.24f));
+            g.setColour (theme.gridLine.withAlpha (0.55f));
             const int64_t startSnap = (int64_t)(scrollX / (pixelsPerTick * (double) snap)) * snap;
             for (int64_t t = startSnap; t <= total; t += snap)
             {
