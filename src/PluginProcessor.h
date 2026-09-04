@@ -10,8 +10,11 @@
 #include "audio/SampleData.h"
 #include "audio/SliceManager.h"
 #include "audio/VoicePool.h"
-#if DYSEKT_STANDALONE
+// SequencerEngine has no DYSEKT_STANDALONE dependency of its own and is now
+// a member of DysektProcessor in every build (see the `sequencer` member
+// below) — its header must be included unconditionally too.
 #include "sequencer/SequencerEngine.h"
+#if DYSEKT_STANDALONE
 #include "sequencer/AbletonLink.h"
 #endif
 #include "audio/LazyChopEngine.h"
