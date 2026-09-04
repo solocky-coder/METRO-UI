@@ -427,7 +427,7 @@ public:
                 // engine every tick, a purely local reset would get
                 // immediately overwritten by the still-configured engine
                 // range on the very next repaint.
-                engine.setLoopRange (0, engine.getLengthTicks());
+                engine.resetLoopRangeToDefault();
                 loopStart = engine.getLoopStartTick();
                 loopEnd   = engine.getLoopEndTick();
                 repaint(); return;

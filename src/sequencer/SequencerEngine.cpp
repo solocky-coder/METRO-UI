@@ -55,7 +55,6 @@ struct SequencerEngine::Impl
     }
 
     double               currentTick = 0.0;
-    bool                 justStarted = false;
     std::atomic<int64_t> playheadTick { 0 };
     std::atomic<int64_t> loopStartTick { 0 };
     // 0 means use the current project end, preserving the legacy full-song loop.
@@ -72,6 +71,15 @@ struct SequencerEngine::Impl
     std::atomic<bool>    pendingRewind{ false };
     std::atomic<bool>    pendingSeek  { false };
     std::atomic<int64_t> pendingSeekTick { 0 };
+
+    // Set by play() instead of pendingPlay when Link is enabled, so the
+    // audio thread can hold off flipping to "playing" until the requested
+    // beat-aligned quantum boundary actually arrives (see processBlock()).
+    // Only ever touched on the audio thread once set, aside from the
+    // message-thread writes in play()/stop() below.
+    std::atomic<bool>    awaitingLinkStart { false };
+    double               linkPhasePrev     = 0.0;
+    bool                 linkPhasePrimed   = false;
     std::atomic<float>   internalBpm  { 120.f };
     std::atomic<float>   hostBpm      { 120.f };
     std::atomic<bool>    syncToHost   { false };
@@ -259,14 +267,25 @@ int64_t SequencerEngine::getLoopEndTick() const noexcept
 void SequencerEngine::play()
 {
     if (impl->abletonLink != nullptr && impl->abletonLink->isEnabled())
+    {
+        // Ask Link peers to start on the next bar, and actually wait for
+        // that same boundary ourselves instead of starting immediately —
+        // processBlock() flips pendingPlay only once the phase wraps.
         impl->abletonLink->requestBeatAlignedStart (4.0);
-    impl->pendingPlay.store (true, std::memory_order_relaxed);
+        impl->linkPhasePrimed = false;
+        impl->awaitingLinkStart.store (true, std::memory_order_relaxed);
+    }
+    else
+    {
+        impl->pendingPlay.store (true, std::memory_order_relaxed);
+    }
 }
 
 void SequencerEngine::stop()
 {
     if (impl->abletonLink != nullptr && impl->abletonLink->isEnabled())
         impl->abletonLink->notifyStop();
+    impl->awaitingLinkStart.store (false, std::memory_order_relaxed);
     impl->pendingStop.store (true, std::memory_order_relaxed);
 }
 
@@ -308,6 +327,17 @@ void SequencerEngine::setLoopRange (int64_t startTick, int64_t endTick)
     const auto end = juce::jmax (start + (int64_t) MidiClip::kPPQ, endTick);
     impl->loopStartTick.store (start, std::memory_order_relaxed);
     impl->loopEndTick.store (end, std::memory_order_relaxed);
+}
+
+void SequencerEngine::resetLoopRangeToDefault()
+{
+    // 0 is the documented sentinel for "always track current project end"
+    // (see getLoopEndTick()) — store it directly rather than routing through
+    // setLoopRange(), which clamps endTick to a concrete captured length and
+    // would freeze the loop at whatever the arrangement length happened to
+    // be at reset time.
+    impl->loopStartTick.store (0, std::memory_order_relaxed);
+    impl->loopEndTick.store   (0, std::memory_order_relaxed);
 }
 
 void SequencerEngine::setLengthTicks (int64_t ticks)
@@ -912,7 +942,6 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
         impl->openRecNotes.clearQuick();
         impl->currentTick = 0.0;
         impl->playheadTick.store (0, std::memory_order_relaxed);
-        impl->justStarted = true;
     }
     if (impl->pendingSeek.exchange (false, std::memory_order_relaxed))
     {
@@ -923,7 +952,34 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     if (impl->pendingPlay.exchange (false, std::memory_order_relaxed))
     {
         impl->playing.store (true, std::memory_order_relaxed);
-        impl->justStarted = true;
+    }
+    if (impl->awaitingLinkStart.load (std::memory_order_relaxed))
+    {
+        // Waiting on the quantum boundary requested by requestBeatAlignedStart().
+        // Detect arrival by watching the Link phase wrap back past zero —
+        // block-granularity, consistent with the rest of this lock-free
+        // transport, and needs no extra Link timing APIs beyond getPhase().
+        if (impl->abletonLink != nullptr && impl->abletonLink->isEnabled())
+        {
+            const double quantum = 4.0;
+            const double phase = impl->abletonLink->getPhase (quantum);
+            if (! impl->linkPhasePrimed)
+            {
+                impl->linkPhasePrimed = true;
+            }
+            else if (phase < impl->linkPhasePrev)
+            {
+                impl->awaitingLinkStart.store (false, std::memory_order_relaxed);
+                impl->playing.store (true, std::memory_order_relaxed);
+            }
+            impl->linkPhasePrev = phase;
+        }
+        else
+        {
+            // Link was disabled while we were waiting — fall back to starting now.
+            impl->awaitingLinkStart.store (false, std::memory_order_relaxed);
+            impl->playing.store (true, std::memory_order_relaxed);
+        }
     }
 
     if (! impl->playing.load (std::memory_order_relaxed)) return;
@@ -970,8 +1026,6 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
             && juce::isPositiveAndBelow (ti, kActivityFlagCount))
             impl->midiActivityFlags[ti].store (true, std::memory_order_relaxed);
     }
-
-    impl->justStarted = false;
 
     // ── MIDI input recording ──────────────────────────────────────────────────
     // Cubase-style: the selected (record-armed) track captures all incoming
@@ -1040,7 +1094,6 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
         impl->flushAllActiveNotes (outMidi, loopSample);
         impl->currentTick = (double) loopStart
                           + std::fmod (blockEndTick - (double) loopStart, (double) loopLength);
-        impl->justStarted = true;
     }
     else
     {

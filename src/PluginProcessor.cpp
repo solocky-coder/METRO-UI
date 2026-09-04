@@ -3177,8 +3177,15 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             if (auto bpmOpt = pos->getBpm())
             {
                 dawBpm.store ((float) *bpmOpt, std::memory_order_relaxed);
-#if DYSEKT_STANDALONE
+                // Not standalone-guarded: sequencer.setHostBpm() must stay in
+                // sync in every build, even though the sequencer tab is
+                // currently only shown in the standalone build (see
+                // DualLcdControlFrame's seqIconArea). Guarding this call was
+                // a landmine — "Sync to Host" would have silently stayed
+                // pinned at 120 BPM if the tab were ever exposed in VST3
+                // without also remembering to remove this #if.
                 sequencer.setHostBpm ((float) *bpmOpt);
+#if DYSEKT_STANDALONE
                 if (abletonLink.isEnabled())
                     abletonLink.setBpm (*bpmOpt);
 #endif

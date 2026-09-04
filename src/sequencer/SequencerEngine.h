@@ -86,6 +86,12 @@ public:
     /** Sets the inclusive-start/exclusive-end cycle range used while looping. */
     void setLoopRange (int64_t startTick, int64_t endTick);
 
+    /** Restores the implicit default loop range: start at 0, end tracking
+     *  the current project length as it grows (see getLoopEndTick()). Unlike
+     *  setLoopRange(), this stores the sentinel rather than a captured length,
+     *  so the loop keeps following the arrangement after clips are added. */
+    void resetLoopRangeToDefault();
+
     /** Backward-compat: sets clip 0 length on all tracks. */
     void setLengthTicks (int64_t ticks);
 
