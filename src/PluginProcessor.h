@@ -525,8 +525,14 @@ public:
     juce::AudioProcessorValueTreeState apvts;
     SliceManager     sliceManager;
     VoicePool        voicePool;
-#if DYSEKT_STANDALONE
+    // SequencerEngine has no DYSEKT_STANDALONE dependency of its own (see
+    // sequencer/SequencerEngine.h, sequencer/AbletonLink.h) — it's declared
+    // unconditionally so processBlock() can always keep it in sync with the
+    // host BPM (see the comment at the sequencer.setHostBpm() call site),
+    // even though the sequencer *UI* and most of its other call sites
+    // remain standalone-only below.
     SequencerEngine  sequencer;
+#if DYSEKT_STANDALONE
     AbletonLink      abletonLink;
 
     /** Selected-track live MIDI routing state — see
