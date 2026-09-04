@@ -220,7 +220,8 @@ target_sources(Dysekt PRIVATE
     src/audio/multisampler/InstrumentSerializer.cpp
     src/audio/multisampler/SfzImporter.cpp
     src/audio/multisampler/SfzExporter.cpp
-    # SequencerEngine and MidiClip are standalone-only — the DAW is the sequencer
+    src/sequencer/SequencerEngine.cpp
+    src/sequencer/MidiClip.cpp
 )
 
 target_include_directories(Dysekt PRIVATE
