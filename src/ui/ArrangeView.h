@@ -1940,7 +1940,15 @@ private:
             }
         }
 
-        // Bar numbers
+        // Bar numbers — confined to the top half of the ruler row so the
+        // loop L/R tags (bottom half, below) never draw on top of them.
+        // Previously both were vertically centred across the full ruler
+        // height, so an L tag at bar 1 (loopStart == 0 is the common case)
+        // landed squarely on the "1" bar number, and any R tag landing near
+        // a bar line did the same.
+        const int rulerTopH = rulerBounds.getHeight() / 2;
+        const juce::Rectangle<int> barNumberBand (rulerBounds.getX(), rulerBounds.getY(),
+                                                    rulerBounds.getWidth(), rulerTopH);
         g.setFont (juce::Font (11.f, juce::Font::bold));
         const int64_t firstBar = (int64_t)(scrollX / (pixelsPerTick * barLen));
         const int64_t lastBar  = firstBar + (int64_t)(gw / (pixelsPerTick * barLen)) + 2;
@@ -1950,14 +1958,18 @@ private:
             if (x < gx || x > gx + gw) continue;
             g.setColour (theme.foreground.withAlpha (0.78f));
             g.drawText (juce::String (bar + 1),
-                        x + 3, rulerBounds.getY(),
-                        48, rulerBounds.getHeight(),
+                        x + 3, barNumberBand.getY(),
+                        48, barNumberBand.getHeight(),
                         juce::Justification::centredLeft, false);
         }
 
-        // Loop L / R labels
+        // Loop L / R labels — bottom half of the ruler row, directly under
+        // where the bar numbers sit, so the two never overlap regardless of
+        // how close a locator falls to a bar (or beat) line.
         if (loopStart >= 0 && loopEnd > loopStart)
         {
+            const int loopLabelY = rulerBounds.getY() + rulerTopH;
+            const int loopLabelH = rulerBounds.getHeight() - rulerTopH;
             const float lx = tickToX (loopStart);
             const float rx = tickToX (loopEnd);
             g.setFont (juce::Font (9.f, juce::Font::bold));
@@ -1965,16 +1977,16 @@ private:
 
             if (rulerBounds.contains ((int)lx, rulerBounds.getCentreY()))
             {
-                g.drawText ("L", (int)lx + 2, rulerBounds.getY(),
-                            14, rulerBounds.getHeight(), juce::Justification::centredLeft);
+                g.drawText ("L", (int)lx + 2, loopLabelY,
+                            14, loopLabelH, juce::Justification::centredLeft);
                 g.drawVerticalLine ((int)lx, (float)rulerBounds.getY(),
                                     (float)rulerBounds.getBottom());
             }
 
             if (rulerBounds.contains ((int)rx, rulerBounds.getCentreY()))
             {
-                g.drawText ("R", (int)rx - 16, rulerBounds.getY(),
-                            14, rulerBounds.getHeight(), juce::Justification::centredRight);
+                g.drawText ("R", (int)rx - 16, loopLabelY,
+                            14, loopLabelH, juce::Justification::centredRight);
                 g.drawVerticalLine ((int)rx, (float)rulerBounds.getY(),
                                     (float)rulerBounds.getBottom());
             }
