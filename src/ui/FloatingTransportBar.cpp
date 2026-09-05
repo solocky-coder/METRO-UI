@@ -279,6 +279,20 @@ FloatingTransportBar::~FloatingTransportBar()
 //==============================================================================
 void FloatingTransportBar::show()
 {
+ // While docked, ArrangeView::resized() stretches this component to fill
+ // the host row (transport.setBounds (r.removeFromTop (kTransportH))) —
+ // so its actual size at the moment Float is clicked is whatever width
+ // the host window last had, not the compact floating size set once in
+ // the constructor. Re-assert the fixed floating size here, every time,
+ // rather than only in the constructor: otherwise a host window that was
+ // maximised wide (e.g. on a large external monitor) before floating
+ // hands that same width to the desktop window, leaving the GRID
+ // snap-button row far short of the width it was laid out for and a
+ // visible gap between it and LINK — while floating from a narrower host
+ // (e.g. a laptop screen) happens to look fine purely by luck of the
+ // previous docked width being closer to the intended size.
+ setSize (MetroMetrics::grid * 160, MetroMetrics::grid * 13);
+
  if (! isOnDesktop())
     {
  setOpaque (true);
