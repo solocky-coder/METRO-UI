@@ -85,6 +85,21 @@ jobs:
             git clone --depth 1 --recurse-submodules https://github.com/sfztools/sfizz.git sfizz
           }
 
+      # link was added as a submodule via GitHub Desktop (see chat/PR history),
+      # the same tool that left JUCE/bungee/signalsmith-*/sfizz above without a
+      # properly recorded submodule commit — `submodules: recursive` on
+      # checkout is not enough to recover from that, since there's no valid
+      # pinned commit for it to check out. Same fallback pattern as those:
+      # clone directly if the expected header isn't there. link itself has a
+      # nested submodule (modules/asio-standalone), hence --recurse-submodules.
+      - name: Fetch link (Ableton Link)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "link/include/ableton/Link.hpp")) {
+            Remove-Item -Recurse -Force link -ErrorAction SilentlyContinue
+            git clone --depth 1 --recurse-submodules https://github.com/Ableton/link.git link
+          }
+
       - name: Patch sfizz cxxopts alias collision
         shell: pwsh
         run: |
