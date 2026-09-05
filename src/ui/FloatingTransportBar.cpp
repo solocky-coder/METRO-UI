@@ -725,6 +725,18 @@ void FloatingTransportBar::paint (juce::Graphics& g)
         frameField (L.floatField);
     frameField (L.linkField);
 
+    // Beat-synced LINK glow — see timerCallback() for how linkPulseAlpha is
+    // derived from Link's own phase. Drawn as a soft halo just outside
+    // linkButton's own bounds so it reads as a glow around the button
+    // rather than recolouring the button (which linkButton's own toggle
+    // state / DysektLookAndFeel already own).
+    if (linkPulseAlpha > 0.01f)
+    {
+ const auto glowBounds = linkButton.getBounds().toFloat().expanded (6.0f);
+        g.setColour (Accent::Purple.withAlpha (linkPulseAlpha * 0.55f));
+        g.drawRoundedRectangle (glowBounds, 6.0f, 2.0f);
+    }
+
     // Grid-snap button row (see gridButtonsFit) reads as one bordered group,
     // same treatment as the MIXER/ARRANGER/GLOBAL EQ switcher below —
     // individual buttons already carry their own chrome, so this just wraps
@@ -799,6 +811,24 @@ void FloatingTransportBar::timerCallback()
  const int peers = linkPtr->getPeerCount();
         linkButton.setButtonText (peers > 0 ? ("LINK " + juce::String (peers)) : "LINK");
         linkButton.setToggleState (linkPtr->isEnabled(), juce::dontSendNotification);
+
+        // Pulse in sync with the beat once there's an actual peer to sync
+        // with (enabled-but-alone stays dark — nothing to be "in time"
+        // with yet). getPhase (1.0) returns Link's own phase *within the
+        // current beat* (0 = on the beat, approaching 1 = about to land on
+        // the next one) — using Link's phase directly means the flash
+        // stays locked to the session's beat, not a locally-derived
+        // BPM/timer guess. Exponential decay gives a snappy flash on the
+        // beat that fades across the rest of it rather than a linear fade
+        // that reads as a slow pulse.
+        const float newAlpha = (linkPtr->isEnabled() && peers > 0)
+                                  ? (float) std::exp (-linkPtr->getPhase (1.0) * 6.0)
+                                  : 0.0f;
+        if (! juce::approximatelyEqual (newAlpha, linkPulseAlpha))
+        {
+            linkPulseAlpha = newAlpha;
+            repaint (linkButton.getBounds().expanded (10));
+        }
     }
 
  // Mirror gridCombo's current selection onto the radio-button alternative

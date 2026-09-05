@@ -400,6 +400,12 @@ private:
 
     juce::TextButton linkButton { "LINK" };
 
+    // Beat-synced glow intensity for linkButton, recomputed each timerCallback()
+    // tick from AbletonLink::getPhase (i.e. Link's own beat clock, not a local
+    // BPM guess) — 1.0 right on the beat, decaying across the rest of it.
+    // Painted as a soft halo around L.linkField in paint(); see timerCallback().
+    float linkPulseAlpha = 0.0f;
+
 
  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FloatingTransportBar)
 };
