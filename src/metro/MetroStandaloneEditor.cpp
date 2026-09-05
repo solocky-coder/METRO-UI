@@ -9,7 +9,8 @@
 namespace dysekt::metro
 {
 MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
-    : AudioProcessorEditor (processorToEdit), processor (processorToEdit), transportBar (processor.sequencer)
+    : AudioProcessorEditor (processorToEdit), processor (processorToEdit),
+      transportBar (processor.sequencer, &processor.abletonLink)
 {
     setLookAndFeel (&lookAndFeel);
     arrangementView = std::make_unique<MetroArrangementView> (processor.sequencer);

@@ -157,7 +157,6 @@ public:
     //==========================================================================
     ArrangeView (SequencerEngine& seq, AbletonLink* link = nullptr)
         : engine (seq),
-          linkPtr (link),
           transport (seq, link),
           trackStrip (seq),
           inspector (seq)
@@ -920,7 +919,6 @@ private:
     //  State
     //==========================================================================
     SequencerEngine&      engine;
-    AbletonLink*          linkPtr = nullptr;
     FloatingTransportBar  transport;
     TrackInspector        inspector;
     TrackHeaderStrip      trackStrip;

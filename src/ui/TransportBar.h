@@ -474,7 +474,16 @@ private:
 
         if (! bpmLabel.isBeingEdited())
         {
-            juce::String s = juce::String ((int) std::round (engine.getBpm()));
+            // While Link is enabled, playback follows Link's tempo (see
+            // SequencerEngine::processBlock(), which reads abletonLink->getBpm()
+            // directly) rather than engine.getBpm()'s internalBpm. Mirror that
+            // here so the displayed BPM doesn't go stale when a Link peer
+            // changes tempo — otherwise the number on screen and the tempo
+            // actually being played can silently disagree.
+            const float displayBpm = (linkPtr != nullptr && linkPtr->isEnabled())
+                                        ? linkPtr->getBpm (engine.getBpm())
+                                        : engine.getBpm();
+            juce::String s = juce::String ((int) std::round (displayBpm));
             if (bpmLabel.getText() != s) bpmLabel.setText (s, juce::dontSendNotification);
         }
 

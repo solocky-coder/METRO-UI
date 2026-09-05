@@ -3,10 +3,12 @@
 #include "MetroMetrics.h"
 #include "MetroTypography.h"
 #include "../sequencer/SequencerEngine.h"
+#include "../sequencer/AbletonLink.h"
 
 namespace dysekt::metro
 {
-MetroTransportBar::MetroTransportBar (SequencerEngine& sequencer) : engine (sequencer)
+MetroTransportBar::MetroTransportBar (SequencerEngine& sequencer, AbletonLink* link)
+    : engine (sequencer), linkPtr (link)
 {
     record.setClickingTogglesState (true);
     floatButton.setTooltip ("Detach the transport into a floating panel");
@@ -19,6 +21,14 @@ MetroTransportBar::MetroTransportBar (SequencerEngine& sequencer) : engine (sequ
     stop.onClick = [this] { engine.stop(); };
     record.onClick = [this] { engine.setRecording (record.getToggleState()); };
     floatButton.onClick = [this] { if (onFloatRequested) onFloatRequested(); };
+
+    if (linkPtr != nullptr)
+    {
+        linkButton.setClickingTogglesState (true);
+        linkButton.setTooltip ("Toggle Ableton Link");
+        linkButton.onStateChange = [this] { if (linkPtr) linkPtr->setEnabled (linkButton.getToggleState()); };
+        addAndMakeVisible (linkButton);
+    }
 
     tempo.setEditable (true, true, false);
     tempo.setJustificationType (juce::Justification::centred);
@@ -46,6 +56,10 @@ void MetroTransportBar::resized()
     floatButton.setBounds (area.removeFromRight (MetroMetrics::grid * 8)
                                .reduced (MetroMetrics::separatorThickness));
 
+    if (linkPtr != nullptr)
+        linkButton.setBounds (area.removeFromRight (MetroMetrics::grid * 8)
+                                  .reduced (MetroMetrics::separatorThickness));
+
     for (auto* button : { &rewind, &play, &stop, &record })
         button->setBounds (area.removeFromLeft (MetroMetrics::grid * 10)
                                .reduced (MetroMetrics::separatorThickness));
@@ -57,7 +71,22 @@ void MetroTransportBar::timerCallback()
     record.setToggleState (engine.isRecording(), juce::dontSendNotification);
 
     if (! tempo.isBeingEdited())
-        tempo.setText (juce::String (engine.getBpm(), 1) + " BPM", juce::dontSendNotification);
+    {
+        // Mirror Link's tempo while enabled — playback follows abletonLink's
+        // BPM directly (see SequencerEngine::processBlock()), so the label
+        // should too, instead of showing the stale local engine.getBpm().
+        const float displayBpm = (linkPtr != nullptr && linkPtr->isEnabled())
+                                    ? linkPtr->getBpm (engine.getBpm())
+                                    : engine.getBpm();
+        tempo.setText (juce::String (displayBpm, 1) + " BPM", juce::dontSendNotification);
+    }
+
+    if (linkPtr != nullptr)
+    {
+        const int peers = linkPtr->getPeerCount();
+        linkButton.setButtonText (peers > 0 ? ("LINK " + juce::String (peers)) : "LINK");
+        linkButton.setToggleState (linkPtr->isEnabled(), juce::dontSendNotification);
+    }
 }
 
 void MetroTransportBar::updateTempoFromEditor()

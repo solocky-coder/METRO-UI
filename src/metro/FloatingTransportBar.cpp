@@ -353,7 +353,15 @@ void FloatingTransportBar::timerCallback()
         cycleButton.setToggleState (looping, juce::dontSendNotification);
 
     if (! tempoLabel.isBeingEdited())
-        tempoLabel.setText (juce::String (engine.getBpm(), 2), juce::dontSendNotification);
+    {
+        // Mirror Link's tempo while enabled — playback follows abletonLink's
+        // BPM directly (see SequencerEngine::processBlock()), so the label
+        // should too, instead of showing the stale local engine.getBpm().
+        const float displayBpm = (linkPtr != nullptr && linkPtr->isEnabled())
+                                    ? linkPtr->getBpm (engine.getBpm())
+                                    : engine.getBpm();
+        tempoLabel.setText (juce::String (displayBpm, 2), juce::dontSendNotification);
+    }
 
     positionLabel.setText (formatMusicalPosition (engine.getPlayheadBeats()), juce::dontSendNotification);
 

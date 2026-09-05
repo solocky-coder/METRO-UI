@@ -273,7 +273,13 @@ void SequencerEngine::play()
         // processBlock() flips pendingPlay only once the phase wraps.
         impl->abletonLink->requestBeatAlignedStart (4.0);
         impl->linkPhasePrimed = false;
-        impl->awaitingLinkStart.store (true, std::memory_order_relaxed);
+        // release: pairs with the acquire load in processBlock() below, so the
+        // audio thread is guaranteed to see the linkPhasePrimed write above
+        // before it observes awaitingLinkStart == true. Without this pairing,
+        // linkPhasePrimed/linkPhasePrev are plain (non-atomic) fields written
+        // on this (message) thread and read/written on the audio thread with
+        // no synchronizes-with relationship between them — a data race.
+        impl->awaitingLinkStart.store (true, std::memory_order_release);
     }
     else
     {
@@ -953,7 +959,11 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     {
         impl->playing.store (true, std::memory_order_relaxed);
     }
-    if (impl->awaitingLinkStart.load (std::memory_order_relaxed))
+    // acquire: pairs with the release store in play() above, so that if we
+    // observe awaitingLinkStart == true here, the linkPhasePrimed = false
+    // write play() did on the message thread is guaranteed visible before we
+    // touch linkPhasePrimed/linkPhasePrev below.
+    if (impl->awaitingLinkStart.load (std::memory_order_acquire))
     {
         // Waiting on the quantum boundary requested by requestBeatAlignedStart().
         // Detect arrival by watching the Link phase wrap back past zero —

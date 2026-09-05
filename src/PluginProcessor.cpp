@@ -3186,8 +3186,16 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // without also remembering to remove this #if.
                 sequencer.setHostBpm ((float) *bpmOpt);
 #if DYSEKT_STANDALONE
+                // Audio thread: must use the realtime-safe requestBpm(), never
+                // setBpm() directly. setBpm() calls Link's
+                // captureAppSessionState()/commitAppSessionState(), which take
+                // an internal lock and are documented as message-thread-only;
+                // calling them here would risk audio dropouts/priority
+                // inversion on every single block. requestBpm() just records
+                // the value atomically and defers the actual Link session
+                // update to the message thread via AsyncUpdater.
                 if (abletonLink.isEnabled())
-                    abletonLink.setBpm (*bpmOpt);
+                    abletonLink.requestBpm (*bpmOpt);
 #endif
             }
         }

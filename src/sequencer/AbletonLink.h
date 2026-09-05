@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_core/juce_core.h>
+#include <juce_events/juce_events.h>   // juce::AsyncUpdater, used by requestBpm()
 #include <atomic>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,7 +23,7 @@
   #include <ableton/Link.hpp>
 #endif
 
-class AbletonLink
+class AbletonLink : private juce::AsyncUpdater
 {
 public:
     AbletonLink()
@@ -61,6 +62,11 @@ public:
     int  getPeerCount()const noexcept { return numPeers.load (std::memory_order_relaxed); }
 
     // ── Propagate local BPM change to Link session ────────────────────────────
+    // Message-thread only: captureAppSessionState()/commitAppSessionState() take
+    // an internal Link lock and must never be called from the audio thread. Call
+    // this directly when you're already on the message thread (e.g. from a UI
+    // BPM edit); call requestBpm() instead if the request may originate from the
+    // audio thread (e.g. following the host's transport tempo in processBlock()).
     void setBpm (double bpm)
     {
 #if DYSEKT_HAS_LINK
@@ -72,6 +78,19 @@ public:
         }
 #endif
         cachedBpm.store ((float) bpm, std::memory_order_relaxed);
+    }
+
+    // ── Realtime-safe request to propagate a BPM change ───────────────────────
+    // Safe to call from ANY thread, including the audio thread: this only does
+    // an atomic store plus AsyncUpdater::triggerAsyncUpdate() (a lock-free flag
+    // set + message post), never touches Link's AppSessionState directly. The
+    // actual captureAppSessionState()/commitAppSessionState() call is deferred to
+    // handleAsyncUpdate(), which JUCE guarantees runs on the message thread.
+    void requestBpm (double bpm) noexcept
+    {
+        pendingBpm.store ((float) bpm, std::memory_order_relaxed);
+        cachedBpm.store  ((float) bpm, std::memory_order_relaxed);
+        triggerAsyncUpdate();
     }
 
     // ── Audio-thread accessors (no allocation, no locks) ─────────────────────
@@ -125,12 +144,28 @@ public:
     }
 
 private:
+    // Runs on the message thread in response to requestBpm()'s
+    // triggerAsyncUpdate(); safe to touch AppSessionState here.
+    void handleAsyncUpdate() override
+    {
+#if DYSEKT_HAS_LINK
+        if (link && isEnabled())
+        {
+            auto s = link->captureAppSessionState();
+            s.setTempo ((double) pendingBpm.load (std::memory_order_relaxed),
+                        ableton::Link::Clock::now());
+            link->commitAppSessionState (s);
+        }
+#endif
+    }
+
 #if DYSEKT_HAS_LINK
     std::unique_ptr<ableton::Link> link;
 #endif
     std::atomic<bool>  enabled  { false };
     std::atomic<float> cachedBpm{ 120.f };
     std::atomic<int>   numPeers { 0     };
+    std::atomic<float> pendingBpm{ 120.f }; // last value passed to requestBpm()
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AbletonLink)
 };
