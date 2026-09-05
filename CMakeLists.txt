@@ -227,6 +227,7 @@ target_sources(Dysekt PRIVATE
 target_include_directories(Dysekt PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
+    $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
     $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>
@@ -342,6 +343,7 @@ target_sources(DysektStandalone PRIVATE
 target_include_directories(DysektStandalone PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
+    $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
     $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>
