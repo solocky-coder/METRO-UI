@@ -73,7 +73,7 @@ public:
         if (link && isEnabled())
         {
             auto s = link->captureAppSessionState();
-            s.setTempo (bpm, ableton::Link::Clock::now());
+            s.setTempo (bpm, link->clock().micros());
             link->commitAppSessionState (s);
         }
 #endif
@@ -109,7 +109,7 @@ public:
         if (link && isEnabled())
         {
             const auto s = link->captureAudioSessionState();
-            return s.phaseAtTime (ableton::Link::Clock::now(), quantum);
+            return s.phaseAtTime (link->clock().micros(), quantum);
         }
 #endif
         juce::ignoreUnused (quantum);
@@ -124,7 +124,7 @@ public:
         {
             auto s = link->captureAppSessionState();
             s.requestBeatAtStartPlayingTime (0.0, quantum);
-            s.setIsPlaying (true, ableton::Link::Clock::now());
+            s.setIsPlaying (true, link->clock().micros());
             link->commitAppSessionState (s);
         }
 #endif
@@ -137,7 +137,7 @@ public:
         if (link && isEnabled())
         {
             auto s = link->captureAppSessionState();
-            s.setIsPlaying (false, ableton::Link::Clock::now());
+            s.setIsPlaying (false, link->clock().micros());
             link->commitAppSessionState (s);
         }
 #endif
@@ -153,7 +153,7 @@ private:
         {
             auto s = link->captureAppSessionState();
             s.setTempo ((double) pendingBpm.load (std::memory_order_relaxed),
-                        ableton::Link::Clock::now());
+                        link->clock().micros());
             link->commitAppSessionState (s);
         }
 #endif
