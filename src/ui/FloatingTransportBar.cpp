@@ -243,12 +243,11 @@ addAndMakeVisible (*b);
  // ── Ableton Link ─────────────────────────────────────────────────────
  if (linkPtr != nullptr)
     {
- configureChrome (linkButton, "LINK", "Toggle Ableton Link (right-click for options)");
+ configureChrome (linkButton, "LINK", "Toggle Ableton Link");
         linkButton.getProperties().set ("transportFontSize", transportTextSize);
         linkButton.setClickingTogglesState (true);
         linkButton.setColour (juce::TextButton::buttonOnColourId, Accent::Purple.withAlpha (0.35f));
         linkButton.onStateChange = [this] { if (linkPtr) linkPtr->setEnabled (linkButton.getToggleState()); };
-        linkButton.onRightClick = [this] (const juce::MouseEvent&) { showLinkContextMenu(); };
  addAndMakeVisible (linkButton);
     }
 
@@ -537,9 +536,17 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
 
         L.gridButtonsFit = row.getWidth() >= minGridButtonsW;
         if (L.gridButtonsFit)
-            L.gridButtonsField = row.removeFromLeft (juce::jmin (row.getWidth(), maxGridButtonsW));
+            // Peeled from the right (not the left): keeps the grid-snap
+            // block flush against the right-pinned Float/Link group at any
+            // host width. Taking it from the left instead left any leftover
+            // row space (row wider than maxGridButtonsW, e.g. a docked host
+            // maximised on a large external monitor) stranded as a visible
+            // gap between the grid buttons and LINK; anchoring to the right
+            // pushes that same leftover space behind the BPM field instead,
+            // where it was already accounted for as spare row width.
+            L.gridButtonsField = row.removeFromRight (juce::jmin (row.getWidth(), maxGridButtonsW));
         else
-            L.gridField = row.removeFromLeft (MetroMetrics::grid * 9);
+            L.gridField = row.removeFromRight (MetroMetrics::grid * 9);
     }
 
  return L;
@@ -726,18 +733,6 @@ void FloatingTransportBar::paint (juce::Graphics& g)
         frameField (L.floatField);
     frameField (L.linkField);
 
-    // Beat-synced LINK glow — see timerCallback() for how linkPulseAlpha is
-    // derived from Link's own phase. Drawn as a soft halo just outside
-    // linkButton's own bounds so it reads as a glow around the button
-    // rather than recolouring the button (which linkButton's own toggle
-    // state / DysektLookAndFeel already own).
-    if (linkPulseAlpha > 0.01f)
-    {
- const auto glowBounds = linkButton.getBounds().toFloat().expanded (6.0f);
-        g.setColour (Accent::Purple.withAlpha (linkPulseAlpha * 0.55f));
-        g.drawRoundedRectangle (glowBounds, 6.0f, 2.0f);
-    }
-
     // Grid-snap button row (see gridButtonsFit) reads as one bordered group,
     // same treatment as the MIXER/ARRANGER/GLOBAL EQ switcher below —
     // individual buttons already carry their own chrome, so this just wraps
@@ -782,15 +777,7 @@ void FloatingTransportBar::timerCallback()
 
 
  if (! tempoLabel.isBeingEdited())
-    {
-        // Mirror Link's tempo while enabled — playback follows abletonLink's
-        // BPM directly (see SequencerEngine::processBlock()), so the label
-        // should too, instead of showing the stale local engine.getBpm().
-        const float displayBpm = (linkPtr != nullptr && linkPtr->isEnabled())
-                                    ? linkPtr->getBpm (engine.getBpm())
-                                    : engine.getBpm();
-        tempoLabel.setText (juce::String ((int) std::round (displayBpm)), juce::dontSendNotification);
-    }
+        tempoLabel.setText (juce::String ((int) std::round (engine.getBpm())), juce::dontSendNotification);
 
 
     positionLabel.setText (formatMusicalPosition (engine.getPlayheadBeats()), juce::dontSendNotification);
@@ -812,24 +799,6 @@ void FloatingTransportBar::timerCallback()
  const int peers = linkPtr->getPeerCount();
         linkButton.setButtonText (peers > 0 ? ("LINK " + juce::String (peers)) : "LINK");
         linkButton.setToggleState (linkPtr->isEnabled(), juce::dontSendNotification);
-
-        // Pulse in sync with the beat once there's an actual peer to sync
-        // with (enabled-but-alone stays dark — nothing to be "in time"
-        // with yet). getPhase (1.0) returns Link's own phase *within the
-        // current beat* (0 = on the beat, approaching 1 = about to land on
-        // the next one) — using Link's phase directly means the flash
-        // stays locked to the session's beat, not a locally-derived
-        // BPM/timer guess. Exponential decay gives a snappy flash on the
-        // beat that fades across the rest of it rather than a linear fade
-        // that reads as a slow pulse.
-        const float newAlpha = (linkPtr->isEnabled() && peers > 0)
-                                  ? (float) std::exp (-linkPtr->getPhase (1.0) * 6.0)
-                                  : 0.0f;
-        if (! juce::approximatelyEqual (newAlpha, linkPulseAlpha))
-        {
-            linkPulseAlpha = newAlpha;
-            repaint (linkButton.getBounds().expanded (10));
-        }
     }
 
  // Mirror gridCombo's current selection onto the radio-button alternative
@@ -849,22 +818,6 @@ void FloatingTransportBar::updateTempoFromEditor()
  const float bpm = tempoLabel.getText().getFloatValue();
  if (bpm >= 20.0f && bpm <= 999.0f)
         engine.setBpm (bpm);
-}
-
-void FloatingTransportBar::showLinkContextMenu()
-{
-    // The one Link setting that isn't tempo sync
-    // (SequencerEngine::setLinkFollowsTransport()) — a right-click menu on
-    // LINK rather than a second cramped button. LINK's own left-click
-    // toggle keeps meaning "tempo sync only".
-    juce::PopupMenu m;
-    m.addItem (1, "Follow Remote Start/Stop", true, engine.getLinkFollowsTransport());
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (linkButton),
-        [this] (int result)
-        {
-            if (result == 1)
-                engine.setLinkFollowsTransport (! engine.getLinkFollowsTransport());
-        });
 }
 
 
