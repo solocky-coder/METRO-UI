@@ -31,6 +31,13 @@ public:
 #if DYSEKT_HAS_LINK
         link = std::make_unique<ableton::Link> (120.0);
         link->enable (false);
+        // Tempo sync and start/stop sync are independent opt-ins in the Link
+        // SDK. Without this call, setIsPlaying() on our AppSessionState is
+        // never transmitted, and incoming peer start/stop state is never
+        // exposed via captureAudioSessionState() either — so nothing here
+        // would send OR receive Play/Stop despite Link otherwise being
+        // "enabled" for tempo.
+        link->enableStartStopSync (true);
         link->setTempoCallback ([this] (double bpm)
         {
             cachedBpm.store ((float) bpm, std::memory_order_relaxed);
@@ -141,6 +148,23 @@ public:
             link->commitAppSessionState (s);
         }
 #endif
+    }
+
+    /** Session-wide "is anyone playing" state, as seen from the audio thread.
+     *  captureAudioSessionState() is real-time safe (unlike the App variant
+     *  used above, it never takes Link's internal lock), so this is safe to
+     *  poll every processBlock() to detect a remote peer starting or
+     *  stopping transport. */
+    bool isSessionPlaying() const noexcept
+    {
+#if DYSEKT_HAS_LINK
+        if (link && isEnabled())
+        {
+            const auto s = link->captureAudioSessionState();
+            return s.isPlaying();
+        }
+#endif
+        return false;
     }
 
 private:

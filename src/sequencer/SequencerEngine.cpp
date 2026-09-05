@@ -80,6 +80,17 @@ struct SequencerEngine::Impl
     std::atomic<bool>    awaitingLinkStart { false };
     double               linkPhasePrev     = 0.0;
     bool                 linkPhasePrimed   = false;
+    // Last-observed Link session play state, used purely to edge-detect a
+    // remote peer's Play/Stop in processBlock() (see isSessionPlaying()).
+    bool                 lastLinkSessionPlaying = false;
+    // Gates the remote-peer-reaction block below. Independent of
+    // AbletonLink::isEnabled() (tempo sync) — see
+    // SequencerEngine::setLinkFollowsTransport().
+    std::atomic<bool>    linkFollowsTransport { false };
+    // Set (message thread) whenever setLinkFollowsTransport() is called, so
+    // processBlock() (audio thread) can re-baseline lastLinkSessionPlaying
+    // itself instead of that plain bool being written cross-thread directly.
+    std::atomic<bool>    linkFollowBaselineDirty { false };
     std::atomic<float>   internalBpm  { 120.f };
     std::atomic<float>   hostBpm      { 120.f };
     std::atomic<bool>    syncToHost   { false };
@@ -752,6 +763,21 @@ void SequencerEngine::setTrackLengthTicks (int trackIndex, int64_t ticks)
 
 //==============================================================================
 void SequencerEngine::setAbletonLink (AbletonLink* l) noexcept { impl->abletonLink = l; }
+
+void SequencerEngine::setLinkFollowsTransport (bool shouldFollow) noexcept
+{
+    impl->linkFollowsTransport.store (shouldFollow, std::memory_order_relaxed);
+    // Re-baseline on the audio thread (see processBlock()) rather than
+    // touching the plain lastLinkSessionPlaying bool from here directly,
+    // so toggling this doesn't immediately react to whatever the session's
+    // play state already happens to be — only to a change from here on.
+    impl->linkFollowBaselineDirty.store (true, std::memory_order_relaxed);
+}
+
+bool SequencerEngine::getLinkFollowsTransport() const noexcept
+{
+    return impl->linkFollowsTransport.load (std::memory_order_relaxed);
+}
 void SequencerEngine::setSfzPlayer   (SfzPlayer*   p) noexcept { impl->sfzPlayer   = p; }
 
 void SequencerEngine::setSelectedSfLiveChannels (uint16_t channelMask) noexcept
@@ -959,6 +985,40 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     {
         impl->playing.store (true, std::memory_order_relaxed);
     }
+    // ── React to a remote Link peer's Play/Stop ───────────────────────────
+    // Everything above only ever sends our own transport state to Link
+    // (requestBeatAlignedStart()/notifyStop() in play()/stop()). Nothing
+    // previously looked at isSessionPlaying(), so a peer pressing Play/Stop
+    // in another Link-enabled app had no effect here at all. Edge-detect it
+    // and either join in (beat-aligned, same path our own Play button uses)
+    // or stop, without touching the local send-side logic above.
+    if (impl->abletonLink != nullptr && impl->abletonLink->isEnabled()
+         && impl->linkFollowsTransport.load (std::memory_order_relaxed))
+    {
+        if (impl->linkFollowBaselineDirty.exchange (false, std::memory_order_relaxed))
+            impl->lastLinkSessionPlaying = impl->abletonLink->isSessionPlaying();
+
+        const bool sessionPlaying = impl->abletonLink->isSessionPlaying();
+        if (sessionPlaying != impl->lastLinkSessionPlaying)
+        {
+            if (sessionPlaying
+                && ! impl->playing.load (std::memory_order_relaxed)
+                && ! impl->awaitingLinkStart.load (std::memory_order_relaxed))
+            {
+                impl->awaitingLinkStart.store (true, std::memory_order_relaxed);
+                impl->linkPhasePrimed = false;
+            }
+            else if (! sessionPlaying && impl->playing.load (std::memory_order_relaxed))
+            {
+                impl->playing.store (false, std::memory_order_relaxed);
+                impl->awaitingLinkStart.store (false, std::memory_order_relaxed);
+                impl->flushAllActiveNotes (outMidi, 0);
+                impl->openRecNotes.clearQuick();
+            }
+            impl->lastLinkSessionPlaying = sessionPlaying;
+        }
+    }
+
     // acquire: pairs with the release store in play() above, so that if we
     // observe awaitingLinkStart == true here, the linkPhasePrimed = false
     // write play() did on the message thread is guaranteed visible before we

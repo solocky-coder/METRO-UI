@@ -25,8 +25,9 @@ MetroTransportBar::MetroTransportBar (SequencerEngine& sequencer, AbletonLink* l
     if (linkPtr != nullptr)
     {
         linkButton.setClickingTogglesState (true);
-        linkButton.setTooltip ("Toggle Ableton Link");
+        linkButton.setTooltip ("Toggle Ableton Link (right-click for options)");
         linkButton.onStateChange = [this] { if (linkPtr) linkPtr->setEnabled (linkButton.getToggleState()); };
+        linkButton.onRightClick = [this] (const juce::MouseEvent&) { showLinkContextMenu(); };
         addAndMakeVisible (linkButton);
     }
 
@@ -94,5 +95,21 @@ void MetroTransportBar::updateTempoFromEditor()
     const auto bpm = tempo.getText().upToFirstOccurrenceOf (" ", false, false).getFloatValue();
     if (bpm >= 20.0f && bpm <= 999.0f)
         engine.setBpm (bpm);
+}
+
+void MetroTransportBar::showLinkContextMenu()
+{
+    // The one Link setting that isn't tempo sync
+    // (SequencerEngine::setLinkFollowsTransport()) — a right-click menu on
+    // LINK rather than a second cramped button. LINK's own left-click
+    // toggle keeps meaning "tempo sync only".
+    juce::PopupMenu m;
+    m.addItem (1, "Follow Remote Start/Stop", true, engine.getLinkFollowsTransport());
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (linkButton),
+        [this] (int result)
+        {
+            if (result == 1)
+                engine.setLinkFollowsTransport (! engine.getLinkFollowsTransport());
+        });
 }
 } // namespace dysekt::metro

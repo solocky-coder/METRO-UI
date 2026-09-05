@@ -208,6 +208,15 @@ public:
     //==========================================================================
     void setAbletonLink (AbletonLink* l) noexcept;
 
+    /** Independent from AbletonLink::setEnabled() (which only turns tempo
+     *  sync on/off). When true, a remote Link peer starting or stopping
+     *  transport also starts/stops local playback (beat-aligned on start,
+     *  same path as pressing the local Play button — see processBlock()).
+     *  When false (the default), Link only ever affects tempo here; local
+     *  transport is controlled exclusively by play()/stop(). */
+    void setLinkFollowsTransport (bool shouldFollow) noexcept;
+    bool getLinkFollowsTransport() const noexcept;
+
     //==========================================================================
     //  SfzPlayer integration  (multi-timbral channel assignment)
     //==========================================================================

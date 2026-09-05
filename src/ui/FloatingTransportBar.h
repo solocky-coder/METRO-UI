@@ -27,6 +27,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/AbletonLink.h"
 #include "TransportIconButton.h"
+#include "ContextMenuButton.h"
 
 
 class SequencerEngine;
@@ -329,6 +330,7 @@ private:
  void updateTempoFromEditor();
  void setLeftLocatorToPlayhead();
  void setRightLocatorToPlayhead();
+ void showLinkContextMenu();
  void updateLocatorsFromEditors();
  void adjustLeftLocator (int segment, int direction);
  void adjustRightLocator (int segment, int direction);
@@ -398,7 +400,7 @@ private:
     static constexpr int kNumGridOptions = 6;
     juce::TextButton gridButtons[kNumGridOptions];
 
-    juce::TextButton linkButton { "LINK" };
+    ContextMenuButton linkButton { "LINK" };
 
     // Beat-synced glow intensity for linkButton, recomputed each timerCallback()
     // tick from AbletonLink::getPhase (i.e. Link's own beat clock, not a local

@@ -9,6 +9,7 @@
 #include "../metro/MetroTypography.h"
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
+#include "ContextMenuButton.h"
 #include "TransportIconButton.h"
 
 using namespace dysekt::metro;   // Base/Text/Accent/Transport — same chrome
@@ -170,10 +171,11 @@ public:
         // ── Ableton Link ─────────────────────────────────────────────────
         if (linkPtr != nullptr)
         {
-            configureChrome (linkBtn, "LINK", "Toggle Ableton Link");
+            configureChrome (linkBtn, "LINK", "Toggle Ableton Link (right-click for options)");
             linkBtn.setClickingTogglesState (true);
             linkBtn.setColour (juce::TextButton::buttonOnColourId, Accent::Purple.withAlpha (0.35f));
             linkBtn.onStateChange = [this] { if (linkPtr) linkPtr->setEnabled (linkBtn.getToggleState()); };
+            linkBtn.onRightClick = [this] (const juce::MouseEvent&) { showLinkContextMenu(); };
             addAndMakeVisible (linkBtn);
         }
 
@@ -307,7 +309,7 @@ private:
 
     TransportIconButton toStartBtn, backBtn, playBtn, stopBtn, recBtn, loopBtn;
     juce::TextButton  floatBtn { "FLOAT" };
-    juce::TextButton  linkBtn  { "LINK" };
+    ContextMenuButton linkBtn  { "LINK" };
     juce::Label       bpmLabel;
     juce::ComboBox    snapCombo;
 
@@ -384,6 +386,22 @@ private:
         // theme.button/theme.accent instead — see this class's header
         // comment. Same fix TrackInspector's track-colour swatches needed.
         b.getProperties().set ("flatFill", true);
+    }
+
+    // Right-click on LINK: a menu instead of a second cramped button for the
+    // one Link setting (SequencerEngine::setLinkFollowsTransport()) that
+    // isn't tempo sync. LINK's own left-click toggle keeps meaning "tempo
+    // sync only" — this is strictly opt-in, additional behaviour.
+    void showLinkContextMenu()
+    {
+        juce::PopupMenu m;
+        m.addItem (1, "Follow Remote Start/Stop", true, engine.getLinkFollowsTransport());
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (linkBtn),
+            [this] (int result)
+            {
+                if (result == 1)
+                    engine.setLinkFollowsTransport (! engine.getLinkFollowsTransport());
+            });
     }
 
     static int64_t segmentStepTicks (int segment) noexcept

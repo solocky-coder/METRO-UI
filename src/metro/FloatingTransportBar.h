@@ -21,6 +21,7 @@
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/AbletonLink.h"
+#include "../ui/ContextMenuButton.h"
 
 class SequencerEngine;
 
@@ -95,6 +96,7 @@ private:
     void updateTempoFromEditor();
     void setLeftLocatorToPlayhead();
     void setRightLocatorToPlayhead();
+    void showLinkContextMenu();
     static juce::String formatMusicalPosition (double beats);
 
     static juce::File getPositionFile();
@@ -130,7 +132,7 @@ private:
 
     // ── Far right: grid snap + link ─────────────────────────────────────
     juce::ComboBox   gridCombo;
-    juce::TextButton linkButton { "LINK" };
+    ContextMenuButton linkButton { "LINK" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FloatingTransportBar)
 };
