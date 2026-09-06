@@ -193,6 +193,44 @@ struct SequencerEngine::Impl
         return masterLen;
     }
 
+    // Pre-create the live-record clip before the audio thread reaches the
+    // first block of a recording pass. This is important at tick 0: if the
+    // first note creates the clip only from drainRecordedEvents(), that
+    // message-thread callback runs after the audio block containing tick 0,
+    // so playback would never see the note at the start boundary until the
+    // next loop.
+    void beginLiveRecordClip (int trackIndex)
+    {
+        if (liveRecordClip.active
+            || ! juce::isPositiveAndBelow (trackIndex, (int) currentTracks.load()->size()))
+            return;
+
+        auto tracks = getTracks();
+        if (! juce::isPositiveAndBelow (trackIndex, (int) tracks->size())) return;
+
+        auto& track = *(*tracks)[(size_t) trackIndex];
+        const int64_t globalTick = (int64_t) currentTick;
+        const auto mode = recordMode.load (std::memory_order_relaxed);
+
+        if (mode == SequencerEngine::RecordMode::Overdub)
+        {
+            auto clipsSnap = track.getClips();
+            for (auto& existing : *clipsSnap)
+            {
+                if (globalTick >= existing->getStartTick()
+                    && globalTick < existing->endTick())
+                {
+                    liveRecordClip = { true, trackIndex, existing };
+                    return;
+                }
+            }
+        }
+
+        const int newIdx = track.addClip (globalTick, MidiClip::kPPQ / 4);
+        auto newSlot = track.getClipSlot (newIdx);
+        liveRecordClip = { true, trackIndex, newSlot };
+    }
+
     //==========================================================================
     //  Audio-thread note rendering — processes one ClipSlot
     //==========================================================================
@@ -296,6 +334,9 @@ int64_t SequencerEngine::getLoopEndTick() const noexcept
 //==============================================================================
 void SequencerEngine::play()
 {
+    if (impl->recording.load (std::memory_order_relaxed))
+        impl->beginLiveRecordClip (impl->recordingTrackIndex.load (std::memory_order_relaxed));
+
     if (impl->abletonLink != nullptr && impl->abletonLink->isEnabled())
     {
         // Ask Link peers to start on the next bar, and actually wait for
@@ -335,7 +376,20 @@ void SequencerEngine::setLooping (bool v)
     impl->looping.store (v, std::memory_order_relaxed);
 }
 
-void SequencerEngine::setRecording  (bool v) { impl->recording.store  (v, std::memory_order_relaxed); }
+void SequencerEngine::setRecording (bool v)
+{
+    impl->recording.store (v, std::memory_order_relaxed);
+
+    // When recording is armed while transport is already running, establish
+    // the destination clip immediately so a note landing exactly on the
+    // current playhead (especially bar 1 / tick 0) exists before that audio
+    // block is rendered. If transport starts after arming, play() performs
+    // the same pre-creation step.
+    if (v && impl->playing.load (std::memory_order_relaxed))
+        impl->beginLiveRecordClip (impl->recordingTrackIndex.load (std::memory_order_relaxed));
+    else if (! v)
+        impl->liveRecordClip = {};
+}
 
 void SequencerEngine::setRecordMode (RecordMode m) noexcept { impl->recordMode.store (m, std::memory_order_relaxed); }
 SequencerEngine::RecordMode SequencerEngine::getRecordMode() const noexcept { return impl->recordMode.load (std::memory_order_relaxed); }
@@ -888,6 +942,14 @@ void SequencerEngine::setRecordingTrack (int trackIndex) noexcept
 {
     impl->recordingTrackIndex.store (trackIndex, std::memory_order_relaxed);
     impl->openRecNotes.clearQuick();  // discard any held notes from previous selection
+    impl->liveRecordClip = {};
+
+    // If the user arms/selects the recording track while an already-playing
+    // recording pass is active, pre-create its destination immediately. This
+    // keeps the first boundary note in the same path as later notes.
+    if (impl->recording.load (std::memory_order_relaxed)
+        && impl->playing.load (std::memory_order_relaxed))
+        impl->beginLiveRecordClip (trackIndex);
 }
 
 int SequencerEngine::getRecordingTrackIndex() const noexcept
