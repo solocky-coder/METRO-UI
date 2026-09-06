@@ -53,6 +53,12 @@ public:
 private:
     void timerCallback() override;
 
+    static constexpr int kToolbarHeight = 40;
+    static constexpr int kRulerHeight = 48;
+    static constexpr int kTrackHeaderWidth = 168;
+    static constexpr int kTrackRowHeight = 72;
+    static constexpr int kClipInset = 7;
+
     int beatWidthPx() const noexcept;
     juce::Rectangle<int> trackRowBounds (int trackIndex) const;
     juce::Rectangle<int> clipBounds (int trackIndex, int clipIndex, int rowY) const;
@@ -62,6 +68,12 @@ private:
     int hitTestTrack (juce::Point<int> position, int& clipIndexOut) const;
 
     void setSelection (MetroSelection newSelection);
+    void drawToolbar (juce::Graphics& graphics, juce::Rectangle<int> area) const;
+    void drawRuler (juce::Graphics& graphics, juce::Rectangle<int> area) const;
+    void drawTrackHeader (juce::Graphics& graphics, juce::Rectangle<int> area,
+                          int trackIndex, const SequencerTrackInfo& track) const;
+    void drawClip (juce::Graphics& graphics, juce::Rectangle<int> area,
+                   int trackIndex, int clipIndex, const SequencerTrackInfo& track) const;
 
     SequencerEngine& engine;
 
@@ -69,6 +81,7 @@ private:
     float scrollPixels = 0.0f;
 
     MetroSelection selection;
+    int activeTool = 0; // select, draw, erase, split, glue
     std::function<void (const MetroSelection&)> onSelectionChanged;
 };
 } // namespace dysekt::metro
