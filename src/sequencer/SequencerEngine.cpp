@@ -70,6 +70,8 @@ struct SequencerEngine::Impl
     std::atomic<int>     countInBars { 1 };
     std::atomic<bool>    countInActive { false };
     std::atomic<int64_t> countInRemainingTicks { 0 };
+    int64_t countInElapsedTicks = 0;
+    int     countInNextBeat = 0;
     std::atomic<bool>    looping      { true  };
     std::atomic<bool>    pendingPlay  { false };
     std::atomic<bool>    pendingStop  { false };
@@ -1177,6 +1179,8 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
                 impl->countInBars.load (std::memory_order_relaxed));
             impl->countInRemainingTicks.store (
                 (int64_t) bars * MidiClip::kPPQ * 4, std::memory_order_relaxed);
+            impl->countInElapsedTicks = 0;
+            impl->countInNextBeat = 0;
             impl->countInActive.store (true, std::memory_order_relaxed);
             impl->liveRecordClip = {};
         }
@@ -1261,7 +1265,31 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
         const int64_t blockTicks = juce::jmax<int64_t> (1,
             (int64_t) std::ceil (ticksPerSample * (double) numSamples));
         const int64_t remaining = impl->countInRemainingTicks.load (std::memory_order_relaxed);
+        const int64_t blockStartElapsed = impl->countInElapsedTicks;
+        const int64_t blockEndElapsed = blockStartElapsed + blockTicks;
+        const int64_t beatTicks = MidiClip::kPPQ;
 
+        // Emit one internal metronome trigger at every quarter-note boundary.
+        // Channel 16 is reserved by the engine for this private transport
+        // signal; PluginProcessor consumes it into an audio click and never
+        // routes it to a musical destination.
+        while ((int64_t) impl->countInNextBeat * beatTicks < blockEndElapsed
+               && (int64_t) impl->countInNextBeat * beatTicks < (int64_t) (impl->countInRemainingTicks.load() + blockStartElapsed))
+        {
+            const int64_t clickTick = (int64_t) impl->countInNextBeat * beatTicks;
+            if (clickTick >= blockStartElapsed)
+            {
+                const int sampleOffset = juce::jlimit (0, numSamples - 1,
+                    (int) std::llround ((double) (clickTick - blockStartElapsed) / ticksPerSample));
+                const int barBeat = impl->countInNextBeat % 4;
+                const int velocity = (barBeat == 0) ? 120 : 92;
+                outMidi.addEvent (juce::MidiMessage::noteOn (16, 37, (juce::uint8) velocity),
+                                  sampleOffset);
+            }
+            ++impl->countInNextBeat;
+        }
+
+        impl->countInElapsedTicks = blockEndElapsed;
         if (remaining > blockTicks)
         {
             impl->countInRemainingTicks.store (remaining - blockTicks, std::memory_order_relaxed);
