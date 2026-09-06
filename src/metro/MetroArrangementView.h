@@ -82,6 +82,16 @@ private:
 
     MetroSelection selection;
     int activeTool = 0; // select, draw, erase, split, glue
+    bool gridVisible = true;
+    bool magnetEnabled = true;
+    bool locked = false;
+    int64_t snapTicks = MidiClip::kPPQ / 4; // 1/16 note
+
+    int64_t tickAtX (int x) const noexcept;
+    int64_t snapTick (int64_t tick) const noexcept;
+    void createClipAt (int trackIndex, int64_t tick);
+    void splitSelectedClip (int64_t splitTick);
+    void glueSelectedClip ();
     std::function<void (const MetroSelection&)> onSelectionChanged;
 };
 } // namespace dysekt::metro
