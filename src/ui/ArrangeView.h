@@ -385,7 +385,7 @@ public:
         {
             const auto header = arrangeHeaderBounds();
             auto content = header.withWidth (340).reduced (8, 4);
-            content.removeFromLeft (100);   // reserve room for the larger "QUANTIZE" label
+            content.removeFromLeft (78);    // reserve room for "QUANTIZE"
             quantizeButtonsBounds = content;
 
             const int gap = 4;
@@ -973,8 +973,8 @@ public:
     /** Undocks the transport from this view (it was a normal child component,
      *  reserving kTransportH at the top — see resized()) and puts it on the
      *  desktop as its own floating window instead. It's the same
-     *  FloatingTransportBar instance throughout, just reparented; see
-     *  that class's header comment. Wired to transport.onFloatRequested. */
+     *  FloatingTransportBar instance throughout, just reparented; see that
+     *  class's header comment. Wired to transport.onFloatRequested. */
     void showFloatingTransport()
     {
         removeChildComponent (&transport);
@@ -1021,8 +1021,8 @@ private:
     // rather than only living in the transport's GRID combo/gridButtons.
     // Same six resolutions, same item ids, as FloatingTransportBar's
     // gridCombo, so a click here just forwards to transport.setSnapItemId()
-    // and transport.getSnapTicks()/currentSnapTicks() stays the single source
-    // of truth for what clip create/move/resize/split actually snap
+    // and transport.getSnapTicks()/currentSnapTicks() stays the single
+    // source of truth for what clip create/move/resize/split actually snap
     // to — these buttons are a second control surface for that one value,
     // not a second value. Mirrored back from transport in timerCallback(),
     // same "poll and mirror" approach FloatingTransportBar uses for its own
@@ -1124,7 +1124,7 @@ private:
 
         // Keep the ruler/grid loop markers in sync with the engine's actual
         // loop range — e.g. locators set from the docked or floating
-        // transport's SET LEFT / SET RIGHT buttons or editable L/R fields,
+        // transport's SET LEFT/SET RIGHT buttons or editable L/R fields,
         // which previously never reached this view at all. Skipped while
         // the user is actively dragging out a new region on the ruler
         // (mouseUp below commits that drag to the engine instead), so the
@@ -1293,8 +1293,8 @@ private:
      *  mouseDown branches: Shift adds the clicked clip to whatever's
      *  already selected without disturbing the rest of the group; a plain
      *  click on a clip that's already part of a multi-clip selection
-     *  leaves the whole group selected (so it can be dragged together);
-     *  a plain click on a clip that ISN'T already selected replaces the
+     *  leaves the whole group selected (so it can be dragged together); a
+     *  plain click on a clip that ISN'T already selected replaces the
      *  selection with just that clip. */
     void beginClipSelection (int trackIdx, int clipIdx, bool shiftDown)
     {
@@ -1330,140 +1330,485 @@ private:
             const int numClips = engine.getNumClips (ti);
             for (int ci = 0; ci < numClips; ++ci)
             {
-                const auto r = clipRectForClip (ti, ci);
-                if (r.intersects (rubberBandRect)
-                    && ! isClipSelected (ti, ci))
+                if (isClipSelected (ti, ci)) continue;
+                if (clipRectForClip (ti, ci).intersects (rubberBandRect))
                     selectedClips.emplace_back (ti, ci);
             }
         }
 
         if (! selectedClips.empty())
         {
-            selectTrack (selectedClips.back().first);
-            selectedClip = selectedClips.back().second;
+            const auto& primary = selectedClips.back();
+            selectTrack (primary.first);
+            selectedClip = primary.second;
         }
-        else
-        {
-            selectedTrack = -1;
-            selectedClip = 0;
-            if (onTrackTypeSelected)
-                onTrackTypeSelected (TrackType::MainSlice, false, false, -1, -1, -1);
-        }
-        trackStrip.setSelectedTrack (selectedTrack);
     }
 
+    int64_t totalVisibleTicks() const noexcept
+    {
+        int64_t maxEnd = MidiClip::kPPQ * 4 * 4;
+        for (int ti = 0; ti < engine.getNumTracks(); ++ti)
+            for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
+            {
+                const auto info = engine.getClipInfo (ti, ci);
+                maxEnd = juce::jmax (maxEnd, info.endTick());
+            }
+        return juce::jmax (maxEnd * 2, MidiClip::kPPQ * 4 * 32);
+    }
+
+    //==========================================================================
+    //  Scrollbars
+    //==========================================================================
+    /** Set the selected track index and update the SfzPlayer's live input channel mask.
+     *  If the selected track is an SF2/SFZ track, its FluidSynth channel receives
+     *  live controller (ch-1) input.  Any other track type clears the mask (silence). */
+    void selectTrack (int idx)
+    {
+        selectedTrack = idx;
+        inspector.setSelectedTrack (idx);
+
+        uint16_t mask = 0;
+        TrackType type = TrackType::MainSlice;
+        bool isSfzInstrument = false;
+        bool hasSelection = juce::isPositiveAndBelow (idx, engine.getNumTracks());
+
+        int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
+        int assignedChannel1Based = -1;
+        int assignedPresetBank = -1, assignedPresetProgram = -1;
+
+        if (hasSelection)
+        {
+            const auto info = engine.getTrackInfo (idx);
+            type = info.type;
+            isSfzInstrument = info.isSfzInstrument;
+            switch (info.type)
+            {
+                case TrackType::MainSlice:
+                    liveCh = 1;  // slicer always responds on ch 1
+                    break;
+                case TrackType::ChromaticSlice:
+                    liveCh = info.midiChannel + 1;  // stored 0-based
+                    break;
+                case TrackType::SfPlayer:
+                    liveCh = 0;  // SfPlayer uses liveInputChannelMask instead
+                    if (info.midiChannel >= 0 && info.midiChannel < 16)
+                    {
+                        mask = (uint16_t)(1u << info.midiChannel);
+                        assignedChannel1Based = info.midiChannel + 1;
+                    }
+                    if (! isSfzInstrument)
+                    {
+                        // The track's own preset link (set wherever it was
+                        // assigned — e.g. TrackInspector's PART dropdown),
+                        // not Sf2ProgramGrid's separate channel map.
+                        assignedPresetBank    = info.preset.bank;
+                        assignedPresetProgram = info.preset.preset;
+                    }
+                    break;
+            }
+        }
+
+        engine.setSelectedLiveChannel (liveCh);
+        engine.setSelectedSfLiveChannels (mask);
+
+        // Deliberately NOT touching engine.setRecordingTrack() here. Record-arm
+        // is independent, explicit per-track state (toggled via TrackHeaderStrip's
+        // R dot or TrackInspector's record button) — it used to be silently
+        // re-pointed at whatever track got selected, so just clicking a track to
+        // inspect it would re-arm recording onto it with no warning. Selecting a
+        // track for viewing must never change what's armed to record.
+
+        // Authoritative live-routing target for PluginProcessor::processBlock
+        // (see SequencerEngine::getSelectedLiveTarget() / setMidiRouteMode()'s
+        // comment on ArrangeView::selectTrack). The accessors above are
+        // legacy/vestigial and do NOT feed getSelectedLiveTarget() — without
+        // this call selectedLiveTarget never leaves its {none, 0} default, so
+        // channel-1 live notes are never re-stamped to the selected track's
+        // engine/channel no matter what's highlighted in the Arranger.
+        engine.setSelectedTrack (hasSelection ? idx : -1);
+
+        if (onTrackTypeSelected)
+            onTrackTypeSelected (type, hasSelection, isSfzInstrument, assignedChannel1Based,
+                                  assignedPresetBank, assignedPresetProgram);
+    }
+
+    static void styleScrollBar (juce::ScrollBar& sb)
+    {
+        const auto& theme = getTheme();
+        sb.setColour (juce::ScrollBar::backgroundColourId, theme.waveformBg);
+        sb.setColour (juce::ScrollBar::thumbColourId,      theme.foreground.withAlpha (0.28f));
+        sb.setColour (juce::ScrollBar::trackColourId,      theme.button.withAlpha (0.45f));
+    }
+
+    void updateScrollRanges()
+    {
+        // Horizontal
+        const double totalW = totalVisibleTicks() * pixelsPerTick;
+        hScroll.setRangeLimits (0.0, totalW);
+        hScroll.setCurrentRange (scrollX,
+                                 scrollX + clipGridBounds.getWidth(),
+                                 juce::dontSendNotification);
+
+        // Vertical
+        const int totalH = engine.getNumTracks() * trackH;
+        const int viewH  = clipGridBounds.getHeight();
+        scrollY = juce::jlimit (0, juce::jmax (0, totalH - viewH), scrollY);
+        vScroll.setRangeLimits (0.0, (double)juce::jmax (viewH, totalH));
+        vScroll.setCurrentRange ((double)scrollY, (double)(scrollY + viewH),
+                                 juce::dontSendNotification);
+
+        // Scrolling/zooming can slide a clip out from under (or into) the
+        // cursor without the mouse itself moving, so re-run the hover hit
+        // test against wherever the mouse actually is whenever the visible
+        // range changes.
+        updateHoverHandle (getMouseXYRelative());
+    }
+
+    void scrollBarMoved (juce::ScrollBar* sb, double newRangeStart) override
+    {
+        if (sb == &hScroll)
+            scrollX = newRangeStart;
+        else
+            scrollY = (int) newRangeStart;
+        updateHoverHandle (getMouseXYRelative());
+        repaint();
+    }
+
+    //==========================================================================
+    //  Tool
+    //==========================================================================
+    /** Switches the active clip-grid tool — from the right-click "Tool"
+     *  submenu, a keyboard shortcut (S/D/E/K/G), or eventually a toolbar.
+     *  Mirrors PianoRollComponent::setActiveTool()'s immediate-feedback
+     *  pattern: apply the tool's cursor right away rather than waiting for
+     *  the next mouseMove. */
     void setActiveTool (Tool t)
     {
         currentTool = t;
-        for (int i = 0; i < kNumArrangeTools; ++i)
-            if (i >= 1 && i <= 5)
-                arrangerButtons[i].setToggleState (false, juce::dontSendNotification);
+        setMouseCursor (toolCursorFor (t));
 
-        int idx = 1;
-        switch (t)
-        {
-            case Tool::Select: idx = 1; break;
-            case Tool::Draw:   idx = 2; break;
-            case Tool::Erase:  idx = 3; break;
-            case Tool::Split:  idx = 4; break;
-            case Tool::Glue:   idx = 5; break;
-        }
-        arrangerButtons[idx].setToggleState (true, juce::dontSendNotification);
+        arrangerButtons[1].setToggleState (t == Tool::Select, juce::dontSendNotification);
+        arrangerButtons[2].setToggleState (t == Tool::Draw,   juce::dontSendNotification);
+        arrangerButtons[3].setToggleState (t == Tool::Erase,  juce::dontSendNotification);
+        arrangerButtons[4].setToggleState (t == Tool::Split,  juce::dontSendNotification);
+        arrangerButtons[5].setToggleState (t == Tool::Glue,   juce::dontSendNotification);
         repaint();
     }
 
-    //=========================================================================
-    //  Context menu
-    //=========================================================================
-    void showContextMenu (int trackIdx, int clipIdx, const juce::MouseEvent& e)
+    //==========================================================================
+    //  Cursor
+    //==========================================================================
+    /** Builds an actual mouse cursor out of the same ToolIcons glyph shown on
+     *  the right-click Tool submenu, so the OS cursor over the clip grid always
+     *  shows which tool is active — mirrors PianoRollComponent::makeToolCursor(). */
+    static juce::MouseCursor makeToolCursor (Tool tool)
     {
-        juce::PopupMenu menu;
+        constexpr int size = 32;
+        juce::Image img (juce::Image::ARGB, size, size, true);
+        juce::Graphics g (img);
 
-        if (juce::isPositiveAndBelow (trackIdx, engine.getNumTracks()))
+        // Same fixed box for every stamp below (outline pass + fill pass) so
+        // position-anchored glyphs (e.g. the Select arrow) don't desync
+        // between passes and warp out of shape.
+        const auto b = juce::Rectangle<float> (2.0f, 2.0f, (float) size - 4.0f, (float) size - 4.0f);
+        const auto kind = static_cast<ToolIcons::Kind> (static_cast<int> (tool));
+
+        static const int offs[][2] = { {-1,0}, {1,0}, {0,-1}, {0,1}, {-1,-1}, {1,-1}, {-1,1}, {1,1} };
+        for (auto& o : offs)
         {
-            juce::PopupMenu toolMenu;
-            toolMenu.addItem (1, "Select", true, currentTool == Tool::Select);
-            toolMenu.addItem (2, "Draw",   true, currentTool == Tool::Draw);
-            toolMenu.addItem (3, "Erase",  true, currentTool == Tool::Erase);
-            toolMenu.addItem (4, "Split",  true, currentTool == Tool::Split);
-            toolMenu.addItem (5, "Glue",   true, currentTool == Tool::Glue);
-            menu.addSubMenu ("Tool", toolMenu);
+            juce::Graphics::ScopedSaveState save (g);
+            g.addTransform (juce::AffineTransform::translation ((float) o[0], (float) o[1]));
+            ToolIcons::draw (g, kind, b, juce::Colours::black);
         }
+        ToolIcons::draw (g, kind, b, juce::Colours::white);
 
-        if (clipIdx >= 0)
+        // Hotspot: the "business end" of each glyph — Erase/Split/Glue have
+        // no single sharp point, so their hotspot is just the icon's centre.
+        int hx = size / 2, hy = size / 2;
+        switch (tool)
         {
-            menu.addSeparator();
-            menu.addItem (20, "Clear clip", true);
-            menu.addItem (21, "Delete clip", true);
+            case Tool::Select: hx = (int) (size * 0.22f); hy = (int) (size * 0.10f); break;
+            case Tool::Draw:   hx = (int) (size * 0.25f); hy = (int) (size * 0.82f); break;
+            case Tool::Split:  hy = (int) (size * 0.19f); break;
+            default: break;
         }
-
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ e.getScreenX(), e.getScreenY(), 1, 1 }),
-                            [this, trackIdx, clipIdx] (int result)
-        {
-            if (result >= 1 && result <= 5)
-            {
-                const Tool tools[] = { Tool::Select, Tool::Draw, Tool::Erase, Tool::Split, Tool::Glue };
-                setActiveTool (tools[result - 1]);
-                return;
-            }
-            if (result == 20 && trackIdx >= 0 && clipIdx >= 0)
-            {
-                if (MidiClip* c = engine.getClip (trackIdx, clipIdx)) c->clear();
-                repaint();
-                return;
-            }
-            if (result == 21 && trackIdx >= 0 && clipIdx >= 0)
-            {
-                engine.removeClip (trackIdx, clipIdx);
-                selectedClips.clear();
-                selectedTrack = -1;
-                selectedClip = 0;
-                trackStrip.setSelectedTrack (-1);
-                if (onTrackTypeSelected)
-                    onTrackTypeSelected (TrackType::MainSlice, false, false, -1, -1, -1);
-                repaint();
-            }
-        });
+        return juce::MouseCursor (img, hx, hy);
     }
 
-    //=========================================================================
-    //  Tool handlers
-    //=========================================================================
+    /** Cached per-tool cursors — built once, since makeToolCursor() rasterises
+     *  an image and mouseMove fires far too often to redo that every call. */
+    static const juce::MouseCursor& toolCursorFor (Tool t)
+    {
+        static const juce::MouseCursor cursors[] = {
+            makeToolCursor (Tool::Select), makeToolCursor (Tool::Draw), makeToolCursor (Tool::Erase),
+            makeToolCursor (Tool::Split),  makeToolCursor (Tool::Glue)
+        };
+        return cursors[(int) t];
+    }
+
+    void updateCursor (const juce::MouseEvent& e)
+    {
+        if (dragMode == DragMode::ResizeRight)
+        { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
+        if (dragMode == DragMode::MoveClip)
+        { setMouseCursor (juce::MouseCursor::DraggingHandCursor); return; }
+        if (rulerDrag == RulerDrag::DragLoopStart || rulerDrag == RulerDrag::DragLoopEnd)
+        { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
+
+        if (rulerBounds.contains (e.getPosition())
+            && loopStart >= 0 && loopEnd > loopStart
+            && (isNearLoopMarker (e.x, loopStart) || isNearLoopMarker (e.x, loopEnd)))
+        { setMouseCursor (juce::MouseCursor::LeftRightResizeCursor); return; }
+
+        if (clipGridBounds.contains (e.getPosition()))
+        {
+            const int trackIdx = trackFromY (e.y);
+            if (juce::isPositiveAndBelow (trackIdx, engine.getNumTracks()))
+            {
+                // Non-Select tools act with a single click rather than
+                // move/resize, so signal that with the tool's own cursor
+                // for the whole grid instead of the Select-tool hover cues.
+                if (currentTool != Tool::Select)
+                {
+                    setMouseCursor (toolCursorFor (currentTool));
+                    return;
+                }
+
+                for (int ci = 0; ci < engine.getNumClips (trackIdx); ++ci)
+                {
+                    const auto clipR = clipRectForClip (trackIdx, ci);
+                    if (clipR.contains (e.getPosition()))
+                    {
+                        if (e.x >= clipR.getRight() - kResizeZone)
+                            setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+                        else
+                            setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+                        return;
+                    }
+                }
+                // Over empty track space — show pencil / crosshair to signal clip creation
+                setMouseCursor (juce::MouseCursor::CrosshairCursor);
+                return;
+            }
+        }
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+    }
+
+    /** Recomputes hoverTrack/hoverClip from the current mouse position and
+     *  repaints if they changed. Only unselected clips get a hover entry —
+     *  a selected clip's handle is already fully visible, so there's
+     *  nothing for the hover preview to add there. */
+    void updateHoverHandle (juce::Point<int> pos)
+    {
+        int newHoverTrack = -1, newHoverClip = -1;
+
+        if (currentTool == Tool::Select && clipGridBounds.contains (pos))
+        {
+            const int trackIdx = trackFromY (pos.y);
+            if (juce::isPositiveAndBelow (trackIdx, engine.getNumTracks()))
+            {
+                const int numClips = engine.getNumClips (trackIdx);
+                for (int ci = 0; ci < numClips; ++ci)
+                {
+                    const auto clipR = clipRectForClip (trackIdx, ci);
+                    if (clipR.contains (pos)
+                        && pos.x >= clipR.getRight() - kResizeZone
+                        && ! isClipSelected (trackIdx, ci))
+                    {
+                        newHoverTrack = trackIdx;
+                        newHoverClip  = ci;
+                        break;
+                    }
+                }
+            }
+        }
+
+        setHoverHandle (newHoverTrack, newHoverClip);
+    }
+
+    void setHoverHandle (int trackIdx, int clipIdx)
+    {
+        if (trackIdx == hoverTrack && clipIdx == hoverClip) return;
+        hoverTrack = trackIdx;
+        hoverClip  = clipIdx;
+        repaint();
+    }
+
+    //==========================================================================
+    //  Context menus
+    //==========================================================================
+    void showContextMenu (int trackIdx, int clipIdx, const juce::MouseEvent& e)
+    {
+        const bool validTrack = juce::isPositiveAndBelow (trackIdx, engine.getNumTracks());
+        const SequencerTrackInfo info = validTrack ? engine.getTrackInfo (trackIdx)
+                                                    : SequencerTrackInfo{};
+        const bool onClip = validTrack && (clipIdx >= 0);
+        juce::PopupMenu m;
+
+        // Tool submenu — same entry as PianoRollComponent's clip/note-grid
+        // right-click menu, so switching tools works the same way in both views.
+        // Icons come from the shared ToolIcons.h glyph set so the two menus
+        // are visually identical, not just structurally the same.
+        juce::PopupMenu toolMenu;
+        const auto toolIconColour = findColour (juce::TextButton::textColourOffId);
+        auto addToolItem = [&] (int itemId, const juce::String& text, Tool tool)
+        {
+            juce::PopupMenu::Item item;
+            item.itemID   = itemId;
+            item.text     = text;
+            item.isTicked = (currentTool == tool);
+            item.setImage (ToolIcons::makeMenuIcon (static_cast<ToolIcons::Kind> (static_cast<int> (tool)),
+                                                     toolIconColour));
+            toolMenu.addItem (item);
+        };
+        addToolItem (30, "Select (S)", Tool::Select);
+        addToolItem (31, "Draw (D)",   Tool::Draw);
+        addToolItem (32, "Erase (E)",  Tool::Erase);
+        addToolItem (33, "Split (K)",  Tool::Split);
+        addToolItem (34, "Glue (G)",   Tool::Glue);
+        m.addSubMenu ("Tool", toolMenu);
+
+        // Track/clip-specific items only make sense when the click landed
+        // on an actual track row — right-clicking empty space below the
+        // last track (or with no tracks at all) still opens the menu, just
+        // scoped down to the Tool submenu above.
+        if (validTrack)
+        {
+            m.addSeparator();
+
+            if (onClip)
+            {
+                m.addItem (1, "Open in piano roll");
+                m.addSeparator();
+                m.addItem (8, "Repeat clip");
+                m.addItem (4, "Duplicate to next track");
+                m.addSeparator();
+                m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
+                m.addItem (3, "Clear clip");
+                m.addItem (6, "Delete clip");
+                m.addSeparator();
+                m.addItem (5, "Set loop to clip length");
+            }
+            else
+            {
+                m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
+            }
+        }
+
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (juce::Rectangle<int> (e.getScreenX(), e.getScreenY(), 1, 1)),
+            [this, trackIdx, clipIdx, info, onClip] (int result)
+            {
+                switch (result)
+                {
+                    case 1:
+                        selectTrack (trackIdx);
+                        selectedClip  = clipIdx;
+                        trackStrip.setSelectedTrack (trackIdx);
+                        if (onClipDoubleClicked) onClipDoubleClicked (trackIdx, clipIdx);
+                        break;
+                    case 2:
+                        engine.setTrackEnabled (trackIdx, ! info.enabled);
+                        break;
+                    case 3:
+                        if (MidiClip* c = engine.getClip (trackIdx, clipIdx))
+                            c->clear();
+                        break;
+                    case 4:
+                        duplicateClipToNextTrack (trackIdx, clipIdx);
+                        break;
+                    case 5:
+                    {
+                        const auto ci = engine.getClipInfo (trackIdx, clipIdx);
+                        loopStart = ci.startTick;
+                        loopEnd   = ci.endTick();
+                        break;
+                    }
+                    case 6:
+                        engine.removeClip (trackIdx, clipIdx);
+                        if (selectedTrack == trackIdx && selectedClip == clipIdx)
+                            selectedClip = 0;
+                        break;
+                    case 8:  // Repeat clip
+                    {
+                        MidiClip* src = engine.getClip (trackIdx, clipIdx);
+                        if (src)
+                        {
+                            const auto srcInfo = engine.getClipInfo (trackIdx, clipIdx);
+                            juce::Array<MidiNote> notes;
+                            { const juce::ScopedReadLock sl (src->getLock()); notes = src->getNotes(); }
+                            for (int rep = 1; rep <= 1; ++rep)
+                            {
+                                const int64_t start = srcInfo.startTick + srcInfo.lengthTicks * rep;
+                                const int newIdx = engine.addClip (trackIdx, start, srcInfo.lengthTicks);
+                                if (MidiClip* dst = engine.getClip (trackIdx, newIdx))
+                                    dst->setNotes (notes);
+                            }
+                        }
+                        break;
+                    }
+                    case 30: setActiveTool (Tool::Select); break;
+                    case 31: setActiveTool (Tool::Draw);   break;
+                    case 32: setActiveTool (Tool::Erase);  break;
+                    case 33: setActiveTool (Tool::Split);  break;
+                    case 34: setActiveTool (Tool::Glue);   break;
+                    default: break;
+                }
+                repaint(); trackStrip.repaint();
+            });
+    }
+
+    void duplicateClipToNextTrack (int srcTrack, int srcClipIdx)
+    {
+        const int dstTrack = srcTrack + 1;
+        MidiClip* src = engine.getClip (srcTrack, srcClipIdx);
+        if (! src || dstTrack >= engine.getNumTracks()) return;
+        const auto srcInfo = engine.getClipInfo (srcTrack, srcClipIdx);
+        // Add a new clip on the destination track at the same start position
+        const int newIdx = engine.addClip (dstTrack, srcInfo.startTick, srcInfo.lengthTicks);
+        MidiClip* dst = engine.getClip (dstTrack, newIdx);
+        if (! dst) return;
+        const juce::ScopedReadLock sl (src->getLock());
+        dst->setNotes (src->getNotes());
+        repaint();
+    }
+
+    //==========================================================================
+    //  Tool handlers — clip-grid equivalents of PianoRollComponent's
+    //  Draw/Erase/Split/Glue handlers, operating on whole clips.
+    //==========================================================================
+    /** Starts a drawn clip: the clip isn't created yet — mouseDrag grows
+     *  drawLenTicks live as the user drags right, and mouseUp commits it at
+     *  whatever length that ended up at (floored to 1 bar for a plain
+     *  click with no real drag, matching the double-click-to-create
+     *  shortcut's clip length). */
     void handleDrawClipDown (int trackIdx, const juce::MouseEvent& e)
     {
         drawStartTick = snapTick (xToTick (e.x));
-        drawLenTicks  = MidiClip::kPPQ * 4;
-        dragMode      = DragMode::DrawClip;
-        dragTrack     = trackIdx;
-        dragClip      = -1;
-        repaint();
+        drawLenTicks  = MidiClip::kPPQ * 4;   // 1-bar floor while not yet dragged
+        dragMode  = DragMode::DrawClip;
+        dragTrack = trackIdx;
     }
 
     void handleEraseClipDown (int trackIdx, int clipIdx)
     {
         engine.removeClip (trackIdx, clipIdx);
-        selectedClips.clear();
-        selectedTrack = -1;
-        selectedClip = 0;
-        trackStrip.setSelectedTrack (-1);
-        if (onTrackTypeSelected)
-            onTrackTypeSelected (TrackType::MainSlice, false, false, -1, -1, -1);
+        if (selectedTrack == trackIdx && selectedClip == clipIdx)
+            selectedClip = 0;
     }
 
-    /** SequencerEngine has no splitClip() API — a split is implemented here
-     *  directly on top of the existing clip primitives (getClip/getClipInfo/
-     *  addClip/setClipLengthTicks): the original clip is shortened in place
-     *  and a new clip is created for the tail, each keeping only the notes
-     *  (re-based to their own clip-local ticks) that fall on their side of
-     *  the cut. */
+    /** Cuts the clicked clip into two clips at the click point: the original
+     *  clip is shortened in place, and a new clip is created for the tail,
+     *  each keeping only the notes (re-based to their own clip-local ticks)
+     *  that fall on their side of the cut. No-ops if the click lands too
+     *  close to either end to leave two clips with positive length. */
     void handleSplitClipDown (int trackIdx, int clipIdx, const juce::MouseEvent& e)
     {
         MidiClip* clip = engine.getClip (trackIdx, clipIdx);
         if (! clip) return;
 
         const auto info = engine.getClipInfo (trackIdx, clipIdx);
-        const int64_t splitTick = snapTick (xToTick (e.x));
-        const int64_t cutOffsetInClip = splitTick - info.startTick;
+        const int64_t cutTick = snapTick (xToTick (e.x));
+        const int64_t cutOffsetInClip = cutTick - info.startTick;
         if (cutOffsetInClip <= 0 || cutOffsetInClip >= info.lengthTicks)
             return;   // click wasn't inside this clip's body
 
@@ -1484,29 +1829,43 @@ private:
         }
 
         const int64_t tailLen = info.lengthTicks - cutOffsetInClip;
-        const int tailIdx = engine.addClip (trackIdx, splitTick, tailLen);
+        const int tailIdx = engine.addClip (trackIdx, cutTick, tailLen);
         if (MidiClip* tail = engine.getClip (trackIdx, tailIdx))
             tail->setNotes (tailNotes);
 
         engine.setClipLengthTicks (trackIdx, clipIdx, cutOffsetInClip);
         clip->setNotes (headNotes);
 
-        selectSingleClip (trackIdx, clipIdx);
+        selectTrack (trackIdx);
+        selectedClip = clipIdx;
     }
 
-    /** SequencerEngine has no glueClips() API either — merges the clicked
-     *  clip with the following clip on the same track directly, extending
+    /** Merges the clicked clip with the next clip on the same track (the
+     *  clip with the lowest startTick that is >= this clip's end), extending
      *  the clicked clip to cover both and re-basing the merged-in clip's
-     *  notes by its start offset relative to the clicked clip. */
+     *  notes by its start offset relative to the clicked clip. No-ops if
+     *  there's no next clip on the track. */
     void handleGlueClipDown (int trackIdx, int clipIdx)
     {
-        if (clipIdx < 0 || clipIdx + 1 >= engine.getNumClips (trackIdx)) return;
-
         MidiClip* clip = engine.getClip (trackIdx, clipIdx);
         if (! clip) return;
         const auto info = engine.getClipInfo (trackIdx, clipIdx);
 
-        const int nextIdx = clipIdx + 1;
+        int nextIdx = -1;
+        int64_t nextStart = std::numeric_limits<int64_t>::max();
+        const int numClips = engine.getNumClips (trackIdx);
+        for (int ci = 0; ci < numClips; ++ci)
+        {
+            if (ci == clipIdx) continue;
+            const auto ci_info = engine.getClipInfo (trackIdx, ci);
+            if (ci_info.startTick >= info.endTick() && ci_info.startTick < nextStart)
+            {
+                nextStart = ci_info.startTick;
+                nextIdx   = ci;
+            }
+        }
+        if (nextIdx < 0) return;   // nothing to glue to
+
         MidiClip* next = engine.getClip (trackIdx, nextIdx);
         if (! next) return;
         const auto nextInfo = engine.getClipInfo (trackIdx, nextIdx);
@@ -1531,417 +1890,616 @@ private:
         clip->setNotes (merged);
         engine.removeClip (trackIdx, nextIdx);
 
-        selectSingleClip (trackIdx, clipIdx);
+        // If the removed clip's index was below ours, the clicked clip's own
+        // index has now shifted down by one to fill the gap.
+        selectTrack (trackIdx);
+        selectedClip = (nextIdx < clipIdx) ? clipIdx - 1 : clipIdx;
     }
 
-    //=========================================================================
-    //  Track selection
-    //=========================================================================
-    void selectTrack (int idx)
-    {
-        if (! juce::isPositiveAndBelow (idx, engine.getNumTracks()))
-        {
-            selectedTrack = -1;
-            selectedClip  = 0;
-            if (onTrackTypeSelected)
-                onTrackTypeSelected (TrackType::MainSlice, false, false, -1, -1, -1);
-            trackStrip.setSelectedTrack (-1);
-            return;
-        }
-
-        selectedTrack = idx;
-        if (selectedClip >= engine.getNumClips (idx))
-            selectedClip = 0;
-
-        trackStrip.setSelectedTrack (idx);
-        const auto info = engine.getTrackInfo (idx);
-        const bool isSf2Track = info.type == TrackType::SfPlayer && ! info.isSfzInstrument;
-        const int ch1Based = (info.type == TrackType::SfPlayer
-                              && info.midiChannel >= 0 && info.midiChannel < 16)
-                            ? info.midiChannel + 1 : -1;
-        if (onTrackTypeSelected)
-            onTrackTypeSelected (info.type, true, info.isSfzInstrument, ch1Based,
-                                 isSf2Track ? info.preset.bank   : -1,
-                                 isSf2Track ? info.preset.preset : -1);
-    }
-
-    //=========================================================================
+    //==========================================================================
     //  Painting
-    //=========================================================================
-    void paintArrangeHeader (juce::Graphics& g)
+    //==========================================================================
+    /** Top-left rect of the ARRANGE/QUANTIZE header row, right under the
+     *  transport — kTransportH + 3 down while the transport is docked and
+     *  actually occupying that space, or just 3 (the panel's own margin)
+     *  while it's floating and has left no gap to sit below. resized() uses
+     *  this same rect to position the quantize buttons, so painting and
+     *  hit-testing never disagree about where this row is. */
+    int leftPanelW() const noexcept
+    {
+        return inspectorVisible ? kLeftW : kStripW;
+    }
+
+    juce::Rectangle<int> arrangeHeaderBounds() const noexcept
+    {
+        const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
+        return { 3, topY, juce::jmax (340, getWidth() - 6), kToolbarH };
+    }
+
+    void paintArrangeHeader (juce::Graphics& g) const
     {
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
-
-        // ThemeData has no transportBg — theme.header is the "top bar" fill
-        // used for this exact purpose elsewhere (TrackHeaderStrip, etc).
         g.setColour (theme.header);
         g.fillRect (header);
-
-        g.setColour (theme.separator.withAlpha (0.75f));
-        g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 1);
-
-        // Header title is intentionally kept large enough to remain legible
-        // beside the six quantize controls; the old 14 px caption was too small.
+        g.setColour (theme.accent.withAlpha (0.8f));
+        g.fillRect (header.getX(), header.getY(), 3, header.getHeight());
+        // "QUANTIZE" labels the button row that follows it — replaces the
+        // old "ARRANGE" caption (redundant with the window title bar, which
+        // already reads "ARRANGE ⋮ TRACKS") now that this row hosts an
+        // interactive control worth naming. Sized to match, not the small
+        // "TRACKS" caption this used to sit opposite — that caption is gone
+        // too, so the buttons now run the full width of the header instead
+        // of being squeezed between two labels.
         g.setColour (theme.foreground.withAlpha (0.92f));
-        g.setFont (juce::Font (17.0f, juce::Font::bold));
-        auto quantizeLabel = header.withWidth (100).reduced (10, 0);
-        g.drawText ("QUANTIZE", quantizeLabel, juce::Justification::centredLeft, false);
+        g.setFont (juce::Font (14.0f, juce::Font::bold));
+        g.drawText ("QUANTIZE", header.reduced (12, 0), juce::Justification::centredLeft, false);
 
         // The actual command buttons are child components; this separator
         // visually divides quantize controls from editing commands.
         g.setColour (theme.separator.withAlpha (0.7f));
         g.fillRect (header.getX() + 340, header.getY(), 1, header.getHeight());
 
+        g.setColour (theme.foreground.withAlpha (0.55f));
+        g.setFont (juce::Font (11.5f, juce::Font::bold));
+        g.drawText ("EDIT", header.getX() + 345, header.getY() - 1,
+                    36, 12, juce::Justification::centredLeft, false);
         // Quantize buttons (real child components, positioned in resized())
         // fill the rest of this header — nothing else to paint there.
         // The bottom border itself is NOT drawn here — see paintOverChildren()
         // below: trackStrip sits directly under this header, and drawing the
         // border in this paint() pass put it underneath trackStrip's own
-        // background fill whenever their bounds touched or overlapped by
-        // a rounding pixel, making the border invisible.
+        // background fill whenever their bounds touched or overlapped by a
+        // rounding pixel, making the border invisible.
     }
 
     /** Draws the header/track-strip separator after every child (trackStrip,
      *  inspector, quantize buttons) has painted. Component::paintOverChildren()
      *  runs after every child paint (unlike the parent's own paint() pass, above),
      *  so this line is guaranteed to sit on top and stay visible no matter how
-     *  trackStrip's bounds line up with the header. */
+     *  trackStrip's bounds line up with the header's bottom edge.
+     *
+     *  Drawn 2px tall instead of 1px, straddling the boundary (1px inside the
+     *  header, 1px over trackStrip's first row) rather than sitting exactly on
+     *  it — a single 1px line landing precisely on the seam between two
+     *  similarly-dark fills (header's background above, the top track row's
+     *  background below) was imperceptible even once paint order guaranteed
+     *  it was actually being drawn. Painting a row's worth over trackStrip
+     *  visibly pushes the top track down under the line instead of letting it
+     *  sit flush against it, which is what actually makes the seam read as a
+     *  border rather than a rounding artifact. */
     void paintOverChildren (juce::Graphics& g) override
     {
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
-        g.setColour (theme.separator.withAlpha (0.85f));
-        g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 1);
+        g.setColour (theme.separator);
+        g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
     }
 
-    juce::Rectangle<int> arrangeHeaderBounds() const noexcept
+    void paintRuler (juce::Graphics& g) const
     {
-        const int top = transport.isFloating() ? 3 : kTransportH + 3;
-        return { 3, top, juce::jmax (0, getWidth() - 6), kToolbarH };
-    }
+        // Ruler content is horizontally scrolled; keep it out of the fixed
+        // ARRANGE header when loop markers move beyond the visible timeline.
+        g.saveState();
+        g.reduceClipRegion (rulerBounds);
 
-    void paintRuler (juce::Graphics& g)
-    {
         const auto& theme = getTheme();
-        g.setColour (theme.waveformBg);
+
+        // Background
+        g.setColour (theme.header);
         g.fillRect (rulerBounds);
 
-        g.setColour (theme.separator.withAlpha (0.65f));
-        g.fillRect (rulerBounds.getX(), rulerBounds.getBottom() - 1, rulerBounds.getWidth(), 1);
+        // Bottom border
+        g.setColour (theme.separator);
+        g.fillRect (rulerBounds.getX(), rulerBounds.getBottom() - 1,
+                    rulerBounds.getWidth(), 1);
 
-        const int64_t snap = currentSnapTicks();
-        const int64_t beat = MidiClip::kPPQ;
-        const int64_t bar  = beat * 4;
-
-        const int64_t firstTick = xToTick (rulerBounds.getX());
-        const int64_t lastTick  = xToTick (rulerBounds.getRight());
-        const int64_t startBar  = firstTick / bar;
-        const int64_t endBar    = lastTick / bar + 1;
-
-        g.setFont (juce::Font (12.0f, juce::Font::plain));
-        for (int64_t bi = startBar; bi <= endBar; ++bi)
+        // Loop region shading inside ruler — a loop range can be set (e.g.
+        // from the transport's L/R locators) without looping actually being
+        // switched on, so this should only paint while the engine is
+        // actually looping, not merely whenever a range happens to exist.
+        if (engine.isLooping() && loopStart >= 0 && loopEnd > loopStart)
         {
-            const int64_t t = bi * bar;
-            const int x = (int) tickToX (t);
-            if (x < rulerBounds.getX() || x > rulerBounds.getRight()) continue;
-            g.setColour (theme.foreground.withAlpha (0.8f));
-            g.drawText (juce::String (bi + 1), x + 3, rulerBounds.getY() + 2, 40, 16,
-                        juce::Justification::centredLeft, false);
-            g.setColour (theme.separator.withAlpha (0.45f));
-            g.drawVerticalLine (x, (float) rulerBounds.getY() + 20.0f,
-                                (float) rulerBounds.getBottom());
+            const float lx = tickToX (loopStart);
+            const float rx = tickToX (loopEnd);
+            g.setColour (theme.accent.withAlpha (0.22f));
+            g.fillRect (lx, (float)rulerBounds.getY(), rx - lx,
+                        (float)rulerBounds.getHeight());
         }
 
-        if (snap > 0)
+        const int64_t ppq    = MidiClip::kPPQ;
+        const int64_t barLen = ppq * 4;
+        const int     gx     = clipGridBounds.getX();
+        const int     gw     = clipGridBounds.getWidth();
+        const int64_t total  = totalVisibleTicks();
+
+        // Decide beat/bar visibility based on zoom
+        const double pxPerBar  = barLen * pixelsPerTick;
+        const double pxPerBeat = ppq  * pixelsPerTick;
+        const bool showBeats   = pxPerBeat >= 6.0;
+
+        // Beat ticks — same opacity+width scheme as paintGridLines (bars:
+        // 2px, theme.separator at 95% alpha; beats: 1px, theme.gridLine at
+        // 90% alpha) rather than the old height-based bar/beat distinction.
+        // The stronger beat contrast keeps the grid legible on the true-black
+        // Metro canvas while preserving the brighter bar hierarchy.
+        if (showBeats)
         {
-            const int64_t step = juce::jmax<int64_t> (1, snap);
-            const int64_t first = (firstTick / step) * step;
-            for (int64_t t = first; t <= lastTick + step; t += step)
+            const int64_t firstBeat = (int64_t)(scrollX / (pixelsPerTick * ppq));
+            const int64_t lastBeat  = firstBeat + (int64_t)(gw / (pixelsPerTick * ppq)) + 2;
+            for (int64_t b = firstBeat; b <= lastBeat && b * ppq <= total; ++b)
             {
-                const int x = (int) tickToX (t);
-                if (x < rulerBounds.getX() || x > rulerBounds.getRight()) continue;
-                if (t % bar != 0)
-                {
-                    g.setColour (theme.separator.withAlpha (0.2f));
-                    g.drawVerticalLine (x, (float) rulerBounds.getBottom() - 8.0f,
-                                        (float) rulerBounds.getBottom());
-                }
+                const int x = gx + (int)((b * ppq) * pixelsPerTick - scrollX);
+                if (x < gx || x > gx + gw) continue;
+                const bool isBar = (b % 4 == 0);
+                g.setColour (isBar ? theme.separator.withAlpha (0.95f)
+                                    : theme.gridLine.withAlpha (0.90f));
+                g.fillRect (x, rulerBounds.getY(), isBar ? 2 : 1, rulerBounds.getHeight());
             }
+        }
+
+        // Quantize increments — use the same live snap resolution as clip
+        // editing and the track grid.  These shorter marks begin at the
+        // ruler's lower edge so bars/beats remain visually dominant while
+        // the ruler still communicates the selected quantize interval.
+        const int64_t snap = currentSnapTicks();
+        if (snap > 0 && pixelsPerTick * (double) snap > 4.0)
+        {
+            const int tickHeight = juce::jmax (4, rulerBounds.getHeight() / 3);
+            const int tickTop    = rulerBounds.getBottom() - tickHeight;
+            const int64_t firstSnap = (int64_t)(scrollX / (pixelsPerTick * (double) snap)) * snap;
+
+            g.setColour (theme.gridLine.withAlpha (0.68f));
+            for (int64_t t = firstSnap; t <= total; t += snap)
+            {
+                if (t % ppq == 0) continue; // beat/bar line already drawn above
+                const int x = gx + (int)(t * pixelsPerTick - scrollX);
+                if (x > gx + gw) break;
+                if (x < gx) continue;
+                g.fillRect (x, tickTop, 1, tickHeight);
+            }
+        }
+
+        // Bar numbers — confined to the top half of the ruler row so the
+        // loop L/R tags (bottom half, below) never draw on top of them.
+        // Previously both were vertically centred across the full ruler
+        // height, so an L tag at bar 1 (loopStart == 0 is the common case)
+        // landed squarely on the "1" bar number, and any R tag landing near
+        // a bar line did the same.
+        const int rulerTopH = rulerBounds.getHeight() / 2;
+        const juce::Rectangle<int> barNumberBand (rulerBounds.getX(), rulerBounds.getY(),
+                                                    rulerBounds.getWidth(), rulerTopH);
+        g.setFont (juce::Font (14.f, juce::Font::bold));
+        const int64_t firstBar = (int64_t)(scrollX / (pixelsPerTick * barLen));
+        const int64_t lastBar  = firstBar + (int64_t)(gw / (pixelsPerTick * barLen)) + 2;
+        for (int64_t bar = firstBar; bar <= lastBar && bar * barLen <= total; ++bar)
+        {
+            const int x = gx + (int)((bar * barLen) * pixelsPerTick - scrollX);
+            if (x < gx || x > gx + gw) continue;
+            g.setColour (theme.foreground.withAlpha (0.78f));
+            g.drawText (juce::String (bar + 1),
+                        x + 3, barNumberBand.getY(),
+                        48, barNumberBand.getHeight(),
+                        juce::Justification::centredLeft, false);
+        }
+
+        // Loop L / R labels — bottom half of the ruler row, directly under
+        // where the bar numbers sit, so the two never overlap regardless of
+        // how close a locator falls to a bar (or beat) line.
+        if (loopStart >= 0 && loopEnd > loopStart)
+        {
+            const int loopLabelY = rulerBounds.getY() + rulerTopH;
+            const int loopLabelH = rulerBounds.getHeight() - rulerTopH;
+            const float lx = tickToX (loopStart);
+            const float rx = tickToX (loopEnd);
+            g.setFont (juce::Font (11.5f, juce::Font::bold));
+            g.setColour (getTheme().accent.brighter (0.2f));
+
+            if (rulerBounds.contains ((int)lx, rulerBounds.getCentreY()))
+            {
+                g.drawText ("L", (int)lx + 2, loopLabelY,
+                            14, loopLabelH, juce::Justification::centredLeft);
+                g.drawVerticalLine ((int)lx, (float)rulerBounds.getY(),
+                                    (float)rulerBounds.getBottom());
+            }
+
+            if (rulerBounds.contains ((int)rx, rulerBounds.getCentreY()))
+            {
+                g.drawText ("R", (int)rx - 16, loopLabelY,
+                            14, loopLabelH, juce::Justification::centredRight);
+                g.drawVerticalLine ((int)rx, (float)rulerBounds.getY(),
+                                    (float)rulerBounds.getBottom());
+            }
+        }
+
+        g.restoreState();
+    }
+
+    void paintTrackRows (juce::Graphics& g) const
+    {
+        const int n = engine.getNumTracks();
+        for (int i = 0; i < n; ++i)
+        {
+            const int rowTop = trackTopY (i);
+            if (rowTop + trackH < clipGridBounds.getY()) continue;  // above view
+            if (rowTop > clipGridBounds.getBottom()) break;          // below view
+            paintOneTrack (g, i);
+        }
+
+        // Empty space below the last track never got a row painted above, but
+        // the grid still needs to continue through it so it doesn't look
+        // "gone" once you scroll (or zoom) past the end of the track list.
+        const int contentBottom = trackTopY (n);
+        if (contentBottom < clipGridBounds.getBottom())
+        {
+            const juce::Rectangle<int> emptyR (
+                clipGridBounds.getX(),
+                contentBottom,
+                clipGridBounds.getWidth(),
+                clipGridBounds.getBottom() - contentBottom);
+
+            g.saveState();
+            g.reduceClipRegion (clipGridBounds);
+
+            const auto& theme = getTheme();
+            g.setColour (theme.waveformBg);
+            g.fillRect (emptyR);
+
+            paintGridLines (g, emptyR);
+
+            g.restoreState();
         }
     }
 
-    void paintTrackRows (juce::Graphics& g)
+    void paintLoopOverlay (juce::Graphics& g) const
     {
+        // A loop range can be set (e.g. from the transport's L/R locators)
+        // without looping actually being switched on — only paint this
+        // overlay while the engine is actually looping.
+        if (! engine.isLooping() || loopStart < 0 || loopEnd <= loopStart) return;
+        const float lx = tickToX (loopStart);
+        const float rx = tickToX (loopEnd);
+
+        // The loop can extend beyond either side of the viewport. Clip all
+        // overlay painting so it cannot bleed into the fixed track strip.
+        g.saveState();
+        g.reduceClipRegion (clipGridBounds);
+
+        // DYSEKT-METRO pass: no translucent wash across the track rows — a
+        // solid fill there would just hide every clip underneath it, and a
+        // wash is the one thing this pass is meant to remove. The loop
+        // range instead reads as full-opacity boundary lines at the loop's
+        // start/end, rather than a colour tint over the whole timeline.
+        const auto& theme = getTheme();
+        g.setColour (theme.accent);
+        g.drawVerticalLine ((int)lx,
+                            (float)clipGridBounds.getY(),
+                            (float)clipGridBounds.getBottom());
+        g.drawVerticalLine ((int)rx,
+                            (float)clipGridBounds.getY(),
+                            (float)clipGridBounds.getBottom());
+
+        g.restoreState();
+    }
+
+    /** Draws the live rubber-band selection rectangle while the user is
+     *  dragging in empty space. Clipped to the clip grid so it can't paint
+     *  over the ruler or track strip. */
+    void paintRubberBand (juce::Graphics& g) const
+    {
+        if (dragMode != DragMode::RubberBand || rubberBandRect.isEmpty()) return;
+
+        g.saveState();
+        g.reduceClipRegion (clipGridBounds);
+
+        // DYSEKT-METRO pass: solid outline only — a solid fill would hide
+        // the clips being selected, so the rectangle reads via a
+        // full-opacity border instead of a wash-plus-border combo.
+        const auto& theme = getTheme();
+        g.setColour (theme.accent);
+        g.drawRect (rubberBandRect, 2);
+
+        g.restoreState();
+    }
+
+    /** Live preview of the clip being drawn with the Draw tool — same
+     *  visual language as the rubber-band rect, drawn in the target
+     *  track's row so it reads as "this is where the clip will land". */
+    void paintDrawClipPreview (juce::Graphics& g) const
+    {
+        if (dragMode != DragMode::DrawClip || ! juce::isPositiveAndBelow (dragTrack, engine.getNumTracks()))
+            return;
+
+        const int x = (int) tickToX (drawStartTick);
+        const int w = juce::jmax (kMinClipPx, (int) (drawLenTicks * pixelsPerTick));
+        const juce::Rectangle<int> r (x, trackTopY (dragTrack), w, trackH - 1);
+
+        g.saveState();
+        g.reduceClipRegion (clipGridBounds);
+
+        // DYSEKT-METRO pass: solid accent-colour block rather than a
+        // translucent fill + border — since it's landing in previously
+        // empty space there's nothing underneath to preserve, and using
+        // the accent colour (instead of the target track's own colour)
+        // is what marks this as "still a preview", not translucency.
+        const auto& theme = getTheme();
+        g.setColour (theme.accent);
+        g.fillRect (r);
+
+        g.restoreState();
+    }
+
+    void paintOneTrack (juce::Graphics& g, int i) const
+    {
+        const auto info  = engine.getTrackInfo (i);
+        const bool muted = ! info.enabled;
+
+        const juce::Rectangle<int> rowR (
+            clipGridBounds.getX(),
+            trackTopY (i),
+            clipGridBounds.getWidth(),
+            trackH);
+
+        // Clip to grid area
+        g.saveState();
+        g.reduceClipRegion (clipGridBounds);
+
+        // DYSEKT-METRO pass: rows no longer lean on a barely-visible
+        // brightness alternation — every row is one flat colour, and the
+        // "seam" between tracks is a solid dark gap rather than a 1px
+        // hairline, so the row boundaries read clearly even at a glance.
+        // Row background stays neutral regardless of track selection — a
+        // whole-row tint (even the old subtle alpha wash) reads as "this
+        // whole row, including empty grid space, is highlighted", when
+        // only the clip itself should carry that signal. See paintClip's
+        // accent-line treatment for the actual selection indicator.
         const auto& theme = getTheme();
         g.setColour (theme.waveformBg);
-        g.fillRect (clipGridBounds);
+        g.fillRect (rowR.withTrimmedBottom (2));
+        g.setColour (juce::Colour (0xFF000000));
+        g.fillRect (rowR.withTop (rowR.getBottom() - 2));
 
-        const int numTracks = engine.getNumTracks();
-        for (int ti = 0; ti < numTracks; ++ti)
-        {
-            const int y = trackTopY (ti);
-            if (y + trackH < clipGridBounds.getY() || y > clipGridBounds.getBottom()) continue;
+        // Vertical grid lines
+        paintGridLines (g, rowR);
 
-            const bool selected = (ti == selectedTrack);
-            if (selected)
-            {
-                g.setColour (theme.accent.withAlpha (0.07f));
-                g.fillRect (clipGridBounds.getX(), y, clipGridBounds.getWidth(), trackH - 1);
-            }
-
-            g.setColour (theme.separator.withAlpha (0.35f));
-            g.fillRect (clipGridBounds.getX(), y + trackH - 1, clipGridBounds.getWidth(), 1);
-
-            paintGridLines (g, y);
-            paintClipsForTrack (g, ti, y);
-        }
-    }
-
-    void paintGridLines (juce::Graphics& g, int y)
-    {
-        const auto& theme = getTheme();
-        const int64_t snap = currentSnapTicks();
-        if (snap <= 0) return;
-
-        const int64_t firstTick = xToTick (clipGridBounds.getX());
-        const int64_t lastTick  = xToTick (clipGridBounds.getRight());
-        const int64_t first = (firstTick / snap) * snap;
-
-        for (int64_t t = first; t <= lastTick + snap; t += snap)
-        {
-            const int x = (int) tickToX (t);
-            if (x < clipGridBounds.getX() || x > clipGridBounds.getRight()) continue;
-            const bool isBar = (t % (MidiClip::kPPQ * 4) == 0);
-            g.setColour (theme.separator.withAlpha (isBar ? 0.45f : 0.18f));
-            g.drawVerticalLine (x, (float) y, (float) (y + trackH - 1));
-        }
-    }
-
-    void paintClipsForTrack (juce::Graphics& g, int trackIdx, int y)
-    {
-        const auto& theme = getTheme();
-        const int numClips = engine.getNumClips (trackIdx);
+        // Clips — paint all slots on this track
+        const int numClips = engine.getNumClips (i);
         for (int ci = 0; ci < numClips; ++ci)
         {
-            const auto r = clipRectForClip (trackIdx, ci);
-            if (! r.intersects (clipGridBounds)) continue;
+            const bool isSelClip = isClipSelected (i, ci);
+            paintClip (g, i, ci, info, isSelClip, muted);
+        }
 
-            const bool selected = isClipSelected (trackIdx, ci)
-                               || (trackIdx == selectedTrack && ci == selectedClip);
-            // ThemeData has no clipFill — theme.button is the nearest
-            // existing "neutral flat surface" colour (used the same way for
-            // the scrollbar track in styleScrollBar()). Flag for review if
-            // a dedicated clip-tile colour was actually intended.
-            const auto fill = selected ? theme.accent : theme.button;
-            g.setColour (fill.withAlpha (selected ? 0.78f : 0.62f));
-            g.fillRoundedRectangle (r.toFloat(), 3.0f);
+        g.restoreState();
+    }
 
-            g.setColour (selected ? theme.accent.brighter (0.2f)
-                                  : theme.separator.withAlpha (0.75f));
-            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 3.0f, 1.0f);
+    void paintGridLines (juce::Graphics& g, const juce::Rectangle<int>& rowR) const
+    {
+        const int64_t ppq    = MidiClip::kPPQ;
+        const int64_t barLen = ppq * 4;
+        const int64_t total  = totalVisibleTicks();
+        const bool showBeats = (ppq * pixelsPerTick) >= 4.0;
+        const auto& theme = getTheme();
 
-            const auto info = engine.getClipInfo (trackIdx, ci);
-            g.setColour (selected ? juce::Colours::black.withAlpha (0.85f)
-                                  : theme.foreground.withAlpha (0.78f));
-            g.setFont (juce::Font (11.0f, juce::Font::bold));
-            g.drawText ("CLIP " + juce::String (ci + 1), r.reduced (6, 2),
+        const int64_t firstBeat = (int64_t)(scrollX / (pixelsPerTick * ppq));
+        const int64_t lastBeat  = firstBeat + (int64_t)(rowR.getWidth() / (pixelsPerTick * ppq)) + 2;
+
+        for (int64_t b = firstBeat; b <= lastBeat && b * ppq <= total; ++b)
+        {
+            const int x = clipGridBounds.getX() + (int)((b * ppq) * pixelsPerTick - scrollX);
+            if (x < rowR.getX() || x > rowR.getRight()) continue;
+            const bool isBar = (b % 4 == 0);
+            if (!showBeats && !isBar) continue;
+            g.setColour (isBar ? theme.separator.withAlpha (0.95f) : theme.gridLine.withAlpha (0.90f));
+            g.fillRect (x, rowR.getY(), isBar ? 2 : 1, rowR.getHeight() - 1);
+        }
+
+        // Sub-beat grid lines at the live GRID/quantize resolution — mirrors
+        // PianoRollComponent's snap-grid pass so the arranger's grid visibly
+        // reacts to the same GRID combo that drives snapTick(), instead of
+        // always showing quarter-note/bar lines regardless of that setting.
+        const int64_t snap = currentSnapTicks();
+        if (snap > 0 && pixelsPerTick * (double) snap > 4.0)
+        {
+            g.setColour (theme.gridLine.withAlpha (0.55f));
+            const int64_t startSnap = (int64_t)(scrollX / (pixelsPerTick * (double) snap)) * snap;
+            for (int64_t t = startSnap; t <= total; t += snap)
+            {
+                if (t % ppq == 0) continue; // already drawn as a beat/bar line above
+                const int x = clipGridBounds.getX() + (int)(t * pixelsPerTick - scrollX);
+                if (x > rowR.getRight()) break;
+                if (x < rowR.getX()) continue;
+                g.fillRect (x, rowR.getY(), 1, rowR.getHeight() - 1);
+            }
+        }
+    }
+
+    void paintClip (juce::Graphics& g, int i, int ci,
+                    const SequencerTrackInfo& info,
+                    bool isSel, bool muted) const
+    {
+        const auto clipR = clipRectForClip (i, ci);
+        if (! clipGridBounds.intersects (clipR)) return;
+
+        // DYSEKT-METRO pass: clips are solid flat tiles now — full-opacity
+        // track colour, square corners (fillRect, not a 0-radius rounded
+        // rect), no border and no left accent bar. Muted gets its own
+        // desaturated tile colour rather than a lowered-alpha version of
+        // the same colour, since a translucent tile reads as "half a tile"
+        // once every other clip on the canvas is solid.
+        const juce::Colour tile = muted
+            ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
+            : info.colour;
+
+        g.setColour (tile);
+        g.fillRect (clipR.reduced (1, 1));
+
+        // Selection reads as a single accent-colour edge line rather than a
+        // brightened outline — an outline implies "this shape has a
+        // border", which doesn't fit tiles that otherwise have none.
+        if (isSel)
+        {
+            g.setColour (getTheme().accent);
+            g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
+        }
+
+        // Track name
+        if (trackH >= 20)
+        {
+            g.setFont (juce::Font (juce::jmin (14.f, (float)trackH * 0.24f), juce::Font::bold));
+            g.setColour (muted ? juce::Colours::white.withAlpha (0.45f)
+                               : juce::Colours::white.withAlpha (0.92f));
+            g.drawText (info.name,
+                        clipR.getX() + 6, clipR.getY() + 2,
+                        juce::jmax (0, clipR.getWidth() - 26),
+                        juce::jmax (0, (int)(trackH * 0.38f)),
                         juce::Justification::centredLeft, true);
+        }
 
-            if (selected)
+        // Track type badge
+        if (clipR.getWidth() > 32 && trackH >= 20)
+        {
+            juce::String badge;
+            switch (info.type)
             {
-                const int handleW = juce::jmin (kResizeZone, r.getWidth());
-                g.setColour (theme.foreground.withAlpha (0.35f));
-                g.fillRect (r.getRight() - handleW, r.getY() + 2,
-                            handleW, juce::jmax (0, r.getHeight() - 4));
+                case TrackType::MainSlice:      badge = "SL"; break;
+                case TrackType::ChromaticSlice: badge = "CH"; break;
+                case TrackType::SfPlayer:       badge = "SF"; break;
             }
-        }
-    }
-
-    void paintLoopOverlay (juce::Graphics& g)
-    {
-        if (loopStart < 0 || loopEnd <= loopStart) return;
-        const auto& theme = getTheme();
-        const int x1 = (int) tickToX (loopStart);
-        const int x2 = (int) tickToX (loopEnd);
-        const int l = juce::jmax (clipGridBounds.getX(), x1);
-        const int r = juce::jmin (clipGridBounds.getRight(), x2);
-        if (r <= l) return;
-
-        g.setColour (theme.accent.withAlpha (0.06f));
-        g.fillRect (l, rulerBounds.getY(), r - l, clipGridBounds.getBottom() - rulerBounds.getY());
-        g.setColour (theme.accent.withAlpha (0.9f));
-        g.fillRect (x1, rulerBounds.getY(), 2, clipGridBounds.getBottom() - rulerBounds.getY());
-        g.fillRect (x2 - 1, rulerBounds.getY(), 2, clipGridBounds.getBottom() - rulerBounds.getY());
-    }
-
-    void paintPlayhead (juce::Graphics& g)
-    {
-        const int x = (int) tickToX (engine.getPlayheadTick());
-        if (x < 0 || x > getWidth()) return;
-        const auto& theme = getTheme();
-        g.setColour (theme.accent.withAlpha (0.95f));
-        g.fillRect (x, rulerBounds.getY(), 2, clipGridBounds.getBottom() - rulerBounds.getY());
-    }
-
-    void paintRubberBand (juce::Graphics& g)
-    {
-        if (rubberBandRect.isEmpty()) return;
-        const auto& theme = getTheme();
-        g.setColour (theme.accent.withAlpha (0.12f));
-        g.fillRect (rubberBandRect);
-        g.setColour (theme.accent.withAlpha (0.65f));
-        g.drawRect (rubberBandRect, 1);
-    }
-
-    void paintDrawClipPreview (juce::Graphics& g)
-    {
-        if (dragMode != DragMode::DrawClip || dragTrack < 0) return;
-        const auto& theme = getTheme();
-        const int x = (int) tickToX (drawStartTick);
-        const int w = juce::jmax (kMinClipPx, (int)(drawLenTicks * pixelsPerTick));
-        const int y = trackTopY (dragTrack);
-        juce::Rectangle<int> r (x, y, w, trackH - 1);
-        g.setColour (theme.accent.withAlpha (0.25f));
-        g.fillRoundedRectangle (r.toFloat(), 3.0f);
-        g.setColour (theme.accent.withAlpha (0.65f));
-        g.drawRoundedRectangle (r.toFloat(), 3.0f, 1.0f);
-    }
-
-    void updateCursor (const juce::MouseEvent& e)
-    {
-        if (rulerBounds.contains (e.getPosition()))
-        {
-            setMouseCursor (juce::MouseCursor::CrosshairCursor);
-            return;
+            g.setFont (juce::Font (10.f));
+            g.setColour (juce::Colours::white.withAlpha (0.55f));
+            g.drawText (badge,
+                        clipR.getRight() - 22, clipR.getY() + 2,
+                        20, 12,
+                        juce::Justification::centredRight, false);
         }
 
-        if (! clipGridBounds.contains (e.getPosition()))
+        // Resize handle — solid, no alpha layering. Selected clips get a
+        // full-strength handle; unselected clips get it only on hover, so
+        // the cursor change and the visual affordance still arrive
+        // together, just via a colour swap rather than a fade-in.
+        const bool isHoverHandle = (! isSel && i == hoverTrack && ci == hoverClip);
+        if (isSel || isHoverHandle)
         {
-            setMouseCursor (juce::MouseCursor::NormalCursor);
-            return;
-        }
-
-        const int ti = trackFromY (e.y);
-        if (juce::isPositiveAndBelow (ti, engine.getNumTracks()))
-        {
-            for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
+            const juce::Rectangle<int> handleR (
+                clipR.reduced (1, 1).withLeft (clipR.getRight() - 8));
+            g.setColour (isSel ? juce::Colours::black.withAlpha (0.35f)
+                               : juce::Colours::black.withAlpha (0.18f));
+            g.fillRect (handleR);
+            g.setColour (juce::Colours::white.withAlpha (isSel ? 0.55f : 0.30f));
+            const float cx = (float) handleR.getCentreX();
+            for (int dot = 0; dot < 3; ++dot)
             {
-                const auto r = clipRectForClip (ti, ci);
-                if (r.contains (e.getPosition()))
-                {
-                    if (e.x >= r.getRight() - kResizeZone)
-                    {
-                        setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
-                        return;
-                    }
-                    break;
-                }
+                const float dy = handleR.getY() + handleR.getHeight() * (0.25f + dot * 0.25f);
+                g.fillRect (juce::Rectangle<float> (2.f, 2.f).withCentre ({ cx, dy }));
             }
         }
 
-        setMouseCursor (juce::MouseCursor::NormalCursor);
+        // Mini note preview
+        paintNotePreview (g, i, ci, clipR, tile, muted);
     }
 
-    void updateHoverHandle (juce::Point<int> p)
+    void paintNotePreview (juce::Graphics& g, int trackIdx, int clipIdx,
+                           juce::Rectangle<int> clipR,
+                           juce::Colour base, bool muted) const
     {
-        hoverTrack = -1;
-        hoverClip = -1;
-        if (! clipGridBounds.contains (p)) return;
+        const MidiClip* clip = engine.getClip (trackIdx, clipIdx);
+        if (! clip) return;
+        const int64_t clipLen = clip->getLengthTicks();
+        if (clipLen <= 0) return;
 
-        const int ti = trackFromY (p.y);
-        if (! juce::isPositiveAndBelow (ti, engine.getNumTracks())) return;
+        const int headerH  = (int)(trackH * 0.38f);
+        const int previewY = clipR.getY() + headerH;
+        const int previewH = clipR.getHeight() - headerH - 3;
+        if (previewH < 4) return;
 
-        for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
+        g.saveState();
+        g.reduceClipRegion (clipR.withTrimmedTop (headerH).withTrimmedBottom (2));
+
+        // Bar-boundary grid lines behind the notes
         {
-            const auto r = clipRectForClip (ti, ci);
-            if (r.contains (p) && p.x >= r.getRight() - kResizeZone)
+            const int64_t ppq    = MidiClip::kPPQ;
+            const int64_t barLen = ppq * 4;
+            g.setColour (base.brighter (0.15f).withAlpha (muted ? 0.10f : 0.18f));
+            for (int64_t t = barLen; t < clipLen; t += barLen)
             {
-                hoverTrack = ti;
-                hoverClip = ci;
-                return;
+                const float gx = clipR.getX() + (float)t / (float)clipLen * clipR.getWidth();
+                g.fillRect (juce::Rectangle<float> (gx, (float)previewY, 1.f, (float)previewH));
             }
         }
+
+        {
+            const juce::ScopedReadLock sl (clip->getLock());
+            const auto& notes = clip->getNotes();
+            if (notes.isEmpty()) { g.restoreState(); return; }
+
+            int loNote = 127, hiNote = 0;
+            for (const auto& n : notes)
+            {
+                loNote = juce::jmin (loNote, n.note);
+                hiNote = juce::jmax (hiNote, n.note);
+            }
+            const int range = juce::jmax (12, hiNote - loNote + 2);
+
+            for (const auto& n : notes)
+            {
+                if (n.startTick >= clipLen) continue;
+                const float nx = clipR.getX()
+                    + (float)(n.startTick) / (float)clipLen * clipR.getWidth();
+                const float nw = juce::jmax (1.5f,
+                    (float)(n.durationTick) / (float)clipLen * clipR.getWidth() - 0.5f);
+                const float pitch = (float)(n.note - loNote) / (float)range;
+                const float ny = (float)previewY + (1.f - pitch) * (float)(previewH - 3);
+                const float nh = juce::jmax (1.5f, (float)previewH / (float)range);
+                const float va = muted ? 0.22f : (0.4f + 0.5f * n.velocity / 127.f);
+                g.setColour (base.brighter (0.2f).withAlpha (va));
+                g.fillRoundedRectangle(nx, ny, nw, nh, 0.0f);
+            }
+        }
+
+        g.restoreState();
     }
 
-    /** Restored — was called from the constructor but had no definition.
-     *  Styles a scrollbar to match the LCD-frame look used throughout this
-     *  view (see paint()'s theme.waveformBg/separator frame). */
-    static void styleScrollBar (juce::ScrollBar& sb)
+    void paintPlayhead (juce::Graphics& g) const
     {
-        const auto& theme = getTheme();
-        sb.setColour (juce::ScrollBar::backgroundColourId, theme.waveformBg);
-        sb.setColour (juce::ScrollBar::thumbColourId,      theme.foreground.withAlpha (0.28f));
-        sb.setColour (juce::ScrollBar::trackColourId,      theme.button.withAlpha (0.45f));
+        if (clipGridBounds.isEmpty()) return;
+        const int64_t tick  = engine.getPlayheadTick();
+        const int64_t total = totalVisibleTicks();
+        if (tick < 0 || tick > total) return;
+
+        const int x = (int)tickToX (tick);
+        if (x < clipGridBounds.getX() || x > clipGridBounds.getRight()) return;
+
+        // The playhead belongs to the track area, not the ruler. Start it at
+        // the ruler's bottom edge (clipGridBounds.getY()) and clamp it to the
+        // actual visible track rows instead of the unused remainder of the
+        // grid viewport.
+        const int totalRowsH   = engine.getNumTracks() * trackH;
+        const int visibleRowsH = juce::jlimit (0, clipGridBounds.getHeight(),
+                                                totalRowsH - scrollY);
+        if (visibleRowsH <= 0) return;
+
+        const auto trackWindow = clipGridBounds.withHeight (visibleRowsH);
+        g.saveState();
+        g.reduceClipRegion (trackWindow);
+
+        const auto playheadColour = juce::Colours::white.withAlpha (0.96f);
+
+        // Line through tracks only; no pixels are painted inside the ruler.
+        g.setColour (playheadColour);
+        g.fillRect (x - 1, trackWindow.getY(), 2, trackWindow.getHeight());
+
+        // Small triangular cap at the top of the first visible track row.
+        const float capW = 7.0f, capH = 6.0f;
+        juce::Path cap;
+        cap.addTriangle ((float) x - capW * 0.5f, (float) trackWindow.getY(),
+                          (float) x + capW * 0.5f, (float) trackWindow.getY(),
+                          (float) x,               (float) trackWindow.getY() + capH);
+        g.setColour (playheadColour);
+        g.fillPath (cap);
+
+        g.restoreState();
     }
 
-    /** Restored — was called from mouseExit() but had no definition.
-     *  Thin setter over hoverTrack/hoverClip; updateHoverHandle() sets those
-     *  fields directly during mouseMove, but mouseExit needs to both clear
-     *  them and force the hover-handle fade-out to repaint immediately. */
-    void setHoverHandle (int trackIdx, int clipIdx)
-    {
-        if (trackIdx == hoverTrack && clipIdx == hoverClip) return;
-        hoverTrack = trackIdx;
-        hoverClip  = clipIdx;
-        repaint();
-    }
-
-    int leftPanelW() const noexcept
-    {
-        return inspectorVisible ? kLeftW : kStripW;
-    }
-
-    void updateScrollRanges()
-    {
-        // SequencerEngine has no getArrangementLengthTicks() — getLengthTicks()
-        // is documented as exactly that ("global length = end of last clip
-        // across all tracks"), so it's the correct existing call here.
-        const int viewW = juce::jmax (1, clipGridBounds.getWidth());
-        const int totalW = juce::jmax (viewW, (int) juce::roundToInt (engine.getLengthTicks() * pixelsPerTick));
-        const double maxScrollX = juce::jmax (0.0, (double) totalW - viewW);
-        scrollX = juce::jlimit (0.0, maxScrollX, scrollX);
-
-        const int viewH = juce::jmax (1, clipGridBounds.getHeight());
-        const int totalH = juce::jmax (viewH, engine.getNumTracks() * trackH);
-        scrollY = juce::jlimit (0, juce::jmax (0, totalH - viewH), scrollY);
-
-        if (maxScrollX > 0.0)
-        {
-            hScroll.setCurrentRange (scrollX / (double) totalW,
-                                     viewW / (double) totalW);
-        }
-        else
-        {
-            hScroll.setCurrentRange (0.0, 1.0);
-        }
-
-        if (totalH > viewH)
-        {
-            vScroll.setCurrentRange (scrollY / (double) totalH,
-                                     viewH / (double) totalH);
-        }
-        else
-        {
-            vScroll.setCurrentRange (0.0, 1.0);
-        }
-    }
-
-    void scrollBarMoved (juce::ScrollBar* bar, double newRangeStart) override
-    {
-        if (bar == &hScroll)
-        {
-            const int viewW = juce::jmax (1, clipGridBounds.getWidth());
-            const int totalW = juce::jmax (viewW, (int) juce::roundToInt (engine.getLengthTicks() * pixelsPerTick));
-            scrollX = juce::jlimit (0.0, juce::jmax (0.0, (double) totalW - viewW), newRangeStart * totalW);
-        }
-        else if (bar == &vScroll)
-        {
-            const int viewH = juce::jmax (1, clipGridBounds.getHeight());
-            const int totalH = juce::jmax (viewH, engine.getNumTracks() * trackH);
-            scrollY = juce::jlimit (0, juce::jmax (0, totalH - viewH),
-                                    (int) juce::roundToInt (newRangeStart * totalH));
-        }
-        repaint();
-    }
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ArrangeView)
 };
