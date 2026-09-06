@@ -175,6 +175,11 @@ public:
 
 
  void mouseDown (const juce::MouseEvent&) override;
+
+ /** Right-click on the record button: pick Overdub vs Add for how live
+  *  MIDI recording behaves when a clip already sits under the playhead
+  *  on the armed track. See SequencerEngine::RecordMode. */
+ void showRecordModeMenu();
  void mouseDrag (const juce::MouseEvent&) override;
  void mouseUp (const juce::MouseEvent&) override;
  void mouseDoubleClick (const juce::MouseEvent&) override;

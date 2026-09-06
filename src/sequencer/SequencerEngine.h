@@ -79,6 +79,23 @@ public:
 
     void setLooping   (bool v);
     void setRecording (bool v);
+
+    /** How live MIDI recording decides where to put newly captured notes
+     *  when a clip already exists under the playhead on the armed track.
+     *
+     *  Overdub — merge into that existing clip, keeping its current notes
+     *            (this is also what happens the very first time you record
+     *            into empty space, since there's nothing yet to merge with —
+     *            a brand-new clip is drawn and grown to follow the playhead).
+     *  Add     — never merge; always draw a brand-new clip starting at the
+     *            first note-on's tick, even if one is already sitting there,
+     *            so the previous take is left completely untouched and the
+     *            new one layers on top as an independent clip (a new take,
+     *            not a punch-in).
+     */
+    enum class RecordMode { Overdub, Add };
+    void       setRecordMode (RecordMode m) noexcept;
+    RecordMode getRecordMode() const noexcept;
     void setSyncToHost(bool v);
     void setBpm       (float b);
     void setHostBpm   (float b);

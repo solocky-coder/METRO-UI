@@ -103,15 +103,20 @@ struct SequencerEngine::Impl
     std::atomic<int>  selectedLiveChannel  { 0 };  // 1-based; 0 = disabled
     std::atomic<SelectedLiveTarget> selectedLiveTarget {}; // player + channel for the selected track
     std::atomic<int>  recordingTrackIndex  { -1 }; // which track receives recorded MIDI (-1 = none)
+    std::atomic<SequencerEngine::RecordMode> recordMode { SequencerEngine::RecordMode::Overdub };
 
     //==========================================================================
     //  Recorded-note FIFO  (audio thread writes, message thread drains)
     //
     //  Same shape as DysektProcessor's commandFifo, just flowing the other
     //  direction: audio thread -> message thread instead of message thread ->
-    //  audio thread. Each entry already carries a clip-relative tick, resolved
-    //  at the point of capture, so the drain never has to re-derive it (and
-    //  can't get it wrong if the clip has since moved).
+    //  audio thread. Each entry carries an absolute (global) tick — the
+    //  audio thread no longer needs a target clip to exist at all, since
+    //  drainRecordedEvents() now creates/grows the destination clip itself
+    //  (Cubase-style: a clip is drawn the moment the first note-on arrives
+    //  on an armed+playing track, and grows to follow the playhead from
+    //  there). Resolving to clip-relative coordinates happens on the
+    //  message thread, once the target clip is known.
     //==========================================================================
     struct RecordedNoteEvent
     {
@@ -119,7 +124,7 @@ struct SequencerEngine::Impl
         int     note       = 60;
         int     velocity   = 100;
         bool    isNoteOn   = true;
-        int64_t localTick  = 0;   // already clip-relative
+        int64_t tick       = 0;   // absolute/global tick, resolved at capture time
     };
 
     static constexpr int kRecordFifoSize = 1024;
@@ -144,6 +149,20 @@ struct SequencerEngine::Impl
     // exclusively by SequencerEngine::drainRecordedEvents().
     struct OpenRecNote { int trackIndex; int note; int64_t startTick; int noteIndexInClip; };
     juce::Array<OpenRecNote> openRecNotes;
+
+    // The clip currently being drawn by live MIDI recording, if any.
+    // MESSAGE-THREAD ONLY — created, grown, and torn down exclusively by
+    // SequencerEngine::drainRecordedEvents(). Cubase-style: nothing exists
+    // until the first note-on arrives on an armed+playing track, at which
+    // point a clip starts right at that tick and drainRecordedEvents()
+    // stretches its length every call to keep its end following the
+    // playhead, until recording stops or the armed track changes.
+    struct LiveRecordClip
+    {
+        bool active         = false;
+        int  trackIndex     = -1;
+        std::shared_ptr<ClipSlot> slot;
+    } liveRecordClip;
 
     //==========================================================================
     Impl()
@@ -317,6 +336,9 @@ void SequencerEngine::setLooping (bool v)
 }
 
 void SequencerEngine::setRecording  (bool v) { impl->recording.store  (v, std::memory_order_relaxed); }
+
+void SequencerEngine::setRecordMode (RecordMode m) noexcept { impl->recordMode.store (m, std::memory_order_relaxed); }
+SequencerEngine::RecordMode SequencerEngine::getRecordMode() const noexcept { return impl->recordMode.load (std::memory_order_relaxed); }
 void SequencerEngine::setSyncToHost (bool v) { impl->syncToHost.store (v, std::memory_order_relaxed); }
 
 void SequencerEngine::setBpm (float b)
@@ -884,41 +906,99 @@ void SequencerEngine::drainRecordedEvents()
     const auto scope = impl->recordFifo.read (impl->recordFifo.getNumReady());
     auto snap = impl->getTracks();
 
+    // Finds (or lazily creates) the clip a recorded note-on should land in.
+    // This only runs once per recording pass — the first branch below
+    // reuses whatever was decided here for every event after that, so the
+    // mode only matters at the very start of a take.
+    const auto mode = impl->recordMode.load (std::memory_order_relaxed);
+    auto findOrCreateSessionSlot = [&] (int trackIndex, int64_t globalTick) -> std::shared_ptr<ClipSlot>
+    {
+        if (impl->liveRecordClip.active && impl->liveRecordClip.trackIndex == trackIndex)
+            return impl->liveRecordClip.slot;
+
+        if (! juce::isPositiveAndBelow (trackIndex, (int) snap->size())) return nullptr;
+        auto& track = *(*snap)[(size_t) trackIndex];
+
+        // Overdub: if the armed track already has a clip sitting under the
+        // playhead, merge new notes into it rather than starting a new one.
+        // Add: skip this search entirely — always lay down a brand-new clip
+        // below, so whatever was already there is left completely alone.
+        if (mode == RecordMode::Overdub)
+        {
+            auto clipsSnap = track.getClips();
+            for (auto& existing : *clipsSnap)
+            {
+                if (globalTick >= existing->getStartTick() && globalTick < existing->endTick())
+                {
+                    impl->liveRecordClip = { true, trackIndex, existing };
+                    return existing;
+                }
+            }
+        }
+
+        // Nothing to merge into (Overdub with empty space) or Add mode —
+        // draw a fresh clip starting at the playhead tick the first note-on
+        // landed on. Length grows below (both here, as notes come in, and
+        // once per drain call to keep pace with the playhead even between
+        // notes). In Add mode this may end up overlapping an existing clip
+        // on the same track — that's intentional, it's a separate take
+        // layered on top, not a punch-in.
+        const int newIdx = track.addClip (globalTick, MidiClip::kPPQ / 4);
+        auto newSlot = track.getClipSlot (newIdx);
+        impl->liveRecordClip = { true, trackIndex, newSlot };
+        return newSlot;
+    };
+
     auto applyEvent = [&] (const Impl::RecordedNoteEvent& ev)
     {
         if (! juce::isPositiveAndBelow (ev.trackIndex, (int) snap->size())) return;
-        auto slot = (*snap)[(size_t) ev.trackIndex]->getClipSlot (0);
-        if (slot == nullptr) return;
-
-        auto&         clip   = slot->clip;
-        const int64_t clipLen = clip.getLengthTicks();
 
         if (ev.isNoteOn)
         {
+            auto slot = findOrCreateSessionSlot (ev.trackIndex, ev.tick);
+            if (slot == nullptr) return;
+
+            auto&         clip      = slot->clip;
+            const int64_t localTick = juce::jmax ((int64_t) 0, ev.tick - slot->getStartTick());
+            if (localTick >= clip.getLengthTicks())
+                clip.setLengthTicks (localTick + 1);
+
             MidiNote n;
             n.note         = ev.note;
             n.velocity     = ev.velocity;
-            n.startTick    = ev.localTick;
+            n.startTick    = localTick;
             n.durationTick = MidiClip::kPPQ / 4;   // placeholder; corrected on note-off
             const int idx  = clip.addNote (n);
-            impl->openRecNotes.add ({ ev.trackIndex, n.note, ev.localTick, idx });
+            impl->openRecNotes.add ({ ev.trackIndex, n.note, localTick, idx });
         }
         else
         {
+            // A note-off can only belong to the currently open live-record
+            // clip for this track — if there isn't one (e.g. recording was
+            // stopped/re-armed between the note-on and note-off), just drop
+            // it rather than guessing at a clip.
+            if (! (impl->liveRecordClip.active && impl->liveRecordClip.trackIndex == ev.trackIndex))
+                return;
+
+            auto  slot = impl->liveRecordClip.slot;
+            auto& clip = slot->clip;
+            const int64_t localTick = juce::jmax ((int64_t) 0, ev.tick - slot->getStartTick());
+
             for (int i = impl->openRecNotes.size() - 1; i >= 0; --i)
             {
                 auto& orn = impl->openRecNotes.getReference (i);
                 if (orn.trackIndex == ev.trackIndex && orn.note == ev.note)
                 {
-                    // Compute real duration, clamped to loop length.
-                    int64_t dur = ev.localTick - orn.startTick;
-                    if (dur <= 0) dur += clipLen;   // wrapped loop
-                    if (dur <= 0) dur  = MidiClip::kPPQ / 4;
+                    int64_t dur = localTick - orn.startTick;
+                    if (dur <= 0) dur = MidiClip::kPPQ / 4;   // clock jitter guard
                     clip.setNoteDuration (orn.noteIndexInClip, dur);
                     impl->openRecNotes.remove (i);
                     break;
                 }
             }
+
+            if (localTick >= clip.getLengthTicks())
+                clip.setLengthTicks (localTick + 1);
         }
     };
 
@@ -926,6 +1006,33 @@ void SequencerEngine::drainRecordedEvents()
         applyEvent (impl->recordBuffer[(size_t) (scope.startIndex1 + i)]);
     for (int i = 0; i < scope.blockSize2; ++i)
         applyEvent (impl->recordBuffer[(size_t) (scope.startIndex2 + i)]);
+
+    // Keep the live-record clip's end following the playhead every drain
+    // tick, not just when a note happens to land — this is what makes the
+    // clip visibly grow in the arranger while recording, Cubase-style.
+    // Once recording stops (or the armed track changes), close the session
+    // out so the next recording pass starts its own new clip.
+    if (impl->liveRecordClip.active)
+    {
+        const int recTi = impl->recordingTrackIndex.load (std::memory_order_relaxed);
+        const bool stillRecordingThisTrack =
+            impl->recording.load (std::memory_order_relaxed)
+            && impl->playing.load  (std::memory_order_relaxed)
+            && recTi == impl->liveRecordClip.trackIndex;
+
+        if (stillRecordingThisTrack)
+        {
+            auto&         clip    = impl->liveRecordClip.slot->clip;
+            const int64_t nowTick = impl->playheadTick.load (std::memory_order_relaxed);
+            const int64_t grownLen = nowTick - impl->liveRecordClip.slot->getStartTick();
+            if (grownLen > clip.getLengthTicks())
+                clip.setLengthTicks (grownLen);
+        }
+        else
+        {
+            impl->liveRecordClip = {};
+        }
+    }
 }
 
 //==============================================================================
@@ -1100,59 +1207,42 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     // ── MIDI input recording ──────────────────────────────────────────────────
     // Cubase-style: the selected (record-armed) track captures all incoming
     // MIDI regardless of channel. This never touches MidiClip on this thread
-    // — it resolves each event to a tick relative to the target clip's start
-    // (fixes the earlier absolute-vs-clip-relative bug) and pushes a small
-    // event into the lock-free FIFO. drainRecordedEvents(), called from the
-    // message thread, is what actually calls addNote()/setNoteDuration().
+    // — no target clip needs to exist yet at all. Each event is stamped with
+    // its absolute/global tick and pushed into the lock-free FIFO;
+    // drainRecordedEvents(), called from the message thread, is what
+    // actually creates/grows the destination clip and calls
+    // addNote()/setNoteDuration() on it.
     const int recTi = impl->recordingTrackIndex.load (std::memory_order_relaxed);
     if (impl->recording.load (std::memory_order_relaxed)
         && impl->playing.load (std::memory_order_relaxed)
         && juce::isPositiveAndBelow (recTi, (int) tracksSnap->size()))
     {
-        auto& track = *(*tracksSnap)[(size_t) recTi];
-        auto  slot0 = track.getClipSlot (0);
-
-        if (slot0 != nullptr)
+        for (const auto meta : inMidi)
         {
-            const int64_t clipStartTick = slot0->getStartTick();
-            const int64_t clipLenTicks  = slot0->clip.getLengthTicks();
-            const double  ticksPerSmp   = (bpm / 60.0) * (double) MidiClip::kPPQ / sampleRate;
-            const bool    haveTargetClip = clipLenTicks > 0;   // guards against modulo-by-zero
+            const auto msg = meta.getMessage();
+            if (msg.getChannel() == 16) continue;   // skip SFZ-internal channel
 
-            for (const auto meta : inMidi)
+            const double evTickGlobal = impl->currentTick + meta.samplePosition * ticksPerSample;
+
+            if (msg.isNoteOn (true))        // true = treat velocity-0 as note-off
             {
-                const auto msg = meta.getMessage();
-                if (msg.getChannel() == 16) continue;   // skip SFZ-internal channel
-                if (! haveTargetClip)       continue;
-
-                const double evTickGlobal = impl->currentTick + meta.samplePosition * ticksPerSmp;
-
-                // Resolve to a tick local to the target clip, in the half-open
-                // range from 0 up to (but not including) clipLenTicks.
-                int64_t localTick = (int64_t) std::fmod (evTickGlobal - (double) clipStartTick,
-                                                          (double) clipLenTicks);
-                if (localTick < 0) localTick += clipLenTicks;
-
-                if (msg.isNoteOn (true))        // true = treat velocity-0 as note-off
-                {
-                    Impl::RecordedNoteEvent ev;
-                    ev.trackIndex = recTi;
-                    ev.note       = msg.getNoteNumber();
-                    ev.velocity   = msg.getVelocity();
-                    ev.isNoteOn   = true;
-                    ev.localTick  = localTick;
-                    impl->pushRecordedEvent (ev);
-                }
-                else if (msg.isNoteOff (true))
-                {
-                    Impl::RecordedNoteEvent ev;
-                    ev.trackIndex = recTi;
-                    ev.note       = msg.getNoteNumber();
-                    ev.velocity   = 0;
-                    ev.isNoteOn   = false;
-                    ev.localTick  = localTick;
-                    impl->pushRecordedEvent (ev);
-                }
+                Impl::RecordedNoteEvent ev;
+                ev.trackIndex = recTi;
+                ev.note       = msg.getNoteNumber();
+                ev.velocity   = msg.getVelocity();
+                ev.isNoteOn   = true;
+                ev.tick       = (int64_t) evTickGlobal;
+                impl->pushRecordedEvent (ev);
+            }
+            else if (msg.isNoteOff (true))
+            {
+                Impl::RecordedNoteEvent ev;
+                ev.trackIndex = recTi;
+                ev.note       = msg.getNoteNumber();
+                ev.velocity   = 0;
+                ev.isNoteOn   = false;
+                ev.tick       = (int64_t) evTickGlobal;
+                impl->pushRecordedEvent (ev);
             }
         }
     }

@@ -95,6 +95,8 @@ public:
         stopBtn.onClick = [this] { engine.stop(); };
         recBtn.onStateChange  = [this] { engine.setRecording (recBtn.getToggleState()); };
         loopBtn.onStateChange = [this] { engine.setLooping   (loopBtn.getToggleState()); };
+        recBtn.setTooltip ("Record — right-click to choose Overdub/Add");
+        recBtn.addMouseListener (this, false);
 
         // ── Musical position — amber, zero-padded bar.beat.tick, same
         // format as FloatingTransportBar::formatMusicalPosition() ────────
@@ -301,6 +303,27 @@ public:
                     juce::Justification::centred);
         g.drawText ("R", rightLocatorLabel.getBounds().translated (-14, 0).withWidth (14),
                     juce::Justification::centred);
+    }
+
+    /** Forwarded here via recBtn.addMouseListener(this, false) — right-click
+     *  on the record button picks Overdub vs Add for live MIDI recording.
+     *  See SequencerEngine::RecordMode. */
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (e.eventComponent == &recBtn && e.mods.isPopupMenu())
+        {
+            const auto current = engine.getRecordMode();
+
+            juce::PopupMenu m;
+            m.addItem (1, "Overdub — merge into existing clip", true, current == SequencerEngine::RecordMode::Overdub);
+            m.addItem (2, "Add — always start a new clip",      true, current == SequencerEngine::RecordMode::Add);
+
+            m.showMenuAsync (juce::PopupMenu::Options(), [this] (int result)
+            {
+                if      (result == 1) engine.setRecordMode (SequencerEngine::RecordMode::Overdub);
+                else if (result == 2) engine.setRecordMode (SequencerEngine::RecordMode::Add);
+            });
+        }
     }
 
 private:

@@ -165,6 +165,8 @@ addAndMakeVisible (*b);
     };
     stopButton.onClick   = [this] { engine.stop(); };
     recordButton.onStateChange = [this] { engine.setRecording (recordButton.getToggleState()); };
+    recordButton.setTooltip ("Record — right-click to choose Overdub/Add");
+    recordButton.addMouseListener (this, false);
     cycleButton.onStateChange  = [this] { engine.setLooping (cycleButton.getToggleState()); };
 
 
@@ -343,6 +345,17 @@ int64_t FloatingTransportBar::getSnapTicks() const
 //==============================================================================
 void FloatingTransportBar::mouseDown (const juce::MouseEvent& e)
 {
+ // Forwarded here via recordButton.addMouseListener(this, false) — handle
+ // right-click before any of the title-strip drag logic below, and don't
+ // fall through into it (e.getPosition() below is in this component's own
+ // coordinate space, not recordButton's, so it must not be used for a
+ // click that actually landed on the button).
+ if (e.eventComponent == &recordButton && e.mods.isPopupMenu())
+ {
+     showRecordModeMenu();
+     return;
+ }
+
  // Capture eligibility at mouse-down. Once the desktop component moves,
  // getMouseDownPosition() is expressed in its new local coordinates and
  // can no longer be used reliably to test the original title-strip hit.
@@ -369,6 +382,22 @@ void FloatingTransportBar::mouseDrag (const juce::MouseEvent& e)
 void FloatingTransportBar::mouseUp (const juce::MouseEvent&)
 {
     draggingTitleStrip = false;
+}
+
+
+void FloatingTransportBar::showRecordModeMenu()
+{
+    const auto current = engine.getRecordMode();
+
+    juce::PopupMenu m;
+    m.addItem (1, "Overdub — merge into existing clip", true, current == SequencerEngine::RecordMode::Overdub);
+    m.addItem (2, "Add — always start a new clip",      true, current == SequencerEngine::RecordMode::Add);
+
+    m.showMenuAsync (juce::PopupMenu::Options(), [this] (int result)
+    {
+        if      (result == 1) engine.setRecordMode (SequencerEngine::RecordMode::Overdub);
+        else if (result == 2) engine.setRecordMode (SequencerEngine::RecordMode::Add);
+    });
 }
 
 
