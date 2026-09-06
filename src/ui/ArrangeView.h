@@ -376,7 +376,7 @@ public:
         // vertical shift the ruler/track rows already get from r above.
         {
             const auto header = arrangeHeaderBounds();
-            auto content = header.reduced (10, 4);
+            auto content = header.withWidth (kLeftW).reduced (10, 4);
             content.removeFromLeft (78);    // reserve room for "QUANTIZE"
             quantizeButtonsBounds = content;
 
@@ -1890,7 +1890,7 @@ private:
     juce::Rectangle<int> arrangeHeaderBounds() const noexcept
     {
         const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
-        return { 3, topY, kLeftW, kRulerH };
+        return { 3, topY, juce::jmax (kLeftW, getWidth() - 6), kRulerH };
     }
 
     void paintArrangeHeader (juce::Graphics& g) const
