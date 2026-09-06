@@ -1,6 +1,7 @@
 #include "DysektLookAndFeel.h"
 #include "BinaryData.h"
 #include "IconManager.h"
+#include "ToolIcons.h"
 
 // Default theme is now Metro (flat, square, no-gloss chrome per the design
 // manual). Was previously ThemeData::opendawTheme(), which meant every
@@ -165,6 +166,31 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
     }
 
     g.setColour (textCol);
+
+    // The Arranger's five edit-tool buttons use the exact same procedural
+    // glyphs as its right-click Tool submenu. Keep the button labels for
+    // accessibility/tooltips, but replace their text rendering with the
+    // shared ToolIcons artwork so the two control surfaces cannot drift.
+    if (button.getProperties().getWithDefault ("flatFill", false))
+    {
+        const auto txt = button.getButtonText();
+        ToolIcons::Kind kind;
+        bool isArrangeTool = true;
+
+        if      (txt == "SELECT") kind = ToolIcons::Kind::Select;
+        else if (txt == "DRAW")   kind = ToolIcons::Kind::Draw;
+        else if (txt == "ERASE")  kind = ToolIcons::Kind::Erase;
+        else if (txt == "SPLIT")  kind = ToolIcons::Kind::Split;
+        else if (txt == "GLUE")   kind = ToolIcons::Kind::Glue;
+        else                       isArrangeTool = false;
+
+        if (isArrangeTool)
+        {
+            const auto iconBounds = button.getLocalBounds().toFloat().reduced (7.0f, 4.0f);
+            ToolIcons::draw (g, kind, iconBounds, textCol);
+            return;
+        }
+    }
 
     const int h = button.getHeight();
     // Symbol-only button (loop): single non-ASCII char — render larger with system font
