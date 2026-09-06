@@ -3988,6 +3988,19 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (const auto meta : seqEvents)
             {
                 const auto msg = meta.getMessage();
+
+                // Channel 16 note-on is a private count-in click trigger.
+                // Consume it here rather than allowing it into any musical
+                // MIDI destination. Accent the first beat of every bar.
+                if (msg.getChannel() == 16 && msg.isNoteOn())
+                {
+                    const int clickLength = juce::jmax (1, (int) std::round (0.055 * currentSampleRate));
+                    countInClickSamplesLeft = clickLength;
+                    countInClickPhase = 0.0f;
+                    countInClickGain = msg.getVelocity() >= 110 ? 0.22f : 0.15f;
+                    continue;
+                }
+
                 const int ch0  = msg.getChannel() - 1;  // convert to 0-based
                 if (ch0 < 0 || ! (sfMask & (1u << ch0)))
                     slicerSeqEvents.addEvent (msg, meta.samplePosition);
@@ -3996,6 +4009,27 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
         }
         standaloneSfPlayerRecordedEvents = std::move (sfPlayerSeqEvents);
+
+        // Render the short count-in click directly into the audio buffer.
+        // This is deliberately a tiny generated tone (no allocation, locks,
+        // or sample lookup) so the count-in remains safe on the audio thread.
+        if (countInClickSamplesLeft > 0)
+        {
+            const double phaseStep = 2.0 * juce::MathConstants<double>::pi * 1760.0
+                                     / currentSampleRate;
+            const int n = buffer.getNumSamples();
+            for (int s = 0; s < n && countInClickSamplesLeft > 0; ++s)
+            {
+                const float env = (float) countInClickSamplesLeft
+                                  / (float) juce::jmax (1, (int) std::round (0.055 * currentSampleRate));
+                const float sample = countInClickGain * env
+                                   * (float) std::sin ((double) countInClickPhase);
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    buffer.addSample (ch, s, sample);
+                countInClickPhase += (float) phaseStep;
+                --countInClickSamplesLeft;
+            }
+        }
 
         // The slicer only ever sees the already-transformed live channel-1
         // input (now on the selected track's own channel, whatever it is)
