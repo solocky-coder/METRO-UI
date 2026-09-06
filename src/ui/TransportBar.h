@@ -305,9 +305,7 @@ public:
                     juce::Justification::centred);
     }
 
-    /** Forwarded here via recBtn.addMouseListener(this, false) — right-click
-     *  on the record button picks Overdub vs Add for live MIDI recording.
-     *  See SequencerEngine::RecordMode. */
+    /** Right-click on Record selects the take mode and 1/2-bar count-in. */
     void mouseDown (const juce::MouseEvent& e) override
     {
         if (e.eventComponent == &recBtn && e.mods.isPopupMenu())
@@ -317,11 +315,17 @@ public:
             juce::PopupMenu m;
             m.addItem (1, "Overdub — merge into existing clip", true, current == SequencerEngine::RecordMode::Overdub);
             m.addItem (2, "Add — always start a new clip",      true, current == SequencerEngine::RecordMode::Add);
+            m.addSeparator();
+            const int countIn = engine.getCountInBars();
+            m.addItem (3, "Count-in: 1 bar", true, countIn == 1);
+            m.addItem (4, "Count-in: 2 bars", true, countIn == 2);
 
             m.showMenuAsync (juce::PopupMenu::Options(), [this] (int result)
             {
                 if      (result == 1) engine.setRecordMode (SequencerEngine::RecordMode::Overdub);
                 else if (result == 2) engine.setRecordMode (SequencerEngine::RecordMode::Add);
+                else if (result == 3) engine.setCountInBars (1);
+                else if (result == 4) engine.setCountInBars (2);
             });
         }
     }
