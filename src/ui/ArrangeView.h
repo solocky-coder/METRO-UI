@@ -164,6 +164,7 @@ public:
         transport.setDocked (true);
         addAndMakeVisible (transport);
         addAndMakeVisible (inspector);
+        inspector.setVisible (false);
         addAndMakeVisible (trackStrip);
 
         transport.onFloatRequested = [this] { showFloatingTransport(); };
@@ -207,7 +208,7 @@ public:
         // These buttons call the already-existing engine/tool operations.
         {
             static const char* const labels[kNumArrangeTools] =
-                { "+ TRACK", "+ CLIP", "SELECT", "DRAW", "ERASE", "SPLIT", "GLUE", "LOCK" };
+                { "+ TRACK", "+ CLIP", "SELECT", "DRAW", "ERASE", "SPLIT", "GLUE", "LOCK", "INSPECTOR" };
 
             for (int i = 0; i < kNumArrangeTools; ++i)
             {
@@ -253,6 +254,14 @@ public:
             {
                 editingLocked = ! editingLocked;
                 arrangerButtons[7].setToggleState (editingLocked, juce::dontSendNotification);
+                repaint();
+            };
+
+            arrangerButtons[8].onClick = [this]
+            {
+                inspectorVisible = ! inspectorVisible;
+                inspector.setVisible (inspectorVisible);
+                resized();
                 repaint();
             };
         }
@@ -376,7 +385,7 @@ public:
         // vertical shift the ruler/track rows already get from r above.
         {
             const auto header = arrangeHeaderBounds();
-            auto content = header.withWidth (kLeftW).reduced (10, 4);
+            auto content = header.withWidth (340).reduced (8, 4);
             content.removeFromLeft (78);    // reserve room for "QUANTIZE"
             quantizeButtonsBounds = content;
 
@@ -391,11 +400,9 @@ public:
 
             // Command toolbar occupies the timeline side of the same header
             // row, leaving QUANTIZE + its six resolution buttons untouched.
-            auto tools = arrangeHeaderBounds();
-            tools.removeFromLeft (kLeftW);
-            tools = tools.reduced (6, 3);
+            auto tools = arrangeHeaderBounds().withTrimmedLeft (350).reduced (4, 3);
             const int toolGap = 4;
-            const int widths[kNumArrangeTools] = { 74, 66, 62, 52, 58, 56, 52, 52 };
+            const int widths[kNumArrangeTools] = { 74, 66, 62, 52, 58, 56, 52, 52, 82 };
             int x = tools.getX();
             for (int i = 0; i < kNumArrangeTools; ++i)
             {
@@ -412,12 +419,17 @@ public:
         auto hScrollR = r.removeFromBottom (kScrollH).withTrimmedRight (kScrollW);
         auto vScrollR = r.removeFromRight  (kScrollW);
 
-        hScroll.setBounds (hScrollR.withTrimmedLeft (kLeftW));
+        hScroll.setBounds (hScrollR.withTrimmedLeft (leftPanelW()));
         vScroll.setBounds (vScrollR);
 
-        auto inspectorCol = r.removeFromLeft (kInspectorW);
-        inspectorCol.removeFromTop (kRulerH);
-        inspector.setBounds (inspectorCol);
+        if (inspectorVisible)
+        {
+            auto inspectorCol = r.removeFromLeft (kInspectorW);
+            inspectorCol.removeFromTop (kRulerH);
+            inspector.setBounds (inspectorCol);
+        }
+        else
+            inspector.setBounds ({});
 
         auto leftCol = r.removeFromLeft (kStripW);
         leftCol.removeFromTop (kRulerH);
@@ -455,7 +467,7 @@ public:
         paintDrawClipPreview (g);
 
         // Corner fill between scrollbars
-        if (getWidth() > kLeftW + 8 && getHeight() > kTransportH + kScrollH + 8)
+        if (getWidth() > leftPanelW() + 8 && getHeight() > kTransportH + kScrollH + 8)
         {
             g.setColour (theme.waveformBg);
             g.fillRect (getWidth() - kScrollW - 4,
@@ -1023,9 +1035,10 @@ private:
     // Quick-access arranger commands. These are deliberately wired to the
     // same engine/tool handlers used by the existing right-click Tool menu,
     // so the toolbar is a second control surface, not a second editor.
-    static constexpr int kNumArrangeTools = 8;
+    static constexpr int kNumArrangeTools = 9;
     juce::TextButton arrangerButtons[kNumArrangeTools];
     bool editingLocked = false;
+    bool inspectorVisible = false;
 
     juce::Rectangle<int>  gridArea, rulerBounds, clipGridBounds;
     
@@ -1887,10 +1900,15 @@ private:
      *  while it's floating and has left no gap to sit below. resized() uses
      *  this same rect to position the quantize buttons, so painting and
      *  hit-testing never disagree about where this row is. */
+    int leftPanelW() const noexcept
+    {
+        return inspectorVisible ? kLeftW : kStripW;
+    }
+
     juce::Rectangle<int> arrangeHeaderBounds() const noexcept
     {
         const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
-        return { 3, topY, juce::jmax (kLeftW, getWidth() - 6), kRulerH };
+        return { 3, topY, juce::jmax (340, getWidth() - 6), kRulerH };
     }
 
     void paintArrangeHeader (juce::Graphics& g) const
@@ -1915,11 +1933,11 @@ private:
         // The actual command buttons are child components; this separator
         // visually divides quantize controls from editing commands.
         g.setColour (theme.separator.withAlpha (0.7f));
-        g.fillRect (header.getX() + kLeftW, header.getY(), 1, header.getHeight());
+        g.fillRect (header.getX() + 340, header.getY(), 1, header.getHeight());
 
         g.setColour (theme.foreground.withAlpha (0.55f));
         g.setFont (juce::Font (9.5f, juce::Font::bold));
-        g.drawText ("EDIT", header.getX() + kLeftW + 5, header.getY() - 1,
+        g.drawText ("EDIT", header.getX() + 345, header.getY() - 1,
                     36, 12, juce::Justification::centredLeft, false);
         // Quantize buttons (real child components, positioned in resized())
         // fill the rest of this header — nothing else to paint there.
