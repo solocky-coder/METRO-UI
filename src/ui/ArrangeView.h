@@ -1124,7 +1124,7 @@ private:
 
         // Keep the ruler/grid loop markers in sync with the engine's actual
         // loop range — e.g. locators set from the docked or floating
-        // transport's SET LEFT/SET RIGHT buttons or editable L/R fields,
+        // transport's SET LEFT / SET RIGHT buttons or editable L/R fields,
         // which previously never reached this view at all. Skipped while
         // the user is actively dragging out a new region on the ruler
         // (mouseUp below commits that drag to the engine instead), so the
