@@ -1374,7 +1374,13 @@ public:
     // =========================================================================
     double currentSampleRate { 44100.0 };
     bool   heldNotes[128]    {};
-    bool   heldNotes2[128]   {};   // SFZ-PLAYER's own note tracking — independent of the Slicer's
+    bool   heldNotes2[128]   {};
+
+    // Count-in click voice; rendered directly into the output buffer from
+    // private channel-16 transport triggers emitted by SequencerEngine.
+    float countInClickPhase = 0.0f;
+    int   countInClickSamplesLeft = 0;
+    float countInClickGain = 0.0f;   // SFZ-PLAYER's own note tracking — independent of the Slicer's
 
     // ── Global post-mix EQ (juce::dsp, runs after voice mix, before master volume) ──
     juce::dsp::ProcessorChain<
