@@ -8,15 +8,14 @@ class NetworkAudioSettingsComponent : public juce::Component,
                                        private juce::Timer
 {
 public:
-    NetworkAudioSettingsComponent (juce::AudioDeviceManager& deviceManager,
-                                    MetroNetworkAudio& networkAudio)
+    explicit NetworkAudioSettingsComponent (juce::AudioDeviceManager& deviceManager,
+                                             MetroNetworkAudio* networkAudio)
         : audioSelector (deviceManager, 0, 0, 1, 2, false, false, false, false),
           networkAudio (networkAudio),
           sourceModel (networkAudio)
     {
         setSize (680, 690);
 
-        audioSelector.setName ("Audio Device");
         addAndMakeVisible (audioSelector);
 
         networkTitle.setText ("NETWORK AUDIO", juce::dontSendNotification);
@@ -29,7 +28,6 @@ public:
         addAndMakeVisible (transportLabel);
 
         enableButton.setButtonText ("Enable network audio");
-        enableButton.setToggleState (false, juce::dontSendNotification);
         enableButton.onClick = [this]
         {
             const bool enabled = enableButton.getToggleState();
@@ -41,14 +39,22 @@ public:
             groupEditor.setEnabled (enabled);
             passwordEditor.setEnabled (enabled);
             publicGroupButton.setEnabled (enabled);
+
             if (! enabled)
             {
-                networkAudio.disconnect();
+#if DYSEKT_HAS_AOO
+                if (networkAudio != nullptr)
+                    networkAudio->disconnect();
+#endif
                 updateStatus ("Disabled");
             }
             else
             {
+#if DYSEKT_HAS_AOO
                 updateStatus ("Ready — local Wi-Fi/LAN audio");
+#else
+                updateStatus ("AOO backend is not enabled in this build");
+#endif
             }
         };
         addAndMakeVisible (enableButton);
@@ -168,33 +174,47 @@ private:
 
     void connectClicked()
     {
-        if (! networkAudio.start())
+#if DYSEKT_HAS_AOO
+        if (networkAudio == nullptr)
+        {
+            updateStatus ("AOO network audio is unavailable");
+            return;
+        }
+
+        if (! networkAudio->start())
         {
             updateStatus ("AOO backend unavailable in this build");
             return;
         }
 
         const int port = juce::jmax (1, portEditor.getText().getIntValue());
-        if (! networkAudio.connectToServer (serverEditor.getText(), port,
-                                            userEditor.getText(), passwordEditor.getText()))
+        if (! networkAudio->connectToServer (serverEditor.getText(), port,
+                                             userEditor.getText(), passwordEditor.getText()))
         {
             updateStatus ("Could not connect to AOO server");
             return;
         }
 
-        if (! networkAudio.joinGroup (groupEditor.getText(), passwordEditor.getText(),
-                                      publicGroupButton.getToggleState()))
+        if (! networkAudio->joinGroup (groupEditor.getText(), passwordEditor.getText(),
+                                       publicGroupButton.getToggleState()))
         {
             updateStatus ("Connected; group join pending/unavailable");
             return;
         }
 
         updateStatus ("Connected — waiting for network sources");
+#else
+        juce::ignoreUnused (networkAudio);
+        updateStatus ("AOO backend is not enabled in this build");
+#endif
     }
 
     void disconnectClicked()
     {
-        networkAudio.disconnect();
+#if DYSEKT_HAS_AOO
+        if (networkAudio != nullptr)
+            networkAudio->disconnect();
+#endif
         updateStatus ("Disconnected");
         refreshSources();
     }
@@ -213,18 +233,24 @@ private:
     class SourceListModel : public juce::ListBoxModel
     {
     public:
-        explicit SourceListModel (MetroNetworkAudio& owner) : owner (owner) {}
+        explicit SourceListModel (MetroNetworkAudio* owner) : owner (owner) {}
 
         int getNumRows() override
         {
-            return (int) owner.getSources().size();
+#if DYSEKT_HAS_AOO
+            return owner != nullptr ? (int) owner->getSources().size() : 0;
+#else
+            return 0;
+#endif
         }
 
         void paintListBoxItem (int rowNumber, juce::Graphics& g,
                                int width, int height, bool rowIsSelected) override
         {
-            juce::ignoreUnused (width);
-            const auto sources = owner.getSources();
+#if DYSEKT_HAS_AOO
+            if (owner == nullptr)
+                return;
+            const auto sources = owner->getSources();
             if (! juce::isPositiveAndBelow (rowNumber, (int) sources.size()))
                 return;
 
@@ -244,14 +270,17 @@ private:
             g.setFont (juce::Font (11.0f));
             g.drawText (details, 10, height / 2, width - 20, height / 2 - 2,
                         juce::Justification::centredLeft);
+#else
+            juce::ignoreUnused (rowNumber, g, width, height, rowIsSelected);
+#endif
         }
 
     private:
-        MetroNetworkAudio& owner;
+        MetroNetworkAudio* owner = nullptr;
     };
 
     juce::AudioDeviceSelectorComponent audioSelector;
-    MetroNetworkAudio& networkAudio;
+    MetroNetworkAudio* networkAudio = nullptr;
 
     juce::Label networkTitle;
     juce::Label transportLabel;
