@@ -209,7 +209,7 @@ public:
         // These buttons call the already-existing engine/tool operations.
         {
             static const char* const labels[kNumArrangeTools] =
-                { "+ TRACK", "+ CLIP", "SELECT", "DRAW", "ERASE", "SPLIT", "GLUE", "LOCK", "INSPECTOR" };
+                { "+ CLIP", "SELECT", "DRAW", "ERASE", "SPLIT", "GLUE", "LOCK", "INSPECTOR" };
 
             for (int i = 0; i < kNumArrangeTools; ++i)
             {
@@ -227,14 +227,6 @@ public:
 
             arrangerButtons[0].onClick = [this]
             {
-                engine.addMainTrack();
-                trackStrip.repaint();
-                updateScrollRanges();
-                repaint();
-            };
-
-            arrangerButtons[1].onClick = [this]
-            {
                 const int t = juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks())
                             ? selectedTrack : 0;
                 if (juce::isPositiveAndBelow (t, engine.getNumTracks()))
@@ -247,25 +239,30 @@ public:
                 repaint();
             };
 
-            arrangerButtons[2].onClick = [this] { setActiveTool (Tool::Select); };
-            arrangerButtons[3].onClick = [this] { setActiveTool (Tool::Draw); };
-            arrangerButtons[4].onClick = [this] { setActiveTool (Tool::Erase); };
-            arrangerButtons[5].onClick = [this] { setActiveTool (Tool::Split); };
-            arrangerButtons[6].onClick = [this] { setActiveTool (Tool::Glue); };
-            arrangerButtons[7].onClick = [this]
+            arrangerButtons[1].onClick = [this] { setActiveTool (Tool::Select); };
+            arrangerButtons[2].onClick = [this] { setActiveTool (Tool::Draw); };
+            arrangerButtons[3].onClick = [this] { setActiveTool (Tool::Erase); };
+            arrangerButtons[4].onClick = [this] { setActiveTool (Tool::Split); };
+            arrangerButtons[5].onClick = [this] { setActiveTool (Tool::Glue); };
+            arrangerButtons[6].onClick = [this]
             {
                 editingLocked = ! editingLocked;
-                arrangerButtons[7].setToggleState (editingLocked, juce::dontSendNotification);
+                arrangerButtons[6].setToggleState (editingLocked, juce::dontSendNotification);
                 repaint();
             };
 
-            arrangerButtons[8].onClick = [this]
+            arrangerButtons[7].onClick = [this]
             {
                 inspectorVisible = ! inspectorVisible;
                 inspector.setVisible (inspectorVisible);
+                arrangerButtons[7].setToggleState (inspectorVisible, juce::dontSendNotification);
                 resized();
                 repaint();
             };
+
+            arrangerButtons[1].setToggleState (true, juce::dontSendNotification);
+            arrangerButtons[6].setToggleState (false, juce::dontSendNotification);
+            arrangerButtons[7].setToggleState (false, juce::dontSendNotification);
         }
 
         // ── Horizontal scrollbar ──────────────────────────────────────────────
@@ -404,7 +401,7 @@ public:
             // row, leaving QUANTIZE + its six resolution buttons untouched.
             auto tools = arrangeHeaderBounds().withTrimmedLeft (350).reduced (4, 3);
             const int toolGap = 4;
-            const int widths[kNumArrangeTools] = { 74, 66, 62, 52, 58, 56, 52, 52, 82 };
+            const int widths[kNumArrangeTools] = { 66, 62, 52, 58, 56, 52, 52, 82 };
             int x = tools.getX();
             for (int i = 0; i < kNumArrangeTools; ++i)
             {
@@ -1037,7 +1034,7 @@ private:
     // Quick-access arranger commands. These are deliberately wired to the
     // same engine/tool handlers used by the existing right-click Tool menu,
     // so the toolbar is a second control surface, not a second editor.
-    static constexpr int kNumArrangeTools = 9;
+    static constexpr int kNumArrangeTools = 8;
     juce::TextButton arrangerButtons[kNumArrangeTools];
     bool editingLocked = false;
     bool inspectorVisible = false;
@@ -1489,6 +1486,12 @@ private:
     {
         currentTool = t;
         setMouseCursor (toolCursorFor (t));
+
+        arrangerButtons[1].setToggleState (t == Tool::Select, juce::dontSendNotification);
+        arrangerButtons[2].setToggleState (t == Tool::Draw,   juce::dontSendNotification);
+        arrangerButtons[3].setToggleState (t == Tool::Erase,  juce::dontSendNotification);
+        arrangerButtons[4].setToggleState (t == Tool::Split,  juce::dontSendNotification);
+        arrangerButtons[5].setToggleState (t == Tool::Glue,   juce::dontSendNotification);
         repaint();
     }
 
