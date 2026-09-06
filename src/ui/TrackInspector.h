@@ -30,6 +30,12 @@
 //      menu — plus a preset name/bank/program readout using
 //      SequencerTrackInfo::preset, which existed but was never surfaced
 //      anywhere in this panel.
+//      [Removed] The part grid itself was later dropped entirely: the only
+//      track type it ever gated to (the real .sfz-instrument track that
+//      backs the Multisampler) is hardcoded to MIDI channel 2 end-to-end
+//      (see SoundFontLoader/SfzPlayer2), so reassigning its channel from
+//      here never did anything but desync it. The preset readout stays —
+//      it's still accurate for every SfPlayer track.
 //   5. A track-colour swatch picker at the bottom, backed by
 //      SequencerEngine::setTrackColour() (new — see its declaration
 //      comment). Uses a small fixed palette independent of the active
@@ -45,15 +51,13 @@
 //
 //  No MIDI Out / Monitor controls: output routing is fixed (engine owns the
 //  destination per track type) and there is no separate audio monitor path
-//  to gate — this project records MIDI only. Only SoundFont tracks expose a
-//  MIDI part/channel selector, since they alone are multi-timbral in the
-//  current instrument model — Slice and Chromatic tracks are always pinned
-//  to their fixed engine channel. Every SfPlayer track (SF2 preset or real
-//  .sfz instrument alike) does carry preset info, so the preset readout
-//  shows for both; only the part grid itself stays gated to real
-//  .sfz-instrument tracks — see partButtons' onClick below for why
-//  reassigning a plain SF2 preset track's channel must stay routed through
-//  the SF2-PLAYER panel's own menu instead.
+//  to gate — this project records MIDI only. No MIDI part/channel selector
+//  either, for the same reason: every track type's channel is pinned by the
+//  engine (Slice/Chromatic to their fixed engine channel, SF2 preset tracks
+//  reassigned only from the SF2-PLAYER panel's own menu, and the real
+//  .sfz-instrument track fixed to MIDI channel 2), so there is no track for
+//  which a channel picker here would ever be meaningful. The preset
+//  name/bank/program readout still shows for every SfPlayer track.
 //==============================================================================
 class TrackInspector : public juce::Component,
                        private juce::Timer
@@ -72,33 +76,6 @@ public:
         configureButton (recordButton,  "R", juce::Colour (0xffd95454));
         for (auto* b : { &muteButton, &soloButton, &recordButton })
             b->getProperties().set ("flatFill", true);
-
-        // 4x4 part-number grid, replacing the old 16-item PART dropdown —
-        // see this class's header comment, point 4. Only ever shown for
-        // real .sfz-instrument tracks (see refresh()), same gating the old
-        // ComboBox used and for the same reason: reassigning a plain SF2
-        // preset track's channel here would desync
-        // processor.sfPlayerChannelMask (see the onClick body below).
-        for (int ch = 0; ch < 16; ++ch)
-        {
-            auto* b = partButtons.add (new juce::TextButton (juce::String (ch + 1)));
-            b->setClickingTogglesState (false);   // radio-style via refresh(), not per-button toggle
-            b->setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff1c2028));
-            b->setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-            b->setColour (juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha (0.55f));
-            b->setColour (juce::TextButton::textColourOnId,   juce::Colours::black.withAlpha (0.85f));
-            b->onClick = [this, ch]
-            {
-                if (! hasTrack()) return;
-                const auto info = engine.getTrackInfo (selectedTrack);
-                // Same call the old channelBox.onChange made — see this
-                // class's header comment for why this path is only ever
-                // reached for real .sfz-instrument tracks.
-                if (info.type == TrackType::SfPlayer && info.isSfzInstrument)
-                    engine.addSfzTrack (info.name, ch, info.colour);
-            };
-            addChildComponent (b);   // hidden until refresh() shows the grid
-        }
 
         // Fixed swatch palette for the track-colour picker — independent of
         // the active UI theme, see this class's header comment point 5.
@@ -240,19 +217,9 @@ public:
         volumeSlider.setValue (info.volumeDb, juce::dontSendNotification);
         panSlider.setValue (info.pan * 100.0, juce::dontSendNotification);
 
-        // Only real .sfz-instrument tracks show the part grid — see this
-        // class's header comment for why plain SF2 preset tracks stay
-        // reassignable only from the SF2-PLAYER panel's own menu.
-        showPartGrid = info.type == TrackType::SfPlayer && info.isSfzInstrument;
-        for (int ch = 0; ch < 16; ++ch)
-        {
-            auto* b = partButtons[ch];
-            b->setVisible (showPartGrid);
-            b->setToggleState (showPartGrid && info.midiChannel == ch, juce::dontSendNotification);
-        }
-
-        // Preset readout shows for every SfPlayer track, sfz or not — see
-        // this class's header comment point 4.
+        // Preset readout shows for every SfPlayer track, sfz or not — the
+        // part-grid channel selector that used to gate on isSfzInstrument
+        // was removed entirely (see this class's header comment, point 4).
         showPreset = info.type == TrackType::SfPlayer;
         presetName = info.preset.name.isNotEmpty() ? info.preset.name : "(no preset)";
         presetTag  = "BANK " + juce::String (info.preset.bank).paddedLeft ('0', 3)
@@ -272,7 +239,6 @@ public:
         auto area = getLocalBounds().reduced (12);
         if (! hasTrack())
         {
-            for (auto* b : partButtons)   b->setBounds ({});
             for (auto* b : colourButtons) b->setBounds ({});
             return;
         }
@@ -298,31 +264,8 @@ public:
         {
             area.removeFromTop (kSectionLabelH + kGapS);
 
-            if (showPartGrid)
-            {
-                constexpr int cols = 4, rows = 4, gap = 2;
-                const int cellW = (area.getWidth() - (cols - 1) * gap) / cols;
-                const int cellH = 22;
-                for (int ch = 0; ch < 16; ++ch)
-                {
-                    const int col = ch % cols, row = ch / cols;
-                    partButtons[ch]->setBounds (area.getX() + col * (cellW + gap),
-                                                 area.getY() + row * (cellH + gap),
-                                                 cellW, cellH);
-                }
-                area.removeFromTop (rows * cellH + (rows - 1) * gap + kGapM);
-            }
-            else
-            {
-                for (auto* b : partButtons) b->setBounds ({});
-            }
-
             presetRowBounds = area.removeFromTop (kPresetRowH);
             area.removeFromTop (kGapL);
-        }
-        else
-        {
-            for (auto* b : partButtons) b->setBounds ({});
         }
 
         // ── Channel section ─────────────────────────────────────────────
@@ -424,12 +367,6 @@ public:
         {
             sectionLabel (g, "INSTRUMENT", content.removeFromTop (kSectionLabelH));
             content.removeFromTop (kGapS);
-
-            if (showPartGrid)
-            {
-                constexpr int rows = 4, gap = 2;
-                content.removeFromTop (rows * 22 + (rows - 1) * gap + kGapM);
-            }
 
             if (showPreset)
             {
@@ -569,10 +506,8 @@ private:
     juce::TextButton muteButton, soloButton, recordButton;
     juce::Slider     volumeSlider, panSlider;
 
-    juce::OwnedArray<juce::TextButton> partButtons;     // 16, radio-style — see refresh()
     juce::OwnedArray<juce::TextButton> colourButtons;   // fixed palette — see constructor
 
-    bool showPartGrid = false;
     bool showPreset   = false;
     juce::String presetName, presetTag;
     juce::Rectangle<int> presetRowBounds;
@@ -620,7 +555,6 @@ private:
             control->setVisible (visible);
         if (! visible)
         {
-            for (auto* b : partButtons)   b->setVisible (false);
             for (auto* b : colourButtons) b->setVisible (false);
         }
     }
