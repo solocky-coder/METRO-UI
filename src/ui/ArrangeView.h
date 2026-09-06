@@ -203,6 +203,60 @@ public:
             quantizeButtons[4].setToggleState (true, juce::dontSendNotification); // 1/16, matches transport's initial GRID selection
         }
 
+        // ── Arranger command toolbar ───────────────────────────────────────
+        // These buttons call the already-existing engine/tool operations.
+        {
+            static const char* const labels[kNumArrangeTools] =
+                { "+ TRACK", "+ CLIP", "SELECT", "DRAW", "ERASE", "SPLIT", "GLUE", "LOCK" };
+
+            for (int i = 0; i < kNumArrangeTools; ++i)
+            {
+                auto& b = arrangerButtons[i];
+                b.setButtonText (labels[i]);
+                b.setTooltip (labels[i]);
+                b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff11171c));
+                b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
+                b.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.72f));
+                b.setColour (juce::TextButton::textColourOnId, juce::Colours::black.withAlpha (0.9f));
+                b.getProperties().set ("flatFill", true);
+                addAndMakeVisible (b);
+            }
+
+            arrangerButtons[0].onClick = [this]
+            {
+                engine.addMainTrack();
+                trackStrip.repaint();
+                updateScrollRanges();
+                repaint();
+            };
+
+            arrangerButtons[1].onClick = [this]
+            {
+                const int t = juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks())
+                            ? selectedTrack : 0;
+                if (juce::isPositiveAndBelow (t, engine.getNumTracks()))
+                {
+                    const int64_t tick = snapTick (engine.getPlayheadTick());
+                    const int idx = engine.addClip (t, tick, MidiClip::kPPQ * 4);
+                    if (idx >= 0)
+                        selectSingleClip (t, idx);
+                }
+                repaint();
+            };
+
+            arrangerButtons[2].onClick = [this] { setActiveTool (Tool::Select); };
+            arrangerButtons[3].onClick = [this] { setActiveTool (Tool::Draw); };
+            arrangerButtons[4].onClick = [this] { setActiveTool (Tool::Erase); };
+            arrangerButtons[5].onClick = [this] { setActiveTool (Tool::Split); };
+            arrangerButtons[6].onClick = [this] { setActiveTool (Tool::Glue); };
+            arrangerButtons[7].onClick = [this]
+            {
+                editingLocked = ! editingLocked;
+                arrangerButtons[7].setToggleState (editingLocked, juce::dontSendNotification);
+                repaint();
+            };
+        }
+
         // ── Horizontal scrollbar ──────────────────────────────────────────────
         hScroll.setRangeLimits (0.0, 1.0);
         hScroll.setCurrentRange (0.0, 0.5);
@@ -333,6 +387,21 @@ public:
             {
                 quantizeButtons[i].setBounds (row.removeFromLeft (bw));
                 row.removeFromLeft (gap);
+            }
+
+            // Command toolbar occupies the timeline side of the same header
+            // row, leaving QUANTIZE + its six resolution buttons untouched.
+            auto tools = arrangeHeaderBounds();
+            tools.removeFromLeft (kLeftW);
+            tools = tools.reduced (6, 3);
+            const int toolGap = 4;
+            const int widths[kNumArrangeTools] = { 74, 66, 62, 52, 58, 56, 52, 52 };
+            int x = tools.getX();
+            for (int i = 0; i < kNumArrangeTools; ++i)
+            {
+                const int w = juce::jmin (widths[i], tools.getRight() - x);
+                arrangerButtons[i].setBounds (x, tools.getY(), juce::jmax (0, w), tools.getHeight());
+                x += w + toolGap;
             }
         }
 
@@ -486,6 +555,14 @@ public:
             return;
         }
 
+        // LOCK leaves selection/navigation available but blocks
+        // destructive/drawing tool actions.
+        if (editingLocked && currentTool != Tool::Select)
+        {
+            repaint();
+            return;
+        }
+
         // Non-Select tools act on a single left-click instead of the
         // Select tool's move/resize/rubber-band-select behaviour below.
         // They all need a real track under the cursor.
@@ -512,6 +589,8 @@ public:
         // Resize handle — right edge of a clip
         if (onClip && e.x >= hitRect.getRight() - kResizeZone)
         {
+            if (editingLocked) { repaint(); return; }
+        {
             beginClipSelection (trackIdx, hitClip, e.mods.isShiftDown());
             dragMode       = DragMode::ResizeRight;
             dragTrack      = trackIdx;
@@ -527,6 +606,7 @@ public:
         // part of a multi-clip selection; see clipRectForClip)
         if (onClip)
         {
+            if (editingLocked) { beginClipSelection (trackIdx, hitClip, e.mods.isShiftDown()); repaint(); return; }
             beginClipSelection (trackIdx, hitClip, e.mods.isShiftDown());
             dragMode       = DragMode::MoveClip;
             dragTrack      = trackIdx;
@@ -939,6 +1019,13 @@ private:
     static constexpr int kNumQuantizeOptions = 6;
     juce::TextButton      quantizeButtons[kNumQuantizeOptions];
     juce::Rectangle<int>  quantizeButtonsBounds;
+
+    // Quick-access arranger commands. These are deliberately wired to the
+    // same engine/tool handlers used by the existing right-click Tool menu,
+    // so the toolbar is a second control surface, not a second editor.
+    static constexpr int kNumArrangeTools = 8;
+    juce::TextButton arrangerButtons[kNumArrangeTools];
+    bool editingLocked = false;
 
     juce::Rectangle<int>  gridArea, rulerBounds, clipGridBounds;
     
@@ -1824,6 +1911,16 @@ private:
         g.setColour (theme.foreground.withAlpha (0.92f));
         g.setFont (juce::Font (11.5f, juce::Font::bold));
         g.drawText ("QUANTIZE", header.reduced (12, 0), juce::Justification::centredLeft, false);
+
+        // The actual command buttons are child components; this separator
+        // visually divides quantize controls from editing commands.
+        g.setColour (theme.separator.withAlpha (0.7f));
+        g.fillRect (header.getX() + kLeftW, header.getY(), 1, header.getHeight());
+
+        g.setColour (theme.foreground.withAlpha (0.55f));
+        g.setFont (juce::Font (9.5f, juce::Font::bold));
+        g.drawText ("EDIT", header.getX() + kLeftW + 5, header.getY() - 1,
+                    36, 12, juce::Justification::centredLeft, false);
         // Quantize buttons (real child components, positioned in resized())
         // fill the rest of this header — nothing else to paint there.
         // The bottom border itself is NOT drawn here — see paintOverChildren()
