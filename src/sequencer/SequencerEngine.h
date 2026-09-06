@@ -63,6 +63,8 @@ public:
     bool    isPlaying()         const noexcept;
     bool    isLooping()         const noexcept;
     bool    isRecording()       const noexcept;
+    int     getCountInBars()     const noexcept;
+    void    setCountInBars (int bars) noexcept;
     int64_t getPlayheadTick()   const noexcept;
     double  getPlayheadBeats()  const noexcept;
     float   getBpm()            const noexcept;
