@@ -602,7 +602,6 @@ public:
         if (onClip && e.x >= hitRect.getRight() - kResizeZone)
         {
             if (editingLocked) { repaint(); return; }
-        {
             beginClipSelection (trackIdx, hitClip, e.mods.isShiftDown());
             dragMode       = DragMode::ResizeRight;
             dragTrack      = trackIdx;
