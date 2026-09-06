@@ -2,3 +2,7 @@
 	path = aoo
 	url = https://github.com/essej/aoo.git
 	branch = sono
+
+[submodule "link"]
+	path = link
+	url = https://github.com/Ableton/link.git
