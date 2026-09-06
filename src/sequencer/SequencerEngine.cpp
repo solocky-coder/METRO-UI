@@ -65,6 +65,11 @@ struct SequencerEngine::Impl
 
     std::atomic<bool>    playing      { false };
     std::atomic<bool>    recording    { false };
+    // Recording is armed immediately, but actual capture waits for the
+    // configured count-in. The audio thread owns the countdown state.
+    std::atomic<int>     countInBars { 1 };
+    std::atomic<bool>    countInActive { false };
+    std::atomic<int64_t> countInRemainingTicks { 0 };
     std::atomic<bool>    looping      { true  };
     std::atomic<bool>    pendingPlay  { false };
     std::atomic<bool>    pendingStop  { false };
@@ -309,6 +314,11 @@ SequencerEngine::~SequencerEngine() = default;
 bool    SequencerEngine::isPlaying()        const noexcept { return impl->playing.load   (std::memory_order_relaxed); }
 bool    SequencerEngine::isLooping()        const noexcept { return impl->looping.load   (std::memory_order_relaxed); }
 bool    SequencerEngine::isRecording()      const noexcept { return impl->recording.load (std::memory_order_relaxed); }
+int     SequencerEngine::getCountInBars()   const noexcept { return impl->countInBars.load (std::memory_order_relaxed); }
+void    SequencerEngine::setCountInBars (int bars) noexcept
+{
+    impl->countInBars.store (juce::jlimit (1, 2, bars), std::memory_order_relaxed);
+}
 int64_t SequencerEngine::getPlayheadTick()  const noexcept { return impl->playheadTick.load (std::memory_order_relaxed); }
 double  SequencerEngine::getPlayheadBeats() const noexcept { return (double) getPlayheadTick() / (double) MidiClip::kPPQ; }
 float   SequencerEngine::getBpm()           const noexcept { return impl->internalBpm.load (std::memory_order_relaxed); }
@@ -334,8 +344,6 @@ int64_t SequencerEngine::getLoopEndTick() const noexcept
 //==============================================================================
 void SequencerEngine::play()
 {
-    if (impl->recording.load (std::memory_order_relaxed))
-        impl->beginLiveRecordClip (impl->recordingTrackIndex.load (std::memory_order_relaxed));
 
     if (impl->abletonLink != nullptr && impl->abletonLink->isEnabled())
     {
@@ -360,6 +368,8 @@ void SequencerEngine::play()
 
 void SequencerEngine::stop()
 {
+    impl->countInActive.store (false, std::memory_order_relaxed);
+    impl->countInRemainingTicks.store (0, std::memory_order_relaxed);
     if (impl->abletonLink != nullptr && impl->abletonLink->isEnabled())
         impl->abletonLink->notifyStop();
     impl->awaitingLinkStart.store (false, std::memory_order_relaxed);
@@ -385,10 +395,12 @@ void SequencerEngine::setRecording (bool v)
     // current playhead (especially bar 1 / tick 0) exists before that audio
     // block is rendered. If transport starts after arming, play() performs
     // the same pre-creation step.
-    if (v && impl->playing.load (std::memory_order_relaxed))
-        impl->beginLiveRecordClip (impl->recordingTrackIndex.load (std::memory_order_relaxed));
-    else if (! v)
+    if (! v)
+    {
+        impl->countInActive.store (false, std::memory_order_relaxed);
+        impl->countInRemainingTicks.store (0, std::memory_order_relaxed);
         impl->liveRecordClip = {};
+    }
 }
 
 void SequencerEngine::setRecordMode (RecordMode m) noexcept { impl->recordMode.store (m, std::memory_order_relaxed); }
@@ -948,7 +960,8 @@ void SequencerEngine::setRecordingTrack (int trackIndex) noexcept
     // recording pass is active, pre-create its destination immediately. This
     // keeps the first boundary note in the same path as later notes.
     if (impl->recording.load (std::memory_order_relaxed)
-        && impl->playing.load (std::memory_order_relaxed))
+        && impl->playing.load (std::memory_order_relaxed)
+        && ! impl->countInActive.load (std::memory_order_relaxed))
         impl->beginLiveRecordClip (trackIndex);
 }
 
@@ -1153,6 +1166,20 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     if (impl->pendingPlay.exchange (false, std::memory_order_relaxed))
     {
         impl->playing.store (true, std::memory_order_relaxed);
+
+        // A record press arms recording; Play starts the transport with a
+        // musical count-in. The actual recording take starts exactly back at
+        // bar 1 after 1 or 2 full bars, so the first recorded note can never
+        // land in the transport's already-passed opening block.
+        if (impl->recording.load (std::memory_order_relaxed))
+        {
+            const int bars = juce::jlimit (1, 2,
+                impl->countInBars.load (std::memory_order_relaxed));
+            impl->countInRemainingTicks.store (
+                (int64_t) bars * MidiClip::kPPQ * 4, std::memory_order_relaxed);
+            impl->countInActive.store (true, std::memory_order_relaxed);
+            impl->liveRecordClip = {};
+        }
     }
     // ── React to a remote Link peer's Play/Stop ───────────────────────────
     // Everything above only ever sends our own transport state to Link
@@ -1225,6 +1252,31 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     if (bpm < 1.f || sampleRate < 1.0) return;
 
     const double ticksPerSample = (bpm / 60.0) * (double) MidiClip::kPPQ / sampleRate;
+
+    // Count-in is a real pre-roll: do not render arrangement clips or capture
+    // MIDI while it is active. At the end, reset to tick 0 and create the live
+    // recording clip before the first recording block is processed.
+    if (impl->countInActive.load (std::memory_order_relaxed))
+    {
+        const int64_t blockTicks = juce::jmax<int64_t> (1,
+            (int64_t) std::ceil (ticksPerSample * (double) numSamples));
+        const int64_t remaining = impl->countInRemainingTicks.load (std::memory_order_relaxed);
+
+        if (remaining > blockTicks)
+        {
+            impl->countInRemainingTicks.store (remaining - blockTicks, std::memory_order_relaxed);
+            return;
+        }
+
+        impl->countInRemainingTicks.store (0, std::memory_order_relaxed);
+        impl->countInActive.store (false, std::memory_order_relaxed);
+        impl->currentTick = 0.0;
+        impl->playheadTick.store (0, std::memory_order_relaxed);
+
+        if (impl->recording.load (std::memory_order_relaxed))
+            impl->beginLiveRecordClip (impl->recordingTrackIndex.load (std::memory_order_relaxed));
+    }
+
     const bool   doLoop         = impl->looping.load (std::memory_order_relaxed);
     const double blockEndTick   = impl->currentTick + ticksPerSample * numSamples;
 
