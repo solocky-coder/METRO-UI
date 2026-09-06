@@ -2,7 +2,7 @@
 #include "MetroColours.h"
 #include "MetroMetrics.h"
 #include "MetroTypography.h"
-#include "../sequencer/SequencerEngine.h"
+#include "../sequencer/SequencerEngine.h"\n#include "../sequencer/MidiClip.h"\n#include <cmath>
 
 namespace dysekt::metro
 {
@@ -86,9 +86,9 @@ void MetroArrangementView::drawToolbar (juce::Graphics& g, juce::Rectangle<int> 
 
     button ({ area.getX() + 8, area.getY() + 7, 88, 26 }, "+ TRACK", false);
     button ({ area.getX() + 102, area.getY() + 7, 78, 26 }, "+ CLIP", false);
-    button ({ area.getX() + 192, area.getY() + 7, 90, 26 }, "SNAP  1/16", false);
-    button ({ area.getX() + 290, area.getY() + 7, 58, 26 }, "GRID", true);
-    button ({ area.getX() + 356, area.getY() + 7, 78, 26 }, "MAGNET", false);
+    button ({ area.getX() + 192, area.getY() + 7, 90, 26 }, "SNAP  1/16", magnetEnabled);
+    button ({ area.getX() + 290, area.getY() + 7, 58, 26 }, "GRID", gridVisible);
+    button ({ area.getX() + 356, area.getY() + 7, 78, 26 }, "MAGNET", magnetEnabled);
 
     const char* tools[] = { "↖", "✎", "⌫", "✂", "▣" };
     int x = area.getX() + 446;
@@ -261,16 +261,19 @@ void MetroArrangementView::paint (juce::Graphics& graphics)
     const int firstBeat = juce::jmax (0, (int) std::floor (scrollPixels / beatWidth));
     const int startX = kTrackHeaderWidth + firstBeat * beatWidth - (int) scrollPixels;
 
-    for (int beat = firstBeat, x = startX; x < grid.getRight(); ++beat, x += beatWidth)
+    if (gridVisible)
     {
-        if (x < kTrackHeaderWidth) continue;
-        graphics.setColour (beat % 4 == 0 ? juce::Colour (0xFF253B44) : juce::Colour (0xFF12252C));
-        graphics.drawVerticalLine (x, (float) grid.getY(), (float) grid.getBottom());
-        const int sub = juce::jmax (1, beatWidth / 4);
-        for (int sx = x + sub; sx < x + beatWidth; sx += sub)
+        for (int beat = firstBeat, x = startX; x < grid.getRight(); ++beat, x += beatWidth)
         {
-            graphics.setColour (juce::Colour (0xFF0B181E));
-            graphics.drawVerticalLine (sx, (float) grid.getY(), (float) grid.getBottom());
+            if (x < kTrackHeaderWidth) continue;
+            graphics.setColour (beat % 4 == 0 ? juce::Colour (0xFF253B44) : juce::Colour (0xFF12252C));
+            graphics.drawVerticalLine (x, (float) grid.getY(), (float) grid.getBottom());
+            const int sub = juce::jmax (1, beatWidth / 4);
+            for (int sx = x + sub; sx < x + beatWidth; sx += sub)
+            {
+                graphics.setColour (juce::Colour (0xFF0B181E));
+                graphics.drawVerticalLine (sx, (float) grid.getY(), (float) grid.getBottom());
+            }
         }
     }
 
@@ -348,21 +351,164 @@ int MetroArrangementView::hitTestTrack (juce::Point<int> position, int& clipInde
     return -1;
 }
 
+int64_t MetroArrangementView::tickAtX (int x) const noexcept
+{
+    const int bw = juce::jmax (1, beatWidthPx());
+    const double beats = (double) (x - kTrackHeaderWidth + (int) scrollPixels) / (double) bw;
+    return juce::jmax<int64_t> (0, (int64_t) std::llround (beats * MidiClip::kPPQ));
+}
+
+int64_t MetroArrangementView::snapTick (int64_t tick) const noexcept
+{
+    if (! magnetEnabled || snapTicks <= 0)
+        return juce::jmax<int64_t> (0, tick);
+    return juce::jmax<int64_t> (0, ((tick + snapTicks / 2) / snapTicks) * snapTicks);
+}
+
+void MetroArrangementView::createClipAt (int trackIndex, int64_t tick)
+{
+    if (locked || trackIndex < 0 || trackIndex >= engine.getNumTracks())
+        return;
+    const auto start = snapTick (tick);
+    const int clip = engine.addClip (trackIndex, start, MidiClip::kPPQ * 4);
+    if (clip >= 0)
+        setSelection (MetroSelection::forClip (trackIndex, clip,
+                                                engine.getTrackInfo (trackIndex),
+                                                engine.getClipInfo (trackIndex, clip)));
+}
+
+void MetroArrangementView::splitSelectedClip (int64_t splitTick)
+{
+    if (locked || ! selection.isClip())
+        return;
+    const int t = selection.trackIndex, cidx = selection.clipIndex;
+    if (cidx < 0 || cidx >= engine.getNumClips (t)) return;
+    const auto info = engine.getClipInfo (t, cidx);
+    const int64_t local = snapTick (splitTick) - info.startTick;
+    if (local <= 0 || local >= info.lengthTicks) return;
+
+    auto* clip = engine.getClip (t, cidx);
+    if (clip == nullptr) return;
+    juce::Array<MidiNote> rightNotes;
+    {
+        const juce::ScopedReadLock lock (clip->getLock());
+        for (const auto& n : clip->getNotes())
+            if (n.startTick >= local)
+            {
+                auto right = n;
+                right.startTick -= local;
+                rightNotes.add (right);
+            }
+    }
+    const int64_t oldLength = info.lengthTicks;
+    const int rightIdx = engine.addClip (t, info.startTick + local, oldLength - local);
+    if (rightIdx < 0) return;
+
+    juce::Array<MidiNote> leftNotes;
+    {
+        const juce::ScopedReadLock lock (clip->getLock());
+        for (const auto& n : clip->getNotes())
+            if (n.startTick < local)
+                leftNotes.add (n);
+    }
+    clip->setNotes (leftNotes);
+    clip->setLengthTicks (local);
+    if (auto* right = engine.getClip (t, rightIdx))
+        right->setNotes (rightNotes);
+    setSelection (MetroSelection::forClip (t, rightIdx, engine.getTrackInfo (t),
+                                            engine.getClipInfo (t, rightIdx)));
+}
+
+void MetroArrangementView::glueSelectedClip ()
+{
+    if (locked || ! selection.isClip()) return;
+    const int t = selection.trackIndex, a = selection.clipIndex;
+    if (a < 0 || a >= engine.getNumClips (t) - 1) return;
+    const auto first = engine.getClipInfo (t, a);
+    const auto second = engine.getClipInfo (t, a + 1);
+    if (first.startTick + first.lengthTicks != second.startTick) return;
+
+    auto* left = engine.getClip (t, a);
+    auto* right = engine.getClip (t, a + 1);
+    if (left == nullptr || right == nullptr) return;
+
+    juce::Array<MidiNote> merged;
+    {
+        const juce::ScopedReadLock l1 (left->getLock());
+        for (const auto& n : left->getNotes()) merged.add (n);
+    }
+    {
+        const juce::ScopedReadLock l2 (right->getLock());
+        for (const auto& n : right->getNotes())
+        {
+            auto n2 = n;
+            n2.startTick += second.startTick - first.startTick;
+            merged.add (n2);
+        }
+    }
+    left->setNotes (merged);
+    left->setLengthTicks (first.lengthTicks + second.lengthTicks);
+    engine.removeClip (t, a + 1);
+    setSelection (MetroSelection::forClip (t, a, engine.getTrackInfo (t),
+                                            engine.getClipInfo (t, a)));
+}
+
 void MetroArrangementView::mouseDown (const juce::MouseEvent& event)
 {
-    int clipIndex = -1;
-    const auto trackIndex = hitTestTrack (event.getPosition(), clipIndex);
-
+    // Toolbar commands are real editor commands now; they call the existing
+    // SequencerEngine/MidiClip APIs rather than maintaining a second model.
     if (event.y < kToolbarHeight)
     {
+        if (event.x >= 8 && event.x < 96) // + TRACK
+        {
+            if (! locked) engine.addMainTrack();
+            repaint();
+            return;
+        }
+        if (event.x >= 102 && event.x < 180) // + CLIP
+        {
+            const int t = selection.trackIndex >= 0 ? selection.trackIndex : 0;
+            if (t >= 0 && t < engine.getNumTracks())
+                createClipAt (t, selection.isClip() ? selection.clip.startTick
+                                                     : tickAtX (getWidth() / 2));
+            repaint();
+            return;
+        }
+        if (event.x >= 192 && event.x < 282) // snap
+        {
+            magnetEnabled = ! magnetEnabled;
+            repaint();
+            return;
+        }
+        if (event.x >= 290 && event.x < 348) // grid
+        {
+            gridVisible = ! gridVisible;
+            repaint();
+            return;
+        }
+        if (event.x >= 356 && event.x < 434) // magnet
+        {
+            magnetEnabled = ! magnetEnabled;
+            repaint();
+            return;
+        }
+
         const int toolX = 446;
         if (event.x >= toolX && event.x < toolX + 5 * 44)
         {
             activeTool = juce::jlimit (0, 4, (event.x - toolX) / 44);
             repaint();
         }
+        if (event.x >= 4 + toolX + 5 * 44 && event.x < 4 + toolX + 5 * 44 + 58)
+        {
+            locked = ! locked;
+            repaint();
+        }
         return;
     }
+
+    int clipIndex = -1;
+    const auto trackIndex = hitTestTrack (event.getPosition(), clipIndex);
 
     if (trackIndex < 0)
     {
@@ -370,14 +516,47 @@ void MetroArrangementView::mouseDown (const juce::MouseEvent& event)
         return;
     }
 
+    if (activeTool == 1) // Draw = create a clip at the clicked position.
+    {
+        if (clipIndex < 0) createClipAt (trackIndex, tickAtX (event.x));
+        return;
+    }
+
     if (clipIndex >= 0)
+    {
+        if (activeTool == 2) // Erase
+        {
+            if (! locked)
+            {
+                engine.removeClip (trackIndex, clipIndex);
+                clearSelection();
+            }
+            repaint();
+            return;
+        }
+
+        if (activeTool == 3) // Split
+        {
+            setSelection (MetroSelection::forClip (trackIndex, clipIndex,
+                                                   engine.getTrackInfo (trackIndex),
+                                                   engine.getClipInfo (trackIndex, clipIndex)));
+            splitSelectedClip (tickAtX (event.x));
+            repaint();
+            return;
+        }
+
         setSelection (MetroSelection::forClip (trackIndex, clipIndex,
                                                engine.getTrackInfo (trackIndex),
                                                engine.getClipInfo (trackIndex, clipIndex)));
-    else
-        setSelection (MetroSelection::forTrack (trackIndex, engine.getTrackInfo (trackIndex)));
-}
 
+        if (activeTool == 4)
+            glueSelectedClip();
+    }
+    else
+    {
+        setSelection (MetroSelection::forTrack (trackIndex, engine.getTrackInfo (trackIndex)));
+    }
+}
 void MetroArrangementView::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
 {
     if (wheel.deltaY == 0.0f)
