@@ -1450,21 +1450,87 @@ private:
             onTrackTypeSelected (TrackType::MainSlice, false, false, -1, -1, -1);
     }
 
+    /** SequencerEngine has no splitClip() API — a split is implemented here
+     *  directly on top of the existing clip primitives (getClip/getClipInfo/
+     *  addClip/setClipLengthTicks): the original clip is shortened in place
+     *  and a new clip is created for the tail, each keeping only the notes
+     *  (re-based to their own clip-local ticks) that fall on their side of
+     *  the cut. */
     void handleSplitClipDown (int trackIdx, int clipIdx, const juce::MouseEvent& e)
     {
+        MidiClip* clip = engine.getClip (trackIdx, clipIdx);
+        if (! clip) return;
+
         const auto info = engine.getClipInfo (trackIdx, clipIdx);
         const int64_t splitTick = snapTick (xToTick (e.x));
-        if (splitTick <= info.startTick || splitTick >= info.startTick + info.lengthTicks)
-            return;
+        const int64_t cutOffsetInClip = splitTick - info.startTick;
+        if (cutOffsetInClip <= 0 || cutOffsetInClip >= info.lengthTicks)
+            return;   // click wasn't inside this clip's body
 
-        engine.splitClip (trackIdx, clipIdx, splitTick);
+        juce::Array<MidiNote> headNotes, tailNotes;
+        {
+            const juce::ScopedReadLock sl (clip->getLock());
+            for (const auto& n : clip->getNotes())
+            {
+                if (n.startTick < cutOffsetInClip)
+                    headNotes.add (n);
+                else
+                {
+                    MidiNote moved = n;
+                    moved.startTick -= cutOffsetInClip;
+                    tailNotes.add (moved);
+                }
+            }
+        }
+
+        const int64_t tailLen = info.lengthTicks - cutOffsetInClip;
+        const int tailIdx = engine.addClip (trackIdx, splitTick, tailLen);
+        if (MidiClip* tail = engine.getClip (trackIdx, tailIdx))
+            tail->setNotes (tailNotes);
+
+        engine.setClipLengthTicks (trackIdx, clipIdx, cutOffsetInClip);
+        clip->setNotes (headNotes);
+
         selectSingleClip (trackIdx, clipIdx);
     }
 
+    /** SequencerEngine has no glueClips() API either — merges the clicked
+     *  clip with the following clip on the same track directly, extending
+     *  the clicked clip to cover both and re-basing the merged-in clip's
+     *  notes by its start offset relative to the clicked clip. */
     void handleGlueClipDown (int trackIdx, int clipIdx)
     {
         if (clipIdx < 0 || clipIdx + 1 >= engine.getNumClips (trackIdx)) return;
-        engine.glueClips (trackIdx, clipIdx, clipIdx + 1);
+
+        MidiClip* clip = engine.getClip (trackIdx, clipIdx);
+        if (! clip) return;
+        const auto info = engine.getClipInfo (trackIdx, clipIdx);
+
+        const int nextIdx = clipIdx + 1;
+        MidiClip* next = engine.getClip (trackIdx, nextIdx);
+        if (! next) return;
+        const auto nextInfo = engine.getClipInfo (trackIdx, nextIdx);
+        const int64_t offset = nextInfo.startTick - info.startTick;
+
+        juce::Array<MidiNote> merged;
+        {
+            const juce::ScopedReadLock sl (clip->getLock());
+            merged = clip->getNotes();
+        }
+        {
+            const juce::ScopedReadLock sl (next->getLock());
+            for (const auto& n : next->getNotes())
+            {
+                MidiNote moved = n;
+                moved.startTick += offset;
+                merged.add (moved);
+            }
+        }
+
+        engine.setClipLengthTicks (trackIdx, clipIdx, offset + nextInfo.lengthTicks);
+        clip->setNotes (merged);
+        engine.removeClip (trackIdx, nextIdx);
+
         selectSingleClip (trackIdx, clipIdx);
     }
 
@@ -1507,7 +1573,9 @@ private:
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
 
-        g.setColour (theme.transportBg);
+        // ThemeData has no transportBg — theme.header is the "top bar" fill
+        // used for this exact purpose elsewhere (TrackHeaderStrip, etc).
+        g.setColour (theme.header);
         g.fillRect (header);
 
         g.setColour (theme.separator.withAlpha (0.75f));
@@ -1661,7 +1729,11 @@ private:
 
             const bool selected = isClipSelected (trackIdx, ci)
                                || (trackIdx == selectedTrack && ci == selectedClip);
-            const auto fill = selected ? theme.accent : theme.clipFill;
+            // ThemeData has no clipFill — theme.button is the nearest
+            // existing "neutral flat surface" colour (used the same way for
+            // the scrollbar track in styleScrollBar()). Flag for review if
+            // a dedicated clip-tile colour was actually intended.
+            const auto fill = selected ? theme.accent : theme.button;
             g.setColour (fill.withAlpha (selected ? 0.78f : 0.62f));
             g.fillRoundedRectangle (r.toFloat(), 3.0f);
 
@@ -1792,6 +1864,29 @@ private:
         }
     }
 
+    /** Restored — was called from the constructor but had no definition.
+     *  Styles a scrollbar to match the LCD-frame look used throughout this
+     *  view (see paint()'s theme.waveformBg/separator frame). */
+    static void styleScrollBar (juce::ScrollBar& sb)
+    {
+        const auto& theme = getTheme();
+        sb.setColour (juce::ScrollBar::backgroundColourId, theme.waveformBg);
+        sb.setColour (juce::ScrollBar::thumbColourId,      theme.foreground.withAlpha (0.28f));
+        sb.setColour (juce::ScrollBar::trackColourId,      theme.button.withAlpha (0.45f));
+    }
+
+    /** Restored — was called from mouseExit() but had no definition.
+     *  Thin setter over hoverTrack/hoverClip; updateHoverHandle() sets those
+     *  fields directly during mouseMove, but mouseExit needs to both clear
+     *  them and force the hover-handle fade-out to repaint immediately. */
+    void setHoverHandle (int trackIdx, int clipIdx)
+    {
+        if (trackIdx == hoverTrack && clipIdx == hoverClip) return;
+        hoverTrack = trackIdx;
+        hoverClip  = clipIdx;
+        repaint();
+    }
+
     int leftPanelW() const noexcept
     {
         return inspectorVisible ? kLeftW : kStripW;
@@ -1799,8 +1894,11 @@ private:
 
     void updateScrollRanges()
     {
+        // SequencerEngine has no getArrangementLengthTicks() — getLengthTicks()
+        // is documented as exactly that ("global length = end of last clip
+        // across all tracks"), so it's the correct existing call here.
         const int viewW = juce::jmax (1, clipGridBounds.getWidth());
-        const int totalW = juce::jmax (viewW, (int) juce::roundToInt (engine.getArrangementLengthTicks() * pixelsPerTick));
+        const int totalW = juce::jmax (viewW, (int) juce::roundToInt (engine.getLengthTicks() * pixelsPerTick));
         const double maxScrollX = juce::jmax (0.0, (double) totalW - viewW);
         scrollX = juce::jlimit (0.0, maxScrollX, scrollX);
 
@@ -1834,7 +1932,7 @@ private:
         if (bar == &hScroll)
         {
             const int viewW = juce::jmax (1, clipGridBounds.getWidth());
-            const int totalW = juce::jmax (viewW, (int) juce::roundToInt (engine.getArrangementLengthTicks() * pixelsPerTick));
+            const int totalW = juce::jmax (viewW, (int) juce::roundToInt (engine.getLengthTicks() * pixelsPerTick));
             scrollX = juce::jlimit (0.0, juce::jmax (0.0, (double) totalW - viewW), newRangeStart * totalW);
         }
         else if (bar == &vScroll)
