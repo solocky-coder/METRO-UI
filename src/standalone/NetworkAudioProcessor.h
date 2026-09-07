@@ -4,17 +4,10 @@
 #include "../network/MetroNetworkAudio.h"
 #include "../network/NetworkAudioRecorder.h"
 
-// Standalone-only bridge that puts the decoded SonoBus/AOO stream into the
-// same AudioProcessor output path as METRO's normal engine. This deliberately
-// lives outside DysektProcessor so the VST3/plugin processor remains free of
-// the standalone network transport dependency.
 class NetworkAudioProcessor final : public DysektProcessor
 {
 public:
-    NetworkAudioProcessor()
-    {
-        activeProcessor = this;
-    }
+    NetworkAudioProcessor() { activeProcessor.store (this, std::memory_order_release); }
 
     ~NetworkAudioProcessor() override
     {
@@ -58,10 +51,7 @@ public:
         return recorder.start (file, rate, juce::jlimit (1, 64, channels));
     }
 
-    void stopNetworkRecording() noexcept
-    {
-        recorder.stop();
-    }
+    void stopNetworkRecording() noexcept { recorder.stop(); }
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
     {
@@ -75,9 +65,10 @@ public:
     {
         DysektProcessor::processBlock (buffer, midi);
 
-        auto* audio = networkAudio != nullptr
-                        ? networkAudio
-                        : activeNetworkAudio.load (std::memory_order_acquire);
+        MetroNetworkAudio* audio = networkAudio;
+        if (audio == nullptr)
+            audio = activeNetworkAudio.load (std::memory_order_acquire);
+
         if (audio == nullptr || ! audio->isRunning())
             return;
 
@@ -99,7 +90,6 @@ public:
 private:
     inline static std::atomic<MetroNetworkAudio*> activeNetworkAudio { nullptr };
     inline static std::atomic<NetworkAudioProcessor*> activeProcessor { nullptr };
-
     MetroNetworkAudio* networkAudio = nullptr;
     double networkSampleRate = 44100.0;
     juce::AudioBuffer<float> networkBuffer;
