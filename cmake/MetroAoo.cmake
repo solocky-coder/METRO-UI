@@ -84,7 +84,10 @@ target_compile_definitions(MetroAoo PUBLIC
     AOO_STATIC
 )
 target_compile_features(MetroAoo PRIVATE cxx_std_17)
-target_link_libraries(MetroAoo PUBLIC Opus::opus)
+target_link_libraries(MetroAoo PUBLIC
+    Opus::opus
+    $<$<PLATFORM_ID:Windows>:ws2_32>
+)
 
 set(DYSEKT_HAS_AOO TRUE)
 message(STATUS "AOO/SonoBus network audio enabled (vendored AOO + Opus)")
