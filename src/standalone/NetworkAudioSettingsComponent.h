@@ -181,9 +181,13 @@ private:
             return;
         }
 
+        // The AOO client connect call is asynchronous. Recreate the network
+        // session first so a previous failed/connecting attempt cannot make
+        // the next click look like a server failure.
+        networkAudio->stop();
         if (! networkAudio->start())
         {
-            updateStatus ("AOO backend unavailable in this build");
+            updateStatus ("Could not start AOO network backend");
             return;
         }
 
@@ -191,18 +195,28 @@ private:
         if (! networkAudio->connectToServer (serverEditor.getText(), port,
                                              userEditor.getText(), passwordEditor.getText()))
         {
-            updateStatus ("Could not connect to AOO server");
+            updateStatus ("AOO connection request was rejected");
             return;
         }
 
-        if (! networkAudio->joinGroup (groupEditor.getText(), passwordEditor.getText(),
-                                       publicGroupButton.getToggleState()))
+        updateStatus ("Connecting to AOO server...");
+
+        // AOO must complete its TCP/UDP login before the group-join message is
+        // sent. Sending group_join immediately after connect can race the login
+        // handshake. Give the connection thread time to complete its handshake.
+        const auto group = groupEditor.getText();
+        const auto password = passwordEditor.getText();
+        const bool isPublic = publicGroupButton.getToggleState();
+        juce::Timer::callAfterDelay (1500, [this, group, password, isPublic]
         {
-            updateStatus ("Connected; group join pending/unavailable");
-            return;
-        }
+            if (networkAudio == nullptr)
+                return;
 
-        updateStatus ("Connected — waiting for network sources");
+            if (networkAudio->joinGroup (group, password, isPublic))
+                updateStatus ("Connected — waiting for network sources");
+            else
+                updateStatus ("Connected, but group join could not be queued");
+        });
 #else
         juce::ignoreUnused (networkAudio);
         updateStatus ("AOO backend is not enabled in this build");
@@ -213,7 +227,14 @@ private:
     {
 #if DYSEKT_HAS_AOO
         if (networkAudio != nullptr)
+        {
             networkAudio->disconnect();
+            // Also reset a connection that is still in the asynchronous
+            // connecting state, since AOO's public disconnect call only acts
+            // after the connection is established.
+            networkAudio->stop();
+            networkAudio->start();
+        }
 #endif
         updateStatus ("Disconnected");
         refreshSources();
