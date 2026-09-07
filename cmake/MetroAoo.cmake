@@ -74,9 +74,11 @@ set(METRO_AOO_SOURCES
 )
 
 add_library(MetroAoo STATIC ${METRO_AOO_SOURCES})
+# AOO includes <opus/...>; metro_opus exposes headers under its include/opus directory.
 target_include_directories(MetroAoo PUBLIC
     ${METRO_AOO_ROOT}/lib
     ${METRO_AOO_ROOT}/deps
+    ${metro_opus_SOURCE_DIR}/include
 )
 target_compile_definitions(MetroAoo PUBLIC
     USE_CODEC_OPUS=1
