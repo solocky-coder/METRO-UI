@@ -302,7 +302,7 @@ private:
 
     void showAudioSettings()
     {
-        auto* comp = new NetworkAudioSettingsComponent (deviceManager, *networkAudio);
+        auto* comp = new NetworkAudioSettingsComponent (deviceManager, networkAudio.get());
         juce::DialogWindow::LaunchOptions opts;
         opts.content.setOwned (comp);
         opts.dialogTitle = "Audio Settings";

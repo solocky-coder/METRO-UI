@@ -28,7 +28,7 @@ public:
         addAndMakeVisible (transportLabel);
 
         enableButton.setButtonText ("Enable network audio");
-        enableButton.onClick = [this]
+        enableButton.onClick = [this, networkAudio]
         {
             const bool enabled = enableButton.getToggleState();
             connectButton.setEnabled (enabled);

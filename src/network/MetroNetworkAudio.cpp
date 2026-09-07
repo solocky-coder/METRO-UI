@@ -1,5 +1,7 @@
 #include "MetroNetworkAudio.h"
 
+#include <juce_events/juce_events.h>
+
 #include <aoo/aoo.hpp>
 #include <aoo/aoo_net.hpp>
 
@@ -13,6 +15,12 @@
 #include <vector>
 
 #if defined(_WIN32)
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #ifndef WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN
+ #endif
  #include <winsock2.h>
  #include <ws2tcpip.h>
  using MetroSocket = SOCKET;
