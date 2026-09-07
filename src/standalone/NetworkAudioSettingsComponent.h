@@ -21,6 +21,7 @@ public:
           networkAudio (networkAudio),
           sourceModel (networkAudio)
     {
+        NetworkAudioProcessor::setActiveNetworkAudio (networkAudio);
         setSize (680, 690);
 
         addAndMakeVisible (audioSelector);
