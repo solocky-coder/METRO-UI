@@ -7,17 +7,6 @@
 #include <atomic>
 #include <memory>
 
-//==============================================================================
-// NetworkAudioRecorder
-//
-// Dedicated recorder for the Network Audio track. The audio callback only
-// hands planar sample pointers to JUCE's ThreadedWriter; file creation and all
-// disk I/O happen outside the realtime callback.
-//
-// The resulting WAV file is an immutable audio-clip source for the arranger.
-// A later arrange-layer can place this file at startTick without changing the
-// network transport or recorder itself.
-//==============================================================================
 class NetworkAudioRecorder final
 {
 public:
@@ -36,6 +25,8 @@ public:
     };
 
     NetworkAudioRecorder() = default;
+    NetworkAudioRecorder (const NetworkAudioRecorder&) = delete;
+    NetworkAudioRecorder& operator= (const NetworkAudioRecorder&) = delete;
 
     ~NetworkAudioRecorder()
     {
@@ -88,8 +79,7 @@ public:
         if (samples <= 0 || channels <= 0)
             return;
 
-        const bool accepted = writer->write (buffer.getArrayOfReadPointers(), samples);
-        if (accepted)
+        if (writer->write (buffer.getArrayOfReadPointers(), samples))
             recordedSamples.fetch_add (samples, std::memory_order_relaxed);
     }
 
@@ -129,14 +119,10 @@ public:
 private:
     juce::TimeSliceThread backgroundThread { "METRO Network Audio Recorder" };
     std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> writer;
-
     std::atomic<bool> recording { false };
     std::atomic<int64_t> recordedSamples { 0 };
-
     juce::File file;
     double currentSampleRate = 0.0;
     int currentChannels = 0;
     int64_t currentStartTick = 0;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NetworkAudioRecorder)
 };
