@@ -73,11 +73,24 @@ set(METRO_AOO_SOURCES
     ${METRO_AOO_ROOT}/deps/oscpack/osc/OscTypes.h
 )
 
+# The Opus CMake project installs its public headers as <include>/opus_*.h,
+# while the SonoBus AOO fork includes them as <opus/opus_*.h>. Generate a tiny
+# compatibility include tree instead of modifying the vendored AOO submodule.
+set(METRO_OPUS_COMPAT_INCLUDE "${CMAKE_CURRENT_BINARY_DIR}/metro_opus_compat")
+file(MAKE_DIRECTORY "${METRO_OPUS_COMPAT_INCLUDE}/opus")
+file(GLOB METRO_OPUS_PUBLIC_HEADERS "${metro_opus_SOURCE_DIR}/include/*.h")
+foreach(METRO_OPUS_HEADER IN LISTS METRO_OPUS_PUBLIC_HEADERS)
+    get_filename_component(METRO_OPUS_HEADER_NAME "${METRO_OPUS_HEADER}" NAME)
+    file(WRITE
+        "${METRO_OPUS_COMPAT_INCLUDE}/opus/${METRO_OPUS_HEADER_NAME}"
+        "#pragma once\n#include <${METRO_OPUS_HEADER_NAME}>\n")
+endforeach()
+
 add_library(MetroAoo STATIC ${METRO_AOO_SOURCES})
-# AOO includes <opus/...>; metro_opus exposes headers under its include/opus directory.
 target_include_directories(MetroAoo PUBLIC
     ${METRO_AOO_ROOT}/lib
     ${METRO_AOO_ROOT}/deps
+    ${METRO_OPUS_COMPAT_INCLUDE}
     ${metro_opus_SOURCE_DIR}/include
 )
 target_compile_definitions(MetroAoo PUBLIC
