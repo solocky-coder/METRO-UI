@@ -10,7 +10,7 @@
 //==============================================================================
 // NetworkAudioRecorder
 //
-// Dedicated recorder for the Network Audio track.  The audio callback only
+// Dedicated recorder for the Network Audio track. The audio callback only
 // hands planar sample pointers to JUCE's ThreadedWriter; file creation and all
 // disk I/O happen outside the realtime callback.
 //
@@ -42,9 +42,6 @@ public:
         stop();
     }
 
-    NetworkAudioRecorder (const NetworkAudioRecorder&) = delete;
-    NetworkAudioRecorder& operator= (const NetworkAudioRecorder&) = delete;
-
     bool start (const juce::File& destination, double sampleRate, int channels,
                 int64_t startTick = 0)
     {
@@ -66,8 +63,6 @@ public:
         if (rawWriter == nullptr)
             return false;
 
-        // 2 seconds of safety buffering at the requested sample rate.  The
-        // writer owns the AudioFormatWriter and its output stream.
         writer = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>
             (rawWriter, backgroundThread, juce::jmax (1024, static_cast<int> (sampleRate * 2.0)));
 
@@ -93,9 +88,6 @@ public:
         if (samples <= 0 || channels <= 0)
             return;
 
-        // ThreadedWriter::write() is specifically designed for realtime input:
-        // it copies the incoming channel pointers into its FIFO and leaves the
-        // actual file writes to the TimeSliceThread.
         const bool accepted = writer->write (buffer.getArrayOfReadPointers(), samples);
         if (accepted)
             recordedSamples.fetch_add (samples, std::memory_order_relaxed);
@@ -104,9 +96,6 @@ public:
     Clip stop()
     {
         recording.store (false, std::memory_order_release);
-
-        // Destroying ThreadedWriter flushes its FIFO before releasing the
-        // underlying AudioFormatWriter, producing a valid WAV file.
         writer.reset();
 
         Clip result;
