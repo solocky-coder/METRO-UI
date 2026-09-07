@@ -7,30 +7,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/JUCE JUCE)
 
 # --- AOO / SonoBus network audio ---
-# AOO is embedded as a subproject so METRO can receive SonoBus/AOO streams
-# natively. The transport layer remains isolated from the DAW/audio engine.
+# The SonoBus-compatible AOO fork is a source-only library. METRO builds it
+# directly and links a private static Opus dependency, matching SonoBus' build.
 option(DYSEKT_ENABLE_AOO "Enable AOO/SonoBus network audio" ON)
 if (DYSEKT_ENABLE_AOO)
-    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/aoo/CMakeLists.txt")
-        set(AOO_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
-        set(AOO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-        set(AOO_BUILD_PD_EXTERNAL OFF CACHE BOOL "" FORCE)
-        set(AOO_BUILD_SC_EXTENSION OFF CACHE BOOL "" FORCE)
-        set(AOO_BUILD_SERVER OFF CACHE BOOL "" FORCE)
-        set(AOO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-        set(AOO_INSTALL_LIBRARY OFF CACHE BOOL "" FORCE)
-        set(AOO_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
-        set(AOO_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
-        set(AOO_USE_OPUS ON CACHE BOOL "" FORCE)
-        set(AOO_NET ON CACHE BOOL "" FORCE)
-        set(AOO_USE_IPV6 ON CACHE BOOL "" FORCE)
-        add_subdirectory(aoo EXCLUDE_FROM_ALL)
-        set(DYSEKT_HAS_AOO TRUE)
-        message(STATUS "AOO/SonoBus network audio enabled")
-    else()
-        set(DYSEKT_HAS_AOO FALSE)
-        message(STATUS "AOO not found at ./aoo — network audio disabled")
-    endif()
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MetroAoo.cmake)
 else()
     set(DYSEKT_HAS_AOO FALSE)
 endif()
@@ -169,12 +150,10 @@ juce_add_binary_data(DysektFonts SOURCES
     src/ui/assets/logos/DYSEKT-SF_logo_midnight.png
     src/ui/assets/logos/DYSEKT-SF_logo_opendaw.png
     src/ui/assets/logos/DYSEKT-SF_logo_pigments.png
-    src/ui/assets/logos/DYSEKT-SF_logo_serum.png
     src/ui/assets/logos/DYSEKT-SF_logo_shell.png
     src/ui/assets/logos/DYSEKT-SF_logo_snow.png
 )
 
-# Keep the existing source lists unchanged; network audio is additive.
 target_sources(Dysekt PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
@@ -233,7 +212,6 @@ target_sources(Dysekt PRIVATE
 
 target_include_directories(Dysekt PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    $<$<BOOL:${DYSEKT_HAS_AOO}>:${CMAKE_CURRENT_SOURCE_DIR}/aoo/include>
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
@@ -266,7 +244,7 @@ target_link_libraries(Dysekt
         juce::juce_audio_utils
         juce::juce_dsp
         DysektFonts
-        $<$<BOOL:${DYSEKT_HAS_AOO}>:Aoo::aoo>
+        $<$<BOOL:${DYSEKT_HAS_AOO}>:MetroAoo>
         $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
         $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
         $<$<PLATFORM_ID:Linux>:asound>
@@ -348,7 +326,6 @@ target_sources(DysektStandalone PRIVATE
 
 target_include_directories(DysektStandalone PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    $<$<BOOL:${DYSEKT_HAS_AOO}>:${CMAKE_CURRENT_SOURCE_DIR}/aoo/include>
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
@@ -383,7 +360,7 @@ target_link_libraries(DysektStandalone
         juce::juce_audio_devices
         juce::juce_dsp
         DysektFonts
-        $<$<BOOL:${DYSEKT_HAS_AOO}>:Aoo::aoo>
+        $<$<BOOL:${DYSEKT_HAS_AOO}>:MetroAoo>
         $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
         $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
         $<$<PLATFORM_ID:Linux>:asound>
