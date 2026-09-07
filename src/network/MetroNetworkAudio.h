@@ -3,7 +3,6 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 #include <atomic>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -34,10 +33,12 @@ public:
     MetroNetworkAudio(const MetroNetworkAudio&) = delete;
     MetroNetworkAudio& operator=(const MetroNetworkAudio&) = delete;
 
+    // Starts the network subsystem. Network I/O is kept off the audio thread.
     bool start();
     void stop();
     bool isRunning() const noexcept;
 
+    // SonoBus/AOO discovery session.
     bool connectToServer(const juce::String& host,
                          int port,
                          const juce::String& username,
@@ -48,11 +49,8 @@ public:
     void leaveGroup(const juce::String& group);
     void disconnect();
 
-    // Connection state is asynchronous; use these for UI/status reporting.
-    bool isConnected() const noexcept;
-    bool isGroupJoined() const noexcept;
-    juce::String getStatus() const;
-
+    // Called from the audio callback. This performs only the lock-free AOO sink
+    // processing; it never performs socket I/O or heap allocation.
     void process(juce::AudioBuffer<float>& destination,
                  int numSamples,
                  double sampleRate);
@@ -60,6 +58,7 @@ public:
     std::vector<SourceInfo> getSources() const;
     void setSourceListener(SourceListener listener);
 
+    // Preferred studio defaults: the normal use case is a local Wi-Fi LAN.
     static constexpr const char* defaultServer = "aoo.sonobus.net";
     static constexpr int defaultServerPort = 10998;
 
