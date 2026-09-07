@@ -112,7 +112,7 @@ public:
     std::atomic<bool> running { false };
     MetroSocket socket = metroInvalidSocket;
     aoo::net::iclient::pointer client;
-    aoo::isink::pointer sink { aoo::isink::create (0) };
+    aoo::isink::pointer sink;
     std::thread ioThread;
     std::thread clientThread;
 
@@ -155,6 +155,7 @@ public:
             return cleanupFailedStart();
 
         client.reset (aoo::net::iclient::create (&socket, sendUdp, ntohs (local.sin_port)));
+        sink.reset (aoo::isink::create (0));
         if (client == nullptr || sink == nullptr) return cleanupFailedStart();
         if (sink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0)
             return cleanupFailedStart();
@@ -455,8 +456,8 @@ void MetroNetworkAudio::process (juce::AudioBuffer<float>& destination,
                                  int numSamples, double sampleRate)
 {
     juce::ignoreUnused (sampleRate);
-    if (impl != nullptr) impl->process (destination, numSamples);
-    else destination.clear();
+    if (impl != nullptr)
+        impl->process (destination, numSamples);
 }
 
 std::vector<MetroNetworkAudio::SourceInfo> MetroNetworkAudio::getSources() const
