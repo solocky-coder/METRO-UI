@@ -28,7 +28,6 @@ void LogoBar::paint (juce::Graphics& g)
         { "midnight", BinaryData::DYSEKTSF_logo_midnight_png, BinaryData::DYSEKTSF_logo_midnight_pngSize },
         { "opendaw",  BinaryData::DYSEKTSF_logo_opendaw_png,  BinaryData::DYSEKTSF_logo_opendaw_pngSize  },
         { "pigments", BinaryData::DYSEKTSF_logo_pigments_png, BinaryData::DYSEKTSF_logo_pigments_pngSize },
-        { "serum",    BinaryData::DYSEKTSF_logo_serum_png,    BinaryData::DYSEKTSF_logo_serum_pngSize    },
         { "shell",    BinaryData::DYSEKTSF_logo_shell_png,    BinaryData::DYSEKTSF_logo_shell_pngSize    },
         { "snow",     BinaryData::DYSEKTSF_logo_snow_png,     BinaryData::DYSEKTSF_logo_snow_pngSize     },
     };
