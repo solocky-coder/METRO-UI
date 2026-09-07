@@ -13,9 +13,15 @@ public:
     NetworkAudioProcessor() = default;
     ~NetworkAudioProcessor() override = default;
 
+    static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept
+    {
+        activeNetworkAudio = audio;
+    }
+
     void setNetworkAudio (MetroNetworkAudio* audio) noexcept
     {
         networkAudio = audio;
+        setActiveNetworkAudio (audio);
     }
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
@@ -30,7 +36,7 @@ public:
     {
         DysektProcessor::processBlock (buffer, midi);
 
-        auto* audio = networkAudio;
+        auto* audio = networkAudio != nullptr ? networkAudio : activeNetworkAudio;
         if (audio == nullptr || ! audio->isRunning())
             return;
 
@@ -47,6 +53,7 @@ public:
     }
 
 private:
+    inline static std::atomic<MetroNetworkAudio*> activeNetworkAudio { nullptr };
     MetroNetworkAudio* networkAudio = nullptr;
     double networkSampleRate = 44100.0;
     juce::AudioBuffer<float> networkBuffer;
