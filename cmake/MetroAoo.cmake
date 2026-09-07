@@ -73,25 +73,24 @@ set(METRO_AOO_SOURCES
     ${METRO_AOO_ROOT}/deps/oscpack/osc/OscTypes.h
 )
 
-# The Opus CMake project installs its public headers as <include>/opus_*.h,
-# while the SonoBus AOO fork includes them as <opus/opus_*.h>. Generate a tiny
-# compatibility include tree instead of modifying the vendored AOO submodule.
-set(METRO_OPUS_COMPAT_INCLUDE "${CMAKE_CURRENT_BINARY_DIR}/metro_opus_compat")
-file(MAKE_DIRECTORY "${METRO_OPUS_COMPAT_INCLUDE}/opus")
-file(GLOB METRO_OPUS_PUBLIC_HEADERS "${metro_opus_SOURCE_DIR}/include/*.h")
-foreach(METRO_OPUS_HEADER IN LISTS METRO_OPUS_PUBLIC_HEADERS)
-    get_filename_component(METRO_OPUS_HEADER_NAME "${METRO_OPUS_HEADER}" NAME)
-    file(WRITE
-        "${METRO_OPUS_COMPAT_INCLUDE}/opus/${METRO_OPUS_HEADER_NAME}"
-        "#pragma once\n#include <${METRO_OPUS_HEADER_NAME}>\n")
-endforeach()
-
 add_library(MetroAoo STATIC ${METRO_AOO_SOURCES})
+
+# AOO's aoo_opus.h does `#include "opus/opus_multistream.h"` (the system
+# libopus / pkg-config convention), but xiph/opus's own CMake tree exposes its
+# public headers flat at include/*.h — there is no include/opus subdirectory.
+# Build a shim "opus/" folder that re-exports those flat headers so the
+# <opus/...> include style resolves regardless of platform or whether a
+# system libopus happens to be found first.
+set(METRO_OPUS_SHIM_DIR "${CMAKE_BINARY_DIR}/metro_opus_shim")
+file(MAKE_DIRECTORY "${METRO_OPUS_SHIM_DIR}/opus")
+file(GLOB METRO_OPUS_PUBLIC_HEADERS "${metro_opus_SOURCE_DIR}/include/*.h")
+file(COPY ${METRO_OPUS_PUBLIC_HEADERS} DESTINATION "${METRO_OPUS_SHIM_DIR}/opus")
+
 target_include_directories(MetroAoo PUBLIC
     ${METRO_AOO_ROOT}/lib
     ${METRO_AOO_ROOT}/deps
-    ${METRO_OPUS_COMPAT_INCLUDE}
     ${metro_opus_SOURCE_DIR}/include
+    ${METRO_OPUS_SHIM_DIR}
 )
 target_compile_definitions(MetroAoo PUBLIC
     USE_CODEC_OPUS=1
