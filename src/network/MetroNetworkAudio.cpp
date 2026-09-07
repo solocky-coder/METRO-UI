@@ -8,7 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstring>
-#include <map>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -39,6 +39,7 @@ constexpr int kAooBufferMs = 120; // Wi-Fi-first jitter headroom.
 
 std::mutex aooLifetimeMutex;
 int aooLifetimeUsers = 0;
+std::atomic<MetroSocket*> activeAooSocket { nullptr };
 
 void closeSocket (MetroSocket socket)
 {
@@ -84,21 +85,18 @@ int32_t sendUdp (void* user, const char* data, int32_t numBytes, void* address)
         return 0;
 
     const auto* sa = static_cast<const sockaddr*> (address);
-    socklen_t length = sizeof (sockaddr_in);
-    const auto result = sendto (*socket, data, numBytes, 0, sa, length);
+    const auto result = sendto (*socket, data, numBytes, 0, sa, sizeof (sockaddr_in));
     return result == numBytes ? 1 : 0;
 }
 
 int32_t sendAooReply (void* endpoint, const char* data, int32_t numBytes)
 {
-    // AOO passes the source endpoint back as the reply-function user pointer.
-    auto* context = static_cast<std::pair<MetroSocket*, sockaddr_in>*> (endpoint);
-    if (context == nullptr || context->first == nullptr || *context->first == metroInvalidSocket)
+    auto* socket = activeAooSocket.load();
+    if (socket == nullptr || *socket == metroInvalidSocket || endpoint == nullptr)
         return 0;
 
-    const auto result = sendto (*context->first, data, numBytes, 0,
-                                reinterpret_cast<const sockaddr*> (&context->second),
-                                sizeof (context->second));
+    const auto* sa = static_cast<const sockaddr*> (endpoint);
+    const auto result = sendto (*socket, data, numBytes, 0, sa, sizeof (sockaddr_in));
     return result == numBytes ? 1 : 0;
 }
 }
@@ -108,18 +106,17 @@ class MetroNetworkAudio::Impl
 public:
     MetroNetworkAudio& owner;
     std::atomic<bool> running { false };
-    std::atomic<bool> clientRunning { false };
-
     MetroSocket socket = metroInvalidSocket;
+
     aoo::net::iclient::pointer client;
     aoo::isink::pointer sink { aoo::isink::create (0) };
-
     std::thread ioThread;
     std::thread clientThread;
 
     mutable std::mutex stateMutex;
     std::vector<SourceInfo> sources;
     MetroNetworkAudio::SourceListener listener;
+    std::vector<std::shared_ptr<sockaddr_in>> peerEndpoints;
 
     std::array<float, kAooChannels * kAooBlockSize> audioScratch {};
     std::array<aoo_sample*, kAooChannels> audioPointers {};
@@ -146,18 +143,11 @@ public:
             return false;
 #endif
 
-        if (! startAooLifetime())
-            return false;
+        startAooLifetime();
 
         socket = ::socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (socket == metroInvalidSocket)
-        {
-            stopAooLifetime();
-#if defined(_WIN32)
-            WSACleanup();
-#endif
-            return false;
-        }
+            return cleanupFailedStart();
 
         sockaddr_in local {};
         local.sin_family = AF_INET;
@@ -165,70 +155,45 @@ public:
         local.sin_port = htons (0);
         if (::bind (socket, reinterpret_cast<const sockaddr*> (&local), sizeof (local)) != 0
             || ! setNonBlocking (socket))
-        {
-            closeSocket (socket);
-            socket = metroInvalidSocket;
-            stopAooLifetime();
-#if defined(_WIN32)
-            WSACleanup();
-#endif
-            return false;
-        }
+            return cleanupFailedStart();
 
         socklen_t localLength = sizeof (local);
         if (getsockname (socket, reinterpret_cast<sockaddr*> (&local), &localLength) != 0)
-        {
-            closeSocket (socket);
-            socket = metroInvalidSocket;
-            stopAooLifetime();
-#if defined(_WIN32)
-            WSACleanup();
-#endif
-            return false;
-        }
+            return cleanupFailedStart();
 
         client.reset (aoo::net::iclient::create (&socket, sendUdp, ntohs (local.sin_port)));
         if (client == nullptr || sink == nullptr)
-        {
-            client.reset();
-            sink.reset();
-            closeSocket (socket);
-            socket = metroInvalidSocket;
-            stopAooLifetime();
-#if defined(_WIN32)
-            WSACleanup();
-#endif
-            return false;
-        }
+            return cleanupFailedStart();
 
+        // 64 output channels gives us room for multichannel SonoBus sources.
+        // AOO's jitter buffer is deliberately larger for the Wi-Fi-first case.
         if (sink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0)
-        {
-            client.reset();
-            sink.reset();
-            closeSocket (socket);
-            socket = metroInvalidSocket;
-            stopAooLifetime();
-#if defined(_WIN32)
-            WSACleanup();
-#endif
-            return false;
-        }
-
+            return cleanupFailedStart();
         sink->set_buffersize (kAooBufferMs);
         sink->set_dynamic_resampling (1);
         sink->set_resend_limit (5);
         sink->set_resend_interval (10);
         sink->set_resend_maxnumframes (16);
 
+        activeAooSocket.store (&socket);
         running.store (true);
-        clientRunning.store (true);
-        clientThread = std::thread ([this]
-        {
-            client->run();
-            clientRunning.store (false);
-        });
+        clientThread = std::thread ([this] { client->run(); });
         ioThread = std::thread ([this] { ioLoop(); });
         return true;
+    }
+
+    bool cleanupFailedStart()
+    {
+        activeAooSocket.store (nullptr);
+        client.reset();
+        sink.reset();
+        closeSocket (socket);
+        socket = metroInvalidSocket;
+        stopAooLifetime();
+#if defined(_WIN32)
+        WSACleanup();
+#endif
+        return false;
     }
 
     void stop()
@@ -238,6 +203,7 @@ public:
 
         connected.store (false);
         joined.store (false);
+        activeAooSocket.store (nullptr);
 
         if (client != nullptr)
             client->quit();
@@ -255,6 +221,7 @@ public:
         {
             std::lock_guard<std::mutex> lock (stateMutex);
             sources.clear();
+            peerEndpoints.clear();
         }
 
         stopAooLifetime();
@@ -277,8 +244,7 @@ public:
         if (! running.load() || client == nullptr)
             return false;
         group = groupName;
-        const auto result = client->group_join (groupName.toRawUTF8(), password.toRawUTF8(), isPublic);
-        return result > 0;
+        return client->group_join (groupName.toRawUTF8(), password.toRawUTF8(), isPublic) > 0;
     }
 
     void leaveGroup (const juce::String& groupName)
@@ -304,11 +270,7 @@ public:
         {
             fd_set readSet;
             FD_ZERO (&readSet);
-#if defined(_WIN32)
             FD_SET (socket, &readSet);
-#else
-            FD_SET (socket, &readSet);
-#endif
             timeval timeout {};
             timeout.tv_sec = 0;
             timeout.tv_usec = 20000;
@@ -360,9 +322,15 @@ public:
                     const auto* event = reinterpret_cast<const aoonet_client_peer_event*> (events[i]);
                     if (event->result > 0 && event->address != nullptr && self->sink != nullptr)
                     {
-                        // A peer can expose multiple AOO sources. A wildcard invitation
-                        // discovers every source the peer makes available to this sink.
-                        self->sink->invite_source (event->address, AOO_ID_WILDCARD, sendAooReply);
+                        // AOO keeps the endpoint pointer inside the peer event;
+                        // copy it so the sink can safely use it after this callback.
+                        auto endpoint = std::make_shared<sockaddr_in>();
+                        std::memcpy (endpoint.get(), event->address, sizeof (sockaddr_in));
+                        {
+                            std::lock_guard<std::mutex> lock (self->stateMutex);
+                            self->peerEndpoints.push_back (endpoint);
+                        }
+                        self->sink->invite_source (endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
                     }
                     break;
                 }
@@ -394,7 +362,7 @@ public:
                 case AOO_SOURCE_ADD_EVENT:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
-                    MetroNetworkAudio::SourceInfo info;
+                    SourceInfo info;
                     info.sourceId = event->id;
                     info.group = self->group;
                     info.online = true;
@@ -455,7 +423,7 @@ public:
         return 1;
     }
 
-    void upsertSource (const MetroNetworkAudio::SourceInfo& info)
+    void upsertSource (const SourceInfo& info)
     {
         std::lock_guard<std::mutex> lock (stateMutex);
         auto it = std::find_if (sources.begin(), sources.end(),
@@ -473,10 +441,10 @@ public:
             return;
 
         for (int channel = 0; channel < kAooChannels; ++channel)
+        {
             audioPointers[(size_t) channel] = audioScratch.data() + (size_t) channel * kAooBlockSize;
-
-        for (int channel = 0; channel < kAooChannels; ++channel)
             std::fill (audioPointers[(size_t) channel], audioPointers[(size_t) channel] + numSamples, 0.0f);
+        }
 
         const auto result = sink->process (audioPointers.data(), numSamples, aoo_osctime_get());
         if (result <= 0)
