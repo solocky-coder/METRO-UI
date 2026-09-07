@@ -1,4 +1,5 @@
 #include "MetroNetworkAudio.h"
+#include "NetworkAudioChannelState.h"
 
 #include <juce_events/juce_events.h>
 
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -232,14 +234,9 @@ public:
         group = groupName;
         pendingGroupPassword = password;
         pendingGroupPublic = isPublic;
-
-        // AOONET queues the group join asynchronously. Keep the request here
-        // and retry it from the actual CONNECT event so a UI timer cannot race
-        // the login/handshake sequence.
         groupJoinPending = true;
         if (! connected.load())
             return true;
-
         return queueGroupJoin();
     }
 
@@ -247,8 +244,10 @@ public:
     {
         if (! running.load() || client == nullptr || ! connected.load() || group.isEmpty())
             return false;
-        groupJoinPending = false;
-        return client->group_join (group.toRawUTF8(), pendingGroupPassword.toRawUTF8(), pendingGroupPublic) > 0;
+        const bool queued = client->group_join (group.toRawUTF8(), pendingGroupPassword.toRawUTF8(), pendingGroupPublic) > 0;
+        if (queued)
+            groupJoinPending = false;
+        return queued;
     }
 
     void leaveGroup (const juce::String& groupName)
@@ -326,10 +325,6 @@ public:
                     const auto* event = reinterpret_cast<const aoonet_client_peer_event*> (events[i]);
                     if (event->result <= 0 || event->address == nullptr || self->sink == nullptr)
                         break;
-
-                    // The AOO NET event supplies both the peer address and its
-                    // exact sockaddr length. Keep the endpoint alive for the
-                    // lifetime of the sink invitation.
                     if (event->length != sizeof (sockaddr_in))
                         break;
 
@@ -339,11 +334,6 @@ public:
                         std::lock_guard<std::mutex> lock (self->stateMutex);
                         self->peerEndpoints.push_back (endpoint);
                     }
-
-                    // Invite every AOO source announced by this peer. The
-                    // wildcard ID is how SonoBus/AOO requests all sources from
-                    // a peer; the reply callback sends the handshake response
-                    // over the same UDP socket.
                     self->sink->invite_source (endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
                     break;
                 }
@@ -440,24 +430,68 @@ public:
         if (! running.load() || sink == nullptr || numSamples <= 0)
             return;
 
+        auto& channel = getNetworkAudioChannelState();
+        if (! channel.enabled.load (std::memory_order_relaxed)
+            || channel.muted.load (std::memory_order_relaxed)
+            || ! channel.monitor.load (std::memory_order_relaxed))
+        {
+            channel.publishPeak (0.0f, 0.0f);
+            return;
+        }
+
+        const float gain = channel.linearGain();
+        const float pan = channel.pan.load (std::memory_order_relaxed);
+        const float panAngle = (pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
+        const float leftGain = gain * std::cos (panAngle);
+        const float rightGain = gain * std::sin (panAngle);
+        float peakL = 0.0f;
+        float peakR = 0.0f;
+
         int offset = 0;
         while (offset < numSamples)
         {
             const int block = std::min (kAooBlockSize, numSamples - offset);
-            for (int channel = 0; channel < kAooChannels; ++channel)
+            for (int c = 0; c < kAooChannels; ++c)
             {
-                audioPointers[(size_t) channel] = audioScratch.data() + (size_t) channel * kAooBlockSize;
-                std::fill (audioPointers[(size_t) channel], audioPointers[(size_t) channel] + block, 0.0f);
+                audioPointers[(size_t) c] = audioScratch.data() + (size_t) c * kAooBlockSize;
+                std::fill (audioPointers[(size_t) c], audioPointers[(size_t) c] + block, 0.0f);
             }
 
             if (sink->process (audioPointers.data(), block, aoo_osctime_get()) > 0)
             {
-                const int channels = std::min (destination.getNumChannels(), kAooChannels);
-                for (int channel = 0; channel < channels; ++channel)
-                    destination.addFrom (channel, offset, audioPointers[(size_t) channel], block);
+                const int sourceChannels = std::min (destination.getNumChannels(), kAooChannels);
+                for (int c = 0; c < sourceChannels; ++c)
+                {
+                    const auto* src = audioPointers[(size_t) c];
+                    for (int i = 0; i < block; ++i)
+                    {
+                        const float sample = src[i];
+                        if (c == 0) peakL = std::max (peakL, std::abs (sample));
+                        if (c == 1) peakR = std::max (peakR, std::abs (sample));
+                    }
+                }
+
+                // SonoBus sources are normally stereo.  For a mono source,
+                // duplicate it to both sides; for multichannel sources keep
+                // channels 2+ available to callers while applying the channel
+                // strip gain/pan to the first stereo pair.
+                if (sourceChannels > 0)
+                    destination.addFrom (0, offset, audioPointers[0], block, leftGain);
+                if (destination.getNumChannels() > 1)
+                {
+                    if (sourceChannels > 1)
+                        destination.addFrom (1, offset, audioPointers[1], block, rightGain);
+                    else
+                        destination.addFrom (1, offset, audioPointers[0], block, rightGain);
+                }
+
+                for (int c = 2; c < sourceChannels; ++c)
+                    destination.addFrom (c, offset, audioPointers[(size_t) c], block, gain);
             }
             offset += block;
         }
+
+        channel.publishPeak (peakL * std::abs (leftGain), peakR * std::abs (rightGain));
     }
 };
 
