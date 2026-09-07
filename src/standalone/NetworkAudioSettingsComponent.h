@@ -3,6 +3,13 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../network/MetroNetworkAudio.h"
+#include "NetworkAudioProcessor.h"
+
+// The standalone build uses the network-aware processor subclass. Keeping this
+// alias local to the standalone settings header lets MainWindow remain source-
+// compatible with the existing DysektProcessor member names while routing
+// SonoBus/AOO audio through the processor/mixer path.
+#define DysektProcessor NetworkAudioProcessor
 
 class NetworkAudioSettingsComponent : public juce::Component,
                                        private juce::Timer
@@ -181,10 +188,6 @@ private:
             return;
         }
 
-        // MainWindow starts the shared backend once. Do not stop/restart it
-        // here: the backend's sink is intentionally owned by that lifetime.
-        // The previous implementation stopped the backend and then attempted
-        // to restart it, but stop() clears the sink, causing start() to fail.
         if (! networkAudio->isRunning())
         {
             if (! networkAudio->start())
