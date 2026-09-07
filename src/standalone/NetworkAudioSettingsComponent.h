@@ -181,14 +181,17 @@ private:
             return;
         }
 
-        // The AOO client connect call is asynchronous. Recreate the network
-        // session first so a previous failed/connecting attempt cannot make
-        // the next click look like a server failure.
-        networkAudio->stop();
-        if (! networkAudio->start())
+        // MainWindow starts the shared backend once. Do not stop/restart it
+        // here: the backend's sink is intentionally owned by that lifetime.
+        // The previous implementation stopped the backend and then attempted
+        // to restart it, but stop() clears the sink, causing start() to fail.
+        if (! networkAudio->isRunning())
         {
-            updateStatus ("Could not start AOO network backend");
-            return;
+            if (! networkAudio->start())
+            {
+                updateStatus ("Could not start AOO network backend");
+                return;
+            }
         }
 
         const int port = juce::jmax (1, portEditor.getText().getIntValue());
@@ -201,15 +204,12 @@ private:
 
         updateStatus ("Connecting to AOO server...");
 
-        // AOO must complete its TCP/UDP login before the group-join message is
-        // sent. Sending group_join immediately after connect can race the login
-        // handshake. Give the connection thread time to complete its handshake.
         const auto group = groupEditor.getText();
         const auto password = passwordEditor.getText();
         const bool isPublic = publicGroupButton.getToggleState();
         juce::Timer::callAfterDelay (1500, [this, group, password, isPublic]
         {
-            if (networkAudio == nullptr)
+            if (networkAudio == nullptr || ! networkAudio->isRunning())
                 return;
 
             if (networkAudio->joinGroup (group, password, isPublic))
@@ -227,14 +227,7 @@ private:
     {
 #if DYSEKT_HAS_AOO
         if (networkAudio != nullptr)
-        {
             networkAudio->disconnect();
-            // Also reset a connection that is still in the asynchronous
-            // connecting state, since AOO's public disconnect call only acts
-            // after the connection is established.
-            networkAudio->stop();
-            networkAudio->start();
-        }
 #endif
         updateStatus ("Disconnected");
         refreshSources();
