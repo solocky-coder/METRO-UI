@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
 //==============================================================================
@@ -24,10 +25,9 @@ public:
     std::atomic<bool> muted   { false };
     std::atomic<bool> solo    { false };
     std::atomic<float> gainDb { 0.0f };
-    std::atomic<float> pan    { 0.0f }; // -1 left .. +1 right
+    std::atomic<float> pan    { 0.0f };
     std::atomic<float> peakL  { 0.0f };
     std::atomic<float> peakR  { 0.0f };
-
     std::atomic<bool> recordArm { false };
     std::atomic<bool> monitor   { true };
 
