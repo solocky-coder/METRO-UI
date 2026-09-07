@@ -43,6 +43,8 @@ public:
 
         networkAudio = std::make_unique<MetroNetworkAudio>();
         networkAudio->start();
+        networkCallback = std::make_unique<NetworkAudioOutputCallback> (*networkAudio);
+        deviceManager.addAudioCallback (networkCallback.get());
 
         setContentNonOwned (editor.get(), true);
         menuBar = std::make_unique<juce::MenuBarComponent> (this);
@@ -67,6 +69,8 @@ public:
     ~MainWindow() override
     {
         setMenuBar (nullptr);
+        if (networkCallback != nullptr)
+            deviceManager.removeAudioCallback (networkCallback.get());
         deviceManager.removeAudioCallback (&player);
 
         for (const auto& id : registeredMidiInputIds)
@@ -140,6 +144,61 @@ public:
     }
 
 private:
+    class NetworkAudioOutputCallback final : public juce::AudioIODeviceCallback
+    {
+    public:
+        explicit NetworkAudioOutputCallback (MetroNetworkAudio& audio)
+            : networkAudio (audio)
+        {
+            networkBuffer.setSize (64, 2048, false, true, true);
+        }
+
+        void audioDeviceAboutToStart (juce::AudioIODevice* device) override
+        {
+            const int blockSize = juce::jmax (1, device != nullptr ? device->getCurrentBufferSizeSamples() : 512);
+            networkBuffer.setSize (64, juce::jmax (blockSize, 2048), false, true, true);
+        }
+
+        void audioDeviceIOCallbackWithContext (const float* const*, int,
+                                               float* const* outputChannelData,
+                                               int numOutputChannels, int numSamples,
+                                               const juce::AudioIODeviceCallbackContext&) override
+        {
+            if (numSamples > networkBuffer.getNumSamples())
+            {
+                for (int ch = 0; ch < numOutputChannels; ++ch)
+                    if (outputChannelData[ch] != nullptr)
+                        juce::FloatVectorOperations::clear (outputChannelData[ch], numSamples);
+                return;
+            }
+
+            networkBuffer.clear (0, 0, numSamples);
+            networkAudio.process (networkBuffer, numSamples, currentSampleRate);
+
+            for (int ch = 0; ch < numOutputChannels; ++ch)
+            {
+                if (outputChannelData[ch] == nullptr)
+                    continue;
+                if (ch < networkBuffer.getNumChannels())
+                    juce::FloatVectorOperations::copy (outputChannelData[ch],
+                                                       networkBuffer.getReadPointer (ch), numSamples);
+                else
+                    juce::FloatVectorOperations::clear (outputChannelData[ch], numSamples);
+            }
+        }
+
+        void audioDeviceStopped() override {}
+
+        void audioDeviceError (const juce::String&) override {}
+
+    private:
+        MetroNetworkAudio& networkAudio;
+        juce::AudioBuffer<float> networkBuffer;
+        double currentSampleRate = 48000.0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NetworkAudioOutputCallback)
+    };
+
     void newProject()
     {
         juce::AlertWindow::showOkCancelBox (
@@ -382,6 +441,7 @@ private:
     juce::StringArray registeredMidiInputIds;
     std::unique_ptr<MidiRouter> midiRouter;
     std::unique_ptr<MetroNetworkAudio> networkAudio;
+    std::unique_ptr<NetworkAudioOutputCallback> networkCallback;
     std::unique_ptr<DysektProcessor> processor;
     std::unique_ptr<DysektEditor> editor;
     std::unique_ptr<juce::MenuBarComponent> menuBar;
