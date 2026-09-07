@@ -5,7 +5,7 @@
 #include "../network/NetworkAudioRecorder.h"
 
 // Standalone-only bridge that puts the decoded SonoBus/AOO stream into the
-// same AudioProcessor output path as METRO's normal engine.  This deliberately
+// same AudioProcessor output path as METRO's normal engine. This deliberately
 // lives outside DysektProcessor so the VST3/plugin processor remains free of
 // the standalone network transport dependency.
 class NetworkAudioProcessor final : public DysektProcessor
@@ -25,7 +25,7 @@ public:
 
     static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept
     {
-        activeNetworkAudio = audio;
+        activeNetworkAudio.store (audio, std::memory_order_release);
     }
 
     static bool startActiveNetworkRecording (const juce::File& file, int channels = 2) noexcept
@@ -75,7 +75,9 @@ public:
     {
         DysektProcessor::processBlock (buffer, midi);
 
-        auto* audio = networkAudio != nullptr ? networkAudio : activeNetworkAudio;
+        auto* audio = networkAudio != nullptr
+                        ? networkAudio
+                        : activeNetworkAudio.load (std::memory_order_acquire);
         if (audio == nullptr || ! audio->isRunning())
             return;
 
