@@ -127,6 +127,9 @@ public:
     std::atomic<bool> connected { false };
     std::atomic<bool> joined { false };
     juce::String group;
+    juce::String pendingGroupPassword;
+    bool pendingGroupPublic = false;
+    bool groupJoinPending = false;
 
     explicit Impl (MetroNetworkAudio& ownerIn) : owner (ownerIn) {}
     ~Impl() { stop(); }
@@ -192,6 +195,7 @@ public:
         if (! running.exchange (false)) return;
         connected.store (false);
         joined.store (false);
+        groupJoinPending = false;
         activeAooSocket.store (nullptr);
         if (client != nullptr) client->quit();
         if (ioThread.joinable()) ioThread.join();
@@ -215,6 +219,9 @@ public:
                           const juce::String& username, const juce::String& password)
     {
         if (! running.load() || client == nullptr) return false;
+        groupJoinPending = false;
+        joined.store (false);
+        connected.store (false);
         return client->connect (host.toRawUTF8(), port,
                                 username.toRawUTF8(), password.toRawUTF8()) > 0;
     }
@@ -223,17 +230,37 @@ public:
     {
         if (! running.load() || client == nullptr) return false;
         group = groupName;
-        return client->group_join (groupName.toRawUTF8(), password.toRawUTF8(), isPublic) > 0;
+        pendingGroupPassword = password;
+        pendingGroupPublic = isPublic;
+
+        // AOONET queues the group join asynchronously. Keep the request here
+        // and retry it from the actual CONNECT event so a UI timer cannot race
+        // the login/handshake sequence.
+        groupJoinPending = true;
+        if (! connected.load())
+            return true;
+
+        return queueGroupJoin();
+    }
+
+    bool queueGroupJoin()
+    {
+        if (! running.load() || client == nullptr || ! connected.load() || group.isEmpty())
+            return false;
+        groupJoinPending = false;
+        return client->group_join (group.toRawUTF8(), pendingGroupPassword.toRawUTF8(), pendingGroupPublic) > 0;
     }
 
     void leaveGroup (const juce::String& groupName)
     {
+        groupJoinPending = false;
         if (client != nullptr) client->group_leave (groupName.toRawUTF8());
         joined.store (false);
     }
 
     void disconnect()
     {
+        groupJoinPending = false;
         if (client != nullptr) client->disconnect();
         connected.store (false);
         joined.store (false);
@@ -284,25 +311,44 @@ public:
             {
                 case AOONET_CLIENT_CONNECT_EVENT:
                     self->connected.store (true);
+                    if (self->groupJoinPending)
+                        self->queueGroupJoin();
                     break;
                 case AOONET_CLIENT_GROUP_JOIN_EVENT:
-                    self->joined.store (true);
+                {
+                    const auto* event = reinterpret_cast<const aoonet_client_group_event*> (events[i]);
+                    if (event->result > 0)
+                        self->joined.store (true);
                     break;
+                }
                 case AOONET_CLIENT_PEER_JOIN_EVENT:
                 {
                     const auto* event = reinterpret_cast<const aoonet_client_peer_event*> (events[i]);
-                    if (event->result > 0 && event->address != nullptr && self->sink != nullptr)
+                    if (event->result <= 0 || event->address == nullptr || self->sink == nullptr)
+                        break;
+
+                    // The AOO NET event supplies both the peer address and its
+                    // exact sockaddr length. Keep the endpoint alive for the
+                    // lifetime of the sink invitation.
+                    if (event->length != sizeof (sockaddr_in))
+                        break;
+
+                    auto endpoint = std::make_shared<sockaddr_in>();
+                    std::memcpy (endpoint.get(), event->address, sizeof (sockaddr_in));
                     {
-                        auto endpoint = std::make_shared<sockaddr_in>();
-                        std::memcpy (endpoint.get(), event->address, sizeof (sockaddr_in));
-                        {
-                            std::lock_guard<std::mutex> lock (self->stateMutex);
-                            self->peerEndpoints.push_back (endpoint);
-                        }
-                        self->sink->invite_source (endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
+                        std::lock_guard<std::mutex> lock (self->stateMutex);
+                        self->peerEndpoints.push_back (endpoint);
                     }
+
+                    // Invite every AOO source announced by this peer. The
+                    // wildcard ID is how SonoBus/AOO requests all sources from
+                    // a peer; the reply callback sends the handshake response
+                    // over the same UDP socket.
+                    self->sink->invite_source (endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
                     break;
                 }
+                case AOONET_CLIENT_PEER_JOINFAIL_EVENT:
+                    break;
                 case AOONET_CLIENT_DISCONNECT_EVENT:
                     self->connected.store (false);
                     self->joined.store (false);
