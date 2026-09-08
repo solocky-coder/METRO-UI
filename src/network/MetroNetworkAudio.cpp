@@ -2,10 +2,8 @@
 #include "NetworkAudioChannelState.h"
 
 #include <juce_events/juce_events.h>
-
 #include <aoo/aoo.hpp>
 #include <aoo/aoo_net.hpp>
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -45,15 +43,14 @@ constexpr int kAooSampleRate = 48000;
 constexpr int kAooBlockSize = 512;
 constexpr int kAooChannels = 64;
 constexpr int kAooBufferMs = 120;
-
+constexpr size_t kMaxNetworkSources = 64;
 std::mutex aooLifetimeMutex;
 int aooLifetimeUsers = 0;
 std::atomic<MetroSocket*> activeAooSocket { nullptr };
 
 void closeSocket (MetroSocket socket)
 {
-    if (socket == metroInvalidSocket)
-        return;
+    if (socket == metroInvalidSocket) return;
 #if defined(_WIN32)
     closesocket (socket);
 #else
@@ -75,22 +72,19 @@ bool setNonBlocking (MetroSocket socket)
 void startAooLifetime()
 {
     std::lock_guard<std::mutex> lock (aooLifetimeMutex);
-    if (aooLifetimeUsers++ == 0)
-        aoo_initialize();
+    if (aooLifetimeUsers++ == 0) aoo_initialize();
 }
 
 void stopAooLifetime()
 {
     std::lock_guard<std::mutex> lock (aooLifetimeMutex);
-    if (aooLifetimeUsers > 0 && --aooLifetimeUsers == 0)
-        aoo_terminate();
+    if (aooLifetimeUsers > 0 && --aooLifetimeUsers == 0) aoo_terminate();
 }
 
 int32_t sendUdp (void* user, const char* data, int32_t numBytes, void* address)
 {
     auto* socket = static_cast<MetroSocket*> (user);
-    if (socket == nullptr || *socket == metroInvalidSocket || address == nullptr)
-        return 0;
+    if (socket == nullptr || *socket == metroInvalidSocket || address == nullptr) return 0;
     const auto result = sendto (*socket, data, numBytes, 0,
                                 static_cast<const sockaddr*> (address), sizeof (sockaddr_in));
     return result == numBytes ? 1 : 0;
@@ -98,9 +92,8 @@ int32_t sendUdp (void* user, const char* data, int32_t numBytes, void* address)
 
 int32_t sendAooReply (void* endpoint, const char* data, int32_t numBytes)
 {
-    auto* socket = activeAooSocket.load();
-    if (socket == nullptr || *socket == metroInvalidSocket || endpoint == nullptr)
-        return 0;
+    auto* socket = activeAooSocket.load (std::memory_order_acquire);
+    if (socket == nullptr || *socket == metroInvalidSocket || endpoint == nullptr) return 0;
     const auto result = sendto (*socket, data, numBytes, 0,
                                 static_cast<const sockaddr*> (endpoint), sizeof (sockaddr_in));
     return result == numBytes ? 1 : 0;
@@ -110,11 +103,20 @@ int32_t sendAooReply (void* endpoint, const char* data, int32_t numBytes)
 class MetroNetworkAudio::Impl
 {
 public:
+    struct SourceRuntime
+    {
+        int32_t sourceId = 0;
+        std::shared_ptr<sockaddr_in> endpoint;
+        aoo::isink::pointer sink;
+        std::array<float, kAooChannels * kAooBlockSize> scratch {};
+        std::array<aoo_sample*, kAooChannels> pointers {};
+    };
+
     MetroNetworkAudio& owner;
     std::atomic<bool> running { false };
     MetroSocket socket = metroInvalidSocket;
     aoo::net::iclient::pointer client;
-    aoo::isink::pointer sink;
+    aoo::isink::pointer discoverySink;
     std::thread ioThread;
     std::thread clientThread;
 
@@ -122,23 +124,71 @@ public:
     std::vector<SourceInfo> sources;
     MetroNetworkAudio::SourceListener listener;
     std::vector<std::shared_ptr<sockaddr_in>> peerEndpoints;
-
-    std::array<float, kAooChannels * kAooBlockSize> audioScratch {};
-    std::array<aoo_sample*, kAooChannels> audioPointers {};
+    std::vector<std::unique_ptr<SourceRuntime>> runtimes;
+    std::array<std::atomic<SourceRuntime*>, kMaxNetworkSources> runtimeSlots {};
+    std::array<float, kAooChannels * kAooBlockSize> mixScratch {};
+    std::array<aoo_sample*, kAooChannels> mixPointers {};
 
     std::atomic<bool> connected { false };
     std::atomic<bool> joined { false };
     juce::String group;
     juce::String pendingGroupPassword;
     bool pendingGroupPublic = false;
-    bool groupJoinPending = false;
+    std::atomic<bool> groupJoinPending { false };
 
-    explicit Impl (MetroNetworkAudio& ownerIn) : owner (ownerIn) {}
+    explicit Impl (MetroNetworkAudio& ownerIn) : owner (ownerIn)
+    {
+        for (auto& slot : runtimeSlots) slot.store (nullptr, std::memory_order_relaxed);
+    }
     ~Impl() { stop(); }
+
+    SourceRuntime* findRuntime (int32_t sourceId) const noexcept
+    {
+        for (const auto& slot : runtimeSlots)
+        {
+            auto* runtime = slot.load (std::memory_order_acquire);
+            if (runtime != nullptr && runtime->sourceId == sourceId) return runtime;
+        }
+        return nullptr;
+    }
+
+    SourceRuntime* createRuntime (int32_t sourceId, const sockaddr_in* endpoint)
+    {
+        if (sourceId == 0 || endpoint == nullptr) return nullptr;
+        if (auto* existing = findRuntime (sourceId)) return existing;
+        auto runtime = std::make_unique<SourceRuntime>();
+        runtime->sourceId = sourceId;
+        runtime->endpoint = std::make_shared<sockaddr_in> (*endpoint);
+        runtime->sink.reset (aoo::isink::create (0));
+        if (runtime->sink == nullptr || runtime->sink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0) return nullptr;
+        runtime->sink->set_buffersize (kAooBufferMs);
+        runtime->sink->set_dynamic_resampling (1);
+        runtime->sink->set_resend_limit (5);
+        runtime->sink->set_resend_interval (10);
+        runtime->sink->set_resend_maxnumframes (16);
+        auto* raw = runtime.get();
+        for (auto& slot : runtimeSlots)
+        {
+            SourceRuntime* expected = nullptr;
+            if (slot.compare_exchange_strong (expected, raw, std::memory_order_release, std::memory_order_relaxed))
+            {
+                runtimes.push_back (std::move (runtime));
+                raw->sink->invite_source (raw->endpoint.get(), sourceId, sendAooReply);
+                return raw;
+            }
+        }
+        return nullptr;
+    }
+
+    void destroyRuntimeSlots()
+    {
+        for (auto& slot : runtimeSlots) slot.store (nullptr, std::memory_order_release);
+        runtimes.clear();
+    }
 
     bool start()
     {
-        if (running.load()) return true;
+        if (running.load (std::memory_order_acquire)) return true;
 #if defined(_WIN32)
         WSADATA wsa {};
         if (WSAStartup (MAKEWORD (2, 2), &wsa) != 0) return false;
@@ -146,33 +196,24 @@ public:
         startAooLifetime();
         socket = ::socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (socket == metroInvalidSocket) return cleanupFailedStart();
-
         sockaddr_in local {};
         local.sin_family = AF_INET;
         local.sin_addr.s_addr = htonl (INADDR_ANY);
         local.sin_port = htons (0);
-        if (::bind (socket, reinterpret_cast<const sockaddr*> (&local), sizeof (local)) != 0
-            || ! setNonBlocking (socket))
-            return cleanupFailedStart();
-
+        if (::bind (socket, reinterpret_cast<const sockaddr*> (&local), sizeof (local)) != 0 || ! setNonBlocking (socket)) return cleanupFailedStart();
         socklen_t localLength = sizeof (local);
-        if (getsockname (socket, reinterpret_cast<sockaddr*> (&local), &localLength) != 0)
-            return cleanupFailedStart();
-
+        if (getsockname (socket, reinterpret_cast<sockaddr*> (&local), &localLength) != 0) return cleanupFailedStart();
         client.reset (aoo::net::iclient::create (&socket, sendUdp, ntohs (local.sin_port)));
-        sink.reset (aoo::isink::create (0));
-        if (client == nullptr || sink == nullptr) return cleanupFailedStart();
-        if (sink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0)
-            return cleanupFailedStart();
-
-        sink->set_buffersize (kAooBufferMs);
-        sink->set_dynamic_resampling (1);
-        sink->set_resend_limit (5);
-        sink->set_resend_interval (10);
-        sink->set_resend_maxnumframes (16);
-
-        activeAooSocket.store (&socket);
-        running.store (true);
+        discoverySink.reset (aoo::isink::create (0));
+        if (client == nullptr || discoverySink == nullptr) return cleanupFailedStart();
+        if (discoverySink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0) return cleanupFailedStart();
+        discoverySink->set_buffersize (kAooBufferMs);
+        discoverySink->set_dynamic_resampling (1);
+        discoverySink->set_resend_limit (5);
+        discoverySink->set_resend_interval (10);
+        discoverySink->set_resend_maxnumframes (16);
+        activeAooSocket.store (&socket, std::memory_order_release);
+        running.store (true, std::memory_order_release);
         clientThread = std::thread ([this] { client->run(); });
         ioThread = std::thread ([this] { ioLoop(); });
         return true;
@@ -180,11 +221,9 @@ public:
 
     bool cleanupFailedStart()
     {
-        activeAooSocket.store (nullptr);
-        client.reset();
-        sink.reset();
-        closeSocket (socket);
-        socket = metroInvalidSocket;
+        activeAooSocket.store (nullptr, std::memory_order_release);
+        client.reset(); discoverySink.reset(); destroyRuntimeSlots();
+        closeSocket (socket); socket = metroInvalidSocket;
         stopAooLifetime();
 #if defined(_WIN32)
         WSACleanup();
@@ -194,22 +233,19 @@ public:
 
     void stop()
     {
-        if (! running.exchange (false)) return;
-        connected.store (false);
-        joined.store (false);
-        groupJoinPending = false;
-        activeAooSocket.store (nullptr);
+        if (! running.exchange (false, std::memory_order_acq_rel)) return;
+        connected.store (false, std::memory_order_release);
+        joined.store (false, std::memory_order_release);
+        groupJoinPending.store (false, std::memory_order_release);
+        activeAooSocket.store (nullptr, std::memory_order_release);
         if (client != nullptr) client->quit();
         if (ioThread.joinable()) ioThread.join();
         if (clientThread.joinable()) clientThread.join();
-        client.reset();
-        sink.reset();
-        closeSocket (socket);
-        socket = metroInvalidSocket;
+        client.reset(); discoverySink.reset(); destroyRuntimeSlots();
+        closeSocket (socket); socket = metroInvalidSocket;
         {
             std::lock_guard<std::mutex> lock (stateMutex);
-            sources.clear();
-            peerEndpoints.clear();
+            sources.clear(); peerEndpoints.clear();
         }
         stopAooLifetime();
 #if defined(_WIN32)
@@ -217,86 +253,74 @@ public:
 #endif
     }
 
-    bool connectToServer (const juce::String& host, int port,
-                          const juce::String& username, const juce::String& password)
+    bool connectToServer (const juce::String& host, int port, const juce::String& username, const juce::String& password)
     {
-        if (! running.load() || client == nullptr) return false;
-        groupJoinPending = false;
-        joined.store (false);
-        connected.store (false);
-        return client->connect (host.toRawUTF8(), port,
-                                username.toRawUTF8(), password.toRawUTF8()) > 0;
+        if (! running.load (std::memory_order_acquire) || client == nullptr) return false;
+        groupJoinPending.store (false, std::memory_order_release);
+        joined.store (false, std::memory_order_release);
+        connected.store (false, std::memory_order_release);
+        return client->connect (host.toRawUTF8(), port, username.toRawUTF8(), password.toRawUTF8()) > 0;
     }
 
     bool joinGroup (const juce::String& groupName, const juce::String& password, bool isPublic)
     {
-        if (! running.load() || client == nullptr) return false;
-        group = groupName;
-        pendingGroupPassword = password;
-        pendingGroupPublic = isPublic;
-        groupJoinPending = true;
-        if (! connected.load())
-            return true;
+        if (! running.load (std::memory_order_acquire) || client == nullptr) return false;
+        group = groupName; pendingGroupPassword = password; pendingGroupPublic = isPublic;
+        groupJoinPending.store (true, std::memory_order_release);
+        if (! connected.load (std::memory_order_acquire)) return true;
         return queueGroupJoin();
     }
 
     bool queueGroupJoin()
     {
-        if (! running.load() || client == nullptr || ! connected.load() || group.isEmpty())
-            return false;
+        if (! running.load (std::memory_order_acquire) || client == nullptr || ! connected.load (std::memory_order_acquire) || group.isEmpty()) return false;
         const bool queued = client->group_join (group.toRawUTF8(), pendingGroupPassword.toRawUTF8(), pendingGroupPublic) > 0;
-        if (queued)
-            groupJoinPending = false;
+        if (queued) groupJoinPending.store (false, std::memory_order_release);
         return queued;
     }
 
     void leaveGroup (const juce::String& groupName)
     {
-        groupJoinPending = false;
+        groupJoinPending.store (false, std::memory_order_release);
         if (client != nullptr) client->group_leave (groupName.toRawUTF8());
-        joined.store (false);
+        joined.store (false, std::memory_order_release);
     }
 
     void disconnect()
     {
-        groupJoinPending = false;
+        groupJoinPending.store (false, std::memory_order_release);
         if (client != nullptr) client->disconnect();
-        connected.store (false);
-        joined.store (false);
+        connected.store (false, std::memory_order_release); joined.store (false, std::memory_order_release);
     }
 
     void ioLoop()
     {
         std::array<char, AOO_MAXPACKETSIZE> packet {};
-        while (running.load())
+        while (running.load (std::memory_order_acquire))
         {
-            fd_set readSet;
-            FD_ZERO (&readSet);
-            FD_SET (socket, &readSet);
-            timeval timeout {};
-            timeout.tv_sec = 0;
-            timeout.tv_usec = 20000;
-
+            fd_set readSet; FD_ZERO (&readSet); FD_SET (socket, &readSet);
+            timeval timeout {}; timeout.tv_usec = 20000;
             const auto ready = select (static_cast<int> (socket + 1), &readSet, nullptr, nullptr, &timeout);
             if (ready > 0 && FD_ISSET (socket, &readSet))
             {
-                sockaddr_in from {};
-                socklen_t fromLength = sizeof (from);
-                const auto n = recvfrom (socket, packet.data(), static_cast<int> (packet.size()), 0,
-                                         reinterpret_cast<sockaddr*> (&from), &fromLength);
+                sockaddr_in from {}; socklen_t fromLength = sizeof (from);
+                const auto n = recvfrom (socket, packet.data(), static_cast<int> (packet.size()), 0, reinterpret_cast<sockaddr*> (&from), &fromLength);
                 if (n > 0)
                 {
                     client->handle_message (packet.data(), n, &from);
-                    sink->handle_message (packet.data(), n, &from, sendAooReply);
+                    if (discoverySink != nullptr) discoverySink->handle_message (packet.data(), n, &from, sendAooReply);
+                    for (auto& runtime : runtimes)
+                        if (runtime != nullptr && runtime->sink != nullptr) runtime->sink->handle_message (packet.data(), n, &from, sendAooReply);
                 }
             }
-
             client->send();
-            sink->send();
-            if (client->events_available() > 0)
-                client->handle_events (clientEventHandler, this);
-            if (sink->events_available() > 0)
-                sink->handle_events (sinkEventHandler, this);
+            if (discoverySink != nullptr) discoverySink->send();
+            for (auto& runtime : runtimes)
+                if (runtime != nullptr && runtime->sink != nullptr) runtime->sink->send();
+            if (client->events_available() > 0) client->handle_events (clientEventHandler, this);
+            if (discoverySink != nullptr && discoverySink->events_available() > 0) discoverySink->handle_events (discoveryEventHandler, this);
+            for (auto& runtime : runtimes)
+                if (runtime != nullptr && runtime->sink != nullptr && runtime->sink->events_available() > 0) runtime->sink->handle_events (sourceEventHandler, this);
         }
     }
 
@@ -309,51 +333,48 @@ public:
             switch (events[i]->type)
             {
                 case AOONET_CLIENT_CONNECT_EVENT:
-                    self->connected.store (true);
-                    if (self->groupJoinPending)
-                        self->queueGroupJoin();
+                    self->connected.store (true, std::memory_order_release);
+                    if (self->groupJoinPending.load (std::memory_order_acquire)) self->queueGroupJoin();
                     break;
                 case AOONET_CLIENT_GROUP_JOIN_EVENT:
                 {
                     const auto* event = reinterpret_cast<const aoonet_client_group_event*> (events[i]);
-                    if (event->result > 0)
-                        self->joined.store (true);
+                    if (event->result > 0) self->joined.store (true, std::memory_order_release);
                     break;
                 }
                 case AOONET_CLIENT_PEER_JOIN_EVENT:
                 {
                     const auto* event = reinterpret_cast<const aoonet_client_peer_event*> (events[i]);
-                    if (event->result <= 0 || event->address == nullptr || self->sink == nullptr)
-                        break;
-                    if (event->length != sizeof (sockaddr_in))
-                        break;
-
+                    if (event->result <= 0 || event->address == nullptr || event->length != sizeof (sockaddr_in)) break;
                     auto endpoint = std::make_shared<sockaddr_in>();
                     std::memcpy (endpoint.get(), event->address, sizeof (sockaddr_in));
                     {
                         std::lock_guard<std::mutex> lock (self->stateMutex);
                         self->peerEndpoints.push_back (endpoint);
                     }
-                    self->sink->invite_source (endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
+                    if (self->discoverySink != nullptr) self->discoverySink->invite_source (endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
                     break;
                 }
-                case AOONET_CLIENT_PEER_JOINFAIL_EVENT:
-                    break;
                 case AOONET_CLIENT_DISCONNECT_EVENT:
-                    self->connected.store (false);
-                    self->joined.store (false);
+                    self->connected.store (false, std::memory_order_release);
+                    self->joined.store (false, std::memory_order_release);
                     break;
-                default:
-                    break;
+                default: break;
             }
         }
         return 1;
     }
 
-    static int32_t sinkEventHandler (void* user, const aoo_event** events, int32_t count)
+    static void notifySourceChange (Impl* self)
     {
-        auto* self = static_cast<Impl*> (user);
-        bool changed = false;
+        MetroNetworkAudio::SourceListener listener;
+        { std::lock_guard<std::mutex> lock (self->stateMutex); listener = self->listener; }
+        if (listener) juce::MessageManager::callAsync (std::move (listener));
+    }
+
+    static int32_t discoveryEventHandler (void* user, const aoo_event** events, int32_t count)
+    {
+        auto* self = static_cast<Impl*> (user); bool changed = false;
         for (int32_t i = 0; i < count; ++i)
         {
             if (events[i] == nullptr) continue;
@@ -362,11 +383,9 @@ public:
                 case AOO_SOURCE_ADD_EVENT:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
-                    SourceInfo info;
-                    info.sourceId = event->id;
-                    info.group = self->group;
-                    info.online = true;
+                    SourceInfo info; info.sourceId = event->id; info.group = self->group; info.online = true;
                     self->upsertSource (info);
+                    if (event->endpoint != nullptr) self->createRuntime (event->id, static_cast<const sockaddr_in*> (event->endpoint));
                     changed = true;
                     break;
                 }
@@ -374,16 +393,11 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     aoo_format_storage format {};
-                    if (self->sink->get_source_format (event->endpoint, event->id, format) > 0)
+                    if (self->discoverySink->get_source_format (event->endpoint, event->id, format) > 0)
                     {
                         std::lock_guard<std::mutex> lock (self->stateMutex);
                         for (auto& source : self->sources)
-                            if (source.sourceId == event->id)
-                            {
-                                source.channels = format.header.nchannels;
-                                source.sampleRate = format.header.samplerate;
-                                source.online = true;
-                            }
+                            if (source.sourceId == event->id) { source.channels = format.header.nchannels; source.sampleRate = format.header.samplerate; source.online = true; }
                         changed = true;
                     }
                     break;
@@ -392,164 +406,141 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_block_lost_event*> (events[i]);
                     std::lock_guard<std::mutex> lock (self->stateMutex);
-                    for (auto& source : self->sources)
-                        if (source.sourceId == event->id)
-                            source.packetLoss = std::min (1.0f, source.packetLoss + 0.001f * (float) event->count);
+                    for (auto& source : self->sources) if (source.sourceId == event->id) source.packetLoss = std::min (1.0f, source.packetLoss + 0.001f * (float) event->count);
                     changed = true;
                     break;
                 }
-                default:
-                    break;
+                default: break;
             }
         }
-        if (changed)
+        if (changed) notifySourceChange (self);
+        return 1;
+    }
+
+    static int32_t sourceEventHandler (void* user, const aoo_event** events, int32_t count)
+    {
+        auto* self = static_cast<Impl*> (user); bool changed = false;
+        for (int32_t i = 0; i < count; ++i)
         {
-            MetroNetworkAudio::SourceListener listener;
+            if (events[i] == nullptr) continue;
+            switch (events[i]->type)
             {
-                std::lock_guard<std::mutex> lock (self->stateMutex);
-                listener = self->listener;
+                case AOO_SOURCE_FORMAT_EVENT:
+                {
+                    const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
+                    auto* runtime = self->findRuntime (event->id);
+                    if (runtime == nullptr || runtime->sink == nullptr) break;
+                    aoo_format_storage format {};
+                    if (runtime->sink->get_source_format (event->endpoint, event->id, format) > 0)
+                    {
+                        std::lock_guard<std::mutex> lock (self->stateMutex);
+                        for (auto& source : self->sources)
+                            if (source.sourceId == event->id) { source.channels = format.header.nchannels; source.sampleRate = format.header.samplerate; source.online = true; }
+                        changed = true;
+                    }
+                    break;
+                }
+                case AOO_BLOCK_LOST_EVENT:
+                {
+                    const auto* event = reinterpret_cast<const aoo_block_lost_event*> (events[i]);
+                    std::lock_guard<std::mutex> lock (self->stateMutex);
+                    for (auto& source : self->sources) if (source.sourceId == event->id) source.packetLoss = std::min (1.0f, source.packetLoss + 0.001f * (float) event->count);
+                    changed = true;
+                    break;
+                }
+                case AOO_SOURCE_REMOVE_EVENT:
+                {
+                    const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
+                    std::lock_guard<std::mutex> lock (self->stateMutex);
+                    for (auto& source : self->sources) if (source.sourceId == event->id) source.online = false;
+                    changed = true;
+                    break;
+                }
+                default: break;
             }
-            if (listener)
-                juce::MessageManager::callAsync (std::move (listener));
         }
+        if (changed) notifySourceChange (self);
         return 1;
     }
 
     void upsertSource (const SourceInfo& info)
     {
         std::lock_guard<std::mutex> lock (stateMutex);
-        auto it = std::find_if (sources.begin(), sources.end(),
-                                [&info] (const auto& source) { return source.sourceId == info.sourceId; });
+        auto it = std::find_if (sources.begin(), sources.end(), [&info] (const auto& source) { return source.sourceId == info.sourceId; });
         if (it == sources.end()) sources.push_back (info);
-        else it->online = true;
+        else { it->group = info.group.isNotEmpty() ? info.group : it->group; it->online = true; }
     }
 
-    void process (juce::AudioBuffer<float>& destination, int numSamples)
+    bool processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, int32_t sourceId, int sourceChannel)
     {
         destination.clear();
-        if (! running.load() || sink == nullptr || numSamples <= 0)
-            return;
-
-        auto& channel = getNetworkAudioChannelState();
-        if (! channel.enabled.load (std::memory_order_relaxed)
-            || channel.muted.load (std::memory_order_relaxed)
-            || ! channel.monitor.load (std::memory_order_relaxed))
-        {
-            channel.publishPeak (0.0f, 0.0f);
-            return;
-        }
-
-        const float gain = channel.linearGain();
-        const float pan = channel.pan.load (std::memory_order_relaxed);
-        const float panAngle = (pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
-        const float leftGain = gain * std::cos (panAngle);
-        const float rightGain = gain * std::sin (panAngle);
-        float peakL = 0.0f;
-        float peakR = 0.0f;
-
+        if (! running.load (std::memory_order_acquire) || numSamples <= 0 || sourceChannel < 0) return false;
+        auto* runtime = findRuntime (sourceId);
+        if (runtime == nullptr || runtime->sink == nullptr) return false;
+        bool produced = false;
         int offset = 0;
         while (offset < numSamples)
         {
             const int block = std::min (kAooBlockSize, numSamples - offset);
             for (int c = 0; c < kAooChannels; ++c)
             {
-                audioPointers[(size_t) c] = audioScratch.data() + (size_t) c * kAooBlockSize;
-                std::fill (audioPointers[(size_t) c], audioPointers[(size_t) c] + block, 0.0f);
+                runtime->pointers[(size_t) c] = runtime->scratch.data() + (size_t) c * kAooBlockSize;
+                std::fill (runtime->pointers[(size_t) c], runtime->pointers[(size_t) c] + block, 0.0f);
             }
-
-            if (sink->process (audioPointers.data(), block, aoo_osctime_get()) > 0)
+            if (runtime->sink->process (runtime->pointers.data(), block, aoo_osctime_get()) > 0 && sourceChannel < kAooChannels)
             {
-                const int sourceChannels = std::min (destination.getNumChannels(), kAooChannels);
-                for (int c = 0; c < sourceChannels; ++c)
-                {
-                    const auto* src = audioPointers[(size_t) c];
-                    for (int i = 0; i < block; ++i)
-                    {
-                        const float sample = src[i];
-                        if (c == 0) peakL = std::max (peakL, std::abs (sample));
-                        if (c == 1) peakR = std::max (peakR, std::abs (sample));
-                    }
-                }
-
-                // SonoBus sources are normally stereo.  For a mono source,
-                // duplicate it to both sides; for multichannel sources keep
-                // channels 2+ available to callers while applying the channel
-                // strip gain/pan to the first stereo pair.
-                if (sourceChannels > 0)
-                    destination.addFrom (0, offset, audioPointers[0], block, leftGain);
-                if (destination.getNumChannels() > 1)
-                {
-                    if (sourceChannels > 1)
-                        destination.addFrom (1, offset, audioPointers[1], block, rightGain);
-                    else
-                        destination.addFrom (1, offset, audioPointers[0], block, rightGain);
-                }
-
-                for (int c = 2; c < sourceChannels; ++c)
-                    destination.addFrom (c, offset, audioPointers[(size_t) c], block, gain);
+                const auto* src = runtime->pointers[(size_t) sourceChannel];
+                if (destination.getNumChannels() > 0) destination.copyFrom (0, offset, src, block);
+                if (destination.getNumChannels() > 1) destination.copyFrom (1, offset, src, block);
+                produced = true;
             }
             offset += block;
         }
+        return produced;
+    }
 
+    void processLegacyMix (juce::AudioBuffer<float>& destination, int numSamples)
+    {
+        destination.clear();
+        if (! running.load (std::memory_order_acquire) || discoverySink == nullptr || numSamples <= 0) return;
+        auto& channel = getNetworkAudioChannelState();
+        if (! channel.enabled.load (std::memory_order_relaxed) || channel.muted.load (std::memory_order_relaxed) || ! channel.monitor.load (std::memory_order_relaxed)) { channel.publishPeak (0.0f, 0.0f); return; }
+        const float gain = channel.linearGain();
+        const float pan = channel.pan.load (std::memory_order_relaxed);
+        const float panAngle = (pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
+        const float leftGain = gain * std::cos (panAngle), rightGain = gain * std::sin (panAngle);
+        float peakL = 0.0f, peakR = 0.0f;
+        int offset = 0;
+        while (offset < numSamples)
+        {
+            const int block = std::min (kAooBlockSize, numSamples - offset);
+            for (int c = 0; c < kAooChannels; ++c) { mixPointers[(size_t) c] = mixScratch.data() + (size_t) c * kAooBlockSize; std::fill (mixPointers[(size_t) c], mixPointers[(size_t) c] + block, 0.0f); }
+            if (discoverySink->process (mixPointers.data(), block, aoo_osctime_get()) > 0)
+            {
+                const int sourceChannels = std::min (destination.getNumChannels(), kAooChannels);
+                for (int c = 0; c < sourceChannels; ++c) for (int i = 0; i < block; ++i) { const float sample = mixPointers[(size_t) c][i]; if (c == 0) peakL = std::max (peakL, std::abs (sample)); if (c == 1) peakR = std::max (peakR, std::abs (sample)); }
+                if (sourceChannels > 0) destination.addFrom (0, offset, mixPointers[0], block, leftGain);
+                if (destination.getNumChannels() > 1) destination.addFrom (1, offset, sourceChannels > 1 ? mixPointers[1] : mixPointers[0], block, rightGain);
+                for (int c = 2; c < sourceChannels; ++c) destination.addFrom (c, offset, mixPointers[(size_t) c], block, gain);
+            }
+            offset += block;
+        }
         channel.publishPeak (peakL * std::abs (leftGain), peakR * std::abs (rightGain));
     }
 };
 
-MetroNetworkAudio::MetroNetworkAudio()
-    : impl (std::make_unique<Impl> (*this)) {}
-
+MetroNetworkAudio::MetroNetworkAudio() : impl (std::make_unique<Impl> (*this)) {}
 MetroNetworkAudio::~MetroNetworkAudio() { stop(); }
-
 bool MetroNetworkAudio::start() { return impl != nullptr && impl->start(); }
-
 void MetroNetworkAudio::stop() { if (impl != nullptr) impl->stop(); }
+bool MetroNetworkAudio::isRunning() const noexcept { return impl != nullptr && impl->running.load (std::memory_order_acquire); }
 
-bool MetroNetworkAudio::isRunning() const noexcept
-{
-    return impl != nullptr && impl->running.load();
-}
+bool MetroNetworkAudio::connectToServer (const juce::String& host, int port, const juce::String& username, const juce::String& password) { return impl != nullptr && impl->connectToServer (host, port, username, password); }
+bool MetroNetworkAudio::joinGroup (const juce::String& group, const juce::String& password, bool isPublic) { return impl != nullptr && impl->joinGroup (group, password, isPublic); }
+void MetroNetworkAudio::leaveGroup (const juce::String& group) { if (impl != nullptr) impl->leaveGroup (group); }
+void MetroNetworkAudio::disconnect() { if (impl != nullptr) impl->disconnect(); }
 
-bool MetroNetworkAudio::connectToServer (const juce::String& host, int port,
-                                         const juce::String& username,
-                                         const juce::String& password)
-{
-    return impl != nullptr && impl->connectToServer (host, port, username, password);
-}
-
-bool MetroNetworkAudio::joinGroup (const juce::String& group,
-                                   const juce::String& password, bool isPublic)
-{
-    return impl != nullptr && impl->joinGroup (group, password, isPublic);
-}
-
-void MetroNetworkAudio::leaveGroup (const juce::String& group)
-{
-    if (impl != nullptr) impl->leaveGroup (group);
-}
-
-void MetroNetworkAudio::disconnect()
-{
-    if (impl != nullptr) impl->disconnect();
-}
-
-void MetroNetworkAudio::process (juce::AudioBuffer<float>& destination,
-                                 int numSamples, double sampleRate)
-{
-    juce::ignoreUnused (sampleRate);
-    if (impl != nullptr)
-        impl->process (destination, numSamples);
-}
-
-std::vector<MetroNetworkAudio::SourceInfo> MetroNetworkAudio::getSources() const
-{
-    if (impl == nullptr) return {};
-    std::lock_guard<std::mutex> lock (impl->stateMutex);
-    return impl->sources;
-}
-
-void MetroNetworkAudio::setSourceListener (SourceListener listener)
-{
-    if (impl == nullptr) return;
-    std::lock_guard<std::mutex> lock (impl->stateMutex);
-    impl->listener = std::move (listener);
-}
+void MetroNetworkAudio::process (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate) { juce::ignoreUnused (sampleRate); if (impl != nullptr) impl->processLegacyMix (destination, numSamples); }
+bool MetroNetworkAudio::processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate, int32_t sourceId, int sourceChannel) { juce::ignoreUnused (sampleRate); return impl != nullptr && impl->processSourceChannel (destination, numSamples, sourceId, sourceChannel); }
+std::vector<MetroNetworkAudio::SourceInfo> MetroNetworkAudio::getSources() const { if (impl == nullptr) return {}; std::lock_guard<std::mutex> lock (impl->stateMutex); return impl->sources; }
+void MetroNetworkAudio::setSourceListener (SourceListener listener) { if (impl == nullptr) return; std::lock_guard<std::mutex> lock (impl->stateMutex); impl->listener = std::move (listener); }
