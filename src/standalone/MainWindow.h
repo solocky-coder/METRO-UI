@@ -28,7 +28,7 @@ public:
         processor = std::make_unique<NetworkAudioProcessor>();
         juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Undefined);
 
-        const auto* device = deviceManager.getCurrentAudioDevice();
+        auto* const device = deviceManager.getCurrentAudioDevice();
         const double deviceSampleRate = device != nullptr ? device->getCurrentSampleRate() : 44100.0;
         const int deviceBlockSize = device != nullptr ? juce::jmax (1, device->getCurrentBufferSizeSamples()) : 512;
         processor->prepareToPlay (deviceSampleRate > 0.0 ? deviceSampleRate : 44100.0, deviceBlockSize);
