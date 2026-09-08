@@ -1,6 +1,7 @@
 #pragma once
 #include "MidiClip.h"
 #include "../audio/SfzPlayer.h"
+#include "../network/NetworkAudioInput.h"
 #include <juce_core/juce_core.h>
 #include <juce_graphics/juce_graphics.h>
 #include <atomic>
@@ -8,346 +9,119 @@
 #include <vector>
 #include <algorithm>
 
-//==============================================================================
-//  ClipSlot  —  a MidiClip with a start position on the timeline.
-//
-//  Always lives behind a shared_ptr once it's been published into a track's
-//  clip list (see SequencerTrack below), so its address is stable for as
-//  long as anyone — audio thread or message thread — is holding a
-//  reference to it.  startTick is atomic so an interactive drag can update
-//  it in place without requiring the containing clip list to be rebuilt.
-//==============================================================================
+enum class TrackType { MainSlice, ChromaticSlice, SfPlayer, Audio };
+
 struct ClipSlot
 {
-    std::atomic<int64_t> startTick { 0 };   // position on the track timeline
-    MidiClip clip;                          // owns note data + length (own internal lock)
-
+    std::atomic<int64_t> startTick { 0 };
+    MidiClip clip;
     ClipSlot() = default;
-
-    ClipSlot (int64_t start, int64_t lengthTicks)
-        : startTick (start)
-    {
-        clip.setLengthTicks (lengthTicks);
-    }
-
+    ClipSlot (int64_t start, int64_t lengthTicks) : startTick (start) { clip.setLengthTicks (lengthTicks); }
     JUCE_DECLARE_NON_COPYABLE (ClipSlot)
-
     int64_t getStartTick() const noexcept { return startTick.load (std::memory_order_relaxed); }
-    int64_t endTick()      const noexcept { return getStartTick() + clip.getLengthTicks(); }
-
-    void writeToStream (juce::MemoryOutputStream& s) const
-    {
-        s.writeInt64 (getStartTick());
-        clip.writeToStream (s);
-    }
-
-    bool readFromStream (juce::MemoryInputStream& s)
-    {
-        startTick.store (s.readInt64(), std::memory_order_relaxed);
-        return clip.readFromStream (s);
-    }
+    int64_t endTick() const noexcept { return getStartTick() + clip.getLengthTicks(); }
+    void writeToStream (juce::MemoryOutputStream& s) const { s.writeInt64 (getStartTick()); clip.writeToStream (s); }
+    bool readFromStream (juce::MemoryInputStream& s) { startTick.store (s.readInt64(), std::memory_order_relaxed); return clip.readFromStream (s); }
 };
-
-//==============================================================================
-//  SequencerTrack
-//
-//  One track in the multi-track linear sequencer.  Three types:
-//
-//    MainSlice      — triggers slices by their pad MIDI note (ch 1 by default).
-//                     Always present, cannot be deleted.
-//
-//    ChromaticSlice — one track per slice with chromatic mode + sequencer
-//                     toggle enabled. Fires notes on s.chromaticChannel (0-15).
-//
-//    SfPlayer       — one track per SF2 instrument group. Fires notes on
-//                     MIDI channel 16 (index 15), prepends a program change
-//                     at playback start.
-//
-//  Lifetime model: a SequencerTrack, once created, is always held behind a
-//  shared_ptr<SequencerTrack> inside a SequencerEngine track-list snapshot
-//  (see SequencerEngine::Impl::TrackList). It is never copied or moved —
-//  fields that can change after publication (enabled, solo, volumeDb, pan,
-//  midiChannel) are atomics mutated in place; the clip list is copy-on-write
-//  and atomically swapped, so the audio thread never takes a lock to read
-//  any of it.
-//==============================================================================
-enum class TrackType { MainSlice, ChromaticSlice, SfPlayer };
 
 struct SequencerTrack
 {
     using ClipList = std::vector<std::shared_ptr<ClipSlot>>;
-
     SequencerTrack() = default;
     JUCE_DECLARE_NON_COPYABLE (SequencerTrack)
 
-    //==========================================================================
-    TrackType         type        = TrackType::MainSlice;   // immutable after construction
-    std::atomic<bool> enabled     { true };                 // mutated in place — no rebuild needed
-    std::atomic<bool> solo        { false };                // mutated in place — gates playback, see SequencerEngine::processBlock
-    std::atomic<float> volumeDb   { 0.0f };                  // -60..+6 dB — stored/persisted, not yet applied to audio output
-    std::atomic<float> pan        { 0.0f };                  // -1..+1    — stored/persisted, not yet applied to audio output
-
-    // Display — set once at construction and read-only afterwards, with one
-    // sanctioned exception: the singleton SFZ-instrument track mutates these
-    // in place from SequencerEngine::addSfzTrack() when a new .sfz file is
-    // loaded or its channel is changed, instead of being torn down and
-    // rebuilt, so its track-list index/selection stays stable. Not atomic —
-    // safe only because every reader (getTrackInfo(), UI Timers) and every
-    // writer of these two fields run on the message thread exclusively;
-    // never touch name/colour from the audio thread.
+    TrackType type = TrackType::MainSlice;
+    std::atomic<bool> enabled { true };
+    std::atomic<bool> solo { false };
+    std::atomic<float> volumeDb { 0.0f };
+    std::atomic<float> pan { 0.0f };
     juce::String name;
-    juce::Colour colour      = juce::Colour (0xFF3A6080);
+    juce::Colour colour = juce::Colour (0xFF3A6080);
 
-    // ChromaticSlice fields — immutable after construction.
-    int              sliceIdx    = -1;     // which slice this track belongs to
-    std::atomic<int> midiChannel { 0 };    // 0-15; mutated in place by addOrUpdateSfTrackOnChannel
-
-    // SfPlayer fields — immutable after construction.
-    Sf2PresetInfo preset;              // bank + program + name
-
-    // Runtime-only marker distinguishing the two engines that both use
-    // TrackType::SfPlayer: an SF2 preset track (false, the common case) vs
-    // a real .sfz-file instrument track created via makeSfzInstrument()
-    // (true). Deliberately NOT persisted — SFZ instrument tracks are
-    // recreated fresh from the loaded .sfz file on every session load, so
-    // there's nothing to round-trip, and adding a new serialised field here
-    // would mean touching the v2/v3 stream format for no benefit. Defaults
-    // false so every existing/legacy track (including plain SF2 presets
-    // read from disk) is correctly treated as non-SFZ.
+    int sliceIdx = -1;
+    std::atomic<int> midiChannel { 0 };
+    Sf2PresetInfo preset;
     bool isSfzInstrument = false;
 
-    //==========================================================================
-    //  Clip list  (copy-on-write, atomically swapped)
-    //==========================================================================
+    // Audio tracks: one explicit network source/channel route per track.
+    int64_t networkRouteId = 0;
+    int32_t networkSourceId = 0;
+    int networkSourceChannel = 0;
 
-    /** One atomic load — safe from any thread, never blocks. */
-    std::shared_ptr<const ClipList> getClips() const noexcept
-    {
-        return clipsSnapshot.load (std::memory_order_acquire);
-    }
-
+    std::shared_ptr<const ClipList> getClips() const noexcept { return clipsSnapshot.load (std::memory_order_acquire); }
     int getNumClips() const noexcept { return (int) getClips()->size(); }
-
     std::shared_ptr<ClipSlot> getClipSlot (int i) const
     {
         auto snap = getClips();
         return juce::isPositiveAndBelow (i, (int) snap->size()) ? (*snap)[(size_t) i] : nullptr;
     }
-
-    //==========================================================================
-    //  Clip helpers (message thread)
-    //==========================================================================
-
-    /** Add a new empty clip at startTick with given length. Returns the new index. */
     int addClip (int64_t startTick, int64_t lengthTicks = MidiClip::kPPQ * 4 * 4)
     {
         auto newSlot = std::make_shared<ClipSlot> (startTick, lengthTicks);
-        auto next    = std::make_shared<ClipList> (*getClips());
-        next->push_back (newSlot);
-        sortAndPublish (std::move (next));
-
+        auto next = std::make_shared<ClipList> (*getClips()); next->push_back (newSlot); sortAndPublish (std::move (next));
         auto published = getClips();
-        for (size_t i = 0; i < published->size(); ++i)
-            if ((*published)[i] == newSlot) return (int) i;
+        for (size_t i = 0; i < published->size(); ++i) if ((*published)[i] == newSlot) return (int) i;
         return (int) published->size() - 1;
     }
-
     void removeClip (int index)
     {
-        auto current = getClips();
-        if (! juce::isPositiveAndBelow (index, (int) current->size())) return;
-        auto next = std::make_shared<ClipList> (*current);
-        next->erase (next->begin() + index);
-        publish (std::move (next));
+        auto current = getClips(); if (! juce::isPositiveAndBelow (index, (int) current->size())) return;
+        auto next = std::make_shared<ClipList> (*current); next->erase (next->begin() + index); publish (std::move (next));
     }
+    void sortClips() { auto next = std::make_shared<ClipList> (*getClips()); sortAndPublish (std::move (next)); }
 
-    /** Ensure clips stay ordered by startTick. Call after moving a clip. */
-    void sortClips()
-    {
-        auto next = std::make_shared<ClipList> (*getClips());
-        sortAndPublish (std::move (next));
-    }
-
-    //==========================================================================
-    //  Factory helpers — return a freshly-built track behind a shared_ptr,
-    //  ready to be pushed into a TrackList snapshot.
     static std::shared_ptr<SequencerTrack> makeMain()
     {
-        auto t = std::make_shared<SequencerTrack>();
-        t->type    = TrackType::MainSlice;
-        t->name    = "MAIN";
-        t->colour  = juce::Colour (0xFF25D9D9);
-        // No init clip — the arranger starts empty; the user adds clips via
-        // double-click (1 bar) or by drawing a clip at their drawn length.
-        return t;
+        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::MainSlice; t->name = "MAIN"; t->colour = juce::Colour (0xFF25D9D9); return t;
     }
-
-    static std::shared_ptr<SequencerTrack> makeChromatic (int sliceIdx, int chromaticChannel,
-                                                           const juce::String& sliceName,
-                                                           juce::Colour sliceColour)
+    static std::shared_ptr<SequencerTrack> makeChromatic (int sliceIdxIn, int chromaticChannel, const juce::String& sliceName, juce::Colour sliceColour)
     {
-        auto t = std::make_shared<SequencerTrack>();
-        t->type        = TrackType::ChromaticSlice;
-        t->sliceIdx    = sliceIdx;
-        t->midiChannel.store (chromaticChannel - 1, std::memory_order_relaxed);
-        t->name        = sliceName.isEmpty()
-                            ? ("CHROM " + juce::String (sliceIdx + 1))
-                            : sliceName;
-        t->colour      = sliceColour;
-        // No init clip — see makeMain() for why.
-        return t;
+        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::ChromaticSlice; t->sliceIdx = sliceIdxIn; t->midiChannel.store (chromaticChannel - 1); t->name = sliceName.isEmpty() ? ("CHROM " + juce::String (sliceIdxIn + 1)) : sliceName; t->colour = sliceColour; return t;
     }
-
-    static std::shared_ptr<SequencerTrack> makeSfPlayer (const Sf2PresetInfo& p,
-                                                          juce::Colour colour)
+    static std::shared_ptr<SequencerTrack> makeSfPlayer (const Sf2PresetInfo& p, juce::Colour c)
     {
-        auto t = std::make_shared<SequencerTrack>();
-        t->type        = TrackType::SfPlayer;
-        t->preset      = p;
-        t->midiChannel.store (15, std::memory_order_relaxed);
-        t->name        = p.name;
-        t->colour      = colour;
-        // No init clip — see makeMain() for why.
-        return t;
+        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->midiChannel.store (15); t->name = p.name; t->colour = c; return t;
     }
-
-    /** Same shape as makeSfPlayer(), but tagged isSfzInstrument=true so
-     *  callers (e.g. ArrangeView's selection callback) can tell a real
-     *  .sfz-file track apart from an SF2 preset track — both share
-     *  TrackType::SfPlayer since they play back through the sequencer's
-     *  clip/channel machinery identically.
-     *
-     *  This is the one track for whichever MULTISAMPLER instrument is
-     *  currently loaded in MultisamplerEditor — whether it got there by
-     *  loading a .sfz file from the browser/drop or by building one from
-     *  scratch via Add Zone. Both paths edit the same underlying
-     *  MultisamplerInstrument model and sync it to the same sfzPlayer2
-     *  engine, so there is only ever one live instrument and this is its
-     *  one track; a second TrackType for the Add Zone case would just be a
-     *  duplicate, disconnected track for the same instrument. See
-     *  SequencerEngine::addSfzTrack()/removeSfzTrack(): created the moment
-     *  the instrument gains its first zone, removed the moment it has none
-     *  left — despite older comments elsewhere calling it "permanent", it
-     *  is not a fixture once created. */
-    static std::shared_ptr<SequencerTrack> makeSfzInstrument (const juce::String& name,
-                                                               juce::Colour colour)
+    static std::shared_ptr<SequencerTrack> makeSfzInstrument (const juce::String& n, juce::Colour c)
     {
-        Sf2PresetInfo p;
-        p.name   = name;
-        p.bank   = 0;
-        p.preset = 0;
-
-        auto t = std::make_shared<SequencerTrack>();
-        t->type            = TrackType::SfPlayer;
-        t->preset          = p;
-        t->isSfzInstrument = true;
-        t->midiChannel.store (15, std::memory_order_relaxed);
-        t->name        = name;
-        t->colour      = colour;
-        // No init clip — see makeMain() for why.
-        return t;
+        Sf2PresetInfo p; p.name = n; p.bank = 0; p.preset = 0;
+        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->isSfzInstrument = true; t->midiChannel.store (15); t->name = n; t->colour = c; return t;
+    }
+    static std::shared_ptr<SequencerTrack> makeAudio (const NetworkAudioInput& input, juce::Colour c = juce::Colour (0xFF406080))
+    {
+        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::Audio;
+        t->networkRouteId = input.routeId; t->networkSourceId = input.sourceId; t->networkSourceChannel = input.sourceChannel;
+        t->name = input.sourceName.isNotEmpty() ? input.sourceName : ("NETWORK " + juce::String (input.sourceId) + "." + juce::String (input.sourceChannel + 1));
+        t->colour = c; t->volumeDb.store (input.gainDb.load()); t->pan.store (input.pan.load()); return t;
     }
 
-    //==========================================================================
-    //  Serialisation  (v2 — multi-clip)
     void writeToStream (juce::MemoryOutputStream& s) const
     {
-        s.writeInt  ((int) type);
-        s.writeBool (enabled.load (std::memory_order_relaxed));
-        s.writeString (name);
-        s.writeInt  ((int) colour.getARGB());
-        s.writeInt  (sliceIdx);
-        s.writeInt  (midiChannel.load (std::memory_order_relaxed));
-        s.writeInt  (preset.bank);
-        s.writeInt  (preset.preset);
-        s.writeString (preset.name);
-
-        auto snap = getClips();
-        s.writeInt ((int) snap->size());
-        for (auto& slot : *snap)
-            slot->writeToStream (s);
-
-        // v3 extension — appended after the clip list so v2 readers (which
-        // stop here) and the legacy v1 reader are unaffected; see
-        // readFromStream()'s hasExtendedFields gate.
-        s.writeBool  (solo.load (std::memory_order_relaxed));
-        s.writeFloat (volumeDb.load (std::memory_order_relaxed));
-        s.writeFloat (pan.load (std::memory_order_relaxed));
+        s.writeInt ((int) type); s.writeBool (enabled.load()); s.writeString (name); s.writeInt ((int) colour.getARGB()); s.writeInt (sliceIdx); s.writeInt (midiChannel.load());
+        s.writeInt (preset.bank); s.writeInt (preset.preset); s.writeString (preset.name);
+        auto snap = getClips(); s.writeInt ((int) snap->size()); for (auto& slot : *snap) slot->writeToStream (s);
+        s.writeBool (solo.load()); s.writeFloat (volumeDb.load()); s.writeFloat (pan.load());
+        if (type == TrackType::Audio) { s.writeInt64 (networkRouteId); s.writeInt (networkSourceId); s.writeInt (networkSourceChannel); }
     }
-
     bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true)
     {
-        type        = (TrackType) s.readInt();
-        enabled.store (s.readBool(), std::memory_order_relaxed);
-        name        = s.readString();
-        colour      = juce::Colour ((juce::uint32) s.readInt());
-        sliceIdx    = s.readInt();
-        midiChannel.store (s.readInt(), std::memory_order_relaxed);
-        preset.bank   = s.readInt();
-        preset.preset = s.readInt();
-        preset.name   = s.readString();
-
-        const int n = s.readInt();
-        if (n < 0 || n > 1024) return false;
-
-        auto next = std::make_shared<ClipList>();
-        next->reserve ((size_t) n);
-        for (int i = 0; i < n; ++i)
-        {
-            auto slot = std::make_shared<ClipSlot>();
-            if (! slot->readFromStream (s)) return false;
-            next->push_back (std::move (slot));
-        }
+        type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt());
+        preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString();
+        const int n = s.readInt(); if (n < 0 || n > 1024) return false; auto next = std::make_shared<ClipList>(); next->reserve ((size_t) n);
+        for (int i = 0; i < n; ++i) { auto slot = std::make_shared<ClipSlot>(); if (! slot->readFromStream (s)) return false; next->push_back (std::move (slot)); }
         sortAndPublish (std::move (next));
-
-        if (hasExtendedFields)
-        {
-            solo.store     (s.readBool(),  std::memory_order_relaxed);
-            volumeDb.store (s.readFloat(), std::memory_order_relaxed);
-            pan.store      (s.readFloat(), std::memory_order_relaxed);
-        }
+        if (hasExtendedFields) { solo.store (s.readBool()); volumeDb.store (s.readFloat()); pan.store (s.readFloat()); }
+        if (type == TrackType::Audio) { networkRouteId = s.readInt64(); networkSourceId = s.readInt(); networkSourceChannel = s.readInt(); }
         return true;
     }
-
-    /** Legacy v1 read: single MidiClip at startTick=0. */
     bool readFromStreamV1 (juce::MemoryInputStream& s)
     {
-        type        = (TrackType) s.readInt();
-        enabled.store (s.readBool(), std::memory_order_relaxed);
-        name        = s.readString();
-        colour      = juce::Colour ((juce::uint32) s.readInt());
-        sliceIdx    = s.readInt();
-        midiChannel.store (s.readInt(), std::memory_order_relaxed);
-        preset.bank   = s.readInt();
-        preset.preset = s.readInt();
-        preset.name   = s.readString();
-
-        auto slot = std::make_shared<ClipSlot>();
-        slot->startTick.store (0, std::memory_order_relaxed);
-        if (! slot->clip.readFromStream (s)) return false;
-
-        auto next = std::make_shared<ClipList>();
-        next->push_back (std::move (slot));
-        publish (std::move (next));
-        return true;
+        type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt());
+        preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString(); auto slot = std::make_shared<ClipSlot>(); slot->startTick.store (0); if (! slot->clip.readFromStream (s)) return false;
+        auto next = std::make_shared<ClipList>(); next->push_back (std::move (slot)); publish (std::move (next)); return true;
     }
-
 private:
-    // Immutable once published; add/remove/sort build a new vector and swap
-    // it in with one atomic store — the audio thread only ever sees a
-    // fully-formed list, never a half-mutated one.
     std::atomic<std::shared_ptr<const ClipList>> clipsSnapshot { std::make_shared<const ClipList>() };
-
-    void publish (std::shared_ptr<const ClipList> next)
-    {
-        clipsSnapshot.store (std::move (next), std::memory_order_release);
-    }
-
-    void sortAndPublish (std::shared_ptr<ClipList> next)
-    {
-        std::sort (next->begin(), next->end(),
-                   [] (const std::shared_ptr<ClipSlot>& a, const std::shared_ptr<ClipSlot>& b)
-                   { return a->getStartTick() < b->getStartTick(); });
-        publish (std::move (next));
-    }
+    void publish (std::shared_ptr<const ClipList> next) { clipsSnapshot.store (std::move (next), std::memory_order_release); }
+    void sortAndPublish (std::shared_ptr<ClipList> next) { std::sort (next->begin(), next->end(), [] (const auto& a, const auto& b) { return a->getStartTick() < b->getStartTick(); }); publish (std::move (next)); }
 };
