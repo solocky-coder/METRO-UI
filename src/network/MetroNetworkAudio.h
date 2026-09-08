@@ -49,11 +49,20 @@ public:
     void leaveGroup(const juce::String& group);
     void disconnect();
 
-    // Called from the audio callback. This performs only the lock-free AOO sink
-    // processing; it never performs socket I/O or heap allocation.
+    // Legacy/mix path. This remains available for monitoring while the DAW
+    // routing layer moves to processSourceChannel().
     void process(juce::AudioBuffer<float>& destination,
                  int numSamples,
                  double sampleRate);
+
+    // First-class routing primitive: render exactly one discovered source
+    // channel. No source/channel is implicitly summed with another source.
+    // Called from the audio callback; it performs only AOO sink processing.
+    bool processSourceChannel(juce::AudioBuffer<float>& destination,
+                              int numSamples,
+                              double sampleRate,
+                              int32_t sourceId,
+                              int sourceChannel);
 
     std::vector<SourceInfo> getSources() const;
     void setSourceListener(SourceListener listener);
