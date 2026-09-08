@@ -5,6 +5,7 @@
 #include "../PluginEditor.h"
 #include "../sequencer/MidiClip.h"
 #include "MidiRouter.h"
+#include "NetworkAudioProcessor.h"
 #include "NetworkAudioSettingsComponent.h"
 
 class MainWindow : public juce::DocumentWindow,
@@ -24,7 +25,7 @@ public:
         deviceManager.addChangeListener (this);
 
         juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Standalone);
-        processor = std::make_unique<DysektProcessor>();
+        processor = std::make_unique<NetworkAudioProcessor>();
         juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Undefined);
         processor->prepareToPlay (44100.0, 512);
         editor = std::make_unique<DysektEditor> (*processor);
@@ -43,6 +44,7 @@ public:
 
         networkAudio = std::make_unique<MetroNetworkAudio>();
         networkAudio->start();
+        processor->setNetworkAudio (networkAudio.get());
         networkCallback = std::make_unique<NetworkAudioOutputCallback> (*networkAudio);
         deviceManager.addAudioCallback (networkCallback.get());
 
@@ -442,7 +444,7 @@ private:
     std::unique_ptr<MidiRouter> midiRouter;
     std::unique_ptr<MetroNetworkAudio> networkAudio;
     std::unique_ptr<NetworkAudioOutputCallback> networkCallback;
-    std::unique_ptr<DysektProcessor> processor;
+    std::unique_ptr<NetworkAudioProcessor> processor;
     std::unique_ptr<DysektEditor> editor;
     std::unique_ptr<juce::MenuBarComponent> menuBar;
     std::unique_ptr<juce::FileChooser> fileChooser;

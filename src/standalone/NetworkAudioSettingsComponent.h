@@ -6,12 +6,6 @@
 #include "../network/NetworkAudioChannelState.h"
 #include "NetworkAudioProcessor.h"
 
-// The standalone build uses the network-aware processor subclass. Keeping this
-// alias local to the standalone settings header lets MainWindow remain source-
-// compatible with the existing DysektProcessor member names while routing
-// SonoBus/AOO audio through the processor/mixer path.
-#define DysektProcessor NetworkAudioProcessor
-
 class NetworkAudioSettingsComponent : public juce::Component,
                                        private juce::Timer
 {
