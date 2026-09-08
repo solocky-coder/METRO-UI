@@ -45,8 +45,6 @@ public:
     void addOrUpdateSfTrackOnChannel(const Sf2PresetInfo& preset, int midiChannel0Based, juce::Colour colour);
     void addSfzTrack(const juce::String& name, int midiChannel0Based, juce::Colour colour); void removeSfzTrack();
 
-    // First-class network-audio tracks. Message-thread only for structural edits;
-    // the returned track metadata is safe to snapshot for UI/audio routing.
     int addNetworkAudioTrack(int64_t routeId, int32_t sourceId, int sourceChannel,
                              const juce::String& sourceName, const juce::String& userName = {});
     bool setNetworkAudioTrackRoute(int trackIndex, int64_t routeId, int32_t sourceId, int sourceChannel);
@@ -64,4 +62,10 @@ public:
     void setSelectedLiveChannel(int ch1Based) noexcept; int getSelectedLiveChannel() const noexcept; void setSelectedTrack(int trackIndex) noexcept; SelectedLiveTarget getSelectedLiveTarget() const noexcept; uint16_t getSfzInstrumentChannelMask() const noexcept;
     void setRecordingTrack(int trackIndex) noexcept; int getRecordingTrackIndex() const noexcept; void drainRecordedEvents();
     static constexpr int kActivityFlagCount = 64; bool getMidiActivityAndClear(int trackIndex) noexcept;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerEngine)
 };
