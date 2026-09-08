@@ -107,10 +107,6 @@ juce_add_binary_data(DysektFonts SOURCES
     src/ui/assets/Empty.wav
     src/ui/assets/icons/icon_mute.svg
     src/ui/assets/icons/icon_solo.svg
-    src/ui/assets/icons/icon_lock.svg
-    src/ui/assets/icons/icon_power.svg
-    src/ui/assets/icons/icon_pan.svg
-    src/ui/assets/icons/icon_volume.svg
     src/ui/assets/buttons/button_idle.svg
     src/ui/assets/buttons/button_hover.svg
     src/ui/assets/buttons/button_active.svg
@@ -120,6 +116,7 @@ juce_add_binary_data(DysektFonts SOURCES
     src/ui/assets/knobs/knob_sprite_64x64_64frames.png
     src/ui/assets/logos/DYSEKT-SF_logo_cr8.png
     src/ui/assets/logos/DYSEKT-SF_logo_dark.png
+    src/ui/assets/logos/DYSEKT-SF_logo_dysekt.png
     src/ui/assets/logos/DYSEKT-SF_logo_dysekt.png
     src/ui/assets/logos/DYSEKT-SF_logo_ghost.png
     src/ui/assets/logos/DYSEKT-SF_logo_hack.png
@@ -183,36 +180,23 @@ set(DYSEKT_COMMON_SOURCES
     src/audio/multisampler/SfzImporter.cpp
     src/audio/multisampler/SfzExporter.cpp
     src/sequencer/SequencerEngine.cpp
-    src/sequencer/SequencerEngineNetworkAudio.cpp
     src/sequencer/MidiClip.cpp
     $<$<BOOL:${DYSEKT_HAS_AOO}>:src/network/MetroNetworkAudio.cpp>
 )
 
 target_sources(Dysekt PRIVATE ${DYSEKT_COMMON_SOURCES})
-target_include_directories(Dysekt PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+target_include_directories(Dysekt PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
-    ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
-    ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
-    $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>
-)
-
-target_compile_definitions(Dysekt PUBLIC
-    JUCE_USE_CURL=0 JUCE_USE_MP3AUDIOFORMAT=1
-    DYSEKT_HAS_AOO=$<BOOL:${DYSEKT_HAS_AOO}>
-    DYSEKT_HAS_LINK=0
+    ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
+    $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>)
+target_compile_definitions(Dysekt PUBLIC JUCE_USE_CURL=0 JUCE_USE_MP3AUDIOFORMAT=1
+    DYSEKT_HAS_AOO=$<BOOL:${DYSEKT_HAS_AOO}> DYSEKT_HAS_LINK=0
     JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0 JUCE_WEB_BROWSER=0
-    DYSEKT_HAS_SFIZZ=$<BOOL:${DYSEKT_HAS_SFIZZ}>
-    DYSEKT_HAS_FLUIDSYNTH=$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>
-    DYSEKT_STANDALONE=0
-)
-
+    DYSEKT_HAS_SFIZZ=$<BOOL:${DYSEKT_HAS_SFIZZ}> DYSEKT_HAS_FLUIDSYNTH=$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}> DYSEKT_STANDALONE=0)
 target_link_libraries(Dysekt PRIVATE juce::juce_audio_utils juce::juce_dsp DysektFonts
-    $<$<BOOL:${DYSEKT_HAS_AOO}>:MetroAoo>
-    $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
-    $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
-    $<$<PLATFORM_ID:Linux>:asound> chowdsp::chowdsp_filters
+    $<$<BOOL:${DYSEKT_HAS_AOO}>:MetroAoo> $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
+    $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth> $<$<PLATFORM_ID:Linux>:asound> chowdsp::chowdsp_filters
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 
 juce_add_gui_app(DysektStandalone PRODUCT_NAME "DYSEKT-SF"
@@ -221,38 +205,20 @@ juce_add_gui_app(DysektStandalone PRODUCT_NAME "DYSEKT-SF"
 if(MSVC)
     target_compile_options(DysektStandalone PRIVATE /source-charset:utf-8)
 endif()
-
-target_sources(DysektStandalone PRIVATE
-    ${DYSEKT_COMMON_SOURCES}
-    src/ui/FloatingTransportBar.cpp
-    src/standalone/Main.cpp
-    src/standalone/MainWindow.cpp
-)
-
-target_include_directories(DysektStandalone PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+target_sources(DysektStandalone PRIVATE ${DYSEKT_COMMON_SOURCES}
+    src/ui/FloatingTransportBar.cpp src/standalone/Main.cpp src/standalone/MainWindow.cpp)
+target_include_directories(DysektStandalone PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
     $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
-    ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
-    ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
+    ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
     $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>
-    $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/asiosdk/common>
-)
-
-target_compile_definitions(DysektStandalone PUBLIC
-    JUCE_USE_CURL=0 JUCE_USE_MP3AUDIOFORMAT=1
-    DYSEKT_HAS_AOO=$<BOOL:${DYSEKT_HAS_AOO}>
-    DYSEKT_HAS_LINK=$<BOOL:${DYSEKT_HAS_LINK}>
+    $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/asiosdk/common>)
+target_compile_definitions(DysektStandalone PUBLIC JUCE_USE_CURL=0 JUCE_USE_MP3AUDIOFORMAT=1
+    DYSEKT_HAS_AOO=$<BOOL:${DYSEKT_HAS_AOO}> DYSEKT_HAS_LINK=$<BOOL:${DYSEKT_HAS_LINK}>
     JUCE_DISPLAY_SPLASH_SCREEN=0 JUCE_WEB_BROWSER=0
-    DYSEKT_HAS_SFIZZ=$<BOOL:${DYSEKT_HAS_SFIZZ}>
-    DYSEKT_HAS_FLUIDSYNTH=$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>
-    DYSEKT_STANDALONE=1
-    $<$<PLATFORM_ID:Windows>:JUCE_ASIO=1>
-)
-
+    DYSEKT_HAS_SFIZZ=$<BOOL:${DYSEKT_HAS_SFIZZ}> DYSEKT_HAS_FLUIDSYNTH=$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}> DYSEKT_STANDALONE=1
+    $<$<PLATFORM_ID:Windows>:JUCE_ASIO=1>)
 target_link_libraries(DysektStandalone PRIVATE juce::juce_audio_utils juce::juce_dsp DysektFonts
-    $<$<BOOL:${DYSEKT_HAS_AOO}>:MetroAoo>
-    $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
-    $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
-    $<$<PLATFORM_ID:Linux>:asound> chowdsp::chowdsp_filters
+    $<$<BOOL:${DYSEKT_HAS_AOO}>:MetroAoo> $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
+    $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth> $<$<PLATFORM_ID:Linux>:asound> chowdsp::chowdsp_filters
     PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
