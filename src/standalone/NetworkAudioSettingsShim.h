@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NetworkAudioSettingsComponent.h"
+#include <tuple>
 
 namespace metro_network_audio_settings
 {
@@ -91,7 +92,7 @@ private:
             return;
         }
 
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (createTrackButton),
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&createTrackButton),
                             [choices = std::move (choices)] (int result)
         {
             if (result == 0)
