@@ -317,7 +317,6 @@ target_sources(DysektStandalone PRIVATE
     src/audio/multisampler/SfzImporter.cpp
     src/audio/multisampler/SfzExporter.cpp
     src/sequencer/SequencerEngine.cpp
-    src/sequencer/SequencerNetworkAudio.cpp
     src/sequencer/MidiClip.cpp
     src/ui/FloatingTransportBar.cpp
     src/standalone/Main.cpp
