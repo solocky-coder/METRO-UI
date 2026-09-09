@@ -3,25 +3,15 @@
 #include "NetworkAudioSettingsComponent.h"
 #include <tuple>
 
-namespace metro_network_audio_settings
-{
-#if DYSEKT_HAS_AOO
-inline MetroNetworkAudio& sharedNetworkAudio()
-{
-    static MetroNetworkAudio instance;
-    return instance;
-}
-#endif
-}
-
 namespace juce
 {
 class MetroNetworkAudioSettingsSelector : public ::NetworkAudioSettingsComponent
 {
 public:
     explicit MetroNetworkAudioSettingsSelector (juce::AudioDeviceManager& deviceManager,
-                                                 ::MetroNetworkAudio* networkAudio)
-        : ::NetworkAudioSettingsComponent (deviceManager, networkAudio)
+                                                 ::MetroNetworkAudio* networkAudioToUse)
+        : ::NetworkAudioSettingsComponent (deviceManager, networkAudioToUse),
+          networkAudio (networkAudioToUse)
     {
         createTrackButton.setButtonText ("+ Create Audio Track");
         createTrackButton.setTooltip ("Create a METRO audio track from a SonoBus/AOO source and choose its channel");
@@ -42,15 +32,18 @@ private:
     void showCreateNetworkTrackMenu()
     {
 #if DYSEKT_HAS_AOO
-        auto sources = metro_network_audio_settings::sharedNetworkAudio().getSources();
+        if (networkAudio == nullptr)
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::WarningIcon,
+                "Create Audio Track",
+                "Network audio is not available.",
+                "OK",
+                this);
+            return;
+        }
 
-        // The real settings component receives the live MetroNetworkAudio instance.
-        // Use the active processor network backend for source discovery so the menu
-        // reflects the same sources shown by the Network Audio panel.
-        auto* activeNetworkAudio = NetworkAudioProcessor::getActiveNetworkAudio();
-        if (activeNetworkAudio != nullptr)
-            sources = activeNetworkAudio->getSources();
-
+        const auto sources = networkAudio->getSources();
         juce::PopupMenu menu;
         int nextItemId = 1000;
         std::vector<std::tuple<int64_t, int32_t, int, juce::String, juce::String>> choices;
@@ -132,12 +125,12 @@ private:
     }
 
     juce::TextButton createTrackButton;
+    ::MetroNetworkAudio* networkAudio = nullptr;
 };
 }
 
-// MainWindow already includes NetworkAudioSettingsComponent.h and constructs
-// that type directly.  Main.cpp includes this shim before MainWindow.h, so
-// redirect that construction to the decorated component without changing the
-// existing call site or creating a second network-audio backend.
+// MainWindow already constructs NetworkAudioSettingsComponent directly. Main.cpp
+// includes this shim before MainWindow.h, so redirect that construction to the
+// decorated component without creating a second network-audio backend.
 #define AudioDeviceSelectorComponent MetroNetworkAudioSettingsSelector
 #define NetworkAudioSettingsComponent MetroNetworkAudioSettingsSelector
