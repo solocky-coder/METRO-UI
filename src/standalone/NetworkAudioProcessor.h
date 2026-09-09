@@ -25,6 +25,24 @@ public:
         activeNetworkAudio.store (audio, std::memory_order_release);
     }
 
+    // Create a normal METRO Audio track whose route points at one discovered
+    // SonoBus/AOO source channel. Returns the new track index, or -1 when the
+    // standalone processor is not currently available.
+    static int createActiveNetworkAudioTrack (int64_t sourceKey,
+                                              int32_t sourceId,
+                                              int sourceChannel,
+                                              const juce::String& sourceName,
+                                              const juce::String& userName = {}) noexcept
+    {
+        auto* processor = activeProcessor.load (std::memory_order_acquire);
+        if (processor == nullptr)
+            return -1;
+
+        return processor->sequencer.addNetworkAudioTrack (sourceKey, sourceId,
+                                                          juce::jmax (0, sourceChannel),
+                                                          sourceName, userName);
+    }
+
     // Message-thread API for the temporary migration fallback. The normal
     // Arrange/track path should populate a TrackType::Audio route instead.
     static void setActiveNetworkSource (int64_t sourceKey, int sourceChannel) noexcept
@@ -96,13 +114,15 @@ public:
             if (info.type != TrackType::Audio || ! info.enabled)
                 continue;
 
-            // During the migration, networkRouteId is the route handle carried
-            // by the Audio track. New routes use the opaque sourceKey as that
-            // handle; raw networkSourceId remains backend metadata only.
-            const int64_t sourceKey = info.networkRouteId;
-            const int sourceChannel = juce::jmax (0, info.networkSourceChannel);
-            if (sourceKey == 0)
+            // The track owns the opaque sourceKey route identity. Read the
+            // network fields directly through the dedicated route API rather
+            // than relying on display-only TrackInfo fields.
+            int64_t sourceKey = 0;
+            int32_t sourceId = 0;
+            int sourceChannel = 0;
+            if (! sequencer.getNetworkAudioRoute (trackIndex, sourceKey, sourceId, sourceChannel))
                 continue;
+            sourceChannel = juce::jmax (0, sourceChannel);
 
             networkBuffer.clear();
             if (! audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate,
