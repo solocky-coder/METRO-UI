@@ -191,7 +191,7 @@ public:
         sourceList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF111118));
         sourceList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF30303A));
         sourceList.setOutlineThickness (1);
-        sourceList.setRowHeight (48);
+        sourceList.setRowHeight (64);
         addAndMakeVisible (sourceList);
 
         startTimerHz (10);
@@ -397,10 +397,10 @@ private:
                                + "  |  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";
 
             g.setColour (s.online ? juce::Colours::white : juce::Colours::grey);
-            g.setFont (juce::Font (17.0f, juce::Font::bold));
+            g.setFont (juce::Font (22.0f, juce::Font::bold));
             g.drawText (name, 10, 3, width - 20, height / 2, juce::Justification::centredLeft);
             g.setColour (juce::Colours::lightgrey);
-            g.setFont (juce::Font (13.0f));
+            g.setFont (juce::Font (16.0f));
             g.drawText (details, 10, height / 2, width - 20, height / 2 - 2,
                         juce::Justification::centredLeft);
 #else
