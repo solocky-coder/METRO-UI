@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   apply-source-fixes:
-    if: ${{ hashFiles('DYSEKT_SOURCE_FIXES_PENDING') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -18,6 +17,7 @@ jobs:
           fetch-depth: 0
 
       - name: Apply source fixes
+        if: ${{ hashFiles('DYSEKT_SOURCE_FIXES_PENDING') != '' }}
         shell: bash
         env:
           DYSEKT_PATCH_B64: >-
@@ -34,6 +34,7 @@ jobs:
           git diff --check
 
       - name: Commit fixes
+        if: ${{ hashFiles('DYSEKT_SOURCE_FIXES_PENDING') != '' }}
         shell: bash
         run: |
           set -euo pipefail
