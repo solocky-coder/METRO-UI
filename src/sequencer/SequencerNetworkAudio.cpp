@@ -33,10 +33,11 @@ int SequencerEngine::addNetworkAudioTrack (int64_t routeId, int32_t sourceId, in
     else if (sourceName.isNotEmpty())
         track->name = sourceName + " Ch " + juce::String (sourceChannel + 1);
 
+    const int newTrackIndex = (int) current->size();
     auto next = std::make_shared<Impl::TrackList> (*current);
     next->push_back (std::move (track));
     impl->publishTracks (std::move (next));
-    return (int) next->size() - 1;
+    return newTrackIndex;
 }
 
 bool SequencerEngine::setNetworkAudioTrackRoute (int trackIndex, int64_t routeId,
