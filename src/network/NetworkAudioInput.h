@@ -5,6 +5,9 @@
 #include <atomic>
 #include <cstdint>
 
+// A METRO network-track route. sourceKey is the stable adapter-owned identity
+// for one remote endpoint + AOO source. sourceId is retained only as backend
+// metadata/debug information.
 struct NetworkAudioInput
 {
     int64_t routeId = 0;

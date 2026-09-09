@@ -3,7 +3,11 @@
 #include "../PluginProcessor.h"
 #include "../network/MetroNetworkAudio.h"
 #include "../network/NetworkAudioRecorder.h"
+#include <atomic>
 
+// Standalone network-audio bridge. The network engine is owned by MainWindow;
+// this processor consumes a METRO Audio track when one exists, otherwise it
+// can render the explicitly selected NetworkSource as the migration fallback.
 class NetworkAudioProcessor final : public DysektProcessor
 {
 public:
@@ -19,6 +23,14 @@ public:
     static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept
     {
         activeNetworkAudio.store (audio, std::memory_order_release);
+    }
+
+    // Message-thread API for the temporary migration fallback. The normal
+    // Arrange/track path should populate a TrackType::Audio route instead.
+    static void setActiveNetworkSource (int64_t sourceKey, int sourceChannel) noexcept
+    {
+        activeSourceKey.store (sourceKey, std::memory_order_release);
+        activeSourceChannel.store (juce::jmax (0, sourceChannel), std::memory_order_release);
     }
 
     static bool startActiveNetworkRecording (const juce::File& file, int channels = 2) noexcept
@@ -58,7 +70,7 @@ public:
         DysektProcessor::prepareToPlay (sampleRate, samplesPerBlock);
         networkSampleRate = sampleRate;
         const int capacity = juce::jmax (4096, samplesPerBlock > 0 ? samplesPerBlock : 512);
-        networkBuffer.setSize (64, capacity, false, true, true);
+        networkBuffer.setSize (2, capacity, false, true, true);
     }
 
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
@@ -76,20 +88,66 @@ public:
         if (numSamples <= 0 || numSamples > networkBuffer.getNumSamples())
             return;
 
-        networkBuffer.clear (0, 0, numSamples);
-        audio->process (networkBuffer, numSamples, networkSampleRate);
+        bool renderedTrack = false;
+        const int numTracks = sequencer.getNumTracks();
+        for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex)
+        {
+            const auto info = sequencer.getTrackInfo (trackIndex);
+            if (info.type != TrackType::Audio || ! info.enabled)
+                continue;
+
+            // During the migration, networkRouteId is the route handle carried
+            // by the Audio track. New routes use the opaque sourceKey as that
+            // handle; raw networkSourceId remains backend metadata only.
+            const int64_t sourceKey = info.networkRouteId;
+            const int sourceChannel = juce::jmax (0, info.networkSourceChannel);
+            if (sourceKey == 0)
+                continue;
+
+            networkBuffer.clear();
+            if (! audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate,
+                                               sourceKey, sourceChannel))
+                continue;
+
+            const float gain = juce::Decibels::decibelsToGain (info.volumeDb);
+            const float pan = juce::jlimit (-1.0f, 1.0f, info.pan);
+            const float angle = (pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
+            const float leftGain = gain * std::cos (angle);
+            const float rightGain = gain * std::sin (angle);
+            if (buffer.getNumChannels() > 0) buffer.addFrom (0, 0, networkBuffer, 0, 0, numSamples, leftGain);
+            if (buffer.getNumChannels() > 1) buffer.addFrom (1, 0, networkBuffer, 1, 0, numSamples, rightGain);
+            renderedTrack = true;
+        }
+
+        // Migration fallback: allow the settings/source list to prove the
+        // engine->NetworkSource->audio path before ArrangeView track creation
+        // is wired up. This is explicitly separate from the Audio-track path.
+        if (! renderedTrack)
+        {
+            const auto sourceKey = activeSourceKey.load (std::memory_order_acquire);
+            const auto sourceChannel = activeSourceChannel.load (std::memory_order_acquire);
+            if (sourceKey != 0)
+            {
+                networkBuffer.clear();
+                if (audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate,
+                                                 sourceKey, sourceChannel))
+                {
+                    if (buffer.getNumChannels() > 0) buffer.addFrom (0, 0, networkBuffer, 0, 0, numSamples);
+                    if (buffer.getNumChannels() > 1) buffer.addFrom (1, 0, networkBuffer, 1, 0, numSamples);
+                }
+            }
+        }
 
         if (recorder.isRecording())
             recorder.push (networkBuffer, numSamples);
-
-        const int channels = juce::jmin (2, buffer.getNumChannels(), networkBuffer.getNumChannels());
-        for (int channel = 0; channel < channels; ++channel)
-            buffer.addFrom (channel, 0, networkBuffer, channel, 0, numSamples);
     }
 
 private:
     inline static std::atomic<MetroNetworkAudio*> activeNetworkAudio { nullptr };
     inline static std::atomic<NetworkAudioProcessor*> activeProcessor { nullptr };
+    inline static std::atomic<int64_t> activeSourceKey { 0 };
+    inline static std::atomic<int> activeSourceChannel { 0 };
+
     MetroNetworkAudio* networkAudio = nullptr;
     double networkSampleRate = 44100.0;
     juce::AudioBuffer<float> networkBuffer;
