@@ -452,10 +452,20 @@ public:
                             if (event->user != nullptr) it->user = juce::String::fromUTF8 (event->user);
                         }
 
-                        for (auto& source : self->sources)
+                        if (auto peer = self->findPeer (endpoint.get()))
                         {
-                            if (auto peer = self->findPeer (endpoint.get()))
+                            for (auto& source : self->sources)
                             {
+                                auto* runtime = self->findRuntime (source.sourceKey);
+                                if (runtime == nullptr || runtime->endpoint == nullptr)
+                                    continue;
+
+                                // A peer can expose multiple AOO sources. Only update
+                                // sources belonging to the peer that just joined; do not
+                                // overwrite every source with the last peer's name.
+                                if (runtime->endpoint->sin_addr.s_addr != endpoint->sin_addr.s_addr)
+                                    continue;
+
                                 source.user = peer->user;
                                 if (peer->group.isNotEmpty()) source.group = peer->group;
                             }
