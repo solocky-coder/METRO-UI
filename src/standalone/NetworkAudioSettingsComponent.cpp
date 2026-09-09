@@ -75,7 +75,10 @@ void NetworkAudioSettingsComponent::updateStatus (const juce::String& text) { st
 int NetworkAudioSettingsComponent::SourceListModel::getNumRows()
 {
     const auto sources = owner.getSources();
-    return (int) std::count_if (sources.begin(), sources.end(), [] (const auto& source) { return source.online; });
+    int count = 0;
+    for (const auto& source : sources)
+        if (source.online) ++count;
+    return count;
 }
 void NetworkAudioSettingsComponent::SourceListModel::paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selected)
 {
