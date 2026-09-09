@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NetworkAudioSettingsComponent.h"
+#include <tuple>
 
 namespace metro_network_audio_settings
 {
@@ -28,12 +29,115 @@ public:
 #endif
           )
     {
+        createTrackButton.setButtonText ("+ Create Audio Track");
+        createTrackButton.setTooltip ("Create a METRO audio track from a SonoBus/AOO source and choose its channel");
+        createTrackButton.onClick = [this] { showCreateNetworkTrackMenu(); };
+        addAndMakeVisible (createTrackButton);
+#if ! DYSEKT_HAS_AOO
+        createTrackButton.setEnabled (false);
+#endif
     }
 
     // MainWindow currently sizes the legacy selector to 500x450. Keep the
     // existing call site intact but give the combined Audio + Network panel
     // enough room for both sections.
     void setSize (int, int) { Component::setSize (680, 690); }
+
+    void resized() override
+    {
+        ::NetworkAudioSettingsComponent::resized();
+        createTrackButton.setBounds (getWidth() - 222, 12, 206, 30);
+    }
+
+private:
+    void showCreateNetworkTrackMenu()
+    {
+#if DYSEKT_HAS_AOO
+        auto sources = metro_network_audio_settings::sharedNetworkAudio().getSources();
+
+        juce::PopupMenu menu;
+        int nextItemId = 1000;
+        std::vector<std::tuple<int64_t, int32_t, int, juce::String, juce::String>> choices;
+
+        for (const auto& source : sources)
+        {
+            if (! source.online || source.channels <= 0)
+                continue;
+
+            const auto user = source.user.isNotEmpty() ? source.user : "Unknown source";
+            const auto sourceLabel = user + " | source #" + juce::String (source.sourceId)
+                                   + " | " + juce::String (source.channels) + " ch";
+
+            juce::PopupMenu channels;
+            const int sourceBaseId = nextItemId;
+            for (int channel = 0; channel < source.channels; ++channel)
+            {
+                const int itemId = sourceBaseId + channel;
+                channels.addItem (itemId, "Channel " + juce::String (channel + 1));
+                choices.emplace_back (source.sourceKey, source.sourceId, channel,
+                                      "source #" + juce::String (source.sourceId), user);
+            }
+            nextItemId += juce::jmax (source.channels, 1);
+            menu.addSubMenu (sourceLabel, channels, true);
+        }
+
+        if (! menu.containsAnyActiveItems())
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::InfoIcon,
+                "Create Audio Track",
+                "No online network sources with available channels were found.",
+                "OK",
+                this);
+            return;
+        }
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&createTrackButton),
+                            [choices = std::move (choices)] (int result)
+        {
+            if (result == 0)
+                return;
+
+            // Menu item IDs are allocated sequentially. The choice vector is
+            // kept in the same order as those IDs, starting at 1000.
+            const int choiceIndex = result - 1000;
+            if (! juce::isPositiveAndBelow (choiceIndex, (int) choices.size()))
+                return;
+
+            const auto& choice = choices[(size_t) choiceIndex];
+            const int64_t sourceKey = std::get<0> (choice);
+            const int32_t sourceId = std::get<1> (choice);
+            const int sourceChannel = std::get<2> (choice);
+            const auto sourceName = std::get<3> (choice);
+            const auto userName = std::get<4> (choice);
+
+            const int trackIndex = NetworkAudioProcessor::createActiveNetworkAudioTrack (
+                sourceKey, sourceId, sourceChannel, sourceName, userName);
+
+            if (trackIndex >= 0)
+            {
+                juce::AlertWindow::showMessageBoxAsync (
+                    juce::AlertWindow::InfoIcon,
+                    "Audio Track Created",
+                    userName + " | " + sourceName + " — Channel " + juce::String (sourceChannel + 1)
+                        + " is now a METRO audio track.",
+                    "OK");
+            }
+            else
+            {
+                juce::AlertWindow::showMessageBoxAsync (
+                    juce::AlertWindow::WarningIcon,
+                    "Audio Track Not Created",
+                    "The standalone audio processor is not available.",
+                    "OK");
+            }
+        });
+#else
+        juce::ignoreUnused (this);
+#endif
+    }
+
+    juce::TextButton createTrackButton;
 };
 }
 
