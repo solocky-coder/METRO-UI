@@ -120,6 +120,14 @@ int64_t makeSourceKey (const sockaddr_in* endpoint, int32_t sourceId) noexcept
     hash &= 0x7fffffffffffffffull;
     return hash == 0 ? 1 : static_cast<int64_t> (hash);
 }
+
+bool sameEndpoint (const sockaddr_in* a, const sockaddr_in* b) noexcept
+{
+    return a != nullptr && b != nullptr
+        && a->sin_family == b->sin_family
+        && a->sin_addr.s_addr == b->sin_addr.s_addr
+        && a->sin_port == b->sin_port;
+}
 }
 
 class MetroNetworkAudio::Impl
@@ -135,6 +143,13 @@ public:
         std::array<aoo_sample*, kAooChannels> pointers {};
     };
 
+    struct PeerInfo
+    {
+        std::shared_ptr<sockaddr_in> endpoint;
+        juce::String group;
+        juce::String user;
+    };
+
     MetroNetworkAudio& owner;
     std::atomic<bool> running { false };
     MetroSocket socket = metroInvalidSocket;
@@ -146,7 +161,7 @@ public:
     mutable std::mutex stateMutex;
     std::vector<MetroNetworkAudio::SourceInfo> sources;
     MetroNetworkAudio::SourceListener listener;
-    std::vector<std::shared_ptr<sockaddr_in>> peerEndpoints;
+    std::vector<PeerInfo> peers;
     std::vector<std::unique_ptr<SourceRuntime>> runtimes;
     std::array<std::atomic<SourceRuntime*>, kMaxNetworkSources> runtimeSlots {};
     std::array<float, kAooChannels * kAooBlockSize> mixScratch {};
@@ -173,6 +188,13 @@ public:
             auto* runtime = slot.load (std::memory_order_acquire);
             if (runtime != nullptr && runtime->sourceKey == sourceKey) return runtime;
         }
+        return nullptr;
+    }
+
+    const PeerInfo* findPeer (const sockaddr_in* endpoint) const noexcept
+    {
+        for (const auto& peer : peers)
+            if (sameEndpoint (peer.endpoint.get(), endpoint)) return &peer;
         return nullptr;
     }
 
@@ -288,7 +310,7 @@ public:
         {
             std::lock_guard<std::mutex> lock (stateMutex);
             sources.clear();
-            peerEndpoints.clear();
+            peers.clear();
         }
         stopAooLifetime();
 #if defined(_WIN32)
@@ -406,10 +428,36 @@ public:
                     std::memcpy (endpoint.get(), event->address, sizeof (sockaddr_in));
                     {
                         std::lock_guard<std::mutex> lock (self->stateMutex);
-                        self->peerEndpoints.push_back (endpoint);
+                        auto it = std::find_if (self->peers.begin(), self->peers.end(), [&endpoint] (const auto& peer)
+                        {
+                            return sameEndpoint (peer.endpoint.get(), endpoint.get());
+                        });
+                        if (it == self->peers.end())
+                        {
+                            PeerInfo peer;
+                            peer.endpoint = endpoint;
+                            peer.group = event->group != nullptr ? juce::String::fromUTF8 (event->group) : juce::String();
+                            peer.user = event->user != nullptr ? juce::String::fromUTF8 (event->user) : juce::String();
+                            self->peers.push_back (std::move (peer));
+                        }
+                        else
+                        {
+                            if (event->group != nullptr) it->group = juce::String::fromUTF8 (event->group);
+                            if (event->user != nullptr) it->user = juce::String::fromUTF8 (event->user);
+                        }
+
+                        for (auto& source : self->sources)
+                        {
+                            if (auto peer = self->findPeer (endpoint.get()))
+                            {
+                                source.user = peer->user;
+                                if (peer->group.isNotEmpty()) source.group = peer->group;
+                            }
+                        }
                     }
                     if (self->discoverySink != nullptr)
                         self->discoverySink->invite_source (endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
+                    notifySourceChange (self);
                     break;
                 }
                 case AOONET_CLIENT_DISCONNECT_EVENT:
@@ -467,6 +515,14 @@ public:
                     info.sourceId = event->id;
                     info.group = self->group;
                     info.online = true;
+                    {
+                        std::lock_guard<std::mutex> lock (self->stateMutex);
+                        if (auto peer = self->findPeer (endpoint))
+                        {
+                            info.user = peer->user;
+                            if (peer->group.isNotEmpty()) info.group = peer->group;
+                        }
+                    }
                     self->upsertSource (info);
                     self->createRuntime (event->id, endpoint);
                     changed = true;
@@ -560,9 +616,35 @@ public:
         else
         {
             it->sourceId = info.sourceId;
+            if (info.user.isNotEmpty()) it->user = info.user;
             if (info.group.isNotEmpty()) it->group = info.group;
             it->online = true;
         }
+    }
+
+    void refreshSourceFormats()
+    {
+        bool changed = false;
+        {
+            std::lock_guard<std::mutex> lock (stateMutex);
+            for (auto& source : sources)
+            {
+                auto* runtime = findRuntime (source.sourceKey);
+                if (runtime == nullptr || runtime->sink == nullptr || runtime->endpoint == nullptr) continue;
+                if (source.channels > 0 && source.sampleRate > 0.0) continue;
+
+                aoo_format_storage format {};
+                if (runtime->sink->get_source_format (runtime->endpoint.get(), runtime->sourceId, format) > 0
+                    && format.header.nchannels > 0 && format.header.samplerate > 0)
+                {
+                    source.channels = format.header.nchannels;
+                    source.sampleRate = format.header.samplerate;
+                    source.online = true;
+                    changed = true;
+                }
+            }
+        }
+        if (changed) notifySourceChange (this);
     }
 
     bool processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, int64_t sourceKey, int sourceChannel)
@@ -678,6 +760,7 @@ bool MetroNetworkAudio::processSourceChannel (juce::AudioBuffer<float>& destinat
 std::vector<MetroNetworkAudio::SourceInfo> MetroNetworkAudio::getSources() const
 {
     if (impl == nullptr) return {};
+    impl->refreshSourceFormats();
     std::lock_guard<std::mutex> lock (impl->stateMutex);
     return impl->sources;
 }
