@@ -128,9 +128,3 @@ private:
     ::MetroNetworkAudio* networkAudio = nullptr;
 };
 }
-
-// MainWindow already constructs NetworkAudioSettingsComponent directly. Main.cpp
-// includes this shim before MainWindow.h, so redirect that construction to the
-// decorated component without creating a second network-audio backend.
-#define AudioDeviceSelectorComponent MetroNetworkAudioSettingsSelector
-#define NetworkAudioSettingsComponent MetroNetworkAudioSettingsSelector
