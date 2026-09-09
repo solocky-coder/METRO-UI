@@ -102,9 +102,6 @@ int32_t sendAooReply (void* endpoint, const char* data, int32_t numBytes)
 
 int64_t makeSourceKey (const sockaddr_in* endpoint, int32_t sourceId) noexcept
 {
-    // FNV-1a over endpoint address/port and raw AOO source ID. This is an
-    // adapter handle, not a cryptographic identifier; its purpose is to keep
-    // equal AOO IDs from different peers distinct inside METRO.
     uint64_t hash = 1469598103934665603ull;
     const auto mix = [&hash] (uint64_t value)
     {
@@ -435,7 +432,7 @@ public:
         if (callback) juce::MessageManager::callAsync (std::move (callback));
     }
 
-    static void markFormat (Impl* self, int64_t key, aoo::isink* sink, const void* endpoint, int32_t sourceId)
+    static void markFormat (Impl* self, int64_t key, aoo::isink* sink, void* endpoint, int32_t sourceId)
     {
         if (sink == nullptr || endpoint == nullptr) return;
         aoo_format_storage format {};
