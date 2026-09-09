@@ -466,10 +466,55 @@ public:
                     notifySourceChange (self);
                     break;
                 }
+                case AOONET_CLIENT_PEER_LEAVE_EVENT:
+                {
+                    const auto* event = reinterpret_cast<const aoonet_client_peer_event*> (events[i]);
+                    if (event->result <= 0 || event->address == nullptr || event->length != sizeof (sockaddr_in)) break;
+                    const auto* endpoint = static_cast<const sockaddr_in*> (event->address);
+                    const juce::String peerGroup = event->group != nullptr ? juce::String::fromUTF8 (event->group) : juce::String();
+                    const juce::String peerUser = event->user != nullptr ? juce::String::fromUTF8 (event->user) : juce::String();
+                    bool sourceChanged = false;
+                    {
+                        std::lock_guard<std::mutex> lock (self->stateMutex);
+                        self->peers.erase (std::remove_if (self->peers.begin(), self->peers.end(), [&] (const auto& peer)
+                        {
+                            return sameEndpoint (peer.endpoint.get(), endpoint);
+                        }), self->peers.end());
+
+                        for (auto& source : self->sources)
+                        {
+                            auto* runtime = self->findRuntime (source.sourceKey);
+                            if (runtime == nullptr || runtime->endpoint == nullptr) continue;
+                            const bool sameIp = runtime->endpoint->sin_addr.s_addr == endpoint->sin_addr.s_addr;
+                            const bool sameGroup = peerGroup.isEmpty() || source.group.isEmpty() || source.group == peerGroup;
+                            const bool sameUser = peerUser.isEmpty() || source.user.isEmpty() || source.user == peerUser;
+                            if (sameIp && sameGroup && sameUser && source.online)
+                            {
+                                source.online = false;
+                                sourceChanged = true;
+                            }
+                        }
+                    }
+                    if (sourceChanged) notifySourceChange (self);
+                    break;
+                }
                 case AOONET_CLIENT_DISCONNECT_EVENT:
+                {
                     self->connected.store (false, std::memory_order_release);
                     self->joined.store (false, std::memory_order_release);
+                    bool sourceChanged = false;
+                    {
+                        std::lock_guard<std::mutex> lock (self->stateMutex);
+                        for (auto& source : self->sources)
+                            if (source.online)
+                            {
+                                source.online = false;
+                                sourceChanged = true;
+                            }
+                    }
+                    if (sourceChanged) notifySourceChange (self);
                     break;
+                }
                 default: break;
             }
         }
