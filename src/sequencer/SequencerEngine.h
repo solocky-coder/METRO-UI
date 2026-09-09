@@ -16,7 +16,7 @@ struct SequencerTrackInfo
     juce::String name; juce::Colour colour = juce::Colour (0xFF3A6080);
     int sliceIdx = -1; int midiChannel = 0; Sf2PresetInfo preset; int numClips = 0;
     bool isSfzInstrument = false;
-    int64_t networkRouteId = 0; int32_t networkSourceId = 0; int networkSourceChannel = 0;
+    int64_t networkRouteId = 0; int64_t networkSourceKey = 0; int32_t networkSourceId = 0; int networkSourceChannel = 0;
 };
 
 struct SequencerClipInfo
@@ -45,11 +45,11 @@ public:
     void addOrUpdateSfTrackOnChannel(const Sf2PresetInfo& preset, int midiChannel0Based, juce::Colour colour);
     void addSfzTrack(const juce::String& name, int midiChannel0Based, juce::Colour colour); void removeSfzTrack();
 
-    int addNetworkAudioTrack(int64_t routeId, int32_t sourceId, int sourceChannel,
+    int addNetworkAudioTrack(int64_t routeId, int64_t sourceKey, int32_t sourceId, int sourceChannel,
                              const juce::String& sourceName, const juce::String& userName = {});
-    bool setNetworkAudioTrackRoute(int trackIndex, int64_t routeId, int32_t sourceId, int sourceChannel);
+    bool setNetworkAudioTrackRoute(int trackIndex, int64_t routeId, int64_t sourceKey, int32_t sourceId, int sourceChannel);
     bool isNetworkAudioTrack(int trackIndex) const noexcept;
-    bool getNetworkAudioRoute(int trackIndex, int64_t& routeId, int32_t& sourceId, int& sourceChannel) const noexcept;
+    bool getNetworkAudioRoute(int trackIndex, int64_t& routeId, int64_t& sourceKey, int32_t& sourceId, int& sourceChannel) const noexcept;
 
     int getNumClips(int trackIndex) const; SequencerClipInfo getClipInfo(int trackIndex, int clipIndex) const; MidiClip* getClip(int trackIndex, int clipIndex = 0); MidiClip& getClip();
     int addClip(int trackIndex, int64_t startTick, int64_t lengthTicks = MidiClip::kPPQ * 4 * 4); void removeClip(int trackIndex, int clipIndex); void setClipStartTick(int trackIndex, int clipIndex, int64_t newStartTick); void setClipLengthTicks(int trackIndex, int clipIndex, int64_t newLength);

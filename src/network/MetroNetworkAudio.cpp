@@ -105,6 +105,7 @@ class MetroNetworkAudio::Impl
 public:
     struct SourceRuntime
     {
+        int64_t sourceKey = 0;
         int32_t sourceId = 0;
         std::shared_ptr<sockaddr_in> endpoint;
         aoo::isink::pointer sink;
@@ -142,21 +143,45 @@ public:
     }
     ~Impl() { stop(); }
 
-    SourceRuntime* findRuntime (int32_t sourceId) const noexcept
+    static int64_t makeSourceKey (const sockaddr_in* endpoint, int32_t sourceId) noexcept
+    {
+        if (endpoint == nullptr) return 0;
+        // Stable identity for a discovered peer/source pair. AOO source IDs are
+        // only unique within an endpoint, so sourceId alone is not sufficient
+        // for DAW routing when multiple peers are in the same group.
+        uint64_t hash = 1469598103934665603ull;
+        const auto* bytes = reinterpret_cast<const uint8_t*> (endpoint);
+        for (size_t i = 0; i < sizeof (sockaddr_in); ++i)
+        {
+            hash ^= bytes[i];
+            hash *= 1099511628211ull;
+        }
+        const auto id = static_cast<uint32_t> (sourceId);
+        for (int i = 0; i < 4; ++i)
+        {
+            hash ^= static_cast<uint8_t> ((id >> (i * 8)) & 0xffu);
+            hash *= 1099511628211ull;
+        }
+        const auto key = static_cast<int64_t> (hash & 0x7fffffffffffffffull);
+        return key != 0 ? key : 1;
+    }
+
+    SourceRuntime* findRuntime (int64_t sourceKey) const noexcept
     {
         for (const auto& slot : runtimeSlots)
         {
             auto* runtime = slot.load (std::memory_order_acquire);
-            if (runtime != nullptr && runtime->sourceId == sourceId) return runtime;
+            if (runtime != nullptr && runtime->sourceKey == sourceKey) return runtime;
         }
         return nullptr;
     }
 
-    SourceRuntime* createRuntime (int32_t sourceId, const sockaddr_in* endpoint)
+    SourceRuntime* createRuntime (int64_t sourceKey, int32_t sourceId, const sockaddr_in* endpoint)
     {
-        if (sourceId == 0 || endpoint == nullptr) return nullptr;
-        if (auto* existing = findRuntime (sourceId)) return existing;
+        if (sourceId == 0 || endpoint == nullptr || sourceKey == 0) return nullptr;
+        if (auto* existing = findRuntime (sourceKey)) return existing;
         auto runtime = std::make_unique<SourceRuntime>();
+        runtime->sourceKey = sourceKey;
         runtime->sourceId = sourceId;
         runtime->endpoint = std::make_shared<sockaddr_in> (*endpoint);
         runtime->sink.reset (aoo::isink::create (0));
@@ -384,8 +409,13 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     SourceInfo info; info.sourceId = event->id; info.group = self->group; info.online = true;
-                    self->upsertSource (info);
-                    if (event->endpoint != nullptr) self->createRuntime (event->id, static_cast<const sockaddr_in*> (event->endpoint));
+                    if (event->endpoint != nullptr)
+                    {
+                        const auto* endpoint = static_cast<const sockaddr_in*> (event->endpoint);
+                        info.sourceKey = makeSourceKey (endpoint, event->id);
+                        self->upsertSource (info);
+                        self->createRuntime (info.sourceKey, event->id, endpoint);
+                    }
                     changed = true;
                     break;
                 }
@@ -397,7 +427,7 @@ public:
                     {
                         std::lock_guard<std::mutex> lock (self->stateMutex);
                         for (auto& source : self->sources)
-                            if (source.sourceId == event->id) { source.channels = format.header.nchannels; source.sampleRate = format.header.samplerate; source.online = true; }
+                            if (source.sourceKey == makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id)) { source.channels = format.header.nchannels; source.sampleRate = format.header.samplerate; source.online = true; }
                         changed = true;
                     }
                     break;
@@ -406,7 +436,7 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_block_lost_event*> (events[i]);
                     std::lock_guard<std::mutex> lock (self->stateMutex);
-                    for (auto& source : self->sources) if (source.sourceId == event->id) source.packetLoss = std::min (1.0f, source.packetLoss + 0.001f * (float) event->count);
+                    for (auto& source : self->sources) if (source.sourceKey == makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id)) source.packetLoss = std::min (1.0f, source.packetLoss + 0.001f * (float) event->count);
                     changed = true;
                     break;
                 }
@@ -428,14 +458,15 @@ public:
                 case AOO_SOURCE_FORMAT_EVENT:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
-                    auto* runtime = self->findRuntime (event->id);
+                    const auto sourceKey = makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id);
+                    auto* runtime = self->findRuntime (sourceKey);
                     if (runtime == nullptr || runtime->sink == nullptr) break;
                     aoo_format_storage format {};
                     if (runtime->sink->get_source_format (event->endpoint, event->id, format) > 0)
                     {
                         std::lock_guard<std::mutex> lock (self->stateMutex);
                         for (auto& source : self->sources)
-                            if (source.sourceId == event->id) { source.channels = format.header.nchannels; source.sampleRate = format.header.samplerate; source.online = true; }
+                            if (source.sourceKey == makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id)) { source.channels = format.header.nchannels; source.sampleRate = format.header.samplerate; source.online = true; }
                         changed = true;
                     }
                     break;
@@ -444,7 +475,7 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_block_lost_event*> (events[i]);
                     std::lock_guard<std::mutex> lock (self->stateMutex);
-                    for (auto& source : self->sources) if (source.sourceId == event->id) source.packetLoss = std::min (1.0f, source.packetLoss + 0.001f * (float) event->count);
+                    for (auto& source : self->sources) if (source.sourceKey == makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id)) source.packetLoss = std::min (1.0f, source.packetLoss + 0.001f * (float) event->count);
                     changed = true;
                     break;
                 }
@@ -452,7 +483,7 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     std::lock_guard<std::mutex> lock (self->stateMutex);
-                    for (auto& source : self->sources) if (source.sourceId == event->id) source.online = false;
+                    for (auto& source : self->sources) if (source.sourceKey == makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id)) source.online = false;
                     changed = true;
                     break;
                 }
@@ -466,16 +497,16 @@ public:
     void upsertSource (const SourceInfo& info)
     {
         std::lock_guard<std::mutex> lock (stateMutex);
-        auto it = std::find_if (sources.begin(), sources.end(), [&info] (const auto& source) { return source.sourceId == info.sourceId; });
+        auto it = std::find_if (sources.begin(), sources.end(), [&info] (const auto& source) { return info.sourceKey != 0 && source.sourceKey == info.sourceKey; });
         if (it == sources.end()) sources.push_back (info);
         else { it->group = info.group.isNotEmpty() ? info.group : it->group; it->online = true; }
     }
 
-    bool processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, int32_t sourceId, int sourceChannel)
+    bool processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, int64_t sourceKey, int32_t sourceId, int sourceChannel)
     {
         destination.clear();
         if (! running.load (std::memory_order_acquire) || numSamples <= 0 || sourceChannel < 0) return false;
-        auto* runtime = findRuntime (sourceId);
+        auto* runtime = findRuntime (sourceKey);
         if (runtime == nullptr || runtime->sink == nullptr) return false;
         bool produced = false;
         int offset = 0;
@@ -541,6 +572,6 @@ void MetroNetworkAudio::leaveGroup (const juce::String& group) { if (impl != nul
 void MetroNetworkAudio::disconnect() { if (impl != nullptr) impl->disconnect(); }
 
 void MetroNetworkAudio::process (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate) { juce::ignoreUnused (sampleRate); if (impl != nullptr) impl->processLegacyMix (destination, numSamples); }
-bool MetroNetworkAudio::processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate, int32_t sourceId, int sourceChannel) { juce::ignoreUnused (sampleRate); return impl != nullptr && impl->processSourceChannel (destination, numSamples, sourceId, sourceChannel); }
+bool MetroNetworkAudio::processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate, int64_t sourceKey, int32_t sourceId, int sourceChannel) { juce::ignoreUnused (sampleRate); return impl != nullptr && impl->processSourceChannel (destination, numSamples, sourceKey, sourceId, sourceChannel); }
 std::vector<MetroNetworkAudio::SourceInfo> MetroNetworkAudio::getSources() const { if (impl == nullptr) return {}; std::lock_guard<std::mutex> lock (impl->stateMutex); return impl->sources; }
 void MetroNetworkAudio::setSourceListener (SourceListener listener) { if (impl == nullptr) return; std::lock_guard<std::mutex> lock (impl->stateMutex); impl->listener = std::move (listener); }

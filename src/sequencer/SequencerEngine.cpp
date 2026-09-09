@@ -32,6 +32,7 @@
 static constexpr int kStreamVersion1 = 1;  // legacy single-clip
 static constexpr int kStreamVersion2 = 2;  // multi-clip
 static constexpr int kStreamVersion3 = 3;  // + per-track solo/volumeDb/pan
+static constexpr int kStreamVersion4 = 4;  // + stable network source key
 
 //==============================================================================
 struct SequencerEngine::Impl
@@ -485,6 +486,10 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.preset      = t.preset;
     info.numClips    = t.getNumClips();
     info.isSfzInstrument = t.isSfzInstrument;
+    info.networkRouteId = t.networkRouteId;
+    info.networkSourceKey = t.networkSourceKey;
+    info.networkSourceId = t.networkSourceId;
+    info.networkSourceChannel = t.networkSourceChannel;
     return info;
 }
 
@@ -852,6 +857,57 @@ void SequencerEngine::setTrackLengthTicks (int trackIndex, int64_t ticks)
 }
 
 //==============================================================================
+int SequencerEngine::addNetworkAudioTrack (int64_t routeId, int64_t sourceKey, int32_t sourceId, int sourceChannel,
+                                                   const juce::String& sourceName, const juce::String& userName)
+{
+    auto current = impl->getTracks();
+    auto input = NetworkAudioInput{};
+    input.routeId = routeId;
+    input.sourceKey = sourceKey;
+    input.sourceId = sourceId;
+    input.sourceChannel = sourceChannel;
+    input.sourceName = sourceName;
+    input.userName = userName;
+
+    auto track = SequencerTrack::makeAudio (input);
+    auto next = std::make_shared<Impl::TrackList> (*current);
+    next->push_back (std::move (track));
+    impl->publishTracks (std::move (next));
+    return (int) current->size();
+}
+
+bool SequencerEngine::setNetworkAudioTrackRoute (int trackIndex, int64_t routeId, int64_t sourceKey, int32_t sourceId, int sourceChannel)
+{
+    auto current = impl->getTracks();
+    if (! juce::isPositiveAndBelow (trackIndex, (int) current->size())) return false;
+    auto& track = *(*current)[(size_t) trackIndex];
+    if (track.type != TrackType::Audio) return false;
+    // Route metadata is message-thread state, not structural track state. Keep
+    // the immutable track-list snapshot intact and update only these fields.
+    track.networkRouteId = routeId;
+    track.networkSourceKey = sourceKey;
+    track.networkSourceId = sourceId;
+    track.networkSourceChannel = sourceChannel;
+    return true;
+}
+
+bool SequencerEngine::isNetworkAudioTrack (int trackIndex) const noexcept
+{
+    auto current = impl->getTracks();
+    return juce::isPositiveAndBelow (trackIndex, (int) current->size())
+        && (*current)[(size_t) trackIndex]->type == TrackType::Audio;
+}
+
+bool SequencerEngine::getNetworkAudioRoute (int trackIndex, int64_t& routeId, int64_t& sourceKey, int32_t& sourceId, int& sourceChannel) const noexcept
+{
+    auto current = impl->getTracks();
+    if (! juce::isPositiveAndBelow (trackIndex, (int) current->size())) return false;
+    const auto& track = *(*current)[(size_t) trackIndex];
+    if (track.type != TrackType::Audio) return false;
+    routeId = track.networkRouteId; sourceKey = track.networkSourceKey; sourceId = track.networkSourceId; sourceChannel = track.networkSourceChannel;
+    return true;
+}
+
 void SequencerEngine::setAbletonLink (AbletonLink* l) noexcept { impl->abletonLink = l; }
 
 void SequencerEngine::setLinkFollowsTransport (bool shouldFollow) noexcept
@@ -1408,7 +1464,7 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
 //==============================================================================
 void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 {
-    s.writeInt   (kStreamVersion3);
+    s.writeInt   (kStreamVersion4);
     s.writeFloat (impl->internalBpm.load (std::memory_order_relaxed));
     s.writeBool  (impl->looping    .load (std::memory_order_relaxed));
     s.writeBool  (impl->syncToHost .load (std::memory_order_relaxed));
@@ -1421,7 +1477,7 @@ void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 
 bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
 {
-    // Peek at first int — kStreamVersion2/3 mean multi-clip format,
+    // Peek at first int — kStreamVersion2/3/4 mean multi-clip format,
     // otherwise treat the bytes as a legacy float BPM (version 1).
     const auto startPos = s.getPosition();
     const int firstInt  = s.readInt();
@@ -1431,8 +1487,9 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     int   n;
     const bool isV2 = (firstInt == kStreamVersion2);
     const bool isV3 = (firstInt == kStreamVersion3);
+    const bool isV4 = (firstInt == kStreamVersion4);
 
-    if (isV2 || isV3)
+    if (isV2 || isV3 || isV4)
     {
         bpm  = s.readFloat();
         loop = s.readBool();
@@ -1457,7 +1514,7 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     for (int i = 0; i < n; ++i)
     {
         auto t  = std::make_shared<SequencerTrack>();
-        bool ok = (isV2 || isV3) ? t->readFromStream (s, isV3) : t->readFromStreamV1 (s);
+        bool ok = (isV2 || isV3 || isV4) ? t->readFromStream (s, isV3 || isV4, isV4) : t->readFromStreamV1 (s);
         if (! ok) return false;
         loaded->push_back (t);
     }

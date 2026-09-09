@@ -12,12 +12,13 @@ public:
     using Route = NetworkAudioInput;
     NetworkAudioTrackRouter() = default;
 
-    int64_t addRoute (int32_t sourceId, int sourceChannel, int targetTrackIndex,
+    int64_t addRoute (int64_t sourceKey, int32_t sourceId, int sourceChannel, int targetTrackIndex,
                       const juce::String& sourceName = {}, const juce::String& userName = {})
     {
         std::lock_guard<std::mutex> lock (mutex);
         auto route = std::make_shared<Route>();
         route->routeId = nextRouteId++;
+        route->sourceKey = sourceKey;
         route->sourceId = sourceId; route->sourceChannel = sourceChannel; route->targetTrackIndex = targetTrackIndex;
         route->sourceName = sourceName; route->userName = userName;
         routes.push_back (route); publishSnapshotLocked(); return route->routeId;
@@ -40,7 +41,7 @@ public:
         std::vector<NetworkAudioInputRoute> result; auto snap = getSnapshot(); result.reserve (snap->size());
         for (const auto& route : *snap)
         {
-            NetworkAudioInputRoute info; info.routeId = route->routeId; info.sourceId = route->sourceId; info.sourceChannel = route->sourceChannel;
+            NetworkAudioInputRoute info; info.routeId = route->routeId; info.sourceKey = route->sourceKey; info.sourceId = route->sourceId; info.sourceChannel = route->sourceChannel;
             info.targetTrackIndex = route->targetTrackIndex; info.enabled = route->enabled.load(); info.recordArm = route->recordArm.load();
             info.monitor = route->monitor.load(); info.mute = route->mute.load(); info.solo = route->solo.load(); info.gainDb = route->gainDb.load(); info.pan = route->pan.load(); result.push_back (info);
         }

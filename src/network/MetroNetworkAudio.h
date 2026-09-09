@@ -16,6 +16,7 @@ class MetroNetworkAudio
 public:
     struct SourceInfo
     {
+        int64_t sourceKey = 0;
         int32_t sourceId = 0;
         juce::String user;
         juce::String group;
@@ -61,6 +62,7 @@ public:
     bool processSourceChannel(juce::AudioBuffer<float>& destination,
                               int numSamples,
                               double sampleRate,
+                              int64_t sourceKey,
                               int32_t sourceId,
                               int sourceChannel);
 
