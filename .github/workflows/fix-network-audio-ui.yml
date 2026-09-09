@@ -37,17 +37,11 @@ jobs:
                                                  ::MetroNetworkAudio* networkAudio)
         : ::NetworkAudioSettingsComponent (deviceManager, networkAudio)'''
           if old in text:
-              shim.write_text(text.replace(old, new, 1))
-
-          main = Path('src/standalone/MainWindow.h')
-          text = main.read_text()
-          if '#include "NetworkAudioSettingsComponent.h"' in text:
-              text = text.replace('#include "NetworkAudioSettingsComponent.h"', '#include "NetworkAudioSettingsShim.h"', 1)
-          old_construct = 'auto* comp = new NetworkAudioSettingsComponent (deviceManager, networkAudio.get());'
-          new_construct = 'auto* comp = new MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get());'
-          if old_construct in text:
-              text = text.replace(old_construct, new_construct, 1)
-          main.write_text(text)
+              text = text.replace(old, new, 1)
+          marker = '#define AudioDeviceSelectorComponent MetroNetworkAudioSettingsSelector'
+          if '#define NetworkAudioSettingsComponent MetroNetworkAudioSettingsSelector' not in text:
+              text = text.replace(marker, marker + '\n#define NetworkAudioSettingsComponent MetroNetworkAudioSettingsSelector', 1)
+          shim.write_text(text)
 
           for name in ('dummy', 'dummy2', 'x', 'dummy3'):
               p = Path(name)
@@ -55,7 +49,8 @@ jobs:
           PY
       - name: Verify source changes
         run: |
-          grep -n "MetroNetworkAudioSettingsSelector" src/standalone/MainWindow.h src/standalone/NetworkAudioSettingsShim.h
+          grep -n "MetroNetworkAudioSettingsSelector" src/standalone/NetworkAudioSettingsShim.h
+          grep -n "NetworkAudioSettingsComponent MetroNetworkAudioSettingsSelector" src/standalone/NetworkAudioSettingsShim.h
           grep -n "Create Audio Track" src/standalone/NetworkAudioSettingsShim.h
       - name: Commit patch and remove one-shot workflow
         shell: bash
