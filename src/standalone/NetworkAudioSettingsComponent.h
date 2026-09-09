@@ -350,7 +350,15 @@ private:
         int getNumRows() override
         {
 #if DYSEKT_HAS_AOO
-            return owner != nullptr ? (int) owner->getSources().size() : 0;
+            if (owner == nullptr)
+                return 0;
+
+            const auto sources = owner->getSources();
+            int count = 0;
+            for (const auto& source : sources)
+                if (source.online)
+                    ++count;
+            return count;
 #else
             return 0;
 #endif
@@ -363,13 +371,25 @@ private:
             if (owner == nullptr)
                 return;
             const auto sources = owner->getSources();
-            if (! juce::isPositiveAndBelow (rowNumber, (int) sources.size()))
+            const MetroNetworkAudio::SourceInfo* source = nullptr;
+            int visibleRow = 0;
+            for (const auto& candidate : sources)
+            {
+                if (! candidate.online)
+                    continue;
+                if (visibleRow++ == rowNumber)
+                {
+                    source = &candidate;
+                    break;
+                }
+            }
+            if (source == nullptr)
                 return;
 
             if (rowIsSelected)
                 g.fillAll (juce::Colour (0xFF242430));
 
-            const auto& s = sources[(size_t) rowNumber];
+            const auto& s = *source;
             const auto name = s.user.isNotEmpty() ? s.user : "Unknown source";
             const auto details = s.group + "  •  " + juce::String (s.channels)
                                + " ch  •  " + juce::String (s.sampleRate, 0) + " Hz"
