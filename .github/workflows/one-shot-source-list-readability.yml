@@ -1,0 +1,65 @@
+name: One-shot source list readability fix
+
+on:
+  push:
+    branches:
+      - fix/network-source-list-readability
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/network-source-list-readability
+          fetch-depth: 0
+      - name: Improve source list readability
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/standalone/NetworkAudioSettingsComponent.h')
+          s = p.read_text()
+          old = '''        sourceList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF111118));
+        sourceList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF30303A));
+        sourceList.setOutlineThickness (1);'''
+          new = '''        sourceList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF111118));
+        sourceList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF30303A));
+        sourceList.setOutlineThickness (1);
+        sourceList.setRowHeight (48);'''
+          if old not in s:
+              raise SystemExit('source list setup target not found')
+          s = s.replace(old, new, 1)
+          old = '''            const auto details = s.group + "  •  " + juce::String (s.channels)
+                               + " ch  •  " + juce::String (s.sampleRate, 0) + " Hz"
+                               + "  •  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";'''
+          new = '''            const auto details = s.group + "  |  " + juce::String (s.channels)
+                               + " ch  |  " + juce::String (s.sampleRate, 0) + " Hz"
+                               + "  |  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";'''
+          if old not in s:
+              raise SystemExit('source details target not found')
+          s = s.replace(old, new, 1)
+          old = '''            g.setFont (juce::Font (14.0f, juce::Font::bold));
+            g.drawText (name, 10, 3, width - 20, height / 2, juce::Justification::centredLeft);
+            g.setColour (juce::Colours::grey);
+            g.setFont (juce::Font (11.0f));
+            g.drawText (details, 10, height / 2, width - 20, height / 2 - 2,
+                        juce::Justification::centredLeft);'''
+          new = '''            g.setFont (juce::Font (17.0f, juce::Font::bold));
+            g.drawText (name, 10, 4, width - 20, 21, juce::Justification::centredLeft);
+            g.setColour (juce::Colours::lightgrey);
+            g.setFont (juce::Font (13.0f));
+            g.drawText (details, 10, 26, width - 20, 18,
+                        juce::Justification::centredLeft);'''
+          if old not in s:
+              raise SystemExit('source text drawing target not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/standalone/NetworkAudioSettingsComponent.h
+          git commit -m "fix: improve network source list readability"
+          git push
