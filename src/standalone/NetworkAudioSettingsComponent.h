@@ -393,8 +393,8 @@ private:
             const auto& s = *source;
             const auto name = s.user.isNotEmpty() ? s.user : "Unknown source";
             const auto details = s.group + "  |  " + juce::String (s.channels)
-                               + " ch  •  " + juce::String (s.sampleRate, 0) + " Hz"
-                               + "  •  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";
+                               + " ch  |  " + juce::String (s.sampleRate, 0) + " Hz"
+                               + "  |  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";
 
             g.setColour (s.online ? juce::Colours::white : juce::Colours::grey);
             g.setFont (juce::Font (17.0f, juce::Font::bold));
