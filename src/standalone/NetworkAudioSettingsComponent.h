@@ -65,7 +65,7 @@ public:
         addAndMakeVisible (enableButton);
 
         channelTitle.setText ("NETWORK AUDIO CHANNEL", juce::dontSendNotification);
-        channelTitle.setFont (juce::Font (14.0f, juce::Font::bold));
+        channelTitle.setFont (juce::Font (17.0f, juce::Font::bold));
         channelTitle.setColour (juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible (channelTitle);
 
@@ -191,6 +191,7 @@ public:
         sourceList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF111118));
         sourceList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF30303A));
         sourceList.setOutlineThickness (1);
+        sourceList.setRowHeight (48);
         addAndMakeVisible (sourceList);
 
         startTimerHz (10);
@@ -391,15 +392,15 @@ private:
 
             const auto& s = *source;
             const auto name = s.user.isNotEmpty() ? s.user : "Unknown source";
-            const auto details = s.group + "  •  " + juce::String (s.channels)
+            const auto details = s.group + "  |  " + juce::String (s.channels)
                                + " ch  •  " + juce::String (s.sampleRate, 0) + " Hz"
                                + "  •  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";
 
             g.setColour (s.online ? juce::Colours::white : juce::Colours::grey);
-            g.setFont (juce::Font (14.0f, juce::Font::bold));
+            g.setFont (juce::Font (17.0f, juce::Font::bold));
             g.drawText (name, 10, 3, width - 20, height / 2, juce::Justification::centredLeft);
-            g.setColour (juce::Colours::grey);
-            g.setFont (juce::Font (11.0f));
+            g.setColour (juce::Colours::lightgrey);
+            g.setFont (juce::Font (13.0f));
             g.drawText (details, 10, height / 2, width - 20, height / 2 - 2,
                         juce::Justification::centredLeft);
 #else
