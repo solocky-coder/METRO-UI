@@ -541,20 +541,34 @@ public:
         if (callback) juce::MessageManager::callAsync (std::move (callback));
     }
 
-    static void markFormat (Impl* self, int64_t key, aoo::isink* sink, void* endpoint, int32_t sourceId)
+    static bool markFormat (Impl* self, int64_t key, aoo::isink* sink, void* endpoint, int32_t sourceId)
     {
-        if (sink == nullptr || endpoint == nullptr) return;
+        if (sink == nullptr || endpoint == nullptr) return false;
+
         aoo_format_storage format {};
-        if (sink->get_source_format (endpoint, sourceId, format) <= 0) return;
+        if (sink->get_source_format (endpoint, sourceId, format) <= 0
+            || format.header.nchannels <= 0
+            || format.header.samplerate <= 0.0)
+            return false;
+
+        bool changed = false;
         std::lock_guard<std::mutex> lock (self->stateMutex);
         for (auto& source : self->sources)
-            if (source.sourceKey == key)
-            {
-                source.channels = format.header.nchannels;
-                source.sampleRate = format.header.samplerate;
-                source.online = true;
-                break;
-            }
+        {
+            if (source.sourceKey != key)
+                continue;
+
+            changed = source.channels != format.header.nchannels
+                   || source.sampleRate != format.header.samplerate
+                   || ! source.online;
+
+            source.channels = format.header.nchannels;
+            source.sampleRate = format.header.samplerate;
+            source.online = true;
+            break;
+        }
+
+        return changed;
     }
 
     static int32_t discoveryEventHandler (void* user, const aoo_event** events, int32_t count)
@@ -585,7 +599,17 @@ public:
                         }
                     }
                     self->upsertSource (info);
-                    self->createRuntime (event->id, endpoint);
+                    auto* runtime = self->createRuntime (event->id, endpoint);
+
+                    // SOURCE_ADD can arrive before the corresponding FORMAT event.
+                    // Populate metadata immediately when AOO already has it.
+                    if (runtime != nullptr && runtime->sink != nullptr)
+                        markFormat (self, info.sourceKey, runtime->sink.get(),
+                                    runtime->endpoint.get(), event->id);
+                    if (self->discoverySink != nullptr)
+                        markFormat (self, info.sourceKey, self->discoverySink.get(),
+                                    event->endpoint, event->id);
+
                     changed = true;
                     break;
                 }
@@ -594,8 +618,14 @@ public:
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     if (event->endpoint == nullptr) break;
                     const auto key = makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id);
-                    self->createRuntime (event->id, static_cast<const sockaddr_in*> (event->endpoint));
-                    markFormat (self, key, self->discoverySink.get(), event->endpoint, event->id);
+                    auto* runtime = self->createRuntime (event->id, static_cast<const sockaddr_in*> (event->endpoint));
+
+                    // Prefer the dedicated sink, then fall back to discovery.
+                    if (runtime != nullptr && runtime->sink != nullptr)
+                        markFormat (self, key, runtime->sink.get(), event->endpoint, event->id);
+                    if (self->discoverySink != nullptr)
+                        markFormat (self, key, self->discoverySink.get(), event->endpoint, event->id);
+
                     changed = true;
                     break;
                 }
@@ -633,8 +663,10 @@ public:
                     if (event->endpoint == nullptr) break;
                     const auto key = makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id);
                     auto* runtime = self->findRuntime (key);
-                    if (runtime == nullptr || runtime->sink == nullptr) break;
-                    markFormat (self, key, runtime->sink.get(), event->endpoint, event->id);
+                    if (runtime != nullptr && runtime->sink != nullptr)
+                        markFormat (self, key, runtime->sink.get(), event->endpoint, event->id);
+                    if (self->discoverySink != nullptr)
+                        markFormat (self, key, self->discoverySink.get(), event->endpoint, event->id);
                     changed = true;
                     break;
                 }
@@ -685,26 +717,70 @@ public:
 
     void refreshSourceFormats()
     {
+        // Snapshot the AOO runtimes while holding the state lock, then query AOO
+        // without that lock. This keeps format polling independent from callbacks.
+        struct PendingQuery
+        {
+            int64_t sourceKey = 0;
+            int32_t sourceId = 0;
+            std::shared_ptr<sockaddr_in> endpoint;
+            aoo::isink* sink = nullptr;
+        };
+
+        std::vector<PendingQuery> queries;
+        {
+            std::lock_guard<std::mutex> lock (stateMutex);
+            for (const auto& source : sources)
+            {
+                if (source.channels > 0 && source.sampleRate > 0.0)
+                    continue;
+
+                auto* runtime = findRuntime (source.sourceKey);
+                if (runtime == nullptr || runtime->sink == nullptr || runtime->endpoint == nullptr)
+                    continue;
+
+                queries.push_back ({ source.sourceKey, runtime->sourceId, runtime->endpoint, runtime->sink.get() });
+            }
+        }
+
+        struct PendingFormat
+        {
+            int64_t sourceKey = 0;
+            int channels = 0;
+            double sampleRate = 0.0;
+        };
+
+        std::vector<PendingFormat> formats;
+        for (const auto& query : queries)
+        {
+            aoo_format_storage format {};
+            if (query.sink->get_source_format (query.endpoint.get(), query.sourceId, format) > 0
+                && format.header.nchannels > 0 && format.header.samplerate > 0.0)
+                formats.push_back ({ query.sourceKey, format.header.nchannels, format.header.samplerate });
+        }
+
         bool changed = false;
         {
             std::lock_guard<std::mutex> lock (stateMutex);
-            for (auto& source : sources)
+            for (const auto& update : formats)
             {
-                auto* runtime = findRuntime (source.sourceKey);
-                if (runtime == nullptr || runtime->sink == nullptr || runtime->endpoint == nullptr) continue;
-                if (source.channels > 0 && source.sampleRate > 0.0) continue;
-
-                aoo_format_storage format {};
-                if (runtime->sink->get_source_format (runtime->endpoint.get(), runtime->sourceId, format) > 0
-                    && format.header.nchannels > 0 && format.header.samplerate > 0)
+                for (auto& source : sources)
                 {
-                    source.channels = format.header.nchannels;
-                    source.sampleRate = format.header.samplerate;
+                    if (source.sourceKey != update.sourceKey)
+                        continue;
+
+                    const bool sourceChanged = source.channels != update.channels
+                                             || source.sampleRate != update.sampleRate
+                                             || ! source.online;
+                    source.channels = update.channels;
+                    source.sampleRate = update.sampleRate;
                     source.online = true;
-                    changed = true;
+                    changed = changed || sourceChanged;
+                    break;
                 }
             }
         }
+
         if (changed) notifySourceChange (this);
     }
 
