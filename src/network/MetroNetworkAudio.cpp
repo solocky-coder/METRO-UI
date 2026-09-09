@@ -756,7 +756,7 @@ public:
             aoo_format_storage format {};
             if (query.sink->get_source_format (query.endpoint.get(), query.sourceId, format) > 0
                 && format.header.nchannels > 0 && format.header.samplerate > 0.0)
-                formats.push_back ({ query.sourceKey, format.header.nchannels, format.header.samplerate });
+                formats.push_back ({ query.sourceKey, format.header.nchannels, static_cast<double> (format.header.samplerate) });
         }
 
         bool changed = false;
