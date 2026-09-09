@@ -22,40 +22,11 @@ jobs:
           from pathlib import Path
           p = Path('src/standalone/NetworkAudioSettingsComponent.h')
           s = p.read_text()
-          old = '''        sourceList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF111118));
-        sourceList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF30303A));
-        sourceList.setOutlineThickness (1);'''
-          new = '''        sourceList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF111118));
-        sourceList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF30303A));
-        sourceList.setOutlineThickness (1);
-        sourceList.setRowHeight (48);'''
-          if old not in s:
-              raise SystemExit('source list setup target not found')
-          s = s.replace(old, new, 1)
-          old = '''            const auto details = s.group + "  •  " + juce::String (s.channels)
-                               + " ch  •  " + juce::String (s.sampleRate, 0) + " Hz"
-                               + "  •  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";'''
-          new = '''            const auto details = s.group + "  |  " + juce::String (s.channels)
-                               + " ch  |  " + juce::String (s.sampleRate, 0) + " Hz"
-                               + "  |  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";'''
-          if old not in s:
-              raise SystemExit('source details target not found')
-          s = s.replace(old, new, 1)
-          old = '''            g.setFont (juce::Font (14.0f, juce::Font::bold));
-            g.drawText (name, 10, 3, width - 20, height / 2, juce::Justification::centredLeft);
-            g.setColour (juce::Colours::grey);
-            g.setFont (juce::Font (11.0f));
-            g.drawText (details, 10, height / 2, width - 20, height / 2 - 2,
-                        juce::Justification::centredLeft);'''
-          new = '''            g.setFont (juce::Font (17.0f, juce::Font::bold));
-            g.drawText (name, 10, 4, width - 20, 21, juce::Justification::centredLeft);
-            g.setColour (juce::Colours::lightgrey);
-            g.setFont (juce::Font (13.0f));
-            g.drawText (details, 10, 26, width - 20, 18,
-                        juce::Justification::centredLeft);'''
-          if old not in s:
-              raise SystemExit('source text drawing target not found')
-          s = s.replace(old, new, 1)
+          s = s.replace('sourceList.setOutlineThickness (1);\n        addAndMakeVisible (sourceList);', 'sourceList.setOutlineThickness (1);\n        sourceList.setRowHeight (48);\n        addAndMakeVisible (sourceList);', 1)
+          s = s.replace('"  •  "', '"  |  "')
+          s = s.replace('juce::Font (14.0f, juce::Font::bold)', 'juce::Font (17.0f, juce::Font::bold)')
+          s = s.replace('juce::Font (11.0f)', 'juce::Font (13.0f)')
+          s = s.replace('g.setColour (juce::Colours::grey);\n            g.setFont (juce::Font (13.0f));', 'g.setColour (juce::Colours::lightgrey);\n            g.setFont (juce::Font (13.0f));', 1)
           p.write_text(s)
           PY
           git config user.name "github-actions[bot]"
