@@ -77,7 +77,8 @@ void NetworkAudioSettingsComponent::SourceListModel::paintListBoxItem (int row, 
 {
     const auto sources = owner.getSources(); if (row < 0 || row >= (int) sources.size()) return; const auto& s = sources[(size_t) row];
     g.fillAll (selected ? juce::Colour (0xff29323a) : juce::Colour (0xff111116)); g.setColour (s.online ? juce::Colours::white : juce::Colours::grey); g.setFont (14.0f);
-    const auto name = s.user.isEmpty() ? juce::String ("Source ") + juce::String (s.sourceId) : s.user;
+    const auto name = (s.user.isEmpty() ? juce::String ("Source ") + juce::String (s.sourceId) : s.user)
+        + " • source #" + juce::String (s.sourceId);
     const auto details = (s.group.isEmpty() ? juce::String() : s.group + " • ") + juce::String (s.sampleRate, 0) + " Hz • " + juce::String (s.channels) + " ch";
     g.drawText (name, 10, 2, width / 2, height - 4, juce::Justification::centredLeft); g.setColour (juce::Colours::lightgrey);
     g.drawText (details, width / 2, 2, width / 2 - 10, height - 4, juce::Justification::centredRight);
