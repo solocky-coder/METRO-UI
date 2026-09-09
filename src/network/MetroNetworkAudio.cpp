@@ -102,6 +102,8 @@ int32_t sendAooReply (void* endpoint, const char* data, int32_t numBytes)
 
 int64_t makeSourceKey (const sockaddr_in* endpoint, int32_t sourceId) noexcept
 {
+    // AOO source IDs are scoped to a peer. Keep the METRO identity stable
+    // when the peer's UDP port changes during reconnect/NAT remapping.
     uint64_t hash = 1469598103934665603ull;
     const auto mix = [&hash] (uint64_t value)
     {
@@ -112,10 +114,7 @@ int64_t makeSourceKey (const sockaddr_in* endpoint, int32_t sourceId) noexcept
         }
     };
     if (endpoint != nullptr)
-    {
         mix (static_cast<uint64_t> (endpoint->sin_addr.s_addr));
-        mix (static_cast<uint64_t> (endpoint->sin_port));
-    }
     mix (static_cast<uint32_t> (sourceId));
     hash &= 0x7fffffffffffffffull;
     return hash == 0 ? 1 : static_cast<int64_t> (hash);
@@ -202,7 +201,14 @@ public:
     {
         if (sourceId == 0 || endpoint == nullptr) return nullptr;
         const auto sourceKey = makeSourceKey (endpoint, sourceId);
-        if (auto* existing = findRuntime (sourceKey)) return existing;
+        if (auto* existing = findRuntime (sourceKey))
+        {
+            // Keep the runtime attached to the newest endpoint tuple while
+            // retaining the same logical sourceKey.
+            *existing->endpoint = *endpoint;
+            existing->sink->invite_source (existing->endpoint.get(), sourceId, sendAooReply);
+            return existing;
+        }
 
         auto runtime = std::make_unique<SourceRuntime>();
         runtime->sourceKey = sourceKey;
