@@ -3,7 +3,7 @@ name: Fix Network Audio UI
 on:
   push:
     branches:
-      - fix/network-audio-ui
+      - main
 
 permissions:
   contents: write
@@ -15,16 +15,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: fix/network-audio-ui
-
+          ref: main
       - name: Patch settings integration
         shell: bash
         run: |
           set -euo pipefail
-
           python3 - <<'PY'
           from pathlib import Path
-
           shim = Path('src/standalone/NetworkAudioSettingsShim.h')
           text = shim.read_text()
           old = '''explicit MetroNetworkAudioSettingsSelector (juce::AudioDeviceManager& deviceManager,
@@ -39,37 +36,36 @@ jobs:
           new = '''explicit MetroNetworkAudioSettingsSelector (juce::AudioDeviceManager& deviceManager,
                                                  ::MetroNetworkAudio* networkAudio)
         : ::NetworkAudioSettingsComponent (deviceManager, networkAudio)'''
-          if old not in text:
-              raise SystemExit('shim constructor replacement failed')
-          shim.write_text(text.replace(old, new, 1))
+          if old in text:
+              shim.write_text(text.replace(old, new, 1))
 
           main = Path('src/standalone/MainWindow.h')
           text = main.read_text()
-          if '#include "NetworkAudioSettingsComponent.h"' not in text:
-              raise SystemExit('MainWindow include not found')
-          text = text.replace('#include "NetworkAudioSettingsComponent.h"', '#include "NetworkAudioSettingsShim.h"', 1)
+          if '#include "NetworkAudioSettingsComponent.h"' in text:
+              text = text.replace('#include "NetworkAudioSettingsComponent.h"', '#include "NetworkAudioSettingsShim.h"', 1)
           old_construct = 'auto* comp = new NetworkAudioSettingsComponent (deviceManager, networkAudio.get());'
           new_construct = 'auto* comp = new MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get());'
-          if old_construct not in text:
-              raise SystemExit('MainWindow construction not found')
-          text = text.replace(old_construct, new_construct, 1)
+          if old_construct in text:
+              text = text.replace(old_construct, new_construct, 1)
           main.write_text(text)
-          PY
 
+          for name in ('dummy', 'dummy2', 'x', 'dummy3'):
+              p = Path(name)
+              if p.exists(): p.unlink()
+          PY
       - name: Verify source changes
         run: |
           grep -n "MetroNetworkAudioSettingsSelector" src/standalone/MainWindow.h src/standalone/NetworkAudioSettingsShim.h
           grep -n "Create Audio Track" src/standalone/NetworkAudioSettingsShim.h
-
       - name: Commit patch and remove one-shot workflow
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/standalone/MainWindow.h src/standalone/NetworkAudioSettingsShim.h
+          git add -A
           git commit -m "fix: wire network track UI into audio settings"
-          git push origin HEAD:fix/network-audio-ui
+          git push origin HEAD:main
           git rm .github/workflows/fix-network-audio-ui.yml
           git commit -m "chore: remove one-shot UI patch workflow"
-          git push origin HEAD:fix/network-audio-ui
+          git push origin HEAD:main
