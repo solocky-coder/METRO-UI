@@ -1,0 +1,95 @@
+name: One-shot network source list lifecycle fix
+
+on:
+  push:
+    branches: [fix/network-source-list-hide-offline]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Hide offline sources in active network source model
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("src/standalone/NetworkAudioSettingsComponent.h")
+          text = path.read_text()
+          old = '''        int getNumRows() override
+        {
+#if DYSEKT_HAS_AOO
+            return owner != nullptr ? (int) owner->getSources().size() : 0;
+#else
+            return 0;
+#endif
+        }
+'''
+          new = '''        int getNumRows() override
+        {
+#if DYSEKT_HAS_AOO
+            if (owner == nullptr)
+                return 0;
+
+            const auto sources = owner->getSources();
+            int count = 0;
+            for (const auto& source : sources)
+                if (source.online)
+                    ++count;
+            return count;
+#else
+            return 0;
+#endif
+        }
+'''
+          if old not in text:
+              raise SystemExit("expected source row-count block not found")
+          text = text.replace(old, new, 1)
+          old2 = '''            const auto sources = owner->getSources();
+            if (! juce::isPositiveAndBelow (rowNumber, (int) sources.size()))
+                return;
+
+            if (rowIsSelected)
+                g.fillAll (juce::Colour (0xFF242430));
+
+            const auto& s = sources[(size_t) rowNumber];
+'''
+          new2 = '''            const auto sources = owner->getSources();
+            const MetroNetworkAudio::SourceInfo* source = nullptr;
+            int visibleRow = 0;
+            for (const auto& candidate : sources)
+            {
+                if (! candidate.online)
+                    continue;
+                if (visibleRow++ == rowNumber)
+                {
+                    source = &candidate;
+                    break;
+                }
+            }
+            if (source == nullptr)
+                return;
+
+            if (rowIsSelected)
+                g.fillAll (juce::Colour (0xFF242430));
+
+            const auto& s = *source;
+'''
+          if old2 not in text:
+              raise SystemExit("expected source paint block not found")
+          text = text.replace(old2, new2, 1)
+          path.write_text(text)
+          PY
+      - name: Remove temporary workflow
+        run: rm .github/workflows/fix-network-source-list.yml
+      - name: Commit source list fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/standalone/NetworkAudioSettingsComponent.h .github/workflows/fix-network-source-list.yml
+          git commit -m "fix: hide offline network sources"
+          git push
