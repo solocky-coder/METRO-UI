@@ -6,7 +6,7 @@
 #include "../sequencer/MidiClip.h"
 #include "MidiRouter.h"
 #include "NetworkAudioProcessor.h"
-#include "NetworkAudioSettingsComponent.h"
+#include "NetworkAudioSettingsShim.h"
 
 class MainWindow : public juce::DocumentWindow,
                    public juce::MenuBarModel,
@@ -249,7 +249,7 @@ private:
 
     void showAudioSettings()
     {
-        auto* comp = new NetworkAudioSettingsComponent (deviceManager, networkAudio.get());
+        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get());
         juce::DialogWindow::LaunchOptions opts;
         opts.content.setOwned (comp);
         opts.dialogTitle = "Audio Settings";
