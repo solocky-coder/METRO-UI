@@ -72,11 +72,27 @@ void NetworkAudioSettingsComponent::disconnectClicked() { networkAudio.disconnec
 void NetworkAudioSettingsComponent::timerCallback() { refreshSources(); }
 void NetworkAudioSettingsComponent::refreshSources() { sourceList.updateContent(); sourceList.repaint(); }
 void NetworkAudioSettingsComponent::updateStatus (const juce::String& text) { statusLabel.setText (text, juce::dontSendNotification); }
-int NetworkAudioSettingsComponent::SourceListModel::getNumRows() { return (int) owner.getSources().size(); }
+int NetworkAudioSettingsComponent::SourceListModel::getNumRows()
+{
+    const auto sources = owner.getSources();
+    int count = 0;
+    for (const auto& source : sources)
+        if (source.online) ++count;
+    return count;
+}
 void NetworkAudioSettingsComponent::SourceListModel::paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selected)
 {
-    const auto sources = owner.getSources(); if (row < 0 || row >= (int) sources.size()) return; const auto& s = sources[(size_t) row];
-    g.fillAll (selected ? juce::Colour (0xff29323a) : juce::Colour (0xff111116)); g.setColour (s.online ? juce::Colours::white : juce::Colours::grey); g.setFont (14.0f);
+    const auto sources = owner.getSources();
+    const MetroNetworkAudio::SourceInfo* source = nullptr;
+    int visibleRow = 0;
+    for (const auto& candidate : sources)
+    {
+        if (! candidate.online) continue;
+        if (visibleRow++ == row) { source = &candidate; break; }
+    }
+    if (source == nullptr) return;
+    const auto& s = *source;
+    g.fillAll (selected ? juce::Colour (0xff29323a) : juce::Colour (0xff111116)); g.setColour (juce::Colours::white); g.setFont (14.0f);
     const auto name = (s.user.isEmpty() ? juce::String ("Source ") + juce::String (s.sourceId) : s.user)
         + " • source #" + juce::String (s.sourceId);
     const auto details = (s.group.isEmpty() ? juce::String() : s.group + " • ") + juce::String (s.sampleRate, 0) + " Hz • " + juce::String (s.channels) + " ch";
