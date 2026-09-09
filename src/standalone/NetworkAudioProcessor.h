@@ -3,7 +3,11 @@
 #include "../PluginProcessor.h"
 #include "../network/MetroNetworkAudio.h"
 #include "../network/NetworkAudioRecorder.h"
+#include <atomic>
 
+// Standalone network-audio bridge. The network engine is owned by MainWindow;
+// this processor only consumes the selected METRO NetworkSource on the audio
+// thread. Selection is published atomically from the message thread.
 class NetworkAudioProcessor final : public DysektProcessor
 {
 public:
@@ -19,6 +23,15 @@ public:
     static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept
     {
         activeNetworkAudio.store (audio, std::memory_order_release);
+    }
+
+    // Message-thread API: select one discovered SonoBus source/channel for the
+    // METRO network-audio track input. The audio callback never locks or scans
+    // the source list.
+    static void setActiveNetworkSource (int64_t sourceKey, int sourceChannel) noexcept
+    {
+        activeSourceKey.store (sourceKey, std::memory_order_release);
+        activeSourceChannel.store (juce::jmax (0, sourceChannel), std::memory_order_release);
     }
 
     static bool startActiveNetworkRecording (const juce::File& file, int channels = 2) noexcept
@@ -58,7 +71,7 @@ public:
         DysektProcessor::prepareToPlay (sampleRate, samplesPerBlock);
         networkSampleRate = sampleRate;
         const int capacity = juce::jmax (4096, samplesPerBlock > 0 ? samplesPerBlock : 512);
-        networkBuffer.setSize (64, capacity, false, true, true);
+        networkBuffer.setSize (2, capacity, false, true, true);
     }
 
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
@@ -76,8 +89,15 @@ public:
         if (numSamples <= 0 || numSamples > networkBuffer.getNumSamples())
             return;
 
-        networkBuffer.clear (0, 0, numSamples);
-        audio->process (networkBuffer, numSamples, networkSampleRate);
+        const auto sourceKey = activeSourceKey.load (std::memory_order_acquire);
+        const auto sourceChannel = activeSourceChannel.load (std::memory_order_acquire);
+        if (sourceKey == 0)
+            return;
+
+        networkBuffer.clear();
+        if (! audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate,
+                                           sourceKey, sourceChannel))
+            return;
 
         if (recorder.isRecording())
             recorder.push (networkBuffer, numSamples);
@@ -90,6 +110,9 @@ public:
 private:
     inline static std::atomic<MetroNetworkAudio*> activeNetworkAudio { nullptr };
     inline static std::atomic<NetworkAudioProcessor*> activeProcessor { nullptr };
+    inline static std::atomic<int64_t> activeSourceKey { 0 };
+    inline static std::atomic<int> activeSourceChannel { 0 };
+
     MetroNetworkAudio* networkAudio = nullptr;
     double networkSampleRate = 44100.0;
     juce::AudioBuffer<float> networkBuffer;
