@@ -310,7 +310,7 @@ public:
 
     SourceRuntime* createRuntime (int32_t sourceId, const sockaddr_in* endpoint)
     {
-        if (sourceId == 0 || sourceId == AOO_ID_WILDCARD || endpoint == nullptr)
+        if (sourceId == AOO_ID_WILDCARD || sourceId == AOO_ID_NONE || endpoint == nullptr)
         {
             aooDiag ("createRuntime REJECT sourceId="
                      + juce::String (sourceId)
@@ -689,17 +689,24 @@ public:
                     }
                     if (self->discoverySink != nullptr)
                     {
-                        aooDiag ("PEER_JOIN wildcard invite sink="
+                        // SonoBus exposes each peer's main audio stream as AOO source 0.
+                        // Its bundled AOO fork explicitly rejects wildcard source messages,
+                        // so inviting AOO_ID_WILDCARD only creates a local -1 descriptor and
+                        // can never complete the remote format handshake.
+                        constexpr int32_t sonoBusMainSourceId = 0;
+
+                        aooDiag ("PEER_JOIN source invite sink="
                                  + juce::String::toHexString (
                                      static_cast<juce::int64> (
                                          reinterpret_cast<uintptr_t> (
                                              self->discoverySink.get())))
-                                 + " endpoint=" + endpointDebug (endpoint.get()));
+                                 + " endpoint=" + endpointDebug (endpoint.get())
+                                 + " sourceId=" + juce::String (sonoBusMainSourceId));
 
                         const auto result = self->discoverySink->invite_source (
-                            endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
+                            endpoint.get(), sonoBusMainSourceId, sendAooReply);
 
-                        aooDiag ("PEER_JOIN wildcard invite result="
+                        aooDiag ("PEER_JOIN source invite result="
                                  + juce::String (result));
                     }
                     notifySourceChange (self);
@@ -863,12 +870,9 @@ public:
                                  static_cast<const sockaddr_in*> (
                                      event->endpoint)));
 
-                    // A wildcard invite (see AOONET_CLIENT_PEER_JOIN_EVENT) can be echoed
-                    // back as an ADD event carrying AOO_ID_WILDCARD itself rather than a
-                    // concrete per-source id. That id can never resolve a real format via
-                    // get_source_format(), so tracking it just leaves a permanent
-                    // "0 ch / 0 Hz" ghost source in the list. Wait for the real numbered
-                    // source instead.
+                    // Never expose a wildcard descriptor as a routable source. SonoBus
+                    // peers are invited explicitly as source 0, so a -1 event can only be
+                    // stale state from an older wildcard invitation.
                     if (event->id == AOO_ID_WILDCARD) break;
                     const auto* endpoint = static_cast<const sockaddr_in*> (event->endpoint);
                     SourceInfo info;
