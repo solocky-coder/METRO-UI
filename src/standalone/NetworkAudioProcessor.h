@@ -5,14 +5,13 @@
 #include "../network/NetworkAudioRecorder.h"
 #include <atomic>
 
-// Standalone network-audio bridge. The network engine is owned by MainWindow;
-// this processor consumes a METRO Audio track when one exists, otherwise it
-// can render the explicitly selected NetworkSource as the migration fallback.
+// Standalone network-audio bridge. Audio tracks are transport-aware: an armed
+// recording pass starts after the sequencer count-in and stops with transport.
+// MIDI/sampler recording remains a separate path.
 class NetworkAudioProcessor final : public DysektProcessor
 {
 public:
     NetworkAudioProcessor() { activeProcessor.store (this, std::memory_order_release); }
-
     ~NetworkAudioProcessor() override
     {
         stopNetworkRecording();
@@ -20,31 +19,16 @@ public:
             activeProcessor.store (nullptr, std::memory_order_release);
     }
 
-    static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept
-    {
-        activeNetworkAudio.store (audio, std::memory_order_release);
-    }
+    static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept { activeNetworkAudio.store (audio, std::memory_order_release); }
 
-    // Create a normal METRO Audio track whose route points at one discovered
-    // SonoBus/AOO source channel. Returns the new track index, or -1 when the
-    // standalone processor is not currently available.
-    static int createActiveNetworkAudioTrack (int64_t sourceKey,
-                                              int32_t sourceId,
-                                              int sourceChannel,
-                                              const juce::String& sourceName,
-                                              const juce::String& userName = {}) noexcept
+    static int createActiveNetworkAudioTrack (int64_t sourceKey, int32_t sourceId, int sourceChannel,
+                                              const juce::String& sourceName, const juce::String& userName = {}) noexcept
     {
         auto* processor = activeProcessor.load (std::memory_order_acquire);
-        if (processor == nullptr)
-            return -1;
-
-        return processor->sequencer.addNetworkAudioTrack (sourceKey, sourceId,
-                                                          juce::jmax (0, sourceChannel),
-                                                          sourceName, userName);
+        if (processor == nullptr) return -1;
+        return processor->sequencer.addNetworkAudioTrack (sourceKey, sourceId, juce::jmax (0, sourceChannel), sourceName, userName);
     }
 
-    // Message-thread API for the temporary migration fallback. The normal
-    // Arrange/track path should populate a TrackType::Audio route instead.
     static void setActiveNetworkSource (int64_t sourceKey, int sourceChannel) noexcept
     {
         activeSourceKey.store (sourceKey, std::memory_order_release);
@@ -54,34 +38,21 @@ public:
     static bool startActiveNetworkRecording (const juce::File& file, int channels = 2) noexcept
     {
         auto* processor = activeProcessor.load (std::memory_order_acquire);
-        return processor != nullptr && processor->startNetworkRecording (file, channels);
+        return processor != nullptr && processor->startNetworkRecording (file, channels, processor->sequencer.getPlayheadTick());
     }
+    static void stopActiveNetworkRecording() noexcept { if (auto* p = activeProcessor.load (std::memory_order_acquire)) p->stopNetworkRecording(); }
+    static bool isActiveNetworkRecording() noexcept { auto* p = activeProcessor.load (std::memory_order_acquire); return p != nullptr && p->recorder.isRecording(); }
 
-    static void stopActiveNetworkRecording() noexcept
-    {
-        if (auto* processor = activeProcessor.load (std::memory_order_acquire))
-            processor->stopNetworkRecording();
-    }
+    void setNetworkAudio (MetroNetworkAudio* audio) noexcept { networkAudio = audio; setActiveNetworkAudio (audio); }
 
-    static bool isActiveNetworkRecording() noexcept
-    {
-        auto* processor = activeProcessor.load (std::memory_order_acquire);
-        return processor != nullptr && processor->recorder.isRecording();
-    }
-
-    void setNetworkAudio (MetroNetworkAudio* audio) noexcept
-    {
-        networkAudio = audio;
-        setActiveNetworkAudio (audio);
-    }
-
-    bool startNetworkRecording (const juce::File& file, int channels = 2) noexcept
+    bool startNetworkRecording (const juce::File& file, int channels = 2, int64_t startTick = 0) noexcept
     {
         const double rate = networkSampleRate > 0.0 ? networkSampleRate : 44100.0;
-        return recorder.start (file, rate, juce::jlimit (1, 64, channels));
+        return recorder.start (file, rate, juce::jlimit (1, 64, channels), startTick);
     }
 
-    void stopNetworkRecording() noexcept { recorder.stop(); }
+    void stopNetworkRecording() noexcept { lastRecordedClip = recorder.stop(); }
+    NetworkAudioRecorder::Clip getLastRecordedNetworkClip() const { return lastRecordedClip; }
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
     {
@@ -89,6 +60,7 @@ public:
         networkSampleRate = sampleRate;
         const int capacity = juce::jmax (4096, samplesPerBlock > 0 ? samplesPerBlock : 512);
         networkBuffer.setSize (2, capacity, false, true, true);
+        recordBuffer.setSize (2, capacity, false, true, true);
     }
 
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
@@ -96,38 +68,59 @@ public:
         DysektProcessor::processBlock (buffer, midi);
 
         MetroNetworkAudio* audio = networkAudio;
-        if (audio == nullptr)
-            audio = activeNetworkAudio.load (std::memory_order_acquire);
-
-        if (audio == nullptr || ! audio->isRunning())
-            return;
+        if (audio == nullptr) audio = activeNetworkAudio.load (std::memory_order_acquire);
+        if (audio == nullptr || ! audio->isRunning()) return;
 
         const int numSamples = buffer.getNumSamples();
-        if (numSamples <= 0 || numSamples > networkBuffer.getNumSamples())
-            return;
+        if (numSamples <= 0 || numSamples > networkBuffer.getNumSamples()) return;
 
         bool renderedTrack = false;
+        bool capturedTrack = false;
         const int numTracks = sequencer.getNumTracks();
+        const bool transportRecording = sequencer.isRecording() && sequencer.isPlaying();
+        const int64_t playheadTick = sequencer.getPlayheadTick();
+
+        // Audio recording is intentionally separate from MIDI record-arm. The
+        // first enabled Audio track is the capture route until an explicit
+        // audio-arm UI is added.
+        int recordTrackIndex = -1;
+        for (int i = 0; i < numTracks; ++i)
+        {
+            const auto info = sequencer.getTrackInfo (i);
+            if (info.type == TrackType::Audio && info.enabled) { recordTrackIndex = i; break; }
+        }
+
+        // During count-in the sequencer playhead is held at tick 0. Starting
+        // only after it advances guarantees the WAV starts at the real capture
+        // boundary, not in the pre-roll.
+        if (transportRecording && recordTrackIndex >= 0 && playheadTick > 0 && ! recorder.isRecording())
+        {
+            const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("METRO Recordings");
+            const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
+            auto safeName = sequencer.getTrackInfo (recordTrackIndex).name;
+            safeName = safeName.replaceCharacters ("\\/:*?\"<>|", "_________");
+            const auto file = dir.getNonexistentChildFile (safeName.isEmpty() ? "AOO" : safeName, "_" + stamp, ".wav");
+            recordTrackArmed = recordTrackIndex;
+            recorder.start (file, networkSampleRate, 2, playheadTick);
+        }
+
+        // Finalize promptly on a transport stop or record disarm.
+        if ((! transportRecording || recordTrackIndex < 0) && recorder.isRecording())
+            lastRecordedClip = recorder.stop();
+
         for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex)
         {
             const auto info = sequencer.getTrackInfo (trackIndex);
-            if (info.type != TrackType::Audio || ! info.enabled)
-                continue;
+            if (info.type != TrackType::Audio || ! info.enabled) continue;
 
-            // The track owns the opaque sourceKey route identity. Read the
-            // network fields directly through the dedicated route API rather
-            // than relying on display-only TrackInfo fields.
             int64_t sourceKey = 0;
             int32_t sourceId = 0;
             int sourceChannel = 0;
-            if (! sequencer.getNetworkAudioRoute (trackIndex, sourceKey, sourceId, sourceChannel))
-                continue;
+            if (! sequencer.getNetworkAudioRoute (trackIndex, sourceKey, sourceId, sourceChannel)) continue;
             sourceChannel = juce::jmax (0, sourceChannel);
 
             networkBuffer.clear();
-            if (! audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate,
-                                               sourceKey, sourceChannel))
-                continue;
+            if (! audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate, sourceKey, sourceChannel)) continue;
 
             const float gain = juce::Decibels::decibelsToGain (info.volumeDb);
             const float pan = juce::jlimit (-1.0f, 1.0f, info.pan);
@@ -137,11 +130,19 @@ public:
             if (buffer.getNumChannels() > 0) buffer.addFrom (0, 0, networkBuffer, 0, 0, numSamples, leftGain);
             if (buffer.getNumChannels() > 1) buffer.addFrom (1, 0, networkBuffer, 1, 0, numSamples, rightGain);
             renderedTrack = true;
+
+            // Record the exact selected route buffer, before any other Audio
+            // track can overwrite the scratch buffer.
+            if (recorder.isRecording() && trackIndex == recordTrackArmed && ! capturedTrack)
+            {
+                recordBuffer.makeCopyOf (networkBuffer, true);
+                recorder.push (recordBuffer, numSamples);
+                capturedTrack = true;
+            }
         }
 
-        // Migration fallback: allow the settings/source list to prove the
-        // engine->NetworkSource->audio path before ArrangeView track creation
-        // is wired up. This is explicitly separate from the Audio-track path.
+        // Migration fallback is playback-only; it can never leak into a disk
+        // take when no Audio track exists.
         if (! renderedTrack)
         {
             const auto sourceKey = activeSourceKey.load (std::memory_order_acquire);
@@ -149,17 +150,13 @@ public:
             if (sourceKey != 0)
             {
                 networkBuffer.clear();
-                if (audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate,
-                                                 sourceKey, sourceChannel))
+                if (audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate, sourceKey, sourceChannel))
                 {
                     if (buffer.getNumChannels() > 0) buffer.addFrom (0, 0, networkBuffer, 0, 0, numSamples);
                     if (buffer.getNumChannels() > 1) buffer.addFrom (1, 0, networkBuffer, 1, 0, numSamples);
                 }
             }
         }
-
-        if (recorder.isRecording())
-            recorder.push (networkBuffer, numSamples);
     }
 
 private:
@@ -170,8 +167,11 @@ private:
 
     MetroNetworkAudio* networkAudio = nullptr;
     double networkSampleRate = 44100.0;
+    int recordTrackArmed = -1;
     juce::AudioBuffer<float> networkBuffer;
+    juce::AudioBuffer<float> recordBuffer;
     NetworkAudioRecorder recorder;
+    NetworkAudioRecorder::Clip lastRecordedClip;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NetworkAudioProcessor)
 };
