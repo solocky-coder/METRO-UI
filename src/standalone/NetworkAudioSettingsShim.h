@@ -47,9 +47,12 @@ private:
         juce::PopupMenu menu;
         int nextItemId = 1000;
         std::vector<std::tuple<int64_t, int32_t, int, juce::String, juce::String>> choices;
+        int discoveredSources = 0;
+        juce::String diagnostic;
 
         for (const auto& source : sources)
         {
+            ++discoveredSources;
             if (! source.online || source.channels <= 0)
                 continue;
 
@@ -72,10 +75,27 @@ private:
 
         if (! menu.containsAnyActiveItems())
         {
+            juce::String message = "No online network sources with available channels were found.";
+            if (discoveredSources > 0)
+            {
+                message += "\n\nAOO discovery found " + juce::String (discoveredSources)
+                         + " source(s), but none has a negotiated audio format yet."
+                           "\n\nThis is the network-audio handshake stage; the source must report its channel count and sample rate before a track can be created.";
+
+                for (const auto& source : sources)
+                {
+                    message += "\n\n" + (source.user.isNotEmpty() ? source.user : "Unknown source")
+                             + " | source #" + juce::String (source.sourceId)
+                             + " | " + juce::String (source.channels) + " ch"
+                             + " | " + juce::String (source.sampleRate, 0) + " Hz"
+                             + " | online=" + (source.online ? "yes" : "no");
+                }
+            }
+
             juce::AlertWindow::showMessageBoxAsync (
                 juce::AlertWindow::InfoIcon,
                 "Create Audio Track",
-                "No online network sources with available channels were found.",
+                message,
                 "OK",
                 this);
             return;
