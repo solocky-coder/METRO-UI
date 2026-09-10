@@ -199,7 +199,7 @@ public:
 
     SourceRuntime* createRuntime (int32_t sourceId, const sockaddr_in* endpoint)
     {
-        if (sourceId == 0 || endpoint == nullptr) return nullptr;
+        if (sourceId == 0 || sourceId == AOO_ID_WILDCARD || endpoint == nullptr) return nullptr;
         const auto sourceKey = makeSourceKey (endpoint, sourceId);
         if (auto* existing = findRuntime (sourceKey))
         {
@@ -584,6 +584,13 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     if (event->endpoint == nullptr) break;
+                    // A wildcard invite (see AOONET_CLIENT_PEER_JOIN_EVENT) can be echoed
+                    // back as an ADD event carrying AOO_ID_WILDCARD itself rather than a
+                    // concrete per-source id. That id can never resolve a real format via
+                    // get_source_format(), so tracking it just leaves a permanent
+                    // "0 ch / 0 Hz" ghost source in the list. Wait for the real numbered
+                    // source instead.
+                    if (event->id == AOO_ID_WILDCARD) break;
                     const auto* endpoint = static_cast<const sockaddr_in*> (event->endpoint);
                     SourceInfo info;
                     info.sourceKey = makeSourceKey (endpoint, event->id);
@@ -616,7 +623,7 @@ public:
                 case AOO_SOURCE_FORMAT_EVENT:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
-                    if (event->endpoint == nullptr) break;
+                    if (event->endpoint == nullptr || event->id == AOO_ID_WILDCARD) break;
                     const auto key = makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id);
                     auto* runtime = self->createRuntime (event->id, static_cast<const sockaddr_in*> (event->endpoint));
 
@@ -660,7 +667,7 @@ public:
                 case AOO_SOURCE_FORMAT_EVENT:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
-                    if (event->endpoint == nullptr) break;
+                    if (event->endpoint == nullptr || event->id == AOO_ID_WILDCARD) break;
                     const auto key = makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id);
                     auto* runtime = self->findRuntime (key);
                     if (runtime != nullptr && runtime->sink != nullptr)
