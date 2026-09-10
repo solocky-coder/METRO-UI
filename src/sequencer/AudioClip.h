@@ -1,6 +1,6 @@
 #pragma once
 
-#include <juce_audio_formats/juce_audio_formats.h>
+#include "MidiClip.h"
 #include <juce_core/juce_core.h>
 
 struct AudioClip
