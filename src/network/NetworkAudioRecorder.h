@@ -17,49 +17,28 @@ public:
         int channels = 0;
         int64_t startTick = 0;
         int64_t lengthSamples = 0;
-
-        bool isValid() const noexcept
-        {
-            return file.existsAsFile() && channels > 0 && sampleRate > 0.0 && lengthSamples > 0;
-        }
+        bool isValid() const noexcept { return file.existsAsFile() && channels > 0 && sampleRate > 0.0 && lengthSamples > 0; }
     };
 
     NetworkAudioRecorder() = default;
     NetworkAudioRecorder (const NetworkAudioRecorder&) = delete;
     NetworkAudioRecorder& operator= (const NetworkAudioRecorder&) = delete;
+    ~NetworkAudioRecorder() { stop(); }
 
-    ~NetworkAudioRecorder()
+    bool start (const juce::File& destination, double sampleRate, int channels, int64_t startTick = 0)
     {
         stop();
-    }
-
-    bool start (const juce::File& destination, double sampleRate, int channels,
-                int64_t startTick = 0)
-    {
-        stop();
-
-        if (destination == juce::File() || sampleRate <= 0.0 || channels <= 0)
-            return false;
-
+        if (destination == juce::File() || sampleRate <= 0.0 || channels <= 0) return false;
         destination.getParentDirectory().createDirectory();
-
         auto stream = std::unique_ptr<juce::FileOutputStream> (destination.createOutputStream());
-        if (stream == nullptr)
-            return false;
-
+        if (stream == nullptr) return false;
         juce::WavAudioFormat format;
         auto* rawWriter = format.createWriterFor (stream.release(), sampleRate,
-                                                   static_cast<unsigned int> (channels),
-                                                   24, {}, 0);
-        if (rawWriter == nullptr)
-            return false;
-
+                                                   static_cast<unsigned int> (channels), 24, {}, 0);
+        if (rawWriter == nullptr) return false;
         writer = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>
             (rawWriter, backgroundThread, juce::jmax (1024, static_cast<int> (sampleRate * 2.0)));
-
-        if (! backgroundThread.isThreadRunning())
-            backgroundThread.startThread (juce::Thread::Priority::low);
-
+        if (! backgroundThread.isThreadRunning()) backgroundThread.startThread (juce::Thread::Priority::low);
         file = destination;
         currentSampleRate = sampleRate;
         currentChannels = channels;
@@ -71,14 +50,10 @@ public:
 
     void push (const juce::AudioBuffer<float>& buffer, int numSamples) noexcept
     {
-        if (! recording.load (std::memory_order_acquire) || writer == nullptr || numSamples <= 0)
-            return;
-
+        if (! recording.load (std::memory_order_acquire) || writer == nullptr || numSamples <= 0) return;
         const int samples = juce::jmin (numSamples, buffer.getNumSamples());
         const int channels = juce::jmin (currentChannels, buffer.getNumChannels());
-        if (samples <= 0 || channels <= 0)
-            return;
-
+        if (samples <= 0 || channels <= 0) return;
         if (writer->write (buffer.getArrayOfReadPointers(), samples))
             recordedSamples.fetch_add (samples, std::memory_order_relaxed);
     }
@@ -87,17 +62,13 @@ public:
     {
         recording.store (false, std::memory_order_release);
         writer.reset();
-
         Clip result;
         result.file = file;
         result.sampleRate = currentSampleRate;
         result.channels = currentChannels;
         result.startTick = currentStartTick;
         result.lengthSamples = recordedSamples.load (std::memory_order_relaxed);
-
-        if (! result.isValid())
-            result = {};
-
+        if (! result.isValid()) result = {};
         file = {};
         currentSampleRate = 0.0;
         currentChannels = 0;
@@ -106,15 +77,8 @@ public:
         return result;
     }
 
-    bool isRecording() const noexcept
-    {
-        return recording.load (std::memory_order_acquire);
-    }
-
-    int64_t getRecordedSamples() const noexcept
-    {
-        return recordedSamples.load (std::memory_order_relaxed);
-    }
+    bool isRecording() const noexcept { return recording.load (std::memory_order_acquire); }
+    int64_t getRecordedSamples() const noexcept { return recordedSamples.load (std::memory_order_relaxed); }
 
 private:
     juce::TimeSliceThread backgroundThread { "METRO Network Audio Recorder" };
