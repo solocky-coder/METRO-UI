@@ -52,7 +52,7 @@ private:
         for (const auto& source : sources)
         {
             ++discoveredSources;
-            if (! source.online || source.channels <= 0)
+            if (! source.online || source.channels <= 0 || source.sampleRate <= 0.0)
                 continue;
 
             const auto user = source.user.isNotEmpty() ? source.user : "Unknown source";

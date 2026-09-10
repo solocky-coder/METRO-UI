@@ -31,6 +31,8 @@ public:
         addAndMakeVisible (transportLabel);
 
         enableButton.setButtonText ("Enable network audio");
+        enableButton.setToggleState (getNetworkAudioChannelState().enabled.load (std::memory_order_relaxed),
+                                     juce::dontSendNotification);
         enableButton.onClick = [this, networkAudio]
         {
             const bool enabled = enableButton.getToggleState();
@@ -170,16 +172,27 @@ public:
         publicGroupButton.setEnabled (false);
         addAndMakeVisible (publicGroupButton);
 
-        connectButton.setEnabled (false);
+        const bool networkEnabled = enableButton.getToggleState();
+        for (auto* editor : { &serverEditor, &portEditor, &userEditor, &groupEditor, &passwordEditor })
+            editor->setEnabled (networkEnabled);
+        publicGroupButton.setEnabled (networkEnabled);
+        monitorButton.setEnabled (networkEnabled);
+
+        connectButton.setEnabled (networkEnabled);
         connectButton.onClick = [this] { connectClicked(); };
         addAndMakeVisible (connectButton);
 
-        disconnectButton.setEnabled (false);
+        disconnectButton.setEnabled (networkEnabled);
         disconnectButton.onClick = [this] { disconnectClicked(); };
         addAndMakeVisible (disconnectButton);
 
         statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-        statusLabel.setText ("Disabled", juce::dontSendNotification);
+        statusLabel.setText (networkEnabled
+                                 ? (networkAudio != nullptr && networkAudio->isRunning()
+                                        ? "Connected — waiting for network sources"
+                                        : "Ready — local Wi-Fi/LAN audio")
+                                 : "Disabled",
+                             juce::dontSendNotification);
         addAndMakeVisible (statusLabel);
 
         sourcesLabel.setText ("Sources", juce::dontSendNotification);
@@ -357,7 +370,7 @@ private:
             const auto sources = owner->getSources();
             int count = 0;
             for (const auto& source : sources)
-                if (source.online)
+                if (source.online && source.channels > 0 && source.sampleRate > 0.0)
                     ++count;
             return count;
 #else
@@ -376,7 +389,7 @@ private:
             int visibleRow = 0;
             for (const auto& candidate : sources)
             {
-                if (! candidate.online)
+                if (! candidate.online || candidate.channels <= 0 || candidate.sampleRate <= 0.0)
                     continue;
                 if (visibleRow++ == rowNumber)
                 {
