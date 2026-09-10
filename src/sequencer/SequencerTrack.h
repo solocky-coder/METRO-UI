@@ -1,5 +1,6 @@
 #pragma once
 #include "MidiClip.h"
+#include "AudioClip.h"
 #include "../audio/SfzPlayer.h"
 #include "../network/NetworkAudioInput.h"
 #include <juce_core/juce_core.h>
@@ -43,10 +44,20 @@ struct SequencerTrack
     Sf2PresetInfo preset;
     bool isSfzInstrument = false;
 
-    // Audio tracks: one explicit network source/channel route per track.
     int64_t networkRouteId = 0;
     int32_t networkSourceId = 0;
     int networkSourceChannel = 0;
+
+    // Runtime audio-take metadata. Persistence is intentionally deferred until
+    // the project stream version is bumped; existing project files remain valid.
+    std::shared_ptr<const std::vector<AudioClip>> getAudioClips() const noexcept { return audioClipsSnapshot.load (std::memory_order_acquire); }
+    void addAudioClip (const AudioClip& clip)
+    {
+        auto next = std::make_shared<std::vector<AudioClip>> (*getAudioClips());
+        next->push_back (clip);
+        std::sort (next->begin(), next->end(), [] (const auto& a, const auto& b) { return a.startTick < b.startTick; });
+        audioClipsSnapshot.store (std::move (next), std::memory_order_release);
+    }
 
     std::shared_ptr<const ClipList> getClips() const noexcept { return clipsSnapshot.load (std::memory_order_acquire); }
     int getNumClips() const noexcept { return (int) getClips()->size(); }
@@ -70,30 +81,11 @@ struct SequencerTrack
     }
     void sortClips() { auto next = std::make_shared<ClipList> (*getClips()); sortAndPublish (std::move (next)); }
 
-    static std::shared_ptr<SequencerTrack> makeMain()
-    {
-        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::MainSlice; t->name = "MAIN"; t->colour = juce::Colour (0xFF25D9D9); return t;
-    }
-    static std::shared_ptr<SequencerTrack> makeChromatic (int sliceIdxIn, int chromaticChannel, const juce::String& sliceName, juce::Colour sliceColour)
-    {
-        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::ChromaticSlice; t->sliceIdx = sliceIdxIn; t->midiChannel.store (chromaticChannel - 1); t->name = sliceName.isEmpty() ? ("CHROM " + juce::String (sliceIdxIn + 1)) : sliceName; t->colour = sliceColour; return t;
-    }
-    static std::shared_ptr<SequencerTrack> makeSfPlayer (const Sf2PresetInfo& p, juce::Colour c)
-    {
-        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->midiChannel.store (15); t->name = p.name; t->colour = c; return t;
-    }
-    static std::shared_ptr<SequencerTrack> makeSfzInstrument (const juce::String& n, juce::Colour c)
-    {
-        Sf2PresetInfo p; p.name = n; p.bank = 0; p.preset = 0;
-        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->isSfzInstrument = true; t->midiChannel.store (15); t->name = n; t->colour = c; return t;
-    }
-    static std::shared_ptr<SequencerTrack> makeAudio (const NetworkAudioInput& input, juce::Colour c = juce::Colour (0xFF406080))
-    {
-        auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::Audio;
-        t->networkRouteId = input.routeId; t->networkSourceId = input.sourceId; t->networkSourceChannel = input.sourceChannel;
-        t->name = input.sourceName.isNotEmpty() ? input.sourceName : ("NETWORK " + juce::String (input.sourceId) + "." + juce::String (input.sourceChannel + 1));
-        t->colour = c; t->volumeDb.store (input.gainDb.load()); t->pan.store (input.pan.load()); return t;
-    }
+    static std::shared_ptr<SequencerTrack> makeMain() { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::MainSlice; t->name = "MAIN"; t->colour = juce::Colour (0xFF25D9D9); return t; }
+    static std::shared_ptr<SequencerTrack> makeChromatic (int sliceIdxIn, int chromaticChannel, const juce::String& sliceName, juce::Colour sliceColour) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::ChromaticSlice; t->sliceIdx = sliceIdxIn; t->midiChannel.store (chromaticChannel - 1); t->name = sliceName.isEmpty() ? ("CHROM " + juce::String (sliceIdxIn + 1)) : sliceName; t->colour = sliceColour; return t; }
+    static std::shared_ptr<SequencerTrack> makeSfPlayer (const Sf2PresetInfo& p, juce::Colour c) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->midiChannel.store (15); t->name = p.name; t->colour = c; return t; }
+    static std::shared_ptr<SequencerTrack> makeSfzInstrument (const juce::String& n, juce::Colour c) { Sf2PresetInfo p; p.name = n; p.bank = 0; p.preset = 0; auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->isSfzInstrument = true; t->midiChannel.store (15); t->name = n; t->colour = c; return t; }
+    static std::shared_ptr<SequencerTrack> makeAudio (const NetworkAudioInput& input, juce::Colour c = juce::Colour (0xFF406080)) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::Audio; t->networkRouteId = input.routeId; t->networkSourceId = input.sourceId; t->networkSourceChannel = input.sourceChannel; t->name = input.sourceName.isNotEmpty() ? input.sourceName : ("NETWORK " + juce::String (input.sourceId) + "." + juce::String (input.sourceChannel + 1)); t->colour = c; t->volumeDb.store (input.gainDb.load()); t->pan.store (input.pan.load()); return t; }
 
     void writeToStream (juce::MemoryOutputStream& s) const
     {
@@ -103,7 +95,7 @@ struct SequencerTrack
         s.writeBool (solo.load()); s.writeFloat (volumeDb.load()); s.writeFloat (pan.load());
         if (type == TrackType::Audio) { s.writeInt64 (networkRouteId); s.writeInt (networkSourceId); s.writeInt (networkSourceChannel); }
     }
-    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true)
+    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool = false)
     {
         type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt());
         preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString();
@@ -115,13 +107,10 @@ struct SequencerTrack
         return true;
     }
     bool readFromStreamV1 (juce::MemoryInputStream& s)
-    {
-        type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt());
-        preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString(); auto slot = std::make_shared<ClipSlot>(); slot->startTick.store (0); if (! slot->clip.readFromStream (s)) return false;
-        auto next = std::make_shared<ClipList>(); next->push_back (std::move (slot)); publish (std::move (next)); return true;
-    }
+    { type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt()); preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString(); auto slot = std::make_shared<ClipSlot>(); slot->startTick.store (0); if (! slot->clip.readFromStream (s)) return false; auto next = std::make_shared<ClipList>(); next->push_back (std::move (slot)); publish (std::move (next)); return true; }
 private:
     std::atomic<std::shared_ptr<const ClipList>> clipsSnapshot { std::make_shared<const ClipList>() };
+    std::atomic<std::shared_ptr<const std::vector<AudioClip>>> audioClipsSnapshot { std::make_shared<const std::vector<AudioClip>>() };
     void publish (std::shared_ptr<const ClipList> next) { clipsSnapshot.store (std::move (next), std::memory_order_release); }
     void sortAndPublish (std::shared_ptr<ClipList> next) { std::sort (next->begin(), next->end(), [] (const auto& a, const auto& b) { return a->getStartTick() < b->getStartTick(); }); publish (std::move (next)); }
 };

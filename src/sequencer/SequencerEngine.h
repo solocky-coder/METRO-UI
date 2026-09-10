@@ -45,8 +45,7 @@ public:
     void addOrUpdateSfTrackOnChannel(const Sf2PresetInfo& preset, int midiChannel0Based, juce::Colour colour);
     void addSfzTrack(const juce::String& name, int midiChannel0Based, juce::Colour colour); void removeSfzTrack();
 
-    int addNetworkAudioTrack(int64_t routeId, int32_t sourceId, int sourceChannel,
-                             const juce::String& sourceName, const juce::String& userName = {});
+    int addNetworkAudioTrack(int64_t routeId, int32_t sourceId, int sourceChannel, const juce::String& sourceName, const juce::String& userName = {});
     bool setNetworkAudioTrackRoute(int trackIndex, int64_t routeId, int32_t sourceId, int sourceChannel);
     bool isNetworkAudioTrack(int trackIndex) const noexcept;
     bool getNetworkAudioRoute(int trackIndex, int64_t& routeId, int32_t& sourceId, int& sourceChannel) const noexcept;
@@ -66,6 +65,5 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerEngine)
 };
