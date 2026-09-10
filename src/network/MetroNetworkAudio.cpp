@@ -60,15 +60,52 @@ constexpr size_t kMaxNetworkSources = 64;
 //      -> get_source_format()
 //
 // This does not intentionally alter AOO routing or source state.
+//
+// Written directly to disk rather than relying on DBG()/OutputDebugString:
+// JUCE's DBG() macro compiles to a no-op unless JUCE_DEBUG is set, so a
+// Release-configuration executable (e.g. a GitHub Actions Windows build)
+// silently produces no output at all. All call sites here run on the AOO
+// io/client threads or the message thread, never the realtime audio
+// callback, so the blocking file I/O below is safe.
 // -------------------------------------------------------------------------
 constexpr bool kAooDiagnostics = true;
+
+std::mutex aooLogMutex;
+std::unique_ptr<juce::FileOutputStream> aooLogStream;
+
+juce::File getAooLogFile()
+{
+    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+               .getChildFile ("metro-aoo-log.txt");
+}
 
 void aooDiag (const juce::String& message)
 {
     if (! kAooDiagnostics)
         return;
 
+    // Still visible in a debugger/console when JUCE_DEBUG is on.
     DBG ("[METRO-AOO] " + message);
+
+    std::lock_guard<std::mutex> lock (aooLogMutex);
+
+    if (aooLogStream == nullptr)
+    {
+        const auto file = getAooLogFile();
+        file.deleteFile();   // fresh log per process run
+        auto stream = std::make_unique<juce::FileOutputStream> (file);
+
+        if (! stream->openedOk())
+            return; // leave aooLogStream null; we'll retry the open next call
+
+        aooLogStream = std::move (stream);
+    }
+
+    const auto line = juce::Time::getCurrentTime().toString (true, true, true, true)
+                     + "  [METRO-AOO] " + message + "\n";
+
+    aooLogStream->writeText (line, false, false, nullptr);
+    aooLogStream->flush();
 }
 
 juce::String endpointString (const sockaddr_in* endpoint)
