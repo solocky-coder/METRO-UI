@@ -28,6 +28,7 @@ struct ClipSlot
 struct SequencerTrack
 {
     using ClipList = std::vector<std::shared_ptr<ClipSlot>>;
+    using AudioClipList = std::vector<AudioClip>;
     SequencerTrack() = default;
     JUCE_DECLARE_NON_COPYABLE (SequencerTrack)
 
@@ -50,11 +51,35 @@ struct SequencerTrack
 
     // Runtime audio-take metadata. Persistence is intentionally deferred until
     // the project stream version is bumped; existing project files remain valid.
-    std::shared_ptr<const std::vector<AudioClip>> getAudioClips() const noexcept { return audioClipsSnapshot.load (std::memory_order_acquire); }
+    std::shared_ptr<const AudioClipList> getAudioClips() const noexcept { return audioClipsSnapshot.load (std::memory_order_acquire); }
+    int getNumAudioClips() const noexcept { return (int) getAudioClips()->size(); }
+    const AudioClip* getAudioClip (int i) const noexcept
+    {
+        auto snap = getAudioClips();
+        return juce::isPositiveAndBelow (i, (int) snap->size()) ? &(*snap)[(size_t) i] : nullptr;
+    }
     void addAudioClip (const AudioClip& clip)
     {
-        auto next = std::make_shared<std::vector<AudioClip>> (*getAudioClips());
+        if (! clip.isValid()) return;
+        auto next = std::make_shared<AudioClipList> (*getAudioClips());
         next->push_back (clip);
+        std::sort (next->begin(), next->end(), [] (const auto& a, const auto& b) { return a.startTick < b.startTick; });
+        audioClipsSnapshot.store (std::move (next), std::memory_order_release);
+    }
+    void removeAudioClip (int index)
+    {
+        auto current = getAudioClips();
+        if (! juce::isPositiveAndBelow (index, (int) current->size())) return;
+        auto next = std::make_shared<AudioClipList> (*current);
+        next->erase (next->begin() + index);
+        audioClipsSnapshot.store (std::move (next), std::memory_order_release);
+    }
+    void setAudioClipStartTick (int index, int64_t newStartTick)
+    {
+        auto current = getAudioClips();
+        if (! juce::isPositiveAndBelow (index, (int) current->size())) return;
+        auto next = std::make_shared<AudioClipList> (*current);
+        (*next)[(size_t) index].startTick = juce::jmax ((int64_t) 0, newStartTick);
         std::sort (next->begin(), next->end(), [] (const auto& a, const auto& b) { return a.startTick < b.startTick; });
         audioClipsSnapshot.store (std::move (next), std::memory_order_release);
     }
@@ -110,7 +135,7 @@ struct SequencerTrack
     { type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt()); preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString(); auto slot = std::make_shared<ClipSlot>(); slot->startTick.store (0); if (! slot->clip.readFromStream (s)) return false; auto next = std::make_shared<ClipList>(); next->push_back (std::move (slot)); publish (std::move (next)); return true; }
 private:
     std::atomic<std::shared_ptr<const ClipList>> clipsSnapshot { std::make_shared<const ClipList>() };
-    std::atomic<std::shared_ptr<const std::vector<AudioClip>>> audioClipsSnapshot { std::make_shared<const std::vector<AudioClip>>() };
+    std::atomic<std::shared_ptr<const AudioClipList>> audioClipsSnapshot { std::make_shared<const AudioClipList>() };
     void publish (std::shared_ptr<const ClipList> next) { clipsSnapshot.store (std::move (next), std::memory_order_release); }
     void sortAndPublish (std::shared_ptr<ClipList> next) { std::sort (next->begin(), next->end(), [] (const auto& a, const auto& b) { return a->getStartTick() < b->getStartTick(); }); publish (std::move (next)); }
 };
