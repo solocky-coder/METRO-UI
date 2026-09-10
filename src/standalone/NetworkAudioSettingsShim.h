@@ -48,7 +48,6 @@ private:
         int nextItemId = 1000;
         std::vector<std::tuple<int64_t, int32_t, int, juce::String, juce::String>> choices;
         int discoveredSources = 0;
-        juce::String diagnostic;
 
         for (const auto& source : sources)
         {
