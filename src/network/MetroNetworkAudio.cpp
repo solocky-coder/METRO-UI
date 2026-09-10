@@ -12,6 +12,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -44,6 +45,54 @@ constexpr int kAooBlockSize = 512;
 constexpr int kAooChannels = 64;
 constexpr int kAooBufferMs = 120;
 constexpr size_t kMaxNetworkSources = 64;
+
+// -------------------------------------------------------------------------
+// AOO diagnostic logging
+//
+// Diagnostic-only instrumentation for tracing:
+//
+//   PEER_JOIN
+//      -> wildcard invite
+//      -> SOURCE_ADD
+//      -> specific invite
+//      -> incoming packet routing
+//      -> SOURCE_FORMAT event
+//      -> get_source_format()
+//
+// This does not intentionally alter AOO routing or source state.
+// -------------------------------------------------------------------------
+constexpr bool kAooDiagnostics = true;
+
+void aooDiag (const juce::String& message)
+{
+    if (! kAooDiagnostics)
+        return;
+
+    DBG ("[METRO-AOO] " + message);
+}
+
+juce::String endpointString (const sockaddr_in* endpoint)
+{
+    if (endpoint == nullptr)
+        return "<null>";
+
+    char address[INET_ADDRSTRLEN] {};
+    const char* result = inet_ntop (AF_INET, &endpoint->sin_addr,
+                                    address, sizeof (address));
+
+    return juce::String (result != nullptr ? result : "?")
+         + ":" + juce::String (ntohs (endpoint->sin_port));
+}
+
+juce::String endpointDebug (const sockaddr_in* endpoint)
+{
+    if (endpoint == nullptr)
+        return "ptr=null";
+
+    return "ptr=" + juce::String::toHexString (
+               static_cast<juce::int64> (reinterpret_cast<uintptr_t> (endpoint)))
+         + " addr=" + endpointString (endpoint);
+}
 
 std::mutex aooLifetimeMutex;
 int aooLifetimeUsers = 0;
@@ -94,9 +143,26 @@ int32_t sendUdp (void* user, const char* data, int32_t numBytes, void* address)
 int32_t sendAooReply (void* endpoint, const char* data, int32_t numBytes)
 {
     auto* socket = activeAooSocket.load (std::memory_order_acquire);
-    if (socket == nullptr || *socket == metroInvalidSocket || endpoint == nullptr) return 0;
+    if (socket == nullptr || *socket == metroInvalidSocket || endpoint == nullptr)
+    {
+        aooDiag ("sendAooReply FAILED endpoint="
+                 + endpointDebug (static_cast<const sockaddr_in*> (endpoint))
+                 + " bytes=" + juce::String (numBytes));
+        return 0;
+    }
+
+    aooDiag ("sendAooReply endpoint="
+             + endpointDebug (static_cast<const sockaddr_in*> (endpoint))
+             + " bytes=" + juce::String (numBytes));
+
     const auto result = sendto (*socket, data, numBytes, 0,
                                 static_cast<const sockaddr*> (endpoint), sizeof (sockaddr_in));
+
+    if (result != numBytes)
+        aooDiag ("sendAooReply sendto FAILED result="
+                 + juce::String ((int) result)
+                 + " expected=" + juce::String (numBytes));
+
     return result == numBytes ? 1 : 0;
 }
 
@@ -207,14 +273,43 @@ public:
 
     SourceRuntime* createRuntime (int32_t sourceId, const sockaddr_in* endpoint)
     {
-        if (sourceId == 0 || sourceId == AOO_ID_WILDCARD || endpoint == nullptr) return nullptr;
+        if (sourceId == 0 || sourceId == AOO_ID_WILDCARD || endpoint == nullptr)
+        {
+            aooDiag ("createRuntime REJECT sourceId="
+                     + juce::String (sourceId)
+                     + " endpoint=" + endpointDebug (endpoint));
+            return nullptr;
+        }
+
         const auto sourceKey = makeSourceKey (endpoint, sourceId);
+
+        aooDiag ("createRuntime sourceId=" + juce::String (sourceId)
+                 + " sourceKey=" + juce::String (sourceKey)
+                 + " endpoint=" + endpointDebug (endpoint));
+
         if (auto* existing = findRuntime (sourceKey))
         {
             // Keep the runtime attached to the newest endpoint tuple while
             // retaining the same logical sourceKey.
             *existing->endpoint = *endpoint;
-            existing->sink->invite_source (existing->endpoint.get(), sourceId, sendAooReply);
+
+            aooDiag ("createRuntime EXISTING runtime="
+                     + juce::String::toHexString (
+                         static_cast<juce::int64> (
+                             reinterpret_cast<uintptr_t> (existing)))
+                     + " sink="
+                     + juce::String::toHexString (
+                         static_cast<juce::int64> (
+                             reinterpret_cast<uintptr_t> (existing->sink.get())))
+                     + " endpoint=" + endpointDebug (existing->endpoint.get())
+                     + " -> invite_source(" + juce::String (sourceId) + ")");
+
+            const auto result = existing->sink->invite_source (
+                existing->endpoint.get(), sourceId, sendAooReply);
+
+            aooDiag ("createRuntime EXISTING invite_source result="
+                     + juce::String (result));
+
             return existing;
         }
 
@@ -233,16 +328,43 @@ public:
         runtime->sink->set_resend_maxnumframes (16);
 
         auto* raw = runtime.get();
+
+        aooDiag ("createRuntime NEW runtime="
+                 + juce::String::toHexString (
+                     static_cast<juce::int64> (
+                         reinterpret_cast<uintptr_t> (raw)))
+                 + " sink="
+                 + juce::String::toHexString (
+                     static_cast<juce::int64> (
+                         reinterpret_cast<uintptr_t> (raw->sink.get())))
+                 + " endpoint=" + endpointDebug (raw->endpoint.get())
+                 + " sourceId=" + juce::String (sourceId));
+
         for (auto& slot : runtimeSlots)
         {
             SourceRuntime* expected = nullptr;
             if (slot.compare_exchange_strong (expected, raw, std::memory_order_release, std::memory_order_relaxed))
             {
                 runtimes.push_back (std::move (runtime));
-                raw->sink->invite_source (raw->endpoint.get(), sourceId, sendAooReply);
+
+                aooDiag ("createRuntime NEW invite_source sink="
+                         + juce::String::toHexString (
+                             static_cast<juce::int64> (
+                                 reinterpret_cast<uintptr_t> (raw->sink.get())))
+                         + " endpoint=" + endpointDebug (raw->endpoint.get())
+                         + " sourceId=" + juce::String (sourceId));
+
+                const auto result = raw->sink->invite_source (
+                    raw->endpoint.get(), sourceId, sendAooReply);
+
+                aooDiag ("createRuntime NEW invite_source result="
+                         + juce::String (result));
+
                 return raw;
             }
         }
+
+        aooDiag ("createRuntime FAILED: no free runtime slot");
         return nullptr;
     }
 
@@ -395,6 +517,9 @@ public:
                                          reinterpret_cast<sockaddr*> (&from), &fromLength);
                 if (n > 0)
                 {
+                    aooDiag ("RX packet bytes=" + juce::String (n)
+                             + " from=" + endpointDebug (&from));
+
                     client->handle_message (packet.data(), n, &from);
 
                     // AOO identifies a sink source by the endpoint pointer, not
@@ -404,10 +529,28 @@ public:
                     // endpoint objects so format/data replies match the invited
                     // source descriptor instead of creating a second descriptor.
                     auto discoveryEndpoint = findPeerEndpoint (&from);
+
+                    aooDiag ("RX discovery routing from="
+                             + endpointDebug (&from)
+                             + " persistentPeerEndpoint="
+                             + endpointDebug (discoveryEndpoint.get()));
+
                     if (discoverySink != nullptr)
+                    {
+                        aooDiag ("RX -> discoverySink="
+                                 + juce::String::toHexString (
+                                     static_cast<juce::int64> (
+                                         reinterpret_cast<uintptr_t> (
+                                             discoverySink.get())))
+                                 + " endpoint="
+                                 + endpointDebug (discoveryEndpoint != nullptr
+                                                       ? discoveryEndpoint.get()
+                                                       : &from));
+
                         discoverySink->handle_message (packet.data(), n,
                                                        discoveryEndpoint != nullptr ? discoveryEndpoint.get() : &from,
                                                        sendAooReply);
+                    }
 
                     for (auto& runtime : runtimes)
                     {
@@ -459,6 +602,15 @@ public:
                     if (event->result <= 0 || event->address == nullptr || event->length != sizeof (sockaddr_in)) break;
                     auto endpoint = std::make_shared<sockaddr_in>();
                     std::memcpy (endpoint.get(), event->address, sizeof (sockaddr_in));
+
+                    aooDiag ("PEER_JOIN endpoint=" + endpointDebug (endpoint.get())
+                             + " user="
+                             + juce::String (event->user != nullptr
+                                                  ? event->user : "<null>")
+                             + " group="
+                             + juce::String (event->group != nullptr
+                                                  ? event->group : "<null>"));
+
                     {
                         std::lock_guard<std::mutex> lock (self->stateMutex);
                         auto it = std::find_if (self->peers.begin(), self->peers.end(), [&endpoint] (const auto& peer)
@@ -499,7 +651,20 @@ public:
                         }
                     }
                     if (self->discoverySink != nullptr)
-                        self->discoverySink->invite_source (endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
+                    {
+                        aooDiag ("PEER_JOIN wildcard invite sink="
+                                 + juce::String::toHexString (
+                                     static_cast<juce::int64> (
+                                         reinterpret_cast<uintptr_t> (
+                                             self->discoverySink.get())))
+                                 + " endpoint=" + endpointDebug (endpoint.get()));
+
+                        const auto result = self->discoverySink->invite_source (
+                            endpoint.get(), AOO_ID_WILDCARD, sendAooReply);
+
+                        aooDiag ("PEER_JOIN wildcard invite result="
+                                 + juce::String (result));
+                    }
                     notifySourceChange (self);
                     break;
                 }
@@ -570,13 +735,47 @@ public:
 
     static bool markFormat (Impl* self, int64_t key, aoo::isink* sink, void* endpoint, int32_t sourceId)
     {
-        if (sink == nullptr || endpoint == nullptr) return false;
+        aooDiag ("get_source_format BEGIN"
+                 " key=" + juce::String (key)
+                 + " sourceId=" + juce::String (sourceId)
+                 + " sink="
+                 + juce::String::toHexString (
+                     static_cast<juce::int64> (
+                         reinterpret_cast<uintptr_t> (sink)))
+                 + " endpoint="
+                 + endpointDebug (static_cast<const sockaddr_in*> (endpoint)));
+
+        if (sink == nullptr || endpoint == nullptr)
+        {
+            aooDiag ("get_source_format SKIP null sink/endpoint");
+            return false;
+        }
 
         aoo_format_storage format {};
-        if (sink->get_source_format (endpoint, sourceId, format) <= 0
+        const auto result = sink->get_source_format (endpoint, sourceId, format);
+
+        aooDiag ("get_source_format RESULT result="
+                 + juce::String (result)
+                 + " sourceId=" + juce::String (sourceId)
+                 + " endpoint="
+                 + endpointDebug (static_cast<const sockaddr_in*> (endpoint))
+                 + " channels="
+                 + juce::String (format.header.nchannels)
+                 + " sampleRate="
+                 + juce::String (format.header.samplerate));
+
+        if (result <= 0
             || format.header.nchannels <= 0
             || format.header.samplerate <= 0.0)
+        {
+            aooDiag ("get_source_format INVALID/NOT_AVAILABLE"
+                     " result=" + juce::String (result)
+                     + " channels="
+                     + juce::String (format.header.nchannels)
+                     + " sampleRate="
+                     + juce::String (format.header.samplerate));
             return false;
+        }
 
         bool changed = false;
         std::lock_guard<std::mutex> lock (self->stateMutex);
@@ -595,6 +794,14 @@ public:
             break;
         }
 
+        aooDiag ("get_source_format ACCEPTED key="
+                 + juce::String (key)
+                 + " sourceId=" + juce::String (sourceId)
+                 + " channels="
+                 + juce::String (format.header.nchannels)
+                 + " sampleRate="
+                 + juce::String (format.header.samplerate));
+
         return changed;
     }
 
@@ -611,6 +818,14 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     if (event->endpoint == nullptr) break;
+
+                    aooDiag ("DISCOVERY SOURCE_ADD"
+                             " id=" + juce::String (event->id)
+                             + " endpoint="
+                             + endpointDebug (
+                                 static_cast<const sockaddr_in*> (
+                                     event->endpoint)));
+
                     // A wildcard invite (see AOONET_CLIENT_PEER_JOIN_EVENT) can be echoed
                     // back as an ADD event carrying AOO_ID_WILDCARD itself rather than a
                     // concrete per-source id. That id can never resolve a real format via
@@ -638,11 +853,39 @@ public:
                     // SOURCE_ADD can arrive before the corresponding FORMAT event.
                     // Populate metadata immediately when AOO already has it.
                     if (runtime != nullptr && runtime->sink != nullptr)
+                    {
+                        aooDiag ("DISCOVERY SOURCE_ADD markFormat via runtime"
+                                 " runtime="
+                                 + juce::String::toHexString (
+                                     static_cast<juce::int64> (
+                                         reinterpret_cast<uintptr_t> (runtime)))
+                                 + " sink="
+                                 + juce::String::toHexString (
+                                     static_cast<juce::int64> (
+                                         reinterpret_cast<uintptr_t> (
+                                             runtime->sink.get())))
+                                 + " endpoint="
+                                 + endpointDebug (runtime->endpoint.get()));
+
                         markFormat (self, info.sourceKey, runtime->sink.get(),
                                     runtime->endpoint.get(), event->id);
+                    }
                     if (self->discoverySink != nullptr)
+                    {
+                        aooDiag ("DISCOVERY SOURCE_ADD markFormat via discovery"
+                                 " sink="
+                                 + juce::String::toHexString (
+                                     static_cast<juce::int64> (
+                                         reinterpret_cast<uintptr_t> (
+                                             self->discoverySink.get())))
+                                 + " endpoint="
+                                 + endpointDebug (
+                                     static_cast<const sockaddr_in*> (
+                                         event->endpoint)));
+
                         markFormat (self, info.sourceKey, self->discoverySink.get(),
                                     event->endpoint, event->id);
+                    }
 
                     changed = true;
                     break;
@@ -651,14 +894,28 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     if (event->endpoint == nullptr || event->id == AOO_ID_WILDCARD) break;
+
+                    aooDiag ("DISCOVERY SOURCE_FORMAT"
+                             " id=" + juce::String (event->id)
+                             + " endpoint="
+                             + endpointDebug (
+                                 static_cast<const sockaddr_in*> (
+                                     event->endpoint)));
+
                     const auto key = makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id);
                     auto* runtime = self->createRuntime (event->id, static_cast<const sockaddr_in*> (event->endpoint));
 
                     // Prefer the dedicated sink, then fall back to discovery.
                     if (runtime != nullptr && runtime->sink != nullptr)
+                    {
+                        aooDiag ("DISCOVERY SOURCE_FORMAT markFormat via runtime");
                         markFormat (self, key, runtime->sink.get(), event->endpoint, event->id);
+                    }
                     if (self->discoverySink != nullptr)
+                    {
+                        aooDiag ("DISCOVERY SOURCE_FORMAT markFormat via discovery");
                         markFormat (self, key, self->discoverySink.get(), event->endpoint, event->id);
+                    }
 
                     changed = true;
                     break;
