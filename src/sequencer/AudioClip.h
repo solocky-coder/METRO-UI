@@ -2,6 +2,7 @@
 
 #include "MidiClip.h"
 #include <juce_core/juce_core.h>
+#include <cmath>
 
 struct AudioClip
 {
@@ -19,7 +20,7 @@ struct AudioClip
     int64_t lengthTicks (double bpm) const noexcept
     {
         if (sampleRate <= 0.0 || bpm <= 0.0) return 0;
-        return juce::roundToInt64 ((double) lengthSamples * bpm * (double) MidiClip::kPPQ / (sampleRate * 60.0));
+        return (int64_t) std::llround ((double) lengthSamples * bpm * (double) MidiClip::kPPQ / (sampleRate * 60.0));
     }
 
     void writeToStream (juce::MemoryOutputStream& s) const
