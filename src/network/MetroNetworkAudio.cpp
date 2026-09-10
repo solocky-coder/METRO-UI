@@ -197,6 +197,14 @@ public:
         return nullptr;
     }
 
+    std::shared_ptr<sockaddr_in> findPeerEndpoint (const sockaddr_in* endpoint) const
+    {
+        std::lock_guard<std::mutex> lock (stateMutex);
+        for (const auto& peer : peers)
+            if (sameEndpoint (peer.endpoint.get(), endpoint)) return peer.endpoint;
+        return {};
+    }
+
     SourceRuntime* createRuntime (int32_t sourceId, const sockaddr_in* endpoint)
     {
         if (sourceId == 0 || sourceId == AOO_ID_WILDCARD || endpoint == nullptr) return nullptr;
@@ -388,10 +396,29 @@ public:
                 if (n > 0)
                 {
                     client->handle_message (packet.data(), n, &from);
-                    if (discoverySink != nullptr) discoverySink->handle_message (packet.data(), n, &from, sendAooReply);
+
+                    // AOO identifies a sink source by the endpoint pointer, not
+                    // by the sockaddr value. recvfrom() gives us a new stack
+                    // address on every packet, while invites use persistent
+                    // endpoint objects. Route packets to those same persistent
+                    // endpoint objects so format/data replies match the invited
+                    // source descriptor instead of creating a second descriptor.
+                    auto discoveryEndpoint = findPeerEndpoint (&from);
+                    if (discoverySink != nullptr)
+                        discoverySink->handle_message (packet.data(), n,
+                                                       discoveryEndpoint != nullptr ? discoveryEndpoint.get() : &from,
+                                                       sendAooReply);
+
                     for (auto& runtime : runtimes)
-                        if (runtime != nullptr && runtime->sink != nullptr)
-                            runtime->sink->handle_message (packet.data(), n, &from, sendAooReply);
+                    {
+                        if (runtime == nullptr || runtime->sink == nullptr || runtime->endpoint == nullptr)
+                            continue;
+                        if (! sameEndpoint (runtime->endpoint.get(), &from))
+                            continue;
+
+                        runtime->sink->handle_message (packet.data(), n,
+                                                       runtime->endpoint.get(), sendAooReply);
+                    }
                 }
             }
 
