@@ -113,7 +113,7 @@ public:
             const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
             auto safeName = sequencer.getTrackInfo (recordTrackIndex).name;
             safeName = safeName.replaceCharacters ("\\/:*?\"<>|", "_________");
-            const auto file = dir.getNonexistentChildFile (safeName.isEmpty() ? "AOO" : safeName, "_" + stamp, ".wav");
+            const auto file = dir.getNonexistentChildFile (safeName.isEmpty() ? "AOO" : safeName, "_" + stamp + ".wav");
             recordTrackArmed = recordTrackIndex;
             recorder.start (file, networkSampleRate, 2, playheadTick);
         }
