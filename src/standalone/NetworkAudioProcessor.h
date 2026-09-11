@@ -74,6 +74,27 @@ public:
         return committed;
     }
 
+    // Live "recording in progress" info for ArrangeView to draw a growing
+    // clip + waveform before the take is committed above. Same
+    // message-thread-from-audio-thread-state pattern as
+    // commitLastRecordedClipToTimeline(): recordTrackArmed is written on
+    // the audio thread and read here unsynchronized, same as that existing
+    // read of it just above — a plain int read/write on every real target
+    // this project builds for, so consistent with the level of rigor
+    // already accepted elsewhere in this file, not a new risk.
+    struct LiveRecordingInfo
+    {
+        NetworkAudioRecorder::LiveSnapshot snapshot;
+        int trackIndex = -1;
+    };
+    LiveRecordingInfo getLiveRecordingSnapshot() const
+    {
+        LiveRecordingInfo info;
+        info.snapshot = recorder.getLiveSnapshot();
+        info.trackIndex = info.snapshot.isRecording ? recordTrackArmed : -1;
+        return info;
+    }
+
     // Rebuilds the AudioClip reader cache from the current arrangement.
     // Called from the message thread — see ArrangeView::timerCallback(),
     // which polls this every frame alongside commitLastRecordedClipToTimeline()
