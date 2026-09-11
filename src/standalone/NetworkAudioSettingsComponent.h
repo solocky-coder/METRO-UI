@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../network/MetroNetworkAudio.h"
 #include "../network/NetworkAudioChannelState.h"
+#include "../metro/MetroLookAndFeel.h"
 #include "NetworkAudioProcessor.h"
 
 class NetworkAudioSettingsComponent : public juce::Component,
@@ -17,8 +18,20 @@ public:
           sourceModel (networkAudio)
     {
         NetworkAudioProcessor::setActiveNetworkAudio (networkAudio);
+
+        // This dialog is launched as its own top-level DialogWindow (see
+        // MainWindow::showAudioSettings()), so it is NOT a child of
+        // MetroStandaloneEditor and never inherits the app's MetroLookAndFeel
+        // that gets set there. Without this call every ComboBox, ToggleButton,
+        // Slider, TextEditor and the built-in AudioDeviceSelectorComponent all
+        // fall back to JUCE's stock LookAndFeel_V4 — which is why this panel
+        // has looked visually inconsistent with the rest of METRO.
+        setLookAndFeel (&settingsLookAndFeel);
+
         // The channel strip needs enough horizontal room for every toggle and the level meter.
-        setSize (980, 760);
+        // Height is the sum of the card layout computed in resized() below, plus a settings
+        // dialog isn't resizable (see MainWindow::showAudioSettings()), so this needs to be right.
+        setSize (980, 950);
 
         addAndMakeVisible (audioSelector);
 
@@ -187,14 +200,12 @@ public:
         disconnectButton.onClick = [this] { disconnectClicked(); };
         addAndMakeVisible (disconnectButton);
 
-        statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-        statusLabel.setText (networkEnabled
-                                 ? (networkAudio != nullptr && networkAudio->isRunning()
-                                        ? "Connected — waiting for network sources"
-                                        : "Ready — local Wi-Fi/LAN audio")
-                                 : "Disabled",
-                             juce::dontSendNotification);
         addAndMakeVisible (statusLabel);
+        updateStatus (networkEnabled
+                          ? (networkAudio != nullptr && networkAudio->isRunning()
+                                 ? "Connected — waiting for network sources"
+                                 : "Ready — local Wi-Fi/LAN audio")
+                          : "Disabled");
 
         sourcesLabel.setText ("Sources", juce::dontSendNotification);
         sourcesLabel.setColour (juce::Label::textColourId, juce::Colours::white);
@@ -215,66 +226,131 @@ public:
     {
         stopTimer();
         sourceList.setModel (nullptr);
+        setLookAndFeel (nullptr);
     }
 
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xFF0D0D14));
-        g.setColour (juce::Colour (0xFF2A2A34));
-        g.drawHorizontalLine (106, 16.0f, (float) getWidth() - 16.0f);
-        g.drawHorizontalLine (438, 16.0f, (float) getWidth() - 16.0f);
-        g.drawHorizontalLine (570, 16.0f, (float) getWidth() - 16.0f);
+
+        // Grouped cards, cached by resized(), so related controls read as one
+        // unit instead of the whole dialog being one flat field of widgets.
+        for (auto* panel : { &devicePanelBounds, &channelPanelBounds, &connectionPanelBounds, &sourcesPanelBounds })
+        {
+            if (panel->isEmpty())
+                continue;
+            g.setColour (juce::Colour (0xFF15151C));
+            g.fillRoundedRectangle (panel->toFloat(), 8.0f);
+            g.setColour (juce::Colour (0xFF2A2A34));
+            g.drawRoundedRectangle (panel->toFloat(), 8.0f, 1.0f);
+        }
     }
 
     void resized() override
     {
-        auto area = getLocalBounds().reduced (16);
-        networkTitle.setBounds (area.removeFromTop (28));
-        transportLabel.setBounds (area.removeFromTop (22));
-        area.removeFromTop (8);
+        constexpr int kPad = 16;
+        constexpr int kLabelColW = 100;   // one shared label column for every row in this dialog
+        constexpr int kRowH = 24;
+        constexpr int kRowGap = 8;
+        constexpr int kSectionGap = 12;
+        constexpr int kCardPad = 10;
 
-        audioSelector.setBounds (area.removeFromTop (250));
-        area.removeFromTop (12);
+        auto area = getLocalBounds().reduced (kPad);
 
-        enableButton.setBounds (area.removeFromTop (28));
-        area.removeFromTop (6);
+        auto headerRow = area.removeFromTop (26);
+        networkTitle.setBounds (headerRow.removeFromLeft (300));
+        area.removeFromTop (2);
+        transportLabel.setBounds (area.removeFromTop (18));
+        area.removeFromTop (kSectionGap);
 
-        channelTitle.setBounds (area.removeFromTop (24));
-        auto channelRow = area.removeFromTop (28);
-        gainLabel.setBounds (channelRow.removeFromLeft (40));
-        gainSlider.setBounds (channelRow.removeFromLeft (230));
-        panLabel.setBounds (channelRow.removeFromLeft (34));
-        panSlider.setBounds (channelRow.removeFromLeft (180));
-        muteButton.setBounds (channelRow.removeFromLeft (72));
-        soloButton.setBounds (channelRow.removeFromLeft (72));
-        recordArmButton.setBounds (channelRow.removeFromLeft (100));
-        monitorButton.setBounds (channelRow.removeFromLeft (82));
-        meterLabel.setBounds (channelRow);
-        area.removeFromTop (8);
+        // --- Device card: audioSelector is a built-in JUCE component that lays
+        // out its own rows (device type / output / channel list / sample rate /
+        // buffer size) — this card just gives it a consistent frame to sit in.
+        auto deviceCardArea = area.removeFromTop (2 * kCardPad + 230);
+        devicePanelBounds = deviceCardArea;
+        audioSelector.setBounds (deviceCardArea.reduced (kCardPad));
+        area.removeFromTop (kSectionGap);
 
-        auto row = area.removeFromTop (28);
-        serverLabel.setBounds (row.removeFromLeft (62));
-        serverEditor.setBounds (row.removeFromLeft (250));
-        portLabel.setBounds (row.removeFromLeft (42));
-        portEditor.setBounds (row.removeFromLeft (80));
+        // --- Network audio channel card ----------------------------------
+        auto channelCardArea = area.removeFromTop (2 * kCardPad + 18 + kRowGap + 4 * kRowH + 3 * kRowGap);
+        channelPanelBounds = channelCardArea;
+        auto channelInner = channelCardArea.reduced (kCardPad);
 
-        row = area.removeFromTop (28);
-        userLabel.setBounds (row.removeFromLeft (62));
-        userEditor.setBounds (row.removeFromLeft (150));
-        groupLabel.setBounds (row.removeFromLeft (58));
-        groupEditor.setBounds (row.removeFromLeft (150));
+        channelTitle.setBounds (channelInner.removeFromTop (18));
+        channelInner.removeFromTop (kRowGap);
 
-        row = area.removeFromTop (28);
-        passwordLabel.setBounds (row.removeFromLeft (62));
-        passwordEditor.setBounds (row.removeFromLeft (150));
-        publicGroupButton.setBounds (row.removeFromLeft (130));
-        connectButton.setBounds (row.removeFromLeft (150));
-        disconnectButton.setBounds (row.removeFromLeft (110));
+        auto channelHeaderRow = channelInner.removeFromTop (kRowH);
+        enableButton.setBounds (channelHeaderRow.removeFromLeft (220));
+        meterLabel.setBounds (channelHeaderRow);
+        channelInner.removeFromTop (kRowGap);
 
-        statusLabel.setBounds (area.removeFromTop (30));
-        area.removeFromTop (8);
-        sourcesLabel.setBounds (area.removeFromTop (26));
-        sourceList.setBounds (area);
+        auto gainRow = channelInner.removeFromTop (kRowH);
+        gainLabel.setBounds (gainRow.removeFromLeft (kLabelColW));
+        gainSlider.setBounds (gainRow);
+        channelInner.removeFromTop (kRowGap);
+
+        auto panRow = channelInner.removeFromTop (kRowH);
+        panLabel.setBounds (panRow.removeFromLeft (kLabelColW));
+        panSlider.setBounds (panRow);
+        channelInner.removeFromTop (kRowGap);
+
+        auto toggleRow = channelInner.removeFromTop (kRowH);
+        toggleRow.removeFromLeft (kLabelColW);
+        muteButton.setBounds (toggleRow.removeFromLeft (70));
+        soloButton.setBounds (toggleRow.removeFromLeft (70));
+        recordArmButton.setBounds (toggleRow.removeFromLeft (100));
+        monitorButton.setBounds (toggleRow.removeFromLeft (90));
+        area.removeFromTop (kSectionGap);
+
+        // --- Connection card ----------------------------------------------
+        auto connectionCardArea = area.removeFromTop (2 * kCardPad + 3 * kRowH + 2 * kRowGap
+                                                        + (kRowGap + 6) + 30 + 8 + kRowH);
+        connectionPanelBounds = connectionCardArea;
+        auto connectionInner = connectionCardArea.reduced (kCardPad);
+
+        auto row = connectionInner.removeFromTop (kRowH);
+        serverLabel.setBounds (row.removeFromLeft (kLabelColW));
+        portEditor.setBounds (row.removeFromRight (90));
+        row.removeFromRight (8);
+        portLabel.setBounds (row.removeFromRight (40));
+        row.removeFromRight (8);
+        serverEditor.setBounds (row);
+        connectionInner.removeFromTop (kRowGap);
+
+        row = connectionInner.removeFromTop (kRowH);
+        userLabel.setBounds (row.removeFromLeft (kLabelColW));
+        auto userField = row.removeFromLeft ((row.getWidth() - 70) / 2);
+        userEditor.setBounds (userField);
+        row.removeFromLeft (8);
+        groupLabel.setBounds (row.removeFromLeft (54));
+        groupEditor.setBounds (row);
+        connectionInner.removeFromTop (kRowGap);
+
+        row = connectionInner.removeFromTop (kRowH);
+        passwordLabel.setBounds (row.removeFromLeft (kLabelColW));
+        passwordEditor.setBounds (row.removeFromLeft (200));
+        row.removeFromLeft (12);
+        publicGroupButton.setBounds (row.removeFromLeft (120));
+        connectionInner.removeFromTop (kRowGap + 6);
+
+        auto buttonRow = connectionInner.removeFromTop (30);
+        buttonRow.removeFromLeft (kLabelColW);
+        connectButton.setBounds (buttonRow.removeFromLeft (150));
+        buttonRow.removeFromLeft (10);
+        disconnectButton.setBounds (buttonRow.removeFromLeft (110));
+        connectionInner.removeFromTop (8);
+
+        auto statusRow = connectionInner.removeFromTop (kRowH);
+        statusRow.removeFromLeft (kLabelColW);
+        statusLabel.setBounds (statusRow);
+        area.removeFromTop (kSectionGap);
+
+        // --- Sources card: takes whatever is left ---------------------
+        sourcesPanelBounds = area;
+        auto sourcesInner = area.reduced (kCardPad);
+        sourcesLabel.setBounds (sourcesInner.removeFromTop (22));
+        sourcesInner.removeFromTop (6);
+        sourceList.setBounds (sourcesInner);
     }
 
 private:
@@ -354,7 +430,20 @@ private:
 
     void updateStatus (const juce::String& text)
     {
-        statusLabel.setText (text, juce::dontSendNotification);
+        // juce::Label only supports one text colour, so the state colour applies to the
+        // whole "<dot>  message" string rather than just the dot.
+        auto stateColour = juce::Colours::grey;
+        if (text.startsWithIgnoreCase ("Connected"))
+            stateColour = juce::Colour (0xFF4CAF50);
+        else if (text.startsWithIgnoreCase ("Connecting") || text.startsWithIgnoreCase ("Ready"))
+            stateColour = juce::Colour (0xFFE0A83D);
+        else if (text.containsIgnoreCase ("could not") || text.containsIgnoreCase ("rejected")
+                  || text.containsIgnoreCase ("unavailable"))
+            stateColour = juce::Colour (0xFFE05A4C);
+
+        statusLabel.setColour (juce::Label::textColourId, stateColour);
+        statusLabel.setText (juce::String (juce::CharPointer_UTF8 ("\xE2\x97\x8F")) + "  " + text,
+                              juce::dontSendNotification);
     }
 
     class SourceListModel : public juce::ListBoxModel
@@ -425,6 +514,11 @@ private:
     private:
         MetroNetworkAudio* owner = nullptr;
     };
+
+    MetroLookAndFeel settingsLookAndFeel;
+
+    // Cached by resized(), drawn by paint() as the grouped card backgrounds.
+    juce::Rectangle<int> devicePanelBounds, channelPanelBounds, connectionPanelBounds, sourcesPanelBounds;
 
     juce::AudioDeviceSelectorComponent audioSelector;
     MetroNetworkAudio* networkAudio = nullptr;
