@@ -8,6 +8,9 @@
 #include "../sequencer/MidiClip.h"
 #include "ToolIcons.h"
 #include "ZoomableScrollBar.h"
+#if DYSEKT_STANDALONE
+ #include "../standalone/NetworkAudioProcessor.h"
+#endif
 #include <limits>
 #include <algorithm>
 #include <vector>
@@ -85,6 +88,15 @@ public:
 
     /** Owner wires this to open the piano roll for the given track + clip. */
     std::function<void(int trackIndex, int clipIndex)> onClipDoubleClicked;
+
+#if DYSEKT_STANDALONE
+    /** Owner (DysektEditor, standalone build only) wires this to the single
+     *  NetworkAudioProcessor instance MainWindow already owns, so completed
+     *  network recordings can be committed to the timeline. Never construct
+     *  a second NetworkAudioProcessor to satisfy this — pass nullptr if none
+     *  is available and the polling below just no-ops. */
+    void setNetworkAudioProcessor (NetworkAudioProcessor* proc) noexcept { networkAudioProcessor = proc; }
+#endif
 
     /** Fired whenever the selected track changes.
      *  @param type          Track type of the newly selected track.
@@ -1010,6 +1022,9 @@ private:
     //  State
     //==========================================================================
     SequencerEngine&      engine;
+#if DYSEKT_STANDALONE
+    NetworkAudioProcessor* networkAudioProcessor = nullptr;
+#endif
     FloatingTransportBar  transport;
     TrackInspector        inspector;
     TrackHeaderStrip      trackStrip;
@@ -1121,6 +1136,15 @@ private:
         // as recording stops still gets its real duration instead of being
         // silently dropped.
         engine.drainRecordedEvents();
+
+#if DYSEKT_STANDALONE
+        // Completed network recordings become timeline AudioClips only on
+        // the message thread. This keeps vector/COW/file metadata work out
+        // of the real-time audio callback. Cheap no-op when nothing has
+        // finished recording since the last poll.
+        if (networkAudioProcessor != nullptr)
+            networkAudioProcessor->commitLastRecordedClipToTimeline();
+#endif
 
         // Keep the ruler/grid loop markers in sync with the engine's actual
         // loop range — e.g. locators set from the docked or floating

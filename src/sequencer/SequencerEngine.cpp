@@ -467,6 +467,126 @@ int SequencerEngine::getNumTracks() const
     return (int) impl->getTracks()->size();
 }
 
+//==============================================================================
+// Audio clip management
+//
+// NOTE: SequencerTrack::addAudioClip()/removeAudioClip() return void (the COW
+// AudioClipList has no natural "index of the clip I just inserted" once the
+// insert re-sorts by startTick), while this API reports success as an int
+// index / bool. addAudioClip() below re-locates the clip after insertion by
+// exact field match; removeAudioClip()/setAudioClipStartTick() validate the
+// index against getNumAudioClips() before delegating, since the track-level
+// calls silently no-op on an out-of-range index rather than reporting it.
+
+int SequencerEngine::getNumAudioClips(int trackIndex) const
+{
+    auto snap = impl->getTracks();
+    if (! juce::isPositiveAndBelow(trackIndex, (int) snap->size()))
+        return 0;
+
+    const auto& track = *(*snap)[(size_t) trackIndex];
+    if (track.type != TrackType::Audio)
+        return 0;
+
+    return track.getNumAudioClips();
+}
+
+AudioClip SequencerEngine::getAudioClip(int trackIndex, int clipIndex) const
+{
+    auto snap = impl->getTracks();
+    if (! juce::isPositiveAndBelow(trackIndex, (int) snap->size()))
+        return {};
+
+    const auto& track = *(*snap)[(size_t) trackIndex];
+    if (track.type != TrackType::Audio)
+        return {};
+
+    if (const auto* clip = track.getAudioClip(clipIndex))
+        return *clip;
+    return {};
+}
+
+int SequencerEngine::addAudioClip(int trackIndex, const AudioClip& clip)
+{
+    if (! clip.isValid())
+        return -1;
+
+    auto snap = impl->getTracks();
+    if (! juce::isPositiveAndBelow(trackIndex, (int) snap->size()))
+        return -1;
+
+    const auto& track = *(*snap)[(size_t) trackIndex];
+    if (track.type != TrackType::Audio)
+        return -1;
+
+    track.addAudioClip(clip);
+
+    // addAudioClip() keeps the list sorted by startTick, so re-derive the
+    // resulting index rather than assuming size()-1.
+    auto after = track.getAudioClips();
+    for (int i = 0; i < (int) after->size(); ++i)
+    {
+        const auto& c = (*after)[(size_t) i];
+        if (c.filePath == clip.filePath && c.startTick == clip.startTick
+            && c.lengthSamples == clip.lengthSamples)
+            return i;
+    }
+    return -1;
+}
+
+bool SequencerEngine::removeAudioClip(int trackIndex, int clipIndex)
+{
+    auto snap = impl->getTracks();
+    if (! juce::isPositiveAndBelow(trackIndex, (int) snap->size()))
+        return false;
+
+    const auto& track = *(*snap)[(size_t) trackIndex];
+    if (track.type != TrackType::Audio)
+        return false;
+
+    if (! juce::isPositiveAndBelow(clipIndex, track.getNumAudioClips()))
+        return false;
+
+    track.removeAudioClip(clipIndex);
+    return true;
+}
+
+bool SequencerEngine::setAudioClipStartTick(int trackIndex,
+                                             int clipIndex,
+                                             int64_t newStartTick)
+{
+    auto snap = impl->getTracks();
+    if (! juce::isPositiveAndBelow(trackIndex, (int) snap->size()))
+        return false;
+
+    const auto& track = *(*snap)[(size_t) trackIndex];
+    if (track.type != TrackType::Audio)
+        return false;
+
+    if (! juce::isPositiveAndBelow(clipIndex, track.getNumAudioClips()))
+        return false;
+
+    track.setAudioClipStartTick(clipIndex, juce::jmax((int64_t) 0, newStartTick));
+    return true;
+}
+
+bool SequencerEngine::addRecordedAudioClip(int trackIndex,
+                                            const juce::File& file,
+                                            double sampleRate,
+                                            int channels,
+                                            int64_t startTick,
+                                            int64_t lengthSamples)
+{
+    AudioClip clip;
+    clip.filePath      = file.getFullPathName();
+    clip.startTick     = juce::jmax((int64_t) 0, startTick);
+    clip.lengthSamples = lengthSamples;
+    clip.sampleRate    = sampleRate;
+    clip.channels      = channels;
+
+    return addAudioClip(trackIndex, clip) >= 0;
+}
+
 SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
 {
     auto snap = impl->getTracks();

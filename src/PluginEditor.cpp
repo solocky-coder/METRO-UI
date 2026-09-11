@@ -49,6 +49,13 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
  setLookAndFeel (&lnf);
 
+#if DYSEKT_STANDALONE
+ // Standalone only: MainWindow constructs a single NetworkAudioProcessor
+ // and passes it in as our DysektProcessor&. Reuse that same instance here
+ // rather than creating a second one (see ArrangeView::setNetworkAudioProcessor).
+ arrangeView.setNetworkAudioProcessor (dynamic_cast<NetworkAudioProcessor*> (&p));
+#endif
+
  addAndMakeVisible (logoBar);
  logoBar.getProperties().set ("dysektThemeKey", "header");
  addAndMakeVisible (headerBar);

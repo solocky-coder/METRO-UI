@@ -45,6 +45,32 @@ public:
     void stopNetworkRecording() noexcept { lastRecordedClip = recorder.stop(); }
     NetworkAudioRecorder::Clip getLastRecordedNetworkClip() const { return lastRecordedClip; }
 
+    // Called from the message thread (see ArrangeView::timerCallback()).
+    // processBlock() finalizes the recorder and stashes the result in
+    // lastRecordedClip/recordTrackArmed on the audio thread; this just moves
+    // that already-captured data into the timeline, so it does no recording
+    // work of its own and touches no realtime state.
+    bool commitLastRecordedClipToTimeline()
+    {
+        if (! lastRecordedClip.isValid())
+            return false;
+
+        const int trackIndex = recordTrackArmed;
+        if (trackIndex < 0)
+            return false;
+
+        const auto clip = lastRecordedClip;
+        lastRecordedClip = {};
+
+        return sequencer.addRecordedAudioClip(
+            trackIndex,
+            clip.file,
+            clip.sampleRate,
+            clip.channels,
+            clip.startTick,
+            clip.lengthSamples);
+    }
+
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
     {
         DysektProcessor::prepareToPlay (sampleRate, samplesPerBlock);

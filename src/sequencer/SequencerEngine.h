@@ -50,6 +50,22 @@ public:
     bool isNetworkAudioTrack(int trackIndex) const noexcept;
     bool getNetworkAudioRoute(int trackIndex, int64_t& routeId, int32_t& sourceId, int& sourceChannel) const noexcept;
 
+    //==========================================================================
+    // Audio clips
+    int getNumAudioClips(int trackIndex) const;
+    AudioClip getAudioClip(int trackIndex, int clipIndex) const;
+    int addAudioClip(int trackIndex, const AudioClip& clip);
+    bool removeAudioClip(int trackIndex, int clipIndex);
+    bool setAudioClipStartTick(int trackIndex, int clipIndex, int64_t newStartTick);
+
+    // Attach a completed network recording to its destination Audio Track.
+    bool addRecordedAudioClip(int trackIndex,
+                              const juce::File& file,
+                              double sampleRate,
+                              int channels,
+                              int64_t startTick,
+                              int64_t lengthSamples);
+
     int getNumClips(int trackIndex) const; SequencerClipInfo getClipInfo(int trackIndex, int clipIndex) const; MidiClip* getClip(int trackIndex, int clipIndex = 0); MidiClip& getClip();
     int addClip(int trackIndex, int64_t startTick, int64_t lengthTicks = MidiClip::kPPQ * 4 * 4); void removeClip(int trackIndex, int clipIndex); void setClipStartTick(int trackIndex, int clipIndex, int64_t newStartTick); void setClipLengthTicks(int trackIndex, int clipIndex, int64_t newLength);
     int64_t getTrackLengthTicks(int trackIndex) const noexcept; void setTrackLengthTicks(int trackIndex, int64_t ticks);
