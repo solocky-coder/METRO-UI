@@ -62,13 +62,29 @@ public:
         const auto clip = lastRecordedClip;
         lastRecordedClip = {};
 
-        return sequencer.addRecordedAudioClip(
+        const bool committed = sequencer.addRecordedAudioClip(
             trackIndex,
             clip.file,
             clip.sampleRate,
             clip.channels,
             clip.startTick,
             clip.lengthSamples);
+
+        // TEMPORARY DIAGNOSTIC — remove once verified. Appends to a plain
+        // text file next to the recordings themselves, so it's readable
+        // just by opening it — no debugger or extra tooling required,
+        // which matters since this build comes from CI and typically runs
+        // on a different machine than the one that built it.
+        {
+            const auto logFile = clip.file.getParentDirectory().getChildFile ("commit_log.txt");
+            logFile.appendText (juce::Time::getCurrentTime().toString (true, true, true, true)
+                                 + "  committed=" + juce::String ((int) committed)
+                                 + "  track=" + juce::String (trackIndex)
+                                 + "  numAudioClips=" + juce::String (sequencer.getNumAudioClips (trackIndex))
+                                 + "  file=" + clip.file.getFullPathName() + "\n");
+        }
+
+        return committed;
     }
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
