@@ -3,6 +3,7 @@
 #include "../PluginProcessor.h"
 #include "../network/MetroNetworkAudio.h"
 #include "../network/NetworkAudioRecorder.h"
+#include "../sequencer/AudioClipPlayer.h"
 #include <atomic>
 
 class NetworkAudioProcessor final : public DysektProcessor
@@ -70,22 +71,16 @@ public:
             clip.startTick,
             clip.lengthSamples);
 
-        // TEMPORARY DIAGNOSTIC — remove once verified. Appends to a plain
-        // text file next to the recordings themselves, so it's readable
-        // just by opening it — no debugger or extra tooling required,
-        // which matters since this build comes from CI and typically runs
-        // on a different machine than the one that built it.
-        {
-            const auto logFile = clip.file.getParentDirectory().getChildFile ("commit_log.txt");
-            logFile.appendText (juce::Time::getCurrentTime().toString (true, true, true, true)
-                                 + "  committed=" + juce::String ((int) committed)
-                                 + "  track=" + juce::String (trackIndex)
-                                 + "  numAudioClips=" + juce::String (sequencer.getNumAudioClips (trackIndex))
-                                 + "  file=" + clip.file.getFullPathName() + "\n");
-        }
-
         return committed;
     }
+
+    // Rebuilds the AudioClip reader cache from the current arrangement.
+    // Called from the message thread — see ArrangeView::timerCallback(),
+    // which polls this every frame alongside commitLastRecordedClipToTimeline()
+    // so a clip that was just recorded, moved, or deleted is reflected in
+    // playback promptly without doing any of that bookkeeping on the audio
+    // thread itself.
+    void syncAudioClipPlayback() { audioClipPlayer.syncAllTracks (sequencer); }
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
     {
@@ -93,11 +88,44 @@ public:
         networkSampleRate = sampleRate;
         const int capacity = juce::jmax (4096, samplesPerBlock > 0 ? samplesPerBlock : 512);
         networkBuffer.setSize (2, capacity, false, true, true);
+        audioClipScratch.setSize (2, capacity, false, true, true);
     }
 
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
     {
         DysektProcessor::processBlock (buffer, midi);
+
+        // Recorded AudioClip playback. Deliberately runs independent of the
+        // live network-audio system below — a project with committed clips
+        // should still hear them during playback even with no network
+        // source connected at all, whereas everything from here down to the
+        // early `audio == nullptr` return only concerns *live* network
+        // audio (routing, recording, monitoring fallback).
+        {
+            const int clipNumSamples = buffer.getNumSamples();
+            if (clipNumSamples > 0 && clipNumSamples <= audioClipScratch.getNumSamples() && sequencer.isPlaying())
+            {
+                const double clipSampleRate = networkSampleRate > 0.0 ? networkSampleRate : 44100.0;
+                const int64_t clipPlayheadTick = sequencer.getPlayheadTick();
+                const double bpm = sequencer.getBpm();
+                const int numTracksForClips = sequencer.getNumTracks();
+                for (int trackIndex = 0; trackIndex < numTracksForClips; ++trackIndex)
+                {
+                    const auto clipTrackInfo = sequencer.getTrackInfo (trackIndex);
+                    if (clipTrackInfo.type != TrackType::Audio || ! clipTrackInfo.enabled) continue;
+
+                    const float gain = juce::Decibels::decibelsToGain (clipTrackInfo.volumeDb);
+                    const float pan = juce::jlimit (-1.0f, 1.0f, clipTrackInfo.pan);
+                    const float angle = (pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
+                    const float leftGain = gain * std::cos (angle);
+                    const float rightGain = gain * std::sin (angle);
+
+                    audioClipPlayer.render (trackIndex, buffer, audioClipScratch, clipNumSamples,
+                                            clipPlayheadTick, bpm, clipSampleRate, leftGain, rightGain);
+                }
+            }
+        }
+
         MetroNetworkAudio* audio = networkAudio;
         if (audio == nullptr) audio = activeNetworkAudio.load (std::memory_order_acquire);
         if (audio == nullptr || ! audio->isRunning()) return;
@@ -199,5 +227,7 @@ private:
     juce::AudioBuffer<float> networkBuffer;
     NetworkAudioRecorder recorder;
     NetworkAudioRecorder::Clip lastRecordedClip;
+    AudioClipPlayer audioClipPlayer;
+    juce::AudioBuffer<float> audioClipScratch;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NetworkAudioProcessor)
 };

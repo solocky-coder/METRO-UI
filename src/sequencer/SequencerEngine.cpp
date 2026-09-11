@@ -32,6 +32,7 @@
 static constexpr int kStreamVersion1 = 1;  // legacy single-clip
 static constexpr int kStreamVersion2 = 2;  // multi-clip
 static constexpr int kStreamVersion3 = 3;  // + per-track solo/volumeDb/pan
+static constexpr int kStreamVersion4 = 4;  // + per-track recorded AudioClip list
 
 //==============================================================================
 struct SequencerEngine::Impl
@@ -1528,7 +1529,7 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
 //==============================================================================
 void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 {
-    s.writeInt   (kStreamVersion3);
+    s.writeInt   (kStreamVersion4);
     s.writeFloat (impl->internalBpm.load (std::memory_order_relaxed));
     s.writeBool  (impl->looping    .load (std::memory_order_relaxed));
     s.writeBool  (impl->syncToHost .load (std::memory_order_relaxed));
@@ -1541,7 +1542,7 @@ void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 
 bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
 {
-    // Peek at first int — kStreamVersion2/3 mean multi-clip format,
+    // Peek at first int — kStreamVersion2/3/4 mean multi-clip format,
     // otherwise treat the bytes as a legacy float BPM (version 1).
     const auto startPos = s.getPosition();
     const int firstInt  = s.readInt();
@@ -1551,8 +1552,9 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     int   n;
     const bool isV2 = (firstInt == kStreamVersion2);
     const bool isV3 = (firstInt == kStreamVersion3);
+    const bool isV4 = (firstInt == kStreamVersion4);
 
-    if (isV2 || isV3)
+    if (isV2 || isV3 || isV4)
     {
         bpm  = s.readFloat();
         loop = s.readBool();
@@ -1577,7 +1579,7 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     for (int i = 0; i < n; ++i)
     {
         auto t  = std::make_shared<SequencerTrack>();
-        bool ok = (isV2 || isV3) ? t->readFromStream (s, isV3) : t->readFromStreamV1 (s);
+        bool ok = (isV2 || isV3 || isV4) ? t->readFromStream (s, isV3 || isV4, isV4) : t->readFromStreamV1 (s);
         if (! ok) return false;
         loaded->push_back (t);
     }

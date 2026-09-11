@@ -557,6 +557,15 @@ public:
         const int trackIdx = trackFromY (e.y);
         const bool validTrack = juce::isPositiveAndBelow (trackIdx, engine.getNumTracks());
 
+        // Audio tracks hit-test against AudioClipList (recorded takes)
+        // rather than the track's default MIDI ClipList — see
+        // handleAudioTrackMouseDown for what left/right-click do there.
+        if (validTrack && engine.getTrackInfo (trackIdx).type == TrackType::Audio)
+        {
+            handleAudioTrackMouseDown (trackIdx, e);
+            return;
+        }
+
         // Hit test all clips on this track (none if the click is below the
         // last track row — that's still valid space to start a rubber-band
         // drag from, it just can't hit a clip or fall back to creating one).
@@ -745,6 +754,22 @@ public:
             updateScrollRanges();
             repaint(); return;
         }
+
+        if (dragMode == DragMode::MoveAudioClip)
+        {
+            const int64_t newOff = juce::jmax ((int64_t)0,
+                dragStartTicks + (int64_t)(dx * ticksPerPixel()));
+            dragLiveOffset = snapTick (newOff);
+
+            const int margin = 40;
+            if (e.x < clipGridBounds.getX() + margin)
+                scrollX = juce::jmax (0.0, scrollX - 8.0);
+            else if (e.x > clipGridBounds.getRight() - margin)
+                scrollX = scrollX + 8.0;
+
+            updateScrollRanges();
+            repaint(); return;
+        }
     }
 
     void mouseUp (const juce::MouseEvent&) override
@@ -832,6 +857,26 @@ public:
             dragLiveOffset = 0;
         }
 
+        // Commit an AudioClip move (Audio-type tracks — see
+        // handleAudioTrackMouseDown). Single-clip only: AudioClipList has no
+        // multi-select equivalent to selectedClips, unlike MIDI MoveClip above.
+        if (dragMode == DragMode::MoveAudioClip && dragTrack >= 0 && dragClip >= 0)
+        {
+            if (dragLiveOffset != dragStartTicks)
+            {
+                engine.setAudioClipStartTick (dragTrack, dragClip, dragLiveOffset);
+                // The move re-sorts the track's AudioClipList, so re-resolve
+                // the selection by its new start tick rather than assuming
+                // the old index still points at the same clip.
+                selectedAudioClipIdx = -1;
+                for (int ci = 0; ci < engine.getNumAudioClips (dragTrack); ++ci)
+                    if (engine.getAudioClip (dragTrack, ci).startTick == dragLiveOffset)
+                        { selectedAudioClipIdx = ci; break; }
+                selectedAudioTrack = dragTrack;
+            }
+            dragLiveOffset = 0;
+        }
+
         // Finalize the rubber-band drag: a real drag (rect grew past a
         // couple of pixels) just leaves the live-updated selectedClips in
         // place. A plain click on empty space no longer creates a clip —
@@ -868,6 +913,27 @@ public:
         if (! clipGridBounds.contains (e.getPosition())) return;
         const int trackIdx = trackFromY (e.y);
         if (! juce::isPositiveAndBelow (trackIdx, engine.getNumTracks())) return;
+
+        // Audio tracks: double-click never opens the piano roll (there are
+        // no notes to edit) and never click-to-creates a clip on empty
+        // space (Audio track clips only ever come from recording). A hit on
+        // an existing recording reveals its file instead — the most useful
+        // "I double-clicked this" action available for a plain audio take.
+        if (engine.getTrackInfo (trackIdx).type == TrackType::Audio)
+        {
+            const int hitClip = findAudioClipAt (trackIdx, e.getPosition());
+            selectTrack (trackIdx);
+            trackStrip.setSelectedTrack (trackIdx);
+            if (hitClip >= 0)
+            {
+                selectedAudioTrack   = trackIdx;
+                selectedAudioClipIdx = hitClip;
+                const juce::File f (engine.getAudioClip (trackIdx, hitClip).filePath);
+                if (f.existsAsFile()) f.revealToUser();
+            }
+            repaint();
+            return;
+        }
 
         for (int ci = 0; ci < engine.getNumClips (trackIdx); ++ci)
         {
@@ -1078,7 +1144,7 @@ private:
     int64_t  lastAutoScrollTick = -1;
 
     // Drag state
-    enum class DragMode  { None, MoveClip, ResizeRight, RubberBand, DrawClip };
+    enum class DragMode  { None, MoveClip, ResizeRight, RubberBand, DrawClip, MoveAudioClip };
     enum class RulerDrag { None, Scrub, LoopSet, DragLoopStart, DragLoopEnd };
     DragMode  dragMode       = DragMode::None;
     RulerDrag rulerDrag      = RulerDrag::None;
@@ -1113,6 +1179,14 @@ private:
 
     int       selectedClip   = 0;   // which clip is selected on selectedTrack
 
+    // Selected AudioClip (Audio-type tracks only — see paintAudioClip/
+    // findAudioClipAt/handleAudioTrackMouseDown). Kept separate from
+    // selectedClip/selectedClips above rather than reusing them, since those
+    // index into a track's MIDI ClipList and an Audio track's AudioClipList
+    // is a completely different collection with its own indices.
+    int       selectedAudioTrack    = -1;
+    int       selectedAudioClipIdx  = -1;
+
     // Multi-clip selection — (trackIdx, clipIdx) pairs. selectedTrack/
     // selectedClip above still track the "primary" clip (whichever was
     // most recently clicked/toggled) so all pre-existing single-clip code
@@ -1143,7 +1217,14 @@ private:
         // of the real-time audio callback. Cheap no-op when nothing has
         // finished recording since the last poll.
         if (networkAudioProcessor != nullptr)
+        {
             networkAudioProcessor->commitLastRecordedClipToTimeline();
+            // Keeps the audio-thread clip-playback reader cache in step with
+            // the arrangement — newly committed, moved, or deleted
+            // AudioClips (the drag/delete paths in this view below all go
+            // straight through SequencerEngine) all funnel through here.
+            networkAudioProcessor->syncAudioClipPlayback();
+        }
 #endif
 
         // Keep the ruler/grid loop markers in sync with the engine's actual
@@ -1269,6 +1350,37 @@ private:
         return { x, y, w, trackH - 1 };
     }
 
+    /** Screen rect for one AudioClip on an Audio-type track — mirrors
+     *  clipRectForClip() above but reads AudioClipList (SequencerEngine::
+     *  getAudioClip) rather than the MIDI ClipList, and previews
+     *  DragMode::MoveAudioClip instead of DragMode::MoveClip. */
+    juce::Rectangle<int> audioClipRectForClip (int trackIdx, int clipIdx) const
+    {
+        if (clipGridBounds.isEmpty()) return {};
+        const auto clip = engine.getAudioClip (trackIdx, clipIdx);
+        if (! clip.isValid()) return {};
+
+        int64_t startTick = clip.startTick;
+        if (dragMode == DragMode::MoveAudioClip && dragTrack == trackIdx && dragClip == clipIdx)
+            startTick = dragLiveOffset;
+
+        const int64_t lengthTicks = juce::jmax<int64_t> (1, clip.lengthTicks (engine.getBpm()));
+        const int w = juce::jmax (kMinClipPx, (int) (lengthTicks * pixelsPerTick));
+        const int x = clipGridBounds.getX() + (int) (startTick * pixelsPerTick - scrollX);
+        const int y = trackTopY (trackIdx);
+        return { x, y, w, trackH - 1 };
+    }
+
+    /** Hit-tests an Audio track's AudioClipList at a point; -1 if none. */
+    int findAudioClipAt (int trackIdx, juce::Point<int> pos) const
+    {
+        const int numAudioClips = engine.getNumAudioClips (trackIdx);
+        for (int ci = 0; ci < numAudioClips; ++ci)
+            if (audioClipRectForClip (trackIdx, ci).contains (pos))
+                return ci;
+        return -1;
+    }
+
     /** Grid-quantize resolution currently selected in the GRID combo, read
      *  live from the transport bar's GRID combo, docked or floating — same
      *  instance either way now (see FloatingTransportBar's header comment),
@@ -1338,6 +1450,54 @@ private:
             selectTrack (trackIdx);
             selectedClip = clipIdx;
         }
+    }
+
+    /** mouseDown handling for Audio-type tracks — hit-tests AudioClipList
+     *  (recorded takes; see AudioClip.h/SequencerTrack::AudioClipList)
+     *  instead of the MIDI ClipList every other track type uses here.
+     *  Right-click opens a small audio-clip menu (showAudioClipContextMenu)
+     *  rather than the MIDI clip menu — "Open in piano roll" and friends
+     *  don't apply to a recording. Left-click on a clip selects it and
+     *  starts a move-drag (committed in mouseUp's MoveAudioClip branch);
+     *  empty space just selects the track — Audio track clips only ever
+     *  come from recording (NetworkAudioProcessor), never click-to-create. */
+    void handleAudioTrackMouseDown (int trackIdx, const juce::MouseEvent& e)
+    {
+        const int hitClip = findAudioClipAt (trackIdx, e.getPosition());
+
+        if (e.mods.isRightButtonDown())
+        {
+            showAudioClipContextMenu (trackIdx, hitClip, e);
+            return;
+        }
+
+        selectTrack (trackIdx);
+        trackStrip.setSelectedTrack (trackIdx);
+
+        if (hitClip >= 0)
+        {
+            selectedAudioTrack   = trackIdx;
+            selectedAudioClipIdx = hitClip;
+
+            // LOCK (editingLocked) still allows selecting a clip, just not
+            // dragging it — same trade the MIDI clip-body branch above makes.
+            if (! editingLocked)
+            {
+                dragMode       = DragMode::MoveAudioClip;
+                dragTrack      = trackIdx;
+                dragClip       = hitClip;
+                dragStartX     = e.x;
+                dragStartTicks = engine.getAudioClip (trackIdx, hitClip).startTick;
+                dragLiveOffset = dragStartTicks;
+            }
+        }
+        else
+        {
+            selectedAudioTrack   = -1;
+            selectedAudioClipIdx = -1;
+        }
+
+        repaint(); trackStrip.repaint();
     }
 
     /** Recomputes selectedClips as rubberBandBaseSelection (empty unless the
@@ -1775,6 +1935,65 @@ private:
                     case 32: setActiveTool (Tool::Erase);  break;
                     case 33: setActiveTool (Tool::Split);  break;
                     case 34: setActiveTool (Tool::Glue);   break;
+                    default: break;
+                }
+                repaint(); trackStrip.repaint();
+            });
+    }
+
+    /** Right-click menu for Audio-type tracks. Deliberately a distinct,
+     *  much smaller menu than showContextMenu() above — an audio clip is a
+     *  recorded file, not editable note data, so none of the MIDI menu's
+     *  "Open in piano roll" / "Repeat clip" / "Clear clip" items apply. */
+    void showAudioClipContextMenu (int trackIdx, int clipIdx, const juce::MouseEvent& e)
+    {
+        const bool validTrack = juce::isPositiveAndBelow (trackIdx, engine.getNumTracks());
+        const SequencerTrackInfo info = validTrack ? engine.getTrackInfo (trackIdx)
+                                                    : SequencerTrackInfo{};
+        const bool onClip = validTrack && (clipIdx >= 0);
+        const AudioClip clip = onClip ? engine.getAudioClip (trackIdx, clipIdx) : AudioClip{};
+
+        juce::PopupMenu m;
+        if (validTrack)
+        {
+            if (onClip)
+            {
+               #if JUCE_MAC
+                m.addItem (1, "Show recording in Finder");
+               #elif JUCE_WINDOWS
+                m.addItem (1, "Show recording in Explorer");
+               #else
+                m.addItem (1, "Show recording in file manager");
+               #endif
+                m.addItem (2, "Delete clip");
+                m.addSeparator();
+            }
+            m.addItem (3, info.enabled ? "Mute track" : "Unmute track");
+        }
+
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (juce::Rectangle<int> (e.getScreenX(), e.getScreenY(), 1, 1)),
+            [this, trackIdx, clipIdx, info, onClip, clip] (int result)
+            {
+                switch (result)
+                {
+                    case 1:
+                        if (onClip)
+                        {
+                            const juce::File f (clip.filePath);
+                            if (f.existsAsFile()) f.revealToUser();
+                        }
+                        break;
+                    case 2:
+                        if (onClip)
+                        {
+                            engine.removeAudioClip (trackIdx, clipIdx);
+                            if (selectedAudioTrack == trackIdx && selectedAudioClipIdx == clipIdx)
+                                selectedAudioClipIdx = -1;
+                        }
+                        break;
+                    case 3:
+                        engine.setTrackEnabled (trackIdx, ! info.enabled);
+                        break;
                     default: break;
                 }
                 repaint(); trackStrip.repaint();
@@ -2286,12 +2505,25 @@ private:
         // Vertical grid lines
         paintGridLines (g, rowR);
 
-        // Clips — paint all slots on this track
-        const int numClips = engine.getNumClips (i);
-        for (int ci = 0; ci < numClips; ++ci)
+        // Clips — Audio tracks show their recorded AudioClipList instead of
+        // the track's (unused, for Audio tracks) default MIDI ClipList slot.
+        if (info.type == TrackType::Audio)
         {
-            const bool isSelClip = isClipSelected (i, ci);
-            paintClip (g, i, ci, info, isSelClip, muted);
+            const int numAudioClips = engine.getNumAudioClips (i);
+            for (int ci = 0; ci < numAudioClips; ++ci)
+            {
+                const bool isSelClip = (selectedAudioTrack == i && selectedAudioClipIdx == ci);
+                paintAudioClip (g, i, ci, info, isSelClip, muted);
+            }
+        }
+        else
+        {
+            const int numClips = engine.getNumClips (i);
+            for (int ci = 0; ci < numClips; ++ci)
+            {
+                const bool isSelClip = isClipSelected (i, ci);
+                paintClip (g, i, ci, info, isSelClip, muted);
+            }
         }
 
         g.restoreState();
@@ -2389,6 +2621,7 @@ private:
                 case TrackType::MainSlice:      badge = "SL"; break;
                 case TrackType::ChromaticSlice: badge = "CH"; break;
                 case TrackType::SfPlayer:       badge = "SF"; break;
+                case TrackType::Audio:          badge = "AU"; break;
             }
             g.setFont (juce::Font (10.f));
             g.setColour (juce::Colours::white.withAlpha (0.55f));
@@ -2421,6 +2654,77 @@ private:
 
         // Mini note preview
         paintNotePreview (g, i, ci, clipR, tile, muted);
+    }
+
+    /** Visual for one recorded AudioClip on an Audio-type track — distinct
+     *  from paintClip()'s MIDI-clip tile (a diagonal stripe fill reading as
+     *  "waveform-ish", the filename instead of the track name, and no
+     *  resize handle — an audio recording's length isn't user-editable
+     *  here, only its position, via DragMode::MoveAudioClip). */
+    void paintAudioClip (juce::Graphics& g, int i, int ci,
+                         const SequencerTrackInfo& info,
+                         bool isSel, bool muted) const
+    {
+        const auto clipR = audioClipRectForClip (i, ci);
+        if (clipR.isEmpty() || ! clipGridBounds.intersects (clipR)) return;
+
+        const auto clip = engine.getAudioClip (i, ci);
+
+        const juce::Colour tile = muted
+            ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
+            : info.colour;
+
+        g.setColour (tile);
+        g.fillRect (clipR.reduced (1, 1));
+
+        // Diagonal stripe texture — cheap way to read as "recorded audio"
+        // at a glance rather than a flat MIDI-clip tile, without needing an
+        // actual waveform render (see AudioClipPlayer.h's header comment on
+        // why full waveform decode is left for later).
+        {
+            g.saveState();
+            g.reduceClipRegion (clipR.reduced (1, 1));
+            g.setColour (juce::Colours::black.withAlpha (muted ? 0.10f : 0.18f));
+            const int stripeSpacing = 7;
+            for (int sx = clipR.getX() - clipR.getHeight(); sx < clipR.getRight(); sx += stripeSpacing)
+            {
+                juce::Path p;
+                p.startNewSubPath ((float) sx, (float) clipR.getBottom());
+                p.lineTo ((float) (sx + clipR.getHeight()), (float) clipR.getY());
+                g.strokePath (p, juce::PathStrokeType (2.0f));
+            }
+            g.restoreState();
+        }
+
+        if (isSel)
+        {
+            g.setColour (getTheme().accent);
+            g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
+        }
+
+        // Filename rather than track name — several clips can share a track,
+        // so the name that actually distinguishes them is the recording's.
+        if (trackH >= 20)
+        {
+            g.setFont (juce::Font (juce::jmin (14.f, (float) trackH * 0.24f), juce::Font::bold));
+            g.setColour (muted ? juce::Colours::white.withAlpha (0.45f)
+                               : juce::Colours::white.withAlpha (0.92f));
+            g.drawText (juce::File (clip.filePath).getFileNameWithoutExtension(),
+                        clipR.getX() + 6, clipR.getY() + 2,
+                        juce::jmax (0, clipR.getWidth() - 26),
+                        juce::jmax (0, (int) (trackH * 0.38f)),
+                        juce::Justification::centredLeft, true);
+        }
+
+        if (clipR.getWidth() > 32 && trackH >= 20)
+        {
+            g.setFont (juce::Font (10.f));
+            g.setColour (juce::Colours::white.withAlpha (0.55f));
+            g.drawText ("AU",
+                        clipR.getRight() - 22, clipR.getY() + 2,
+                        20, 12,
+                        juce::Justification::centredRight, false);
+        }
     }
 
     void paintNotePreview (juce::Graphics& g, int trackIdx, int clipIdx,

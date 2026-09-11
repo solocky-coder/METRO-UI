@@ -49,8 +49,9 @@ struct SequencerTrack
     int32_t networkSourceId = 0;
     int networkSourceChannel = 0;
 
-    // Runtime audio-take metadata. Persistence is intentionally deferred until
-    // the project stream version is bumped; existing project files remain valid.
+    // Runtime audio-take metadata. Persisted from project stream version 4
+    // onward (see SequencerEngine.cpp's kStreamVersion4); older project
+    // files simply have no AudioClip block to read and load with an empty list.
     std::shared_ptr<const AudioClipList> getAudioClips() const noexcept { return audioClipsSnapshot.load (std::memory_order_acquire); }
     int getNumAudioClips() const noexcept { return (int) getAudioClips()->size(); }
     const AudioClip* getAudioClip (int i) const noexcept
@@ -119,8 +120,11 @@ struct SequencerTrack
         auto snap = getClips(); s.writeInt ((int) snap->size()); for (auto& slot : *snap) slot->writeToStream (s);
         s.writeBool (solo.load()); s.writeFloat (volumeDb.load()); s.writeFloat (pan.load());
         if (type == TrackType::Audio) { s.writeInt64 (networkRouteId); s.writeInt (networkSourceId); s.writeInt (networkSourceChannel); }
+        auto audioSnap = getAudioClips();
+        s.writeInt ((int) audioSnap->size());
+        for (auto& c : *audioSnap) c.writeToStream (s);
     }
-    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool = false)
+    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool hasAudioClips = false)
     {
         type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt());
         preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString();
@@ -129,6 +133,19 @@ struct SequencerTrack
         sortAndPublish (std::move (next));
         if (hasExtendedFields) { solo.store (s.readBool()); volumeDb.store (s.readFloat()); pan.store (s.readFloat()); }
         if (type == TrackType::Audio) { networkRouteId = s.readInt64(); networkSourceId = s.readInt(); networkSourceChannel = s.readInt(); }
+        if (hasAudioClips)
+        {
+            const int an = s.readInt(); if (an < 0 || an > 4096) return false;
+            auto audioNext = std::make_shared<AudioClipList>(); audioNext->reserve ((size_t) an);
+            for (int i = 0; i < an; ++i)
+            {
+                AudioClip c;
+                if (! c.readFromStream (s)) return false;
+                audioNext->push_back (c);
+            }
+            std::sort (audioNext->begin(), audioNext->end(), [] (const auto& a, const auto& b) { return a.startTick < b.startTick; });
+            audioClipsSnapshot.store (std::move (audioNext), std::memory_order_release);
+        }
         return true;
     }
     bool readFromStreamV1 (juce::MemoryInputStream& s)
