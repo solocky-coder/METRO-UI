@@ -109,7 +109,7 @@ public:
         // capture only after the first real post-count-in tick is observable.
         if (transportRecording && recordTrackIndex >= 0 && playheadTick > 0 && ! recorder.isRecording())
         {
-            const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("METRO Recordings");
+            const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("DYSEKT-SF Recordings");
             const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
             auto safeName = sequencer.getTrackInfo (recordTrackIndex).name;
             safeName = safeName.replaceCharacters ("\\/:*?\"<>|", "_________");
