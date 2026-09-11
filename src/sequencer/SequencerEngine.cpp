@@ -515,7 +515,7 @@ int SequencerEngine::addAudioClip(int trackIndex, const AudioClip& clip)
     if (! juce::isPositiveAndBelow(trackIndex, (int) snap->size()))
         return -1;
 
-    const auto& track = *(*snap)[(size_t) trackIndex];
+    auto& track = *(*snap)[(size_t) trackIndex];
     if (track.type != TrackType::Audio)
         return -1;
 
@@ -540,7 +540,7 @@ bool SequencerEngine::removeAudioClip(int trackIndex, int clipIndex)
     if (! juce::isPositiveAndBelow(trackIndex, (int) snap->size()))
         return false;
 
-    const auto& track = *(*snap)[(size_t) trackIndex];
+    auto& track = *(*snap)[(size_t) trackIndex];
     if (track.type != TrackType::Audio)
         return false;
 
@@ -559,7 +559,7 @@ bool SequencerEngine::setAudioClipStartTick(int trackIndex,
     if (! juce::isPositiveAndBelow(trackIndex, (int) snap->size()))
         return false;
 
-    const auto& track = *(*snap)[(size_t) trackIndex];
+    auto& track = *(*snap)[(size_t) trackIndex];
     if (track.type != TrackType::Audio)
         return false;
 
