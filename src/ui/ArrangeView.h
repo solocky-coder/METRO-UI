@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <vector>
 #include <utility>
+#include <unordered_map>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 //==============================================================================
 //  ArrangeView  —  Cubase-style arrange window
@@ -1186,6 +1188,15 @@ private:
     // is a completely different collection with its own indices.
     int       selectedAudioTrack    = -1;
     int       selectedAudioClipIdx  = -1;
+
+    // Per-clip waveform peak cache for paintAudioClipWaveform(), keyed by
+    // the clip's file path. Built lazily (once per file, on first paint) by
+    // getAudioClipWaveform() below — mutable because paint() and friends
+    // are const. A fixed bucket count (kWaveformBuckets) is computed once
+    // regardless of zoom level and resampled to whatever pixel width the
+    // clip is currently drawn at, so this never needs rebuilding on zoom or
+    // scroll, only when a genuinely new file shows up.
+    mutable std::unordered_map<juce::String, std::vector<std::pair<float, float>>> audioWaveformCache;
 
     // Multi-clip selection — (trackIdx, clipIdx) pairs. selectedTrack/
     // selectedClip above still track the "primary" clip (whichever was
@@ -2677,24 +2688,11 @@ private:
         g.setColour (tile);
         g.fillRect (clipR.reduced (1, 1));
 
-        // Diagonal stripe texture — cheap way to read as "recorded audio"
-        // at a glance rather than a flat MIDI-clip tile, without needing an
-        // actual waveform render (see AudioClipPlayer.h's header comment on
-        // why full waveform decode is left for later).
-        {
-            g.saveState();
-            g.reduceClipRegion (clipR.reduced (1, 1));
-            g.setColour (juce::Colours::black.withAlpha (muted ? 0.10f : 0.18f));
-            const int stripeSpacing = 7;
-            for (int sx = clipR.getX() - clipR.getHeight(); sx < clipR.getRight(); sx += stripeSpacing)
-            {
-                juce::Path p;
-                p.startNewSubPath ((float) sx, (float) clipR.getBottom());
-                p.lineTo ((float) (sx + clipR.getHeight()), (float) clipR.getY());
-                g.strokePath (p, juce::PathStrokeType (2.0f));
-            }
-            g.restoreState();
-        }
+        // Waveform, decoded from the recording itself — see
+        // getAudioClipWaveform()/paintAudioClipWaveform() below. Peaks are
+        // cached per file so this is a lookup + line-draw here, not a
+        // re-decode on every repaint.
+        paintAudioClipWaveform (g, clipR, clip.filePath, muted);
 
         if (isSel)
         {
@@ -2725,6 +2723,94 @@ private:
                         20, 12,
                         juce::Justification::centredRight, false);
         }
+    }
+
+    // Fixed resolution for the cached peak data in audioWaveformCache —
+    // independent of zoom/pixel width (see that member's comment).
+    static constexpr int kWaveformBuckets = 400;
+
+    /** Returns the (min, max) peak-per-bucket data for one recording,
+     *  decoding and caching it on first use. Runs on the message thread
+     *  (paint()), same as every other UI-side file access in this view —
+     *  for the short local takes AudioClip represents this is a small,
+     *  one-time read per file, not a per-frame cost. */
+    const std::vector<std::pair<float, float>>& getAudioClipWaveform (const juce::String& filePath) const
+    {
+        auto found = audioWaveformCache.find (filePath);
+        if (found != audioWaveformCache.end())
+            return found->second;
+
+        std::vector<std::pair<float, float>> peaks ((size_t) kWaveformBuckets, std::make_pair (0.0f, 0.0f));
+
+        juce::AudioFormatManager fm;
+        fm.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (juce::File (filePath)));
+
+        if (reader != nullptr && reader->lengthInSamples > 0 && reader->numChannels > 0)
+        {
+            const int64_t total = reader->lengthInSamples;
+            const int numChannels = juce::jmin (2, (int) reader->numChannels);
+            juce::AudioBuffer<float> block (juce::jmax (1, numChannels), 8192);
+
+            for (int b = 0; b < kWaveformBuckets; ++b)
+            {
+                const int64_t bucketStart = ((int64_t) b * total) / kWaveformBuckets;
+                const int64_t bucketEnd   = juce::jmax (bucketStart + 1, ((int64_t) (b + 1) * total) / kWaveformBuckets);
+
+                float mn = 0.0f, mx = 0.0f;
+                int64_t pos = bucketStart;
+                while (pos < bucketEnd)
+                {
+                    const int toRead = (int) juce::jmin<int64_t> (block.getNumSamples(), bucketEnd - pos);
+                    if (toRead <= 0) break;
+                    reader->read (&block, 0, toRead, pos, true, true);
+                    for (int ch = 0; ch < block.getNumChannels(); ++ch)
+                    {
+                        const auto range = block.findMinMax (ch, 0, toRead);
+                        mn = juce::jmin (mn, range.getStart());
+                        mx = juce::jmax (mx, range.getEnd());
+                    }
+                    pos += toRead;
+                }
+                peaks[(size_t) b] = { mn, mx };
+            }
+        }
+
+        auto& stored = audioWaveformCache[filePath];
+        stored = std::move (peaks);
+        return stored;
+    }
+
+    /** Draws the cached peak data for one clip's file across `clipR`,
+     *  resampling the fixed-resolution bucket data to whatever pixel width
+     *  the clip currently occupies (so this needs no rebuild on zoom). */
+    void paintAudioClipWaveform (juce::Graphics& g, juce::Rectangle<int> clipR,
+                                 const juce::String& filePath, bool muted) const
+    {
+        const auto inner = clipR.reduced (1, 1);
+        if (inner.getWidth() <= 0 || inner.getHeight() <= 0) return;
+
+        const auto& peaks = getAudioClipWaveform (filePath);
+        if (peaks.empty()) return;
+
+        g.saveState();
+        g.reduceClipRegion (inner);
+        g.setColour (juce::Colours::black.withAlpha (muted ? 0.30f : 0.50f));
+
+        const int   numBuckets = (int) peaks.size();
+        const float centreY    = (float) inner.getCentreY();
+        const float halfH      = (float) inner.getHeight() * 0.5f - 1.0f;
+
+        for (int x = 0; x < inner.getWidth(); ++x)
+        {
+            const int bucket = juce::jlimit (0, numBuckets - 1, (x * numBuckets) / inner.getWidth());
+            const auto& pk = peaks[(size_t) bucket];
+            const float top = centreY - pk.second * halfH;
+            const float bot = centreY - pk.first  * halfH;
+            g.drawVerticalLine (inner.getX() + x, juce::jmin (top, bot), juce::jmax (top, bot) + 1.0f);
+        }
+
+        g.restoreState();
     }
 
     void paintNotePreview (juce::Graphics& g, int trackIdx, int clipIdx,
