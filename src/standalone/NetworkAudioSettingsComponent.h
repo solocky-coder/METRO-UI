@@ -17,7 +17,8 @@ public:
           sourceModel (networkAudio)
     {
         NetworkAudioProcessor::setActiveNetworkAudio (networkAudio);
-        setSize (680, 760);
+        // The channel strip needs enough horizontal room for every toggle and the level meter.
+        setSize (980, 760);
 
         addAndMakeVisible (audioSelector);
 
