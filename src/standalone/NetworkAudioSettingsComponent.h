@@ -31,7 +31,7 @@ public:
         // The channel strip needs enough horizontal room for every toggle and the level meter.
         // Height is the sum of the card layout computed in resized() below, plus a settings
         // dialog isn't resizable (see MainWindow::showAudioSettings()), so this needs to be right.
-        setSize (980, 950);
+        setSize (980, 980);
 
         addAndMakeVisible (audioSelector);
 
@@ -95,32 +95,37 @@ public:
 
         gainSlider.setRange (-100.0, 24.0, 0.1);
         gainSlider.setValue (getNetworkAudioChannelState().gainDb.load(), juce::dontSendNotification);
-        gainSlider.setTextValueSuffix (" dB");
-        gainSlider.onValueChange = []
-        {
-            getNetworkAudioChannelState().setGainDb ((float) gainSliderStaticValue());
-        };
+        // MetroLookAndFeel::drawLinearSlider centers its track on the slider's full local
+        // bounds and ignores the textbox offset JUCE normally reserves space for, so a
+        // slider with a built-in textbox here would render with the track drawn straight
+        // through it. Disable the native textbox and show the value with our own label.
+        gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
         addAndMakeVisible (gainSlider);
 
         panSlider.setRange (-1.0, 1.0, 0.01);
         panSlider.setValue (getNetworkAudioChannelState().pan.load(), juce::dontSendNotification);
-        panSlider.setTextValueSuffix ("  L/R");
-        panSlider.onValueChange = []
-        {
-            getNetworkAudioChannelState().setPan ((float) panSliderStaticValue());
-        };
+        panSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
         addAndMakeVisible (panSlider);
 
-        // Use local callbacks rather than a global routing object.  These
-        // values are atomics, so the audio thread can read them safely.
+        for (auto* label : { &gainValueLabel, &panValueLabel })
+        {
+            label->setColour (juce::Label::textColourId, juce::Colours::white);
+            label->setJustificationType (juce::Justification::centredRight);
+            addAndMakeVisible (*label);
+        }
+
         gainSlider.onValueChange = [this]
         {
             getNetworkAudioChannelState().setGainDb ((float) gainSlider.getValue());
+            gainValueLabel.setText (juce::String (gainSlider.getValue(), 1) + " dB", juce::dontSendNotification);
         };
         panSlider.onValueChange = [this]
         {
             getNetworkAudioChannelState().setPan ((float) panSlider.getValue());
+            panValueLabel.setText (juce::String (panSlider.getValue(), 2) + "  L/R", juce::dontSendNotification);
         };
+        gainValueLabel.setText (juce::String (gainSlider.getValue(), 1) + " dB", juce::dontSendNotification);
+        panValueLabel.setText (juce::String (panSlider.getValue(), 2) + "  L/R", juce::dontSendNotification);
 
         muteButton.setButtonText ("Mute");
         muteButton.setToggleState (getNetworkAudioChannelState().muted.load(), juce::dontSendNotification);
@@ -250,9 +255,10 @@ public:
     {
         constexpr int kPad = 16;
         constexpr int kLabelColW = 100;   // one shared label column for every row in this dialog
+        constexpr int kValueColW = 70;    // gain/pan readout column
         constexpr int kRowH = 24;
         constexpr int kRowGap = 8;
-        constexpr int kSectionGap = 12;
+        constexpr int kSectionGap = 14;
         constexpr int kCardPad = 10;
 
         auto area = getLocalBounds().reduced (kPad);
@@ -265,8 +271,9 @@ public:
 
         // --- Device card: audioSelector is a built-in JUCE component that lays
         // out its own rows (device type / output / channel list / sample rate /
-        // buffer size) — this card just gives it a consistent frame to sit in.
-        auto deviceCardArea = area.removeFromTop (2 * kCardPad + 230);
+        // buffer size). It needs ~260px to lay all of those rows out without its
+        // last row (buffer size) crowding the bottom edge of the card.
+        auto deviceCardArea = area.removeFromTop (2 * kCardPad + 260);
         devicePanelBounds = deviceCardArea;
         audioSelector.setBounds (deviceCardArea.reduced (kCardPad));
         area.removeFromTop (kSectionGap);
@@ -286,11 +293,15 @@ public:
 
         auto gainRow = channelInner.removeFromTop (kRowH);
         gainLabel.setBounds (gainRow.removeFromLeft (kLabelColW));
+        gainValueLabel.setBounds (gainRow.removeFromRight (kValueColW));
+        gainRow.removeFromRight (10);
         gainSlider.setBounds (gainRow);
         channelInner.removeFromTop (kRowGap);
 
         auto panRow = channelInner.removeFromTop (kRowH);
         panLabel.setBounds (panRow.removeFromLeft (kLabelColW));
+        panValueLabel.setBounds (panRow.removeFromRight (kValueColW));
+        panRow.removeFromRight (10);
         panSlider.setBounds (panRow);
         channelInner.removeFromTop (kRowGap);
 
@@ -529,8 +540,10 @@ private:
     juce::Label channelTitle;
     juce::Label gainLabel;
     juce::Slider gainSlider;
+    juce::Label gainValueLabel;
     juce::Label panLabel;
     juce::Slider panSlider;
+    juce::Label panValueLabel;
     juce::ToggleButton muteButton;
     juce::ToggleButton soloButton;
     juce::ToggleButton recordArmButton;
@@ -553,9 +566,6 @@ private:
     juce::Label sourcesLabel;
     juce::ListBox sourceList;
     SourceListModel sourceModel;
-
-    static double gainSliderStaticValue() { return 0.0; }
-    static double panSliderStaticValue() { return 0.0; }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NetworkAudioSettingsComponent)
 };
