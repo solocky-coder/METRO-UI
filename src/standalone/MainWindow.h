@@ -250,13 +250,34 @@ private:
     void showAudioSettings()
     {
         auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get());
+
+        // comp sizes itself to a fixed ideal size in its own constructor (currently 980x1092
+        // to fit every card comfortably). That can be taller than some laptop screens, and
+        // this dialog is otherwise non-resizable — so rather than risk the window being
+        // silently clipped with no scrollbar or resize handle to reach the rest of it, put
+        // comp inside a Viewport and clamp the *window's* size to the actual screen. If the
+        // full size fits, this is invisible (no visible scrollbars); if it doesn't, the
+        // dialog scrolls instead of clipping.
+        auto* viewport = new juce::Viewport();
+        viewport->setViewedComponent (comp, true); // viewport now owns and deletes comp
+
+        const auto idealSize = comp->getBounds();
+        const auto displayArea = juce::Desktop::getInstance()
+                                      .getDisplays()
+                                      .getDisplayForRect (getScreenBounds())
+                                      ->userArea;
+        constexpr int kScreenMargin = 80; // room for the OS title bar, taskbar/dock, etc.
+        const int viewportWidth = juce::jmin (idealSize.getWidth(), displayArea.getWidth() - kScreenMargin);
+        const int viewportHeight = juce::jmin (idealSize.getHeight(), displayArea.getHeight() - kScreenMargin);
+        viewport->setSize (viewportWidth, viewportHeight);
+
         juce::DialogWindow::LaunchOptions opts;
-        opts.content.setOwned (comp);
+        opts.content.setOwned (viewport);
         opts.dialogTitle = "Audio Settings";
         opts.dialogBackgroundColour = juce::Colour (0xFF0D0D14);
         opts.escapeKeyTriggersCloseButton = true;
         opts.useNativeTitleBar = true;
-        opts.resizable = false;
+        opts.resizable = true; // belt-and-braces, in case someone still wants more room
         opts.launchAsync();
     }
 
