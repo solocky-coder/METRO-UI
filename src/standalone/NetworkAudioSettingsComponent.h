@@ -11,12 +11,21 @@ class NetworkAudioSettingsComponent : public juce::Component,
                                        private juce::Timer
 {
 public:
+    // showDeviceSelectorIn: this panel started out embedded in the combined Audio Settings
+    // dialog alongside the plain device selector, so it grew a device-selector card of its
+    // own. Audio Settings and Network Audio are now separate menu items/dialogs (see
+    // MainWindow::showAudioSettings() / showNetworkAudioSettings()), so the device card is
+    // no longer needed here and defaults to hidden; pass true only if some future caller
+    // wants both in one dialog again.
     explicit NetworkAudioSettingsComponent (juce::AudioDeviceManager& deviceManager,
-                                             MetroNetworkAudio* networkAudio)
+                                             MetroNetworkAudio* networkAudio,
+                                             bool showDeviceSelectorIn = false)
         : audioSelector (deviceManager, 0, 0, 1, 2, false, false, false, false),
           networkAudio (networkAudio),
           sourceModel (networkAudio)
     {
+        showDeviceSelector = showDeviceSelectorIn;
+
         NetworkAudioProcessor::setActiveNetworkAudio (networkAudio);
 
         // This dialog is launched as its own top-level DialogWindow (see
@@ -30,10 +39,18 @@ public:
 
         // The channel strip needs enough horizontal room for every toggle and the level meter.
         // Height is the sum of the card layout computed in resized() below, plus a settings
-        // dialog isn't resizable (see MainWindow::showAudioSettings()), so this needs to be right.
-        setSize (980, 980);
+        // dialog isn't resizable (see MainWindow::showAudioSettings()), so this needs to be
+        // right. kDeviceCardHeight matches the device card block resized() removes below —
+        // when the device selector is hidden, that block (plus its section gap) is never
+        // laid out, so it's subtracted here too rather than leaving blank space in the dialog.
+        constexpr int kDeviceCardHeight = 2 * 10 + 260; // kCardPad*2 + audioSelector's own row height
+        constexpr int kSectionGapOuter = 14;
+        setSize (980, showDeviceSelector ? 980 : 980 - kDeviceCardHeight - kSectionGapOuter);
 
-        addAndMakeVisible (audioSelector);
+        if (showDeviceSelector)
+            addAndMakeVisible (audioSelector);
+        else
+            audioSelector.setVisible (false);
 
         networkTitle.setText ("NETWORK AUDIO", juce::dontSendNotification);
         networkTitle.setFont (juce::Font (18.0f, juce::Font::bold));
@@ -272,11 +289,19 @@ public:
         // --- Device card: audioSelector is a built-in JUCE component that lays
         // out its own rows (device type / output / channel list / sample rate /
         // buffer size). It needs ~260px to lay all of those rows out without its
-        // last row (buffer size) crowding the bottom edge of the card.
-        auto deviceCardArea = area.removeFromTop (2 * kCardPad + 260);
-        devicePanelBounds = deviceCardArea;
-        audioSelector.setBounds (deviceCardArea.reduced (kCardPad));
-        area.removeFromTop (kSectionGap);
+        // last row (buffer size) crowding the bottom edge of the card. Hidden
+        // entirely when this panel is shown on its own (see showDeviceSelector).
+        if (showDeviceSelector)
+        {
+            auto deviceCardArea = area.removeFromTop (2 * kCardPad + 260);
+            devicePanelBounds = deviceCardArea;
+            audioSelector.setBounds (deviceCardArea.reduced (kCardPad));
+            area.removeFromTop (kSectionGap);
+        }
+        else
+        {
+            devicePanelBounds = {};
+        }
 
         // --- Network audio channel card ----------------------------------
         auto channelCardArea = area.removeFromTop (2 * kCardPad + 18 + kRowGap + 4 * kRowH + 3 * kRowGap);
@@ -527,6 +552,7 @@ private:
     };
 
     MetroLookAndFeel settingsLookAndFeel;
+    bool showDeviceSelector = false;
 
     // Cached by resized(), drawn by paint() as the grouped card backgrounds.
     juce::Rectangle<int> devicePanelBounds, channelPanelBounds, connectionPanelBounds, sourcesPanelBounds;

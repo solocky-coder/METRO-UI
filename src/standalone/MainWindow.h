@@ -111,6 +111,7 @@ public:
         else if (menuIndex == 1)
         {
             menu.addItem (10, "Audio Settings...");
+            menu.addItem (13, "Network Audio...");
             menu.addItem (11, "MIDI Settings...");
             menu.addSeparator();
             menu.addItem (12, "MIDI Routing...");
@@ -133,6 +134,7 @@ public:
             case 5:  exportMidiClip(); break;
             case 6:  juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case 10: showAudioSettings(); break;
+            case 13: showNetworkAudioSettings(); break;
             case 11: showMidiSettings(); break;
             case 12: showMidiRouting(); break;
             case 20: showAbout(); break;
@@ -247,17 +249,47 @@ private:
             });
     }
 
-    void showAudioSettings()
+    // Plain output/input device picker: just JUCE's built-in AudioDeviceSelectorComponent,
+    // Metro-styled. Network Audio used to be folded into this same dialog; it's now its own
+    // menu item/dialog (see showNetworkAudioSettings()) so this one only handles the device
+    // itself.
+    class AudioOnlySettingsComponent : public juce::Component
     {
-        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get());
+    public:
+        explicit AudioOnlySettingsComponent (juce::AudioDeviceManager& dm)
+            : audioSelector (dm, 0, 0, 1, 2, false, false, false, false)
+        {
+            // Same reasoning as NetworkAudioSettingsComponent: this is launched as its own
+            // top-level DialogWindow, so it never inherits METRO's app-wide LookAndFeel.
+            setLookAndFeel (&settingsLookAndFeel);
+            setSize (700, 320);
+            addAndMakeVisible (audioSelector);
+        }
 
-        // comp sizes itself to a fixed ideal size in its own constructor (currently 980x1092
-        // to fit every card comfortably). That can be taller than some laptop screens, and
-        // this dialog is otherwise non-resizable — so rather than risk the window being
-        // silently clipped with no scrollbar or resize handle to reach the rest of it, put
-        // comp inside a Viewport and clamp the *window's* size to the actual screen. If the
-        // full size fits, this is invisible (no visible scrollbars); if it doesn't, the
-        // dialog scrolls instead of clipping.
+        ~AudioOnlySettingsComponent() override { setLookAndFeel (nullptr); }
+
+        void paint (juce::Graphics& g) override { g.fillAll (juce::Colour (0xFF0D0D14)); }
+
+        void resized() override
+        {
+            audioSelector.setBounds (getLocalBounds().reduced (16));
+        }
+
+    private:
+        MetroLookAndFeel settingsLookAndFeel;
+        juce::AudioDeviceSelectorComponent audioSelector;
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioOnlySettingsComponent)
+    };
+
+    // Shared by showAudioSettings() and showNetworkAudioSettings(): comp sizes itself to a
+    // fixed ideal size in its own constructor, which can be taller than some laptop screens,
+    // and these dialogs are otherwise non-resizable — so rather than risk the window being
+    // silently clipped with no scrollbar or resize handle to reach the rest of it, put comp
+    // inside a Viewport and clamp the *window's* size to the actual screen. If the full size
+    // fits, this is invisible (no visible scrollbars); if it doesn't, the dialog scrolls
+    // instead of clipping. Takes ownership of comp via the viewport.
+    void launchScrollableSettingsDialog (juce::Component* comp, const juce::String& title)
+    {
         auto* viewport = new juce::Viewport();
         viewport->setViewedComponent (comp, true); // viewport now owns and deletes comp
 
@@ -273,12 +305,23 @@ private:
 
         juce::DialogWindow::LaunchOptions opts;
         opts.content.setOwned (viewport);
-        opts.dialogTitle = "Audio Settings";
+        opts.dialogTitle = title;
         opts.dialogBackgroundColour = juce::Colour (0xFF0D0D14);
         opts.escapeKeyTriggersCloseButton = true;
         opts.useNativeTitleBar = true;
         opts.resizable = true; // belt-and-braces, in case someone still wants more room
         opts.launchAsync();
+    }
+
+    void showAudioSettings()
+    {
+        launchScrollableSettingsDialog (new AudioOnlySettingsComponent (deviceManager), "Audio Settings");
+    }
+
+    void showNetworkAudioSettings()
+    {
+        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false);
+        launchScrollableSettingsDialog (comp, "Network Audio");
     }
 
     class MidiOnlySettingsComponent : public juce::Component

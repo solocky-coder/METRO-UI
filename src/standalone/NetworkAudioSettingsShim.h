@@ -9,8 +9,9 @@ class MetroNetworkAudioSettingsSelector : public ::NetworkAudioSettingsComponent
 {
 public:
     explicit MetroNetworkAudioSettingsSelector (juce::AudioDeviceManager& deviceManager,
-                                                 ::MetroNetworkAudio* networkAudioToUse)
-        : ::NetworkAudioSettingsComponent (deviceManager, networkAudioToUse),
+                                                 ::MetroNetworkAudio* networkAudioToUse,
+                                                 bool showDeviceSelector = false)
+        : ::NetworkAudioSettingsComponent (deviceManager, networkAudioToUse, showDeviceSelector),
           networkAudio (networkAudioToUse)
     {
         createTrackButton.setButtonText ("+ Create Audio Track");
@@ -20,6 +21,16 @@ public:
 #if ! DYSEKT_HAS_AOO
         createTrackButton.setEnabled (false);
 #endif
+
+        // NetworkAudioSettingsComponent's constructor already called setSize(980, 980),
+        // which synchronously triggers resized() -- but at that point in construction this
+        // object is still only a NetworkAudioSettingsComponent, so that call dispatches to
+        // the BASE class's resized(), not this override. Nothing resizes the component again
+        // afterward (MainWindow::showAudioSettings() drops it into a Viewport at its existing
+        // size), so without this explicit call, this override -- and therefore
+        // createTrackButton's bounds -- would never run, leaving the button added but sized
+        // 0x0 (present, but invisible and unclickable).
+        resized();
     }
 
     void resized() override
