@@ -6,6 +6,22 @@
 #include <vector>
 
 #if JUCE_WINDOWS
+// MIB_IF_ROW2 / GetIfEntry2 below are Vista+ APIs. Nothing else in this
+// translation unit sets the target Windows version before the system headers
+// below load first (JUCE's public umbrella headers don't - only its own
+// module .cpp files do, via juce_BasicNativeHeaders.h), so without this the
+// SDK falls back to a pre-Vista target and quietly declares the legacy
+// _IP_ADAPTER_ADDRESSES_XP shape instead, leaving MIB_IF_ROW2/GetIfEntry2
+// undeclared.
+#ifndef _WIN32_WINNT
+ #define _WIN32_WINNT 0x0A00 // _WIN32_WINNT_WIN10, matches JUCE's own target
+#endif
+#ifndef WINVER
+ #define WINVER _WIN32_WINNT
+#endif
+#ifndef NTDDI_VERSION
+ #define NTDDI_VERSION 0x0A000000 // NTDDI_WIN10
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
