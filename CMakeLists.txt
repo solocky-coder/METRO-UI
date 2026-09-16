@@ -261,6 +261,16 @@ juce_add_gui_app(DysektStandalone
 
 if(MSVC)
     target_compile_options(DysektStandalone PRIVATE /source-charset:utf-8)
+    # The Apple USB/NCM reverse-tethering path (AppleUsbNetworkTransport.cpp)
+    # writes under HKLM\SYSTEM\CurrentControlSet\Enum\...\Device Parameters
+    # and calls SetupDiCallClassInstaller(DIF_INSTALLDEVICE, ...) to bind the
+    # inbox WinUSB driver to the iPhone's MI_00 interface - both are
+    # privileged operations that silently fail for a non-elevated process
+    # ("Apple USB: could not bind Microsoft's inbox WinUSB driver to MI_00").
+    # Embed a manifest so Windows prompts for elevation automatically on
+    # launch instead of relying on the user remembering to right-click ->
+    # Run as administrator.
+    target_link_options(DysektStandalone PRIVATE "/MANIFESTUAC:level='requireAdministrator' uiAccess='false'")
 endif()
 
 target_sources(DysektStandalone PRIVATE
