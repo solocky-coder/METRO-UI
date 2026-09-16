@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NetworkAudioSettingsComponent.h"
+#include "network/AppleUsbNetworkTransport.h"
 #include <tuple>
 
 namespace juce
@@ -18,9 +19,71 @@ public:
         createTrackButton.setTooltip ("Create a METRO audio track from a SonoBus/AOO source and choose its channel");
         createTrackButton.onClick = [this] { showCreateNetworkTrackMenu(); };
         addAndMakeVisible (createTrackButton);
+
 #if ! DYSEKT_HAS_AOO
         createTrackButton.setEnabled (false);
 #endif
+
+        // The base component owns the visible service ON/OFF button. Wrap its
+        // existing callback so the same switch also controls DYSEKT's integrated
+        // Apple USB/NCM transport. This is intentionally NOT a child process:
+        // AppleUsbNetworkTransport runs inside DYSEKT and performs the USB setup
+        // itself (WinUSB, Apple mode/configuration, CDC-NCM and UsbNcm binding).
+        for (auto* child : getChildren())
+        {
+            if (auto* button = dynamic_cast<juce::TextButton*> (child))
+            {
+                if (! button->getButtonText().startsWithIgnoreCase ("Network audio:"))
+                    continue;
+
+                auto baseClick = button->onClick;
+                button->onClick = [button, baseClick]
+                {
+                    auto& usbService = appleUsbService();
+                    const bool requestedOn = button->getToggleState();
+
+                    if (requestedOn)
+                    {
+                        // Empty deviceId is deliberate: the transport discovers
+                        // the connected Apple USB parent itself. The Windows setup
+                        // must happen before the AOO backend is allowed to proceed.
+                        if (! usbService.start ({}))
+                        {
+                            button->setToggleState (false, juce::dontSendNotification);
+                            return;
+                        }
+                    }
+
+                    if (baseClick != nullptr)
+                        baseClick();
+
+                    // The AOO backend can reject an enable request (or be absent
+                    // from the build). Never leave the USB service running when
+                    // the UI ultimately ended up OFF.
+                    if (! button->getToggleState())
+                        usbService.stop();
+
+                    if (! requestedOn)
+                        usbService.stop();
+                };
+                break;
+            }
+        }
+
+        // If the service was already enabled before this dialog was opened,
+        // bring the integrated USB transport into the same state immediately.
+        for (auto* child : getChildren())
+        {
+            if (auto* button = dynamic_cast<juce::TextButton*> (child))
+            {
+                if (button->getButtonText().startsWithIgnoreCase ("Network audio:"))
+                {
+                    if (button->getToggleState() && appleUsbService().state() == DeviceNetworkTransport::State::Stopped)
+                        appleUsbService().start ({});
+                    break;
+                }
+            }
+        }
 
         // NetworkAudioSettingsComponent's constructor already called setSize(980, 980),
         // which synchronously triggers resized() -- but at that point in construction this
@@ -33,6 +96,8 @@ public:
         resized();
     }
 
+    ~MetroNetworkAudioSettingsSelector() override = default;
+
     void resized() override
     {
         ::NetworkAudioSettingsComponent::resized();
@@ -40,6 +105,14 @@ public:
     }
 
 private:
+    static ::AppleUsbNetworkTransport& appleUsbService()
+    {
+        // Function-local static gives the standalone application one persistent
+        // USB service, independent of the lifetime of the settings dialog.
+        static ::AppleUsbNetworkTransport service;
+        return service;
+    }
+
     void showCreateNetworkTrackMenu()
     {
 #if DYSEKT_HAS_AOO
