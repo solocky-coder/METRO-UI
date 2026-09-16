@@ -62,7 +62,6 @@ public:
                     if (baseClick != nullptr)
                         baseClick();
 
-                    // The AOO backend remains authoritative for the service switch.
                     if (! button->getToggleState())
                         usbService.stop();
                 };
@@ -70,13 +69,11 @@ public:
             }
         }
 
-        // The diagnostics are a child of the DYSEKT settings page, not a
-        // separate process/window. It mirrors the useful readout from
-        // iPhoneUsbShare: Apple device, USB Ethernet, connection state, IP,
-        // live RX/TX rates and the actual transport status.
+        // The complete iPhoneUsbShare surface is embedded here as a child of
+        // Network Audio. It is not a second process and does not create a
+        // separate top-level window.
         usbStatusComponent = new ::AppleUsbShareStatusComponent (appleUsbService());
         addAndMakeVisible (usbStatusComponent);
-
         resized();
     }
 
@@ -87,17 +84,16 @@ public:
         ::NetworkAudioSettingsComponent::resized();
         createTrackButton.setBounds (getWidth() - 222, 12, 206, 30);
 
-        // Keep the USB diagnostic card in the upper-right area beside the
-        // network-audio controls. The component itself owns its internal layout.
+        // The embedded app surface is intentionally large enough to preserve
+        // the reference application's title, device card, connection metrics,
+        // activity area and Start/Stop/Diagnostics controls.
         const int x = juce::jmax (390, getWidth() - 570);
-        usbStatusComponent->setBounds (x, 44, getWidth() - x - 16, 285);
+        usbStatusComponent->setBounds (x, 44, getWidth() - x - 16, 420);
     }
 
 private:
     static ::AppleUsbNetworkTransport& appleUsbService()
     {
-        // Function-local static gives the standalone application one persistent
-        // USB service, independent of the lifetime of the settings dialog.
         static ::AppleUsbNetworkTransport service;
         return service;
     }
@@ -155,21 +151,14 @@ private:
                            "\n\nThis is the network-audio handshake stage; the source must report its channel count and sample rate before a track can be created.";
 
                 for (const auto& source : sources)
-                {
                     message += "\n\n" + (source.user.isNotEmpty() ? source.user : "Unknown source")
                              + " | source #" + juce::String (source.sourceId)
                              + " | " + juce::String (source.channels) + " ch"
                              + " | " + juce::String (source.sampleRate, 0) + " Hz"
                              + " | online=" + (source.online ? "yes" : "no");
-                }
             }
 
-            juce::AlertWindow::showMessageBoxAsync (
-                juce::AlertWindow::InfoIcon,
-                "Create Audio Track",
-                message,
-                "OK",
-                this);
+            juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon, "Create Audio Track", message, "OK");
             return;
         }
 
@@ -193,23 +182,13 @@ private:
             const int trackIndex = NetworkAudioProcessor::createActiveNetworkAudioTrack (
                 sourceKey, sourceId, sourceChannel, sourceName, userName);
 
-            if (trackIndex >= 0)
-            {
-                juce::AlertWindow::showMessageBoxAsync (
-                    juce::AlertWindow::InfoIcon,
-                    "Audio Track Created",
-                    userName + " | " + sourceName + " — Channel " + juce::String (sourceChannel + 1)
-                        + " is now a METRO audio track.",
-                    "OK");
-            }
-            else
-            {
-                juce::AlertWindow::showMessageBoxAsync (
-                    juce::AlertWindow::WarningIcon,
-                    "Audio Track Not Created",
-                    "The standalone audio processor is not available.",
-                    "OK");
-            }
+            juce::AlertWindow::showMessageBoxAsync (
+                trackIndex >= 0 ? juce::AlertWindow::InfoIcon : juce::AlertWindow::WarningIcon,
+                trackIndex >= 0 ? "Audio Track Created" : "Audio Track Not Created",
+                trackIndex >= 0
+                    ? userName + " | " + sourceName + " — Channel " + juce::String (sourceChannel + 1) + " is now a METRO audio track."
+                    : "The standalone audio processor is not available.",
+                "OK");
         });
 #else
         juce::ignoreUnused (this);
