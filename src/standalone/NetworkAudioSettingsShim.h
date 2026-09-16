@@ -25,10 +25,8 @@ public:
 #endif
 
         // The base component owns the visible service ON/OFF button. Wrap its
-        // existing callback so the same switch also controls DYSEKT's integrated
-        // Apple USB/NCM transport. This is intentionally NOT a child process:
-        // AppleUsbNetworkTransport runs inside DYSEKT and performs the USB setup
-        // itself (WinUSB, Apple mode/configuration, CDC-NCM and UsbNcm binding).
+        // callback so the same switch also controls DYSEKT's integrated
+        // Apple USB/NCM transport. This is intentionally NOT a child process.
         for (auto* child : getChildren())
         {
             if (auto* button = dynamic_cast<juce::TextButton*> (child))
@@ -42,26 +40,31 @@ public:
                     auto& usbService = appleUsbService();
                     const bool requestedOn = button->getToggleState();
 
+                    // Do not make the UI switch itself hostage to USB discovery.
+                    // ON means the service is enabled; Apple setup may legitimately
+                    // need to wait for an iPhone/iPad to enumerate or for Windows to
+                    // finish re-enumerating the UsbNcm function. The transport status
+                    // is exposed through the button tooltip instead of silently
+                    // snapping the switch back to OFF.
                     if (requestedOn)
                     {
-                        // Empty deviceId is deliberate: the transport discovers
-                        // the connected Apple USB parent itself. The Windows setup
-                        // must happen before the AOO backend is allowed to proceed.
-                        if (! usbService.start ({}))
-                        {
-                            button->setToggleState (false, juce::dontSendNotification);
-                            if (baseClick != nullptr)
-                                baseClick();
-                            return;
-                        }
+                        const bool usbReady = usbService.start ({});
+                        button->setTooltip (usbReady
+                            ? "Network audio ON — Apple USB/NCM transport ready"
+                            : "Network audio ON — waiting for Apple USB device/setup: " + usbService.status());
+                    }
+                    else
+                    {
+                        usbService.stop();
+                        button->setTooltip ("Network audio OFF");
                     }
 
                     if (baseClick != nullptr)
                         baseClick();
 
-                    // The AOO backend can reject an enable request (or be absent
-                    // from the build). Never leave the USB service running when
-                    // the UI ultimately ended up OFF.
+                    // If the AOO backend itself rejects the enable request, honor
+                    // that authoritative result and keep the integrated USB service
+                    // stopped. Otherwise the UI remains ON while USB setup can wait.
                     if (! button->getToggleState())
                         usbService.stop();
                 };
@@ -78,7 +81,12 @@ public:
                 if (button->getButtonText().startsWithIgnoreCase ("Network audio:"))
                 {
                     if (button->getToggleState() && appleUsbService().state() == DeviceNetworkTransport::State::Stopped)
-                        appleUsbService().start ({});
+                    {
+                        const bool usbReady = appleUsbService().start ({});
+                        button->setTooltip (usbReady
+                            ? "Network audio ON — Apple USB/NCM transport ready"
+                            : "Network audio ON — waiting for Apple USB device/setup: " + appleUsbService().status());
+                    }
                     break;
                 }
             }
@@ -87,11 +95,8 @@ public:
         // NetworkAudioSettingsComponent's constructor already called setSize(980, 980),
         // which synchronously triggers resized() -- but at that point in construction this
         // object is still only a NetworkAudioSettingsComponent, so that call dispatches to
-        // the BASE class's resized(), not this override. Nothing resizes the component again
-        // afterward (MainWindow::showAudioSettings() drops it into a Viewport at its existing
-        // size), so without this explicit call, this override -- and therefore
-        // createTrackButton's bounds -- would never run, leaving the button added but sized
-        // 0x0 (present, but invisible and unclickable).
+        // the BASE class's resized(). Nothing resizes the component again afterward, so
+        // explicitly lay out the derived component's added button.
         resized();
     }
 
