@@ -11,12 +11,6 @@ class NetworkAudioSettingsComponent : public juce::Component,
                                        private juce::Timer
 {
 public:
-    // showDeviceSelectorIn: this panel started out embedded in the combined Audio Settings
-    // dialog alongside the plain device selector, so it grew a device-selector card of its
-    // own. Audio Settings and Network Audio are now separate menu items/dialogs (see
-    // MainWindow::showAudioSettings() / showNetworkAudioSettings()), so the device card is
-    // no longer needed here and defaults to hidden; pass true only if some future caller
-    // wants both in one dialog again.
     explicit NetworkAudioSettingsComponent (juce::AudioDeviceManager& deviceManager,
                                              MetroNetworkAudio* networkAudio,
                                              bool showDeviceSelectorIn = false)
@@ -25,25 +19,10 @@ public:
           sourceModel (networkAudio)
     {
         showDeviceSelector = showDeviceSelectorIn;
-
         NetworkAudioProcessor::setActiveNetworkAudio (networkAudio);
-
-        // This dialog is launched as its own top-level DialogWindow (see
-        // MainWindow::showAudioSettings()), so it is NOT a child of
-        // MetroStandaloneEditor and never inherits the app's MetroLookAndFeel
-        // that gets set there. Without this call every ComboBox, ToggleButton,
-        // Slider, TextEditor and the built-in AudioDeviceSelectorComponent all
-        // fall back to JUCE's stock LookAndFeel_V4 — which is why this panel
-        // has looked visually inconsistent with the rest of METRO.
         setLookAndFeel (&settingsLookAndFeel);
 
-        // The channel strip needs enough horizontal room for every toggle and the level meter.
-        // Height is the sum of the card layout computed in resized() below, plus a settings
-        // dialog isn't resizable (see MainWindow::showAudioSettings()), so this needs to be
-        // right. kDeviceCardHeight matches the device card block resized() removes below —
-        // when the device selector is hidden, that block (plus its section gap) is never
-        // laid out, so it's subtracted here too rather than leaving blank space in the dialog.
-        constexpr int kDeviceCardHeight = 2 * 10 + 260; // kCardPad*2 + audioSelector's own row height
+        constexpr int kDeviceCardHeight = 2 * 10 + 260;
         constexpr int kSectionGapOuter = 14;
         setSize (980, showDeviceSelector ? 980 : 980 - kDeviceCardHeight - kSectionGapOuter);
 
@@ -61,39 +40,17 @@ public:
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
 
-        enableButton.setButtonText ("Enable network audio");
+        // This is deliberately a TextButton rather than JUCE's ToggleButton.
+        // It is the service master switch: ON starts the network backend and
+        // OFF disconnects and stops it. The button text also makes the state
+        // unambiguous without relying on a checkbox glyph.
+        enableButton.setClickingTogglesState (true);
         enableButton.setToggleState (getNetworkAudioChannelState().enabled.load (std::memory_order_relaxed),
                                      juce::dontSendNotification);
-        enableButton.onClick = [this, networkAudio]
+        updateEnableButtonText();
+        enableButton.onClick = [this]
         {
-            const bool enabled = enableButton.getToggleState();
-            getNetworkAudioChannelState().enabled.store (enabled, std::memory_order_relaxed);
-            connectButton.setEnabled (enabled);
-            disconnectButton.setEnabled (enabled);
-            serverEditor.setEnabled (enabled);
-            portEditor.setEnabled (enabled);
-            userEditor.setEnabled (enabled);
-            groupEditor.setEnabled (enabled);
-            passwordEditor.setEnabled (enabled);
-            publicGroupButton.setEnabled (enabled);
-            monitorButton.setEnabled (enabled);
-
-            if (! enabled)
-            {
-#if DYSEKT_HAS_AOO
-                if (networkAudio != nullptr)
-                    networkAudio->disconnect();
-#endif
-                updateStatus ("Disabled");
-            }
-            else
-            {
-#if DYSEKT_HAS_AOO
-                updateStatus ("Ready — local Wi-Fi/LAN audio");
-#else
-                updateStatus ("AOO backend is not enabled in this build");
-#endif
-            }
+            setNetworkAudioEnabled (enableButton.getToggleState());
         };
         addAndMakeVisible (enableButton);
 
@@ -112,10 +69,6 @@ public:
 
         gainSlider.setRange (-100.0, 24.0, 0.1);
         gainSlider.setValue (getNetworkAudioChannelState().gainDb.load(), juce::dontSendNotification);
-        // MetroLookAndFeel::drawLinearSlider centers its track on the slider's full local
-        // bounds and ignores the textbox offset JUCE normally reserves space for, so a
-        // slider with a built-in textbox here would render with the track drawn straight
-        // through it. Disable the native textbox and show the value with our own label.
         gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
         addAndMakeVisible (gainSlider);
 
@@ -209,16 +162,11 @@ public:
         addAndMakeVisible (publicGroupButton);
 
         const bool networkEnabled = enableButton.getToggleState();
-        for (auto* editor : { &serverEditor, &portEditor, &userEditor, &groupEditor, &passwordEditor })
-            editor->setEnabled (networkEnabled);
-        publicGroupButton.setEnabled (networkEnabled);
-        monitorButton.setEnabled (networkEnabled);
+        setNetworkControlEnabled (networkEnabled);
 
-        connectButton.setEnabled (networkEnabled);
         connectButton.onClick = [this] { connectClicked(); };
         addAndMakeVisible (connectButton);
 
-        disconnectButton.setEnabled (networkEnabled);
         disconnectButton.onClick = [this] { disconnectClicked(); };
         addAndMakeVisible (disconnectButton);
 
@@ -254,9 +202,6 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xFF0D0D14));
-
-        // Grouped cards, cached by resized(), so related controls read as one
-        // unit instead of the whole dialog being one flat field of widgets.
         for (auto* panel : { &devicePanelBounds, &channelPanelBounds, &connectionPanelBounds, &sourcesPanelBounds })
         {
             if (panel->isEmpty())
@@ -271,26 +216,20 @@ public:
     void resized() override
     {
         constexpr int kPad = 16;
-        constexpr int kLabelColW = 100;   // one shared label column for every row in this dialog
-        constexpr int kValueColW = 70;    // gain/pan readout column
+        constexpr int kLabelColW = 100;
+        constexpr int kValueColW = 70;
         constexpr int kRowH = 24;
         constexpr int kRowGap = 8;
         constexpr int kSectionGap = 14;
         constexpr int kCardPad = 10;
 
         auto area = getLocalBounds().reduced (kPad);
-
         auto headerRow = area.removeFromTop (26);
         networkTitle.setBounds (headerRow.removeFromLeft (300));
         area.removeFromTop (2);
         transportLabel.setBounds (area.removeFromTop (18));
         area.removeFromTop (kSectionGap);
 
-        // --- Device card: audioSelector is a built-in JUCE component that lays
-        // out its own rows (device type / output / channel list / sample rate /
-        // buffer size). It needs ~260px to lay all of those rows out without its
-        // last row (buffer size) crowding the bottom edge of the card. Hidden
-        // entirely when this panel is shown on its own (see showDeviceSelector).
         if (showDeviceSelector)
         {
             auto deviceCardArea = area.removeFromTop (2 * kCardPad + 260);
@@ -303,11 +242,9 @@ public:
             devicePanelBounds = {};
         }
 
-        // --- Network audio channel card ----------------------------------
         auto channelCardArea = area.removeFromTop (2 * kCardPad + 18 + kRowGap + 4 * kRowH + 3 * kRowGap);
         channelPanelBounds = channelCardArea;
         auto channelInner = channelCardArea.reduced (kCardPad);
-
         channelTitle.setBounds (channelInner.removeFromTop (18));
         channelInner.removeFromTop (kRowGap);
 
@@ -338,7 +275,6 @@ public:
         monitorButton.setBounds (toggleRow.removeFromLeft (90));
         area.removeFromTop (kSectionGap);
 
-        // --- Connection card ----------------------------------------------
         auto connectionCardArea = area.removeFromTop (2 * kCardPad + 3 * kRowH + 2 * kRowGap
                                                         + (kRowGap + 6) + 30 + 8 + kRowH);
         connectionPanelBounds = connectionCardArea;
@@ -381,7 +317,6 @@ public:
         statusLabel.setBounds (statusRow);
         area.removeFromTop (kSectionGap);
 
-        // --- Sources card: takes whatever is left ---------------------
         sourcesPanelBounds = area;
         auto sourcesInner = area.reduced (kCardPad);
         sourcesLabel.setBounds (sourcesInner.removeFromTop (22));
@@ -390,6 +325,79 @@ public:
     }
 
 private:
+    void updateEnableButtonText()
+    {
+        const bool enabled = enableButton.getToggleState();
+        enableButton.setButtonText (enabled ? "Network audio: ON" : "Network audio: OFF");
+    }
+
+    void setNetworkControlEnabled (bool enabled)
+    {
+        getNetworkAudioChannelState().enabled.store (enabled, std::memory_order_relaxed);
+        connectButton.setEnabled (enabled);
+        disconnectButton.setEnabled (enabled);
+        serverEditor.setEnabled (enabled);
+        portEditor.setEnabled (enabled);
+        userEditor.setEnabled (enabled);
+        groupEditor.setEnabled (enabled);
+        passwordEditor.setEnabled (enabled);
+        publicGroupButton.setEnabled (enabled);
+        monitorButton.setEnabled (enabled);
+        gainSlider.setEnabled (enabled);
+        panSlider.setEnabled (enabled);
+        muteButton.setEnabled (enabled);
+        soloButton.setEnabled (enabled);
+        recordArmButton.setEnabled (enabled);
+    }
+
+    void setNetworkAudioEnabled (bool enabled)
+    {
+#if DYSEKT_HAS_AOO
+        if (enabled)
+        {
+            if (networkAudio == nullptr)
+            {
+                enableButton.setToggleState (false, juce::dontSendNotification);
+                updateEnableButtonText();
+                setNetworkControlEnabled (false);
+                updateStatus ("AOO network audio is unavailable");
+                return;
+            }
+
+            if (! networkAudio->isRunning() && ! networkAudio->start())
+            {
+                enableButton.setToggleState (false, juce::dontSendNotification);
+                updateEnableButtonText();
+                setNetworkControlEnabled (false);
+                updateStatus ("Could not start AOO network backend");
+                return;
+            }
+
+            setNetworkControlEnabled (true);
+            updateEnableButtonText();
+            updateStatus ("Ready — local Wi-Fi/LAN audio");
+        }
+        else
+        {
+            if (networkAudio != nullptr)
+            {
+                networkAudio->disconnect();
+                networkAudio->stop();
+            }
+            setNetworkControlEnabled (false);
+            updateEnableButtonText();
+            updateStatus ("Disabled");
+            refreshSources();
+        }
+#else
+        juce::ignoreUnused (enabled);
+        enableButton.setToggleState (false, juce::dontSendNotification);
+        updateEnableButtonText();
+        setNetworkControlEnabled (false);
+        updateStatus ("AOO backend is not enabled in this build");
+#endif
+    }
+
     void timerCallback() override
     {
         refreshSources();
@@ -466,8 +474,6 @@ private:
 
     void updateStatus (const juce::String& text)
     {
-        // juce::Label only supports one text colour, so the state colour applies to the
-        // whole "<dot>  message" string rather than just the dot.
         auto stateColour = juce::Colours::grey;
         if (text.startsWithIgnoreCase ("Connected"))
             stateColour = juce::Colour (0xFF4CAF50);
@@ -553,8 +559,6 @@ private:
 
     MetroLookAndFeel settingsLookAndFeel;
     bool showDeviceSelector = false;
-
-    // Cached by resized(), drawn by paint() as the grouped card backgrounds.
     juce::Rectangle<int> devicePanelBounds, channelPanelBounds, connectionPanelBounds, sourcesPanelBounds;
 
     juce::AudioDeviceSelectorComponent audioSelector;
@@ -562,7 +566,7 @@ private:
 
     juce::Label networkTitle;
     juce::Label transportLabel;
-    juce::ToggleButton enableButton;
+    juce::TextButton enableButton { "Network audio: OFF" };
     juce::Label channelTitle;
     juce::Label gainLabel;
     juce::Slider gainSlider;
