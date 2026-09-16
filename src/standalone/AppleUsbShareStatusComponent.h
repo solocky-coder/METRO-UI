@@ -114,10 +114,18 @@ public:
             appendActivity ("Diagnostics collected.");
         };
 
-        for (auto* component : { static_cast<juce::Component*> (&title), &subtitle, &deviceCaption, &deviceLabel,
-                                 &adapterLabel, &connectionCaption, &connectionLabel, &ipCaption, &ipValue,
-                                 &rxCaption, &rxValue, &txCaption, &txValue, &activityTitle, &activityEditor,
-                                 &statusDot, &startButton, &stopButton, &diagnosticsButton })
+        // Use an explicitly typed array. MSVC cannot deduce a common pointer
+        // type for this braced initializer because JUCE component subclasses
+        // do not participate in the same deduction path as the first cast.
+        juce::Component* components[] =
+        {
+            &title, &subtitle, &deviceCaption, &deviceLabel,
+            &adapterLabel, &connectionCaption, &connectionLabel, &ipCaption, &ipValue,
+            &rxCaption, &rxValue, &txCaption, &txValue, &activityTitle, &activityEditor,
+            &statusDot, &startButton, &stopButton, &diagnosticsButton
+        };
+
+        for (auto* component : components)
             addAndMakeVisible (*component);
 
         startTimerHz (2);
@@ -219,35 +227,33 @@ private:
         if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR) return;
         for (auto* a = adapters; a != nullptr; a = a->Next)
         {
-            const auto friendly = a->FriendlyName ? juce::String (a->FriendlyName) : juce::String();
-            const auto description = a->Description ? juce::String (a->Description) : juce::String();
-            const auto combined = (friendly + " " + description).toLowerCase();
-            if (! combined.contains ("usbncm") && ! combined.contains ("usb ncm") && ! combined.contains ("iphone") && ! combined.contains ("ipad") && ! combined.contains ("apple")) continue;
-            if (preferredAdapter.isNotEmpty() && friendly != preferredAdapter && description != preferredAdapter) continue;
-
-            juce::String ip = "—";
+            const juce::String name = juce::String (a->FriendlyName != nullptr ? a->FriendlyName : L"");
+            if (preferredAdapter.isNotEmpty() && name != preferredAdapter && ! name.containsIgnoreCase (preferredAdapter)) continue;
+            if (preferredAdapter.isEmpty() && ! name.containsIgnoreCase ("UsbNcm") && ! name.containsIgnoreCase ("USB Ethernet")) continue;
+            juce::String address;
             for (auto* u = a->FirstUnicastAddress; u != nullptr; u = u->Next)
             {
-                if (u->Address.lpSockaddr == nullptr || u->Address.lpSockaddr->sa_family != AF_INET) continue;
                 char host[NI_MAXHOST] = {};
-                if (getnameinfo (u->Address.lpSockaddr, u->Address.iSockaddrLength, host, sizeof (host), nullptr, 0, NI_NUMERICHOST) == 0) { ip = host; break; }
+                if (u->Address.lpSockaddr != nullptr && getnameinfo (u->Address.lpSockaddr, static_cast<socklen_t> (u->Address.iSockaddrLength), host, sizeof (host), nullptr, 0, NI_NUMERICHOST) == 0)
+                {
+                    const juce::String candidate (host);
+                    if (! candidate.contains (":") || candidate.startsWith ("fe80")) { address = candidate; break; }
+                }
             }
-            ipValue.setText (ip, juce::dontSendNotification);
-
-            MIB_IF_ROW2 row{};
-            row.InterfaceLuid = a->Luid;
-            if (GetIfEntry2 (&row) == NO_ERROR)
+            ipValue.setText (address.isNotEmpty() ? address : "—", juce::dontSendNotification);
+            MIB_IF_ROW2 row {};
+            if (GetIfEntry2 (&row, a->IfIndex) == NO_ERROR)
             {
                 const auto now = juce::Time::getMillisecondCounter();
-                if (lastSampleMs != 0)
+                const auto rx = row.InOctets;
+                const auto tx = row.OutOctets;
+                if (lastMetricTime != 0 && now > lastMetricTime)
                 {
-                    const auto dt = juce::jmax<uint32_t> (1, now - lastSampleMs);
-                    const auto rx = static_cast<double> (row.InOctets - lastRx) / static_cast<double> (dt) * 1000.0 / 1024.0;
-                    const auto tx = static_cast<double> (row.OutOctets - lastTx) / static_cast<double> (dt) * 1000.0 / 1024.0;
-                    rxValue.setText (juce::String (juce::jmax (0.0, rx), 1) + " KB/s", juce::dontSendNotification);
-                    txValue.setText (juce::String (juce::jmax (0.0, tx), 1) + " KB/s", juce::dontSendNotification);
+                    const double seconds = (now - lastMetricTime) / 1000.0;
+                    rxValue.setText (juce::String (static_cast<int> ((rx - lastRx) / seconds / 1024.0)) + " KB/s", juce::dontSendNotification);
+                    txValue.setText (juce::String (static_cast<int> ((tx - lastTx) / seconds / 1024.0)) + " KB/s", juce::dontSendNotification);
                 }
-                lastRx = row.InOctets; lastTx = row.OutOctets; lastSampleMs = juce::Time::getMillisecondCounter();
+                lastRx = rx; lastTx = tx; lastMetricTime = now;
             }
             return;
         }
@@ -258,15 +264,13 @@ private:
 #endif
 
     AppleUsbNetworkTransport& usbTransport;
-    juce::Label title, subtitle;
-    juce::Label deviceCaption, deviceLabel, adapterLabel, statusDot;
-    juce::Label connectionCaption, connectionLabel;
-    juce::Label ipCaption, ipValue, rxCaption, rxValue, txCaption, txValue;
-    juce::Label activityTitle;
+    juce::Label title, subtitle, deviceCaption, deviceLabel, adapterLabel,
+                connectionCaption, connectionLabel, ipCaption, ipValue,
+                rxCaption, rxValue, txCaption, txValue, activityTitle, statusDot;
     juce::TextEditor activityEditor;
     juce::TextButton startButton, stopButton, diagnosticsButton;
 #if JUCE_WINDOWS
-    uint64_t lastRx = 0, lastTx = 0;
-    uint32_t lastSampleMs = 0;
+    ULONG64 lastRx = 0, lastTx = 0;
+    juce::uint32 lastMetricTime = 0;
 #endif
 };
