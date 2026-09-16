@@ -319,6 +319,8 @@ target_sources(DysektStandalone PRIVATE
     src/ui/FloatingTransportBar.cpp
     src/standalone/Main.cpp
     src/standalone/MainWindow.cpp
+    src/standalone/network/DeviceNetworkTransport.cpp
+    src/standalone/network/AppleUsbNetworkTransport.cpp
     $<$<BOOL:${DYSEKT_HAS_AOO}>:src/network/MetroNetworkAudio.cpp>
 )
 
