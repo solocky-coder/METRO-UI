@@ -349,17 +349,27 @@ target_compile_definitions(DysektStandalone PUBLIC
     $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Darwin>>:LINK_PLATFORM_MACOSX=1>
     $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Linux>>:LINK_PLATFORM_LINUX=1>
     # MIB_IF_ROW2 / GetIfEntry2 (used by AppleUsbShareStatusComponent.h) are
-    # Vista+ APIs. This must be set on the compiler command line (/D), not in
-    # a header: Main.cpp and MainWindow.h include juce_gui_basics /
-    # juce_audio_utils before ever reaching AppleUsbShareStatusComponent.h,
-    # and those JUCE headers pull in <windows.h> transitively first. Once
-    # windows.h has been preprocessed once in a translation unit, its include
-    # guards make any later #define + re-#include a no-op, so the version
-    # target has to be locked in before the compiler opens the first header
-    # at all.
+    # Vista+ APIs. _WIN32_WINNT must be set on the compiler command line
+    # (/D), not in a header: Main.cpp and MainWindow.h include
+    # juce_gui_basics / juce_audio_utils before ever reaching
+    # AppleUsbShareStatusComponent.h, and those JUCE headers pull in
+    # <windows.h> transitively first. Once windows.h has been preprocessed
+    # once in a translation unit, its include guards make any later #define
+    # + re-#include a no-op, so the version target has to be locked in
+    # before the compiler opens the first header at all.
+    #
+    # Deliberately NOT setting NTDDI_VERSION here (tried it, broke the
+    # build worse): when _WIN32_WINNT is exactly _WIN32_WINNT_WIN10 (0x0A00)
+    # and NTDDI_VERSION is left undefined, the Windows SDK's own
+    # sdkddkver.h special-cases that combination and defaults NTDDI_VERSION
+    # to WDK_NTDDI_VERSION - the SDK's latest known revision, which is what
+    # JUCE's own juce_BasicNativeHeaders.h relies on and what HarfBuzz's
+    # DirectWrite5 variable-font code (IDWriteFontFace5 /
+    # DWRITE_FONT_AXIS_VALUE) needs. Pinning NTDDI_VERSION to the literal
+    # Win10-RTM baseline ourselves undercuts that and breaks DirectWrite5
+    # instead, so leave NTDDI_VERSION alone and let the SDK derive it.
     $<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0A00>
     $<$<PLATFORM_ID:Windows>:WINVER=0x0A00>
-    $<$<PLATFORM_ID:Windows>:NTDDI_VERSION=0x0A000000>
 )
 
 if (DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP)
