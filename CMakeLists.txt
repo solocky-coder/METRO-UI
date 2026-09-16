@@ -7,9 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/JUCE JUCE)
 
 # --- AOO / SonoBus network audio ---
-# The SonoBus-compatible AOO fork is a source-only library. METRO builds it
-# directly and links a private static Opus dependency, matching SonoBus' build.
-option(DYSEKT_ENABLE_AOO "Enable AOO/SonoBus network audio" ON)
+# Network audio is a DYSEKT standalone feature. The plugin target must remain
+# free of AOO/SonoBus transport and network-audio sources.
+option(DYSEKT_ENABLE_AOO "Enable AOO/SonoBus network audio in DYSEKT standalone" ON)
 if (DYSEKT_ENABLE_AOO)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MetroAoo.cmake)
 else()
@@ -207,7 +207,6 @@ target_sources(Dysekt PRIVATE
     src/audio/multisampler/SfzExporter.cpp
     src/sequencer/SequencerEngine.cpp
     src/sequencer/MidiClip.cpp
-    $<$<BOOL:${DYSEKT_HAS_AOO}>:src/network/MetroNetworkAudio.cpp>
 )
 
 target_include_directories(Dysekt PRIVATE
@@ -222,7 +221,7 @@ target_include_directories(Dysekt PRIVATE
 target_compile_definitions(Dysekt PUBLIC
     JUCE_USE_CURL=0
     JUCE_USE_MP3AUDIOFORMAT=1
-    DYSEKT_HAS_AOO=$<BOOL:${DYSEKT_HAS_AOO}>
+    DYSEKT_HAS_AOO=0
     DYSEKT_HAS_LINK=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
@@ -244,7 +243,6 @@ target_link_libraries(Dysekt
         juce::juce_audio_utils
         juce::juce_dsp
         DysektFonts
-        $<$<BOOL:${DYSEKT_HAS_AOO}>:MetroAoo>
         $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
         $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
         $<$<PLATFORM_ID:Linux>:asound>
