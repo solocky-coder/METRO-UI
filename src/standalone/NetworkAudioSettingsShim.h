@@ -90,7 +90,7 @@ public:
         // Keep the USB diagnostic card in the upper-right area beside the
         // network-audio controls. The component itself owns its internal layout.
         const int x = juce::jmax (390, getWidth() - 570);
-        usbStatusComponent.setBounds (x, 44, getWidth() - x - 16, 285);
+        usbStatusComponent->setBounds (x, 44, getWidth() - x - 16, 285);
     }
 
 private:
