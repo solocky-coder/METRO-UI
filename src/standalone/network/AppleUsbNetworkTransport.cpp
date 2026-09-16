@@ -5,11 +5,10 @@
  #include <winusb.h>
  #include <setupapi.h>
  #include <iphlpapi.h>
- #include <netioapi.h>
  #include <vector>
  #include <set>
  #include <algorithm>
- #include <thread>
+ #include <optional>
  #include <sstream>
  #include <iomanip>
  #pragma comment(lib, "setupapi.lib")
@@ -20,18 +19,7 @@
 namespace
 {
 #if JUCE_WINDOWS
-    constexpr int AppleVid = 0x05AC;
-    constexpr wchar_t WinUsbInterfaceGuidText[] = L"{8D4D9C11-3B6B-4D3A-9B0B-7E8B2E2E0C51}";
-    const GUID WinUsbInterfaceGuid = { 0x8d4d9c11, 0x3b6b, 0x4d3a, { 0x9b, 0x0b, 0x7e, 0x8b, 0x2e, 0x2e, 0x0c, 0x51 } };
-
-    struct WinUsbSetupPacket
-    {
-        UCHAR requestType;
-        UCHAR request;
-        USHORT value;
-        USHORT index;
-        USHORT length;
-    };
+    constexpr GUID WinUsbInterfaceGuid = { 0x8d4d9c11, 0x3b6b, 0x4d3a, { 0x9b, 0x0b, 0x7e, 0x8b, 0x2e, 0x2e, 0x0c, 0x51 } };
 
     struct WinUsbHandle
     {
@@ -74,7 +62,7 @@ namespace
             }
 
             auto id = getDeviceInstanceId(set, data);
-            if (id.size() >= 8 && _wcsnicmp(id.c_str(), L"USB\\VID_05AC&PID_", 16) == 0 &&
+            if (id.size() >= 16 && _wcsnicmp(id.c_str(), L"USB\\VID_05AC&PID_", 16) == 0 &&
                 id.find(L"&MI_") == std::wstring::npos)
             {
                 result = id;
@@ -90,8 +78,7 @@ namespace
     {
         std::wstringstream marker;
         marker << L"&MI_" << std::uppercase << std::hex << std::setw(2) << std::setfill(L'0') << number << L"\\";
-        auto markerText = marker.str();
-        return interfaceId.find(markerText) != std::wstring::npos;
+        return interfaceId.find(marker.str()) != std::wstring::npos;
     }
 
     static std::wstring findAppleInterface(int number)
@@ -112,7 +99,7 @@ namespace
             }
 
             auto id = getDeviceInstanceId(set, data);
-            if (id.size() >= 8 && _wcsnicmp(id.c_str(), L"USB\\VID_05AC&PID_", 16) == 0 && hasAppleInterface(id, number))
+            if (id.size() >= 16 && _wcsnicmp(id.c_str(), L"USB\\VID_05AC&PID_", 16) == 0 && hasAppleInterface(id, number))
             {
                 result = id;
                 break;
@@ -160,7 +147,7 @@ namespace
     static WinUsbHandle openWinUsb()
     {
         WinUsbHandle result;
-        auto path = findWinUsbPath();
+        const auto path = findWinUsbPath();
         if (path.empty()) return result;
 
         result.file = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE,
@@ -169,7 +156,6 @@ namespace
         if (result.file == INVALID_HANDLE_VALUE) return result;
         if (!WinUsb_Initialize(result.file, &result.usb))
         {
-            result.usb = nullptr;
             CloseHandle(result.file);
             result.file = INVALID_HANDLE_VALUE;
         }
@@ -186,7 +172,8 @@ namespace
         setup.Index = index;
         setup.Length = static_cast<USHORT>(buffer.size());
         ULONG transferred = 0;
-        return WinUsb_ControlTransfer(usb, setup, buffer.empty() ? nullptr : buffer.data(),
+        const auto* data = buffer.empty() ? nullptr : buffer.data();
+        return WinUsb_ControlTransfer(usb, setup, const_cast<UCHAR*>(data),
                                        static_cast<ULONG>(buffer.size()), &transferred, nullptr) &&
                transferred == buffer.size();
     }
@@ -199,8 +186,8 @@ namespace
         if (!controlTransfer(handle.usb, 0xC0, 0x45, 0, 0, buffer)) return std::nullopt;
 
         std::ostringstream mode;
-        mode << static_cast<int>(buffer[0]) << ':' << static_cast<int>(buffer[1]) << ':' << static_cast<int>(buffer[2]);
-        if (buffer.size() == 4) mode << ':' << static_cast<int>(buffer[3]);
+        mode << static_cast<int>(buffer[0]) << ':' << static_cast<int>(buffer[1]) << ':' << static_cast<int>(buffer[2])
+             << ':' << static_cast<int>(buffer[3]);
         return mode.str();
     }
 
@@ -217,8 +204,7 @@ namespace
         auto handle = openWinUsb();
         if (!handle) return false;
         std::vector<UCHAR> result(1);
-        if (!controlTransfer(handle.usb, 0xC0, 0x52, 0, static_cast<USHORT>(mode), result)) return false;
-        return result[0] == 0;
+        return controlTransfer(handle.usb, 0xC0, 0x52, 0, static_cast<USHORT>(mode), result) && result[0] == 0;
     }
 
     static std::vector<UCHAR> getDescriptor(WINUSB_INTERFACE_HANDLE usb, UCHAR type, UCHAR index, USHORT length)
@@ -275,7 +261,6 @@ namespace
                         }
                         scan += subLength;
                     }
-
                     if (alternate == 0 && interruptIn && std::find(result.begin(), result.end(), number) == result.end())
                         result.push_back(number);
                 }
@@ -291,18 +276,13 @@ namespace
         ULONG size = 0;
         if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW)
             return result;
-
         std::vector<unsigned char> buffer(size);
         auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
         if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR)
             return result;
-
         for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next)
-        {
-            if (adapter->IfType != IF_TYPE_ETHERNET_CSMACD) continue;
-            if (adapter->OperStatus == IfOperStatusDown) continue;
-            if (adapter->AdapterName != nullptr) result.emplace(adapter->AdapterName);
-        }
+            if (adapter->IfType == IF_TYPE_ETHERNET_CSMACD && adapter->OperStatus != IfOperStatusDown && adapter->AdapterName != nullptr)
+                result.emplace(adapter->AdapterName);
         return result;
     }
 
@@ -315,7 +295,6 @@ namespace
         auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
         if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR)
             return {};
-
         for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next)
         {
             if (adapter->AdapterName != nullptr && id == adapter->AdapterName)
@@ -383,7 +362,6 @@ std::vector<DeviceNetworkTransport::Device> AppleUsbNetworkTransport::enumerate(
     ULONG size = 0;
     if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW)
         return devices;
-
     std::vector<unsigned char> buffer(size);
     auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
     if (GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR)
@@ -393,17 +371,10 @@ std::vector<DeviceNetworkTransport::Device> AppleUsbNetworkTransport::enumerate(
     {
         if (adapter->IfType != IF_TYPE_ETHERNET_CSMACD || adapter->OperStatus == IfOperStatusDown)
             continue;
-
         const auto friendlyName = adapter->FriendlyName != nullptr ? juce::String(adapter->FriendlyName) : juce::String();
         const auto description = adapter->Description != nullptr ? juce::String(adapter->Description) : juce::String();
         const auto text = (friendlyName + " " + description).toLowerCase();
-
-        // A freshly-created Apple NCM adapter is commonly named simply
-        // "Ethernet", so discovery is intentionally not based on Apple text.
-        // start() snapshots existing Ethernet adapters and identifies the
-        // adapter created by the NCM transition.
-        if (!text.contains("apple") && !text.contains("iphone") && !text.contains("ipad"))
-            continue;
+        if (!text.contains("apple") && !text.contains("iphone") && !text.contains("ipad")) continue;
 
         Device device;
         device.kind = Kind::AppleUsb;
@@ -428,19 +399,7 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
     currentState.store(State::Error, std::memory_order_release);
     return false;
 #else
-    // Fast path: an NCM adapter may already exist from an earlier transition.
-    auto existing = ethernetAdapters();
-    if (!existing.empty())
-    {
-        // If the adapter is already present, do not disturb it. This is also
-        // what makes unplug/replug and DYSEKT restart idempotent.
-        const auto id = *existing.begin();
-        currentDeviceId = juce::String::toHexString(static_cast<juce::int64>(std::hash<std::string>{}(id)));
-        currentInterfaceName = adapterNameForId(id);
-        currentStatus = "USB network interface ready — " + currentInterfaceName;
-        currentState.store(State::Connected, std::memory_order_release);
-        return true;
-    }
+    juce::ignoreUnused(deviceId);
 
     const auto parent = findAppleParent();
     if (parent.empty())
@@ -457,9 +416,8 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
         return false;
     }
 
-    // Reference-compatible Apple transition:
-    //   configuration 2 -> restart -> GET_MODE -> configuration 4 -> SET_MODE(3)
-    // The audio/network layer never touches ICS, DHCP, or Internet sharing.
+    // Proven Apple transition used by iPhoneUsbShare, without ICS/DHCP:
+    // configuration 2 -> restart -> GET_MODE -> configuration 4 -> SET_MODE(3).
     if (!setConfiguration(2))
     {
         currentStatus = "Apple USB: SET_CONFIGURATION(2) failed";
@@ -481,7 +439,7 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
         return false;
     }
 
-    auto mode = getMode();
+    const auto mode = getMode();
     if (!mode.has_value())
     {
         currentStatus = "Apple USB: GET_MODE failed";
@@ -505,8 +463,6 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
         return false;
     }
 
-    // The vendor control request is the proven Apple/macOS Internet Sharing
-    // mode switch: bmRequestType=C0, bRequest=52, wValue=0, wIndex=3.
     if (!setMode(3))
     {
         currentStatus = "Apple USB: SET_MODE(3) failed";
@@ -514,14 +470,13 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
         return false;
     }
 
-    // Descriptor inspection is deliberately performed after SET_MODE. iOS 16+
-    // can expose multiple CDC-NCM-looking functions; the tethering function is
-    // the one with an interrupt IN endpoint. Prefer that over auxiliary RemoteXPC.
+    // iOS 16+ may expose multiple CDC-NCM-looking functions. The tethering
+    // function is selected by its interrupt-IN endpoint; auxiliary RemoteXPC
+    // does not have that endpoint. If the WinUSB handle disappears immediately,
+    // the expected re-enumerated tethering PDO is MI_02.
     const auto ncmInterfaces = findInterruptBackedNcmControlInterfaces();
     if (ncmInterfaces.empty())
     {
-        // The WinUSB handle normally disappears when the new configuration is
-        // published. MI_02 is the expected tethering control PDO afterwards.
         bool foundMi02 = false;
         for (int attempt = 0; attempt < 20; ++attempt)
         {
@@ -543,7 +498,7 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
     const auto adapter = waitForNewEthernet(adaptersBeforeNcm, 10000);
     if (!adapter.has_value())
     {
-        currentStatus = "Apple USB: NCM mode selected but no new Windows Ethernet adapter appeared";
+        currentStatus = "Apple USB: NCM selected but no new Windows Ethernet adapter appeared";
         currentState.store(State::Error, std::memory_order_release);
         return false;
     }
