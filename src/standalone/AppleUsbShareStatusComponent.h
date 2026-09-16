@@ -1,18 +1,16 @@
 #pragma once
 
-#include "network/AppleUsbNetworkTransport.h"
-
-#include <juce_gui_basics/juce_gui_basics.h>
-#include <vector>
-
-#if JUCE_WINDOWS
-// MIB_IF_ROW2 / GetIfEntry2 below are Vista+ APIs. Nothing else in this
-// translation unit sets the target Windows version before the system headers
-// below load first (JUCE's public umbrella headers don't - only its own
-// module .cpp files do, via juce_BasicNativeHeaders.h), so without this the
-// SDK falls back to a pre-Vista target and quietly declares the legacy
-// _IP_ADAPTER_ADDRESSES_XP shape instead, leaving MIB_IF_ROW2/GetIfEntry2
-// undeclared.
+// MIB_IF_ROW2 / GetIfEntry2 further down are Vista+ APIs. This must run
+// before ANY other header in this translation unit, JUCE's included: on
+// Windows, juce_core.h (pulled in transitively by AppleUsbNetworkTransport.h
+// below) already drags in <windows.h> itself before we get a chance to set
+// the target version, and windows.h's include guards mean a later
+// #define + re-#include is a no-op - the SDK has already locked in whatever
+// (pre-Vista) target it fell back to and quietly declared the legacy
+// _IP_ADAPTER_ADDRESSES_XP shape, leaving MIB_IF_ROW2/GetIfEntry2
+// undeclared. JUCE_WINDOWS isn't defined yet this early, so gate on the
+// compiler-provided _WIN32 instead.
+#ifdef _WIN32
 #ifndef _WIN32_WINNT
  #define _WIN32_WINNT 0x0A00 // _WIN32_WINNT_WIN10, matches JUCE's own target
 #endif
@@ -22,6 +20,14 @@
 #ifndef NTDDI_VERSION
  #define NTDDI_VERSION 0x0A000000 // NTDDI_WIN10
 #endif
+#endif
+
+#include "network/AppleUsbNetworkTransport.h"
+
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <vector>
+
+#if JUCE_WINDOWS
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
