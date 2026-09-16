@@ -198,6 +198,10 @@ namespace
         return result;
     }
 
+    // Include all Ethernet PDOs while the Apple transition is in progress. A
+    // newly-created NCM adapter can initially report Dormant/Down before the
+    // network stack finishes binding it, so filtering on OperStatus here can
+    // miss the adapter entirely.
     static std::set<std::string> ethernetAdapters()
     {
         std::set<std::string> result;
@@ -278,7 +282,13 @@ std::vector<DeviceNetworkTransport::Device> AppleUsbNetworkTransport::enumerate(
         const auto friendlyName = adapter->FriendlyName != nullptr ? juce::String(adapter->FriendlyName) : juce::String();
         const auto description = adapter->Description != nullptr ? juce::String(adapter->Description) : juce::String();
         const auto text = (friendlyName + " " + description).toLowerCase();
-        if (!text.contains("apple") && !text.contains("iphone") && !text.contains("ipad")) continue;
+        // Windows binds Apple's CDC-NCM function to its in-box UsbNcm driver.
+        // The resulting adapter is commonly named "Ethernet N" while the
+        // driver description is "UsbNcm Host Device #N", so looking only for
+        // Apple/iPhone/iPad in the friendly name misses the working adapter.
+        const bool isAppleNamed = text.contains("apple") || text.contains("iphone") || text.contains("ipad");
+        const bool isUsbNcm = text.contains("usbncm") || text.contains("usb ncm");
+        if (!isAppleNamed && !isUsbNcm) continue;
         Device device; device.kind = Kind::AppleUsb;
         device.id = juce::String::formatted("%llX", static_cast<unsigned long long>(adapter->Luid.Value));
         device.name = friendlyName.isNotEmpty() ? friendlyName : description; device.interfaceName = device.name; device.connected = true;
@@ -331,7 +341,6 @@ void AppleUsbNetworkTransport::stop()
 {
     currentDeviceId.clear(); currentInterfaceName.clear(); currentStatus = "USB network transport stopped"; currentState.store(State::Stopped, std::memory_order_release);
 }
-
 juce::String AppleUsbNetworkTransport::status() const
 {
     return currentStatus;
