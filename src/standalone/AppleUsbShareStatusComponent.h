@@ -1,41 +1,30 @@
 #pragma once
 
-// MIB_IF_ROW2 / GetIfEntry2 further down are Vista+ APIs. This must run
-// before ANY other header in this translation unit, JUCE's included: on
-// Windows, juce_core.h (pulled in transitively by AppleUsbNetworkTransport.h
-// below) already drags in <windows.h> itself before we get a chance to set
-// the target version, and windows.h's include guards mean a later
-// #define + re-#include is a no-op - the SDK has already locked in whatever
-// (pre-Vista) target it fell back to and quietly declared the legacy
-// _IP_ADAPTER_ADDRESSES_XP shape, leaving MIB_IF_ROW2/GetIfEntry2
-// undeclared. JUCE_WINDOWS isn't defined yet this early, so gate on the
-// compiler-provided _WIN32 instead.
-#ifdef _WIN32
-#ifndef _WIN32_WINNT
- #define _WIN32_WINNT 0x0A00 // _WIN32_WINNT_WIN10, matches JUCE's own target
-#endif
-#ifndef WINVER
- #define WINVER _WIN32_WINNT
-#endif
-#ifndef NTDDI_VERSION
- #define NTDDI_VERSION 0x0A000000 // NTDDI_WIN10
-#endif
+// Match the Windows target before any JUCE header can pull in windows.h.
+#if defined(_WIN32)
+ #ifndef _WIN32_WINNT
+  #define _WIN32_WINNT 0x0A00
+ #endif
+ #ifndef WINVER
+  #define WINVER _WIN32_WINNT
+ #endif
+ #ifndef NTDDI_VERSION
+  #define NTDDI_VERSION 0x0A000000
+ #endif
+ #include <winsock2.h>
+ #include <ws2tcpip.h>
+ #include <windows.h>
+ #include <iphlpapi.h>
+ #pragma comment(lib, "ws2_32.lib")
+ #pragma comment(lib, "iphlpapi.lib")
 #endif
 
 #include "network/AppleUsbNetworkTransport.h"
-
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
 
-#if JUCE_WINDOWS
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <iphlpapi.h>
-#pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib, "iphlpapi.lib")
-#endif
-
+// Embedded iPhoneUsbShare application surface. This is a child of the DYSEKT
+// Network Audio panel: no second process and no second top-level window.
 class AppleUsbShareStatusComponent final : public juce::Component,
                                            private juce::Timer
 {
@@ -43,74 +32,149 @@ public:
     explicit AppleUsbShareStatusComponent (AppleUsbNetworkTransport& transport)
         : usbTransport (transport)
     {
-        deviceLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-        deviceLabel.setFont (juce::Font (18.0f, juce::Font::plain));
-        adapterLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-        connectionLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-        connectionLabel.setFont (juce::Font (20.0f, juce::Font::bold));
-        ipValue.setColour (juce::Label::textColourId, juce::Colours::white);
-        rxValue.setColour (juce::Label::textColourId, juce::Colours::white);
-        txValue.setColour (juce::Label::textColourId, juce::Colours::white);
-        for (auto* label : { &ipCaption, &rxCaption, &txCaption })
-        {
+        title.setText ("Apple USB Internet Share", juce::dontSendNotification);
+        title.setFont (juce::Font (24.0f, juce::Font::bold));
+        subtitle.setText ("Share this PC's internet with your iPhone or iPad over USB", juce::dontSendNotification);
+        subtitle.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+
+        deviceCaption.setText ("Apple device", juce::dontSendNotification);
+        deviceLabel.setText ("Looking for iPhone or iPad…", juce::dontSendNotification);
+        deviceLabel.setFont (juce::Font (17.0f));
+        adapterLabel.setText ("USB Ethernet: not connected", juce::dontSendNotification);
+        for (auto* label : { &deviceCaption, &adapterLabel, &connectionCaption, &ipCaption, &rxCaption, &txCaption, &activityTitle })
             label->setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-            addAndMakeVisible (*label);
-        }
+
+        connectionCaption.setText ("Connection", juce::dontSendNotification);
+        connectionLabel.setText ("Not sharing", juce::dontSendNotification);
+        connectionLabel.setFont (juce::Font (19.0f, juce::Font::bold));
         ipCaption.setText ("Device IP", juce::dontSendNotification);
         rxCaption.setText ("Download", juce::dontSendNotification);
         txCaption.setText ("Upload", juce::dontSendNotification);
+        ipValue.setText ("—", juce::dontSendNotification);
+        rxValue.setText ("0 KB/s", juce::dontSendNotification);
+        txValue.setText ("0 KB/s", juce::dontSendNotification);
 
-        activityTitle.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         activityTitle.setText ("Activity", juce::dontSendNotification);
         activityTitle.setFont (juce::Font (13.0f, juce::Font::bold));
         activityEditor.setMultiLine (true);
         activityEditor.setReadOnly (true);
         activityEditor.setScrollbarsShown (true);
         activityEditor.setFont (juce::Font (12.0f));
-        activityEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xFF101017));
+        activityEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff101017));
         activityEditor.setColour (juce::TextEditor::textColourId, juce::Colours::white);
+        statusDot.setText ("●", juce::dontSendNotification);
+        statusDot.setFont (juce::Font (15.0f, juce::Font::bold));
 
-        statusDot.setColour (juce::Label::textColourId, juce::Colours::orange);
+        startButton.setButtonText ("Start sharing");
+        stopButton.setButtonText ("Stop");
+        diagnosticsButton.setButtonText ("Diagnostics");
+        stopButton.setEnabled (false);
 
-        addAndMakeVisible (deviceLabel);
-        addAndMakeVisible (adapterLabel);
-        addAndMakeVisible (connectionLabel);
-        addAndMakeVisible (ipValue);
-        addAndMakeVisible (rxValue);
-        addAndMakeVisible (txValue);
-        addAndMakeVisible (activityTitle);
-        addAndMakeVisible (activityEditor);
-        addAndMakeVisible (statusDot);
+        startButton.onClick = [this]
+        {
+            startButton.setEnabled (false);
+            stopButton.setEnabled (false);
+            appendActivity ("Starting USB network path…");
+            const bool ok = usbTransport.start ({});
+            if (ok)
+            {
+                appendActivity ("USB network path is ON.");
+                stopButton.setEnabled (true);
+            }
+            else
+            {
+                appendActivity ("ERROR: " + usbTransport.status());
+                startButton.setEnabled (true);
+            }
+            refresh();
+        };
 
-        startTimerHz (4);
+        stopButton.onClick = [this]
+        {
+            stopButton.setEnabled (false);
+            appendActivity ("Stopping USB network path…");
+            usbTransport.stop();
+            startButton.setEnabled (true);
+            appendActivity ("USB network path stopped.");
+            refresh();
+        };
+
+        diagnosticsButton.onClick = [this]
+        {
+            const auto devices = usbTransport.enumerate();
+            juce::String report;
+            report << "Apple USB Internet Share diagnostics\n\n";
+            report << "Transport state: " << stateName (usbTransport.state()) << "\n";
+            report << "Transport status: " << usbTransport.status() << "\n\n";
+            report << "Detected network adapters:\n";
+            if (devices.empty()) report << "  (none)\n";
+            for (const auto& device : devices)
+                report << "  " << device.name << " | connected=" << (device.connected ? "yes" : "no") << "\n";
+            juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon, "Diagnostics", report, "OK");
+            appendActivity ("Diagnostics collected.");
+        };
+
+        for (auto* component : { static_cast<juce::Component*> (&title), &subtitle, &deviceCaption, &deviceLabel,
+                                 &adapterLabel, &connectionCaption, &connectionLabel, &ipCaption, &ipValue,
+                                 &rxCaption, &rxValue, &txCaption, &txValue, &activityTitle, &activityEditor,
+                                 &statusDot, &startButton, &stopButton, &diagnosticsButton })
+            addAndMakeVisible (*component);
+
+        startTimerHz (2);
         refresh();
     }
 
+    ~AppleUsbShareStatusComponent() override { stopTimer(); }
+
     void resized() override
     {
-        auto area = getLocalBounds().reduced (12);
-        auto top = area.removeFromTop (44);
-        deviceLabel.setBounds (top.removeFromLeft (getWidth() - 80));
-        statusDot.setBounds (area.getRight() - 18, 18, 12, 12);
-        adapterLabel.setBounds (area.getX(), 50, area.getWidth(), 22);
-        connectionLabel.setBounds (area.getX(), 76, area.getWidth(), 28);
+        auto area = getLocalBounds().reduced (18);
+        title.setBounds (area.removeFromTop (32));
+        subtitle.setBounds (area.removeFromTop (25));
 
-        auto metrics = area.withY (112).withHeight (46);
-        const int third = metrics.getWidth() / 3;
-        auto cell = metrics.removeFromLeft (third);
-        ipCaption.setBounds (cell.removeFromTop (18));
-        ipValue.setBounds (cell);
-        cell = metrics.removeFromLeft (third);
-        rxCaption.setBounds (cell.removeFromTop (18));
-        rxValue.setBounds (cell);
-        txCaption.setBounds (metrics.removeFromTop (18));
-        txValue.setBounds (metrics);
+        auto device = area.removeFromTop (78).reduced (10);
+        deviceCaption.setBounds (device.removeFromTop (18));
+        deviceLabel.setBounds (device.removeFromTop (24));
+        adapterLabel.setBounds (device);
+        statusDot.setBounds (getWidth() - 40, 58, 18, 18);
 
-        activityTitle.setBounds (area.getX(), 168, area.getWidth(), 20);
-        activityEditor.setBounds (area.getX(), 190, area.getWidth(), juce::jmax (70, area.getHeight() - 190));
+        auto connection = area.removeFromTop (112).reduced (10);
+        connectionCaption.setBounds (connection.removeFromTop (20));
+        connectionLabel.setBounds (connection.removeFromTop (28));
+        const int third = connection.getWidth() / 3;
+        auto cell = connection.removeFromLeft (third);
+        ipCaption.setBounds (cell.removeFromTop (18)); ipValue.setBounds (cell);
+        cell = connection.removeFromLeft (third);
+        rxCaption.setBounds (cell.removeFromTop (18)); rxValue.setBounds (cell);
+        txCaption.setBounds (connection.removeFromTop (18)); txValue.setBounds (connection);
+
+        activityTitle.setBounds (area.removeFromTop (20));
+        auto buttons = area.removeFromBottom (32);
+        activityEditor.setBounds (area);
+        diagnosticsButton.setBounds (buttons.removeFromRight (105));
+        stopButton.setBounds (buttons.removeFromRight (72).reduced (2, 0));
+        startButton.setBounds (buttons.removeFromRight (118).reduced (2, 0));
     }
 
 private:
+    static juce::String stateName (DeviceNetworkTransport::State state)
+    {
+        switch (state)
+        {
+            case DeviceNetworkTransport::State::Stopped: return "Stopped";
+            case DeviceNetworkTransport::State::Starting: return "Starting";
+            case DeviceNetworkTransport::State::Connected: return "Connected";
+            case DeviceNetworkTransport::State::Error: return "Error";
+            default: return "Unknown";
+        }
+    }
+
+    void appendActivity (const juce::String& message)
+    {
+        const auto line = juce::Time::getCurrentTime().formatted ("[%H:%M:%S] ") + message + "\n";
+        activityEditor.setText (line + activityEditor.getText().substring (0, 14000), false);
+    }
+
     void timerCallback() override { refresh(); }
 
     void refresh()
@@ -120,28 +184,13 @@ private:
         juce::String adapter;
         bool connected = false;
         for (const auto& device : devices)
-        {
-            if (device.kind == DeviceNetworkTransport::Kind::AppleUsb)
-            {
-                adapter = device.name;
-                connected = device.connected;
-                break;
-            }
-        }
+            if (device.kind == DeviceNetworkTransport::Kind::AppleUsb) { adapter = device.name; connected = device.connected; break; }
 
-        deviceLabel.setText (connected ? "iPhone / iPad detected" : "Looking for iPhone or iPad…", juce::dontSendNotification);
+        deviceLabel.setText (connected ? "iPhone / iPad detected" : "Connect your iPhone or iPad by USB", juce::dontSendNotification);
         adapterLabel.setText (adapter.isNotEmpty() ? "USB Ethernet: " + adapter : "USB Ethernet: not connected", juce::dontSendNotification);
-
-        const auto status = usbTransport.status();
-        connectionLabel.setText (state == DeviceNetworkTransport::State::Connected
-                                      ? "Connected"
-                                      : state == DeviceNetworkTransport::State::Starting
-                                          ? "Starting"
-                                          : state == DeviceNetworkTransport::State::Error
-                                              ? "Error"
-                                              : "Not sharing",
-                                  juce::dontSendNotification);
-        activityEditor.setText (status.isNotEmpty() ? status : "Waiting for Apple USB transport…", false);
+        connectionLabel.setText (state == DeviceNetworkTransport::State::Connected ? "USB network path is ON"
+                                  : state == DeviceNetworkTransport::State::Starting ? "Starting"
+                                  : state == DeviceNetworkTransport::State::Error ? "Error" : "Ready", juce::dontSendNotification);
 
 #if JUCE_WINDOWS
         updateNetworkMetrics (adapter);
@@ -151,10 +200,9 @@ private:
         txValue.setText ("0 KB/s", juce::dontSendNotification);
 #endif
 
-        const auto dot = state == DeviceNetworkTransport::State::Connected ? juce::Colours::green
-                       : state == DeviceNetworkTransport::State::Error ? juce::Colours::red
-                       : state == DeviceNetworkTransport::State::Starting ? juce::Colours::orange
-                       : juce::Colours::grey;
+        const auto dot = connected && state == DeviceNetworkTransport::State::Connected ? juce::Colours::green
+                       : connected ? juce::Colours::orange
+                       : state == DeviceNetworkTransport::State::Error ? juce::Colours::red : juce::Colours::grey;
         statusDot.setColour (juce::Label::textColourId, dot);
     }
 
@@ -164,40 +212,25 @@ private:
         ULONG size = 0;
         if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW)
         {
-            ipValue.setText ("—", juce::dontSendNotification);
-            rxValue.setText ("0 KB/s", juce::dontSendNotification);
-            txValue.setText ("0 KB/s", juce::dontSendNotification);
-            return;
+            ipValue.setText ("—", juce::dontSendNotification); rxValue.setText ("0 KB/s", juce::dontSendNotification); txValue.setText ("0 KB/s", juce::dontSendNotification); return;
         }
-
         std::vector<unsigned char> buffer (size);
         auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*> (buffer.data());
-        if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR)
-            return;
-
+        if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR) return;
         for (auto* a = adapters; a != nullptr; a = a->Next)
         {
             const auto friendly = a->FriendlyName ? juce::String (a->FriendlyName) : juce::String();
             const auto description = a->Description ? juce::String (a->Description) : juce::String();
             const auto combined = (friendly + " " + description).toLowerCase();
-            if (! combined.contains ("usbncm") && ! combined.contains ("usb ncm") &&
-                ! combined.contains ("iphone") && ! combined.contains ("ipad") &&
-                ! combined.contains ("apple"))
-                continue;
-            if (preferredAdapter.isNotEmpty() && friendly != preferredAdapter && description != preferredAdapter)
-                continue;
+            if (! combined.contains ("usbncm") && ! combined.contains ("usb ncm") && ! combined.contains ("iphone") && ! combined.contains ("ipad") && ! combined.contains ("apple")) continue;
+            if (preferredAdapter.isNotEmpty() && friendly != preferredAdapter && description != preferredAdapter) continue;
 
             juce::String ip = "—";
             for (auto* u = a->FirstUnicastAddress; u != nullptr; u = u->Next)
             {
-                if (u->Address.lpSockaddr == nullptr || u->Address.lpSockaddr->sa_family != AF_INET)
-                    continue;
+                if (u->Address.lpSockaddr == nullptr || u->Address.lpSockaddr->sa_family != AF_INET) continue;
                 char host[NI_MAXHOST] = {};
-                if (getnameinfo (u->Address.lpSockaddr, u->Address.iSockaddrLength, host, sizeof (host), nullptr, 0, NI_NUMERICHOST) == 0)
-                {
-                    ip = host;
-                    break;
-                }
+                if (getnameinfo (u->Address.lpSockaddr, u->Address.iSockaddrLength, host, sizeof (host), nullptr, 0, NI_NUMERICHOST) == 0) { ip = host; break; }
             }
             ipValue.setText (ip, juce::dontSendNotification);
 
@@ -214,25 +247,26 @@ private:
                     rxValue.setText (juce::String (juce::jmax (0.0, rx), 1) + " KB/s", juce::dontSendNotification);
                     txValue.setText (juce::String (juce::jmax (0.0, tx), 1) + " KB/s", juce::dontSendNotification);
                 }
-                lastRx = row.InOctets;
-                lastTx = row.OutOctets;
-                lastSampleMs = juce::Time::getMillisecondCounter();
+                lastRx = row.InOctets; lastTx = row.OutOctets; lastSampleMs = juce::Time::getMillisecondCounter();
             }
             return;
         }
-
         ipValue.setText ("—", juce::dontSendNotification);
+        rxValue.setText ("0 KB/s", juce::dontSendNotification);
+        txValue.setText ("0 KB/s", juce::dontSendNotification);
     }
 #endif
 
     AppleUsbNetworkTransport& usbTransport;
-    juce::Label deviceLabel, adapterLabel, connectionLabel;
-    juce::Label ipCaption, rxCaption, txCaption, ipValue, rxValue, txValue;
-    juce::Label activityTitle, statusDot;
+    juce::Label title, subtitle;
+    juce::Label deviceCaption, deviceLabel, adapterLabel, statusDot;
+    juce::Label connectionCaption, connectionLabel;
+    juce::Label ipCaption, ipValue, rxCaption, rxValue, txCaption, txValue;
+    juce::Label activityTitle;
     juce::TextEditor activityEditor;
+    juce::TextButton startButton, stopButton, diagnosticsButton;
 #if JUCE_WINDOWS
-    uint64_t lastRx = 0;
-    uint64_t lastTx = 0;
+    uint64_t lastRx = 0, lastTx = 0;
     uint32_t lastSampleMs = 0;
 #endif
 };
