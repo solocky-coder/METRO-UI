@@ -16,8 +16,7 @@ public:
     enum class Kind
     {
         WifiLan,
-        AppleUsb,
-        AndroidUsb
+        AppleUsb
     };
 
     enum class State
