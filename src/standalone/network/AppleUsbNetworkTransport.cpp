@@ -94,7 +94,7 @@ namespace
         HKEY deviceKey = nullptr;
         const std::wstring devicePath = std::wstring(UsbEnumRoot) + parent;
         if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, devicePath.c_str(), 0, KEY_READ | KEY_WRITE, &deviceKey) != ERROR_SUCCESS) return false;
-        DWORD type = 0, bytes = 0;
+        DWORD type = 0, bytes = sizeof(DWORD);
         wchar_t driver[512] = {};
         bytes = sizeof(driver);
         if (RegQueryValueExW(deviceKey, L"Driver", nullptr, &type, reinterpret_cast<LPBYTE>(driver), &bytes) != ERROR_SUCCESS || type != REG_SZ) { RegCloseKey(deviceKey); return false; }
@@ -143,8 +143,10 @@ namespace
         HKEY key = nullptr;
         const auto path = std::wstring(UsbEnumRoot) + instanceId + L"\\Device Parameters";
         if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, path.c_str(), 0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS) return false;
-        const wchar_t* guids[] = { L"{8D4D9C11-3B6B-4D3A-9B0B-7E8B2E2E0C51}", nullptr };
-        const auto a = RegSetValueExW(key, L"DeviceInterfaceGUIDs", 0, REG_MULTI_SZ, reinterpret_cast<const BYTE*>(guids), static_cast<DWORD>((wcslen(guids[0]) + 2) * sizeof(wchar_t)));
+        const wchar_t guidString[] = L"{8D4D9C11-3B6B-4D3A-9B0B-7E8B2E2E0C51}";
+        wchar_t guidMultiSz[sizeof(guidString) / sizeof(wchar_t) + 1] = {};
+        wcscpy_s(guidMultiSz, ARRAYSIZE(guidMultiSz), guidString);
+        const auto a = RegSetValueExW(key, L"DeviceInterfaceGUIDs", 0, REG_MULTI_SZ, reinterpret_cast<const BYTE*>(guidMultiSz), static_cast<DWORD>(sizeof(guidMultiSz)));
         const wchar_t compatible[] = L"USB\\MS_COMP_WINUSB";
         const auto b = RegSetValueExW(key, L"WinUsbCompatibleId", 0, REG_SZ, reinterpret_cast<const BYTE*>(compatible), static_cast<DWORD>(sizeof(compatible)));
         RegCloseKey(key);
@@ -162,15 +164,15 @@ namespace
         if (!SetupDiGetDeviceInstallParamsW(set, &dev, &params)) { SetupDiDestroyDeviceInfoList(set); return false; }
         params.Flags |= DI_ENUMSINGLEINF | DI_QUIETINSTALL;
         params.FlagsEx |= DI_FLAGSEX_ALLOWEXCLUDEDDRVS;
-        const auto inf = std::wstring(L"C:\\Windows\\INF\\winusb.inf");
+        wchar_t windowsDir[MAX_PATH] = {};
+        if (!GetWindowsDirectoryW(windowsDir, ARRAYSIZE(windowsDir))) { SetupDiDestroyDeviceInfoList(set); return false; }
+        const auto inf = std::wstring(windowsDir) + L"\\INF\\winusb.inf";
         wcsncpy_s(params.DriverPath, ARRAYSIZE(params.DriverPath), inf.c_str(), _TRUNCATE);
         if (!SetupDiSetDeviceInstallParamsW(set, &dev, &params) || !SetupDiBuildDriverInfoList(set, &dev, SPDIT_CLASSDRIVER)) { SetupDiDestroyDeviceInfoList(set); return false; }
         bool installed = false;
         SP_DRVINFO_DATA_W info{}; info.cbSize = sizeof(info);
         if (SetupDiEnumDriverInfoW(set, &dev, SPDIT_CLASSDRIVER, 0, &info))
-        {
             if (SetupDiSetSelectedDriverW(set, &dev, &info)) installed = SetupDiCallClassInstaller(DIF_INSTALLDEVICE, set, &dev) != FALSE;
-        }
         SetupDiDestroyDriverInfoList(set, &dev, SPDIT_CLASSDRIVER);
         SetupDiDestroyDeviceInfoList(set);
         return installed;
@@ -195,21 +197,6 @@ namespace
         }
         SetupDiDestroyDeviceInfoList(set);
         return result;
-    }
-
-    static bool ensureWinUsbControl(const std::wstring& parent)
-    {
-        if (!findWinUsbPathForParent(parent).empty()) return true;
-        const auto mi00 = findAppleInterface(0);
-        if (mi00.empty()) return false;
-        if (!setWinUsbParameters(mi00)) return false;
-        if (!installInboxWinUsb(mi00)) return false;
-        if (!CreateProcessW(nullptr, const_cast<wchar_t*>(std::wstring(L"pnputil.exe /restart-device \"") .append(mi00).append(L"\"").c_str()), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, nullptr, nullptr))
-        {
-            // Fall back to the normal device restart helper below.
-        }
-        Sleep(1500);
-        return !findWinUsbPathForParent(parent).empty();
     }
 
     static WinUsbHandle openWinUsb(const std::wstring& parent)
@@ -392,9 +379,8 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
     if (!writeUsbCgpConfiguration(parent)) { currentStatus = "Apple USB: cannot configure usbccgp/AppleLowerFilter (run DYSEKT as Administrator)"; currentState.store(State::Error, std::memory_order_release); return false; }
     if (!setUsbConfigurationHints(parent, 2, 0)) { currentStatus = "Apple USB: cannot write safe usbccgp configuration hints"; currentState.store(State::Error, std::memory_order_release); return false; }
 
-    // iPhoneUsbShare does not require a pre-installed third-party WinUSB package.
-    // It binds Microsoft's inbox winusb.inf to the existing Apple MI_00 PDO,
-    // publishes the same application interface GUID, then restarts MI_00.
+    // Bind Microsoft's inbox WinUSB directly to the existing Apple MI_00 PDO.
+    // No third-party/custom WinUSB package is required.
     if (findWinUsbPathForParent(parent).empty())
     {
         const auto mi00 = findAppleInterface(0);
