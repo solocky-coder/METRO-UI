@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NetworkAudioSettingsComponent.h"
+#include "AppleUsbShareStatusComponent.h"
 #include "network/AppleUsbNetworkTransport.h"
 #include <tuple>
 
@@ -24,9 +25,10 @@ public:
         createTrackButton.setEnabled (false);
 #endif
 
-        // The base component owns the visible service ON/OFF button. Wrap its
-        // callback so the same switch also controls DYSEKT's integrated
-        // Apple USB/NCM transport. This is intentionally NOT a child process.
+        // The base component owns the visible service ON/OFF button. DYSEKT's
+        // integrated Apple USB/NCM service is controlled by the same switch.
+        // The switch is deliberately initialized OFF every time this settings
+        // view is created; opening the page must never start USB setup.
         for (auto* child : getChildren())
         {
             if (auto* button = dynamic_cast<juce::TextButton*> (child))
@@ -34,24 +36,22 @@ public:
                 if (! button->getButtonText().startsWithIgnoreCase ("Network audio:"))
                     continue;
 
+                button->setToggleState (false, juce::dontSendNotification);
+                button->setButtonText ("Network audio: OFF");
+                getNetworkAudioChannelState().enabled.store (false, std::memory_order_relaxed);
+
                 auto baseClick = button->onClick;
                 button->onClick = [button, baseClick]
                 {
                     auto& usbService = appleUsbService();
                     const bool requestedOn = button->getToggleState();
 
-                    // Do not make the UI switch itself hostage to USB discovery.
-                    // ON means the service is enabled; Apple setup may legitimately
-                    // need to wait for an iPhone/iPad to enumerate or for Windows to
-                    // finish re-enumerating the UsbNcm function. The transport status
-                    // is exposed through the button tooltip instead of silently
-                    // snapping the switch back to OFF.
                     if (requestedOn)
                     {
                         const bool usbReady = usbService.start ({});
                         button->setTooltip (usbReady
                             ? "Network audio ON — Apple USB/NCM transport ready"
-                            : "Network audio ON — waiting for Apple USB device/setup: " + usbService.status());
+                            : "Network audio ON — Apple USB/NCM setup failed: " + usbService.status());
                     }
                     else
                     {
@@ -62,9 +62,7 @@ public:
                     if (baseClick != nullptr)
                         baseClick();
 
-                    // If the AOO backend itself rejects the enable request, honor
-                    // that authoritative result and keep the integrated USB service
-                    // stopped. Otherwise the UI remains ON while USB setup can wait.
+                    // The AOO backend remains authoritative for the service switch.
                     if (! button->getToggleState())
                         usbService.stop();
                 };
@@ -72,31 +70,13 @@ public:
             }
         }
 
-        // If the service was already enabled before this dialog was opened,
-        // bring the integrated USB transport into the same state immediately.
-        for (auto* child : getChildren())
-        {
-            if (auto* button = dynamic_cast<juce::TextButton*> (child))
-            {
-                if (button->getButtonText().startsWithIgnoreCase ("Network audio:"))
-                {
-                    if (button->getToggleState() && appleUsbService().state() == DeviceNetworkTransport::State::Stopped)
-                    {
-                        const bool usbReady = appleUsbService().start ({});
-                        button->setTooltip (usbReady
-                            ? "Network audio ON — Apple USB/NCM transport ready"
-                            : "Network audio ON — waiting for Apple USB device/setup: " + appleUsbService().status());
-                    }
-                    break;
-                }
-            }
-        }
+        // The diagnostics are a child of the DYSEKT settings page, not a
+        // separate process/window. It mirrors the useful readout from
+        // iPhoneUsbShare: Apple device, USB Ethernet, connection state, IP,
+        // live RX/TX rates and the actual transport status.
+        usbStatusComponent = new ::AppleUsbShareStatusComponent (appleUsbService());
+        addAndMakeVisible (usbStatusComponent);
 
-        // NetworkAudioSettingsComponent's constructor already called setSize(980, 980),
-        // which synchronously triggers resized() -- but at that point in construction this
-        // object is still only a NetworkAudioSettingsComponent, so that call dispatches to
-        // the BASE class's resized(). Nothing resizes the component again afterward, so
-        // explicitly lay out the derived component's added button.
         resized();
     }
 
@@ -106,6 +86,11 @@ public:
     {
         ::NetworkAudioSettingsComponent::resized();
         createTrackButton.setBounds (getWidth() - 222, 12, 206, 30);
+
+        // Keep the USB diagnostic card in the upper-right area beside the
+        // network-audio controls. The component itself owns its internal layout.
+        const int x = juce::jmax (390, getWidth() - 570);
+        usbStatusComponent.setBounds (x, 44, getWidth() - x - 16, 285);
     }
 
 private:
@@ -233,5 +218,6 @@ private:
 
     juce::TextButton createTrackButton;
     ::MetroNetworkAudio* networkAudio = nullptr;
+    ::AppleUsbShareStatusComponent* usbStatusComponent = nullptr;
 };
 }
