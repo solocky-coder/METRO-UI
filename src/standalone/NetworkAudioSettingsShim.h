@@ -50,6 +50,8 @@ public:
                         if (! usbService.start ({}))
                         {
                             button->setToggleState (false, juce::dontSendNotification);
+                            if (baseClick != nullptr)
+                                baseClick();
                             return;
                         }
                     }
@@ -61,9 +63,6 @@ public:
                     // from the build). Never leave the USB service running when
                     // the UI ultimately ended up OFF.
                     if (! button->getToggleState())
-                        usbService.stop();
-
-                    if (! requestedOn)
                         usbService.stop();
                 };
                 break;
