@@ -3,10 +3,14 @@
 #include "network/AppleUsbNetworkTransport.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <vector>
 
 #if JUCE_WINDOWS
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <iphlpapi.h>
+#pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "iphlpapi.lib")
 #endif
 
