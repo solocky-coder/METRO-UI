@@ -117,7 +117,14 @@ juce_add_plugin(Dysekt
 )
 
 if(MSVC)
-    target_compile_options(Dysekt PRIVATE /source-charset:utf-8)
+    # /utf-8 (not just /source-charset:utf-8) so narrow string literals are
+    # also compiled with UTF-8 as the *execution* charset. Without this,
+    # MSVC re-encodes literals into the build machine's local codepage,
+    # corrupting non-ASCII characters like the em dash/ellipsis used in UI
+    # strings (e.g. "Ready — local Wi-Fi/LAN audio", "Looking for iPhone
+    # or iPad…") into invalid UTF-8 - which juce::String then renders as a
+    # missing-glyph box on top of the text.
+    target_compile_options(Dysekt PRIVATE /utf-8)
 endif()
 
 juce_add_binary_data(DysektFonts SOURCES
@@ -260,7 +267,7 @@ juce_add_gui_app(DysektStandalone
 )
 
 if(MSVC)
-    target_compile_options(DysektStandalone PRIVATE /source-charset:utf-8)
+    target_compile_options(DysektStandalone PRIVATE /utf-8)
     # The Apple USB/NCM reverse-tethering path (AppleUsbNetworkTransport.cpp)
     # writes under HKLM\SYSTEM\CurrentControlSet\Enum\...\Device Parameters
     # and calls SetupDiCallClassInstaller(DIF_INSTALLDEVICE, ...) to bind the
