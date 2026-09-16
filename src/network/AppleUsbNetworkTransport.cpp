@@ -20,8 +20,6 @@
 #pragma comment(lib, "winusb.lib")
 #pragma comment(lib, "iphlpapi.lib")
 
-namespace dysekt::network
-{
 namespace
 {
 std::string lower(std::string value)
@@ -206,7 +204,6 @@ bool waitForAdapter(int seconds)
     }
     return false;
 }
-
 } // namespace
 
 struct AppleUsbNetworkTransport::Impl
@@ -236,23 +233,14 @@ bool AppleUsbNetworkTransport::start(const std::string& deviceId)
     impl->current = State::Starting;
     notifyState(DeviceInfo{ deviceId, "Apple USB device", Kind::AppleUsb, State::Starting, false });
 
-    if (!isAppleInstance(deviceId) || controlPath().empty())
-    {
-        impl->current = State::Error;
-        notifyState(DeviceInfo{ deviceId, "Apple USB device", Kind::AppleUsb, State::Error, false });
-        return false;
-    }
+    if (!isAppleInstance(deviceId) || controlPath().empty()) goto fail;
 
     auto mode = getMode();
-    if (mode.empty())
-    {
-        impl->current = State::Error;
-        notifyState(DeviceInfo{ deviceId, "Apple USB device", Kind::AppleUsb, State::Error, false });
-        return false;
-    }
+    if (mode.empty()) goto fail;
 
-    // Proven iPhoneUsbShare transition: safe config 2 -> restart -> 3:3:3 ->
-    // config 4 -> SET_MODE(3).  DYSEKT intentionally does not start ICS or DHCP.
+    // Proven transition: safe configuration 2 -> restart -> 3:3:3 ->
+    // configuration 4 -> SET_MODE(3).  DYSEKT deliberately does not start
+    // Internet Connection Sharing and does not wait for DHCP.
     if (mode != "5:3:3" && mode != "5:3:3:0")
     {
         if (!setConfiguration(2) || !restartDevice(deviceId)) goto fail;
@@ -286,12 +274,8 @@ DeviceNetworkTransport::State AppleUsbNetworkTransport::state(const std::string&
     return deviceId == impl->activeId ? impl->current : State::Stopped;
 }
 
-} // namespace dysekt::network
-
 #else
 
-namespace dysekt::network
-{
 struct AppleUsbNetworkTransport::Impl {};
 AppleUsbNetworkTransport::AppleUsbNetworkTransport() : impl(std::make_unique<Impl>()) {}
 AppleUsbNetworkTransport::~AppleUsbNetworkTransport() = default;
@@ -299,6 +283,5 @@ std::vector<DeviceNetworkTransport::DeviceInfo> AppleUsbNetworkTransport::enumer
 bool AppleUsbNetworkTransport::start(const std::string&) { return false; }
 void AppleUsbNetworkTransport::stop(const std::string&) {}
 DeviceNetworkTransport::State AppleUsbNetworkTransport::state(const std::string&) const { return State::Stopped; }
-}
 
 #endif
