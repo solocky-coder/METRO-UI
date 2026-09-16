@@ -1,9 +1,9 @@
 #include "AppleUsbNetworkTransport.h"
 
 #if JUCE_WINDOWS
- #include <iphlpapi.h>
  #include <winsock2.h>
  #include <windows.h>
+ #include <iphlpapi.h>
  #include <vector>
  #pragma comment(lib, "iphlpapi.lib")
 #endif
@@ -37,11 +37,9 @@ std::vector<DeviceNetworkTransport::Device> AppleUsbNetworkTransport::enumerate(
                                     ? juce::String (adapter->Description)
                                     : juce::String();
 
-        // Apple NCM can legitimately appear to Windows as an ordinary Ethernet
-        // adapter. Keep this heuristic deliberately narrow enough to avoid
-        // claiming arbitrary LAN adapters, while allowing the common Apple
-        // driver naming variants. The actual USB/NCM binding layer will replace
-        // this discovery heuristic with parent-device identity when it is added.
+        // Apple NCM can appear to Windows as an ordinary Ethernet adapter.
+        // This discovery layer is intentionally conservative; the actual
+        // Apple USB/NCM bring-up belongs behind this standalone-only boundary.
         const auto text = (friendlyName + " " + description).toLowerCase();
         if (!text.contains ("apple") && !text.contains ("iphone") && !text.contains ("ipad"))
             continue;
@@ -56,8 +54,8 @@ std::vector<DeviceNetworkTransport::Device> AppleUsbNetworkTransport::enumerate(
     }
 #else
     // Apple USB/NCM is currently a Windows standalone transport. Keeping the
-    // non-Windows implementation empty makes the target portable without
-    // pretending that a platform-specific USB path exists.
+    // non-Windows implementation empty avoids pretending that a platform-
+    // specific USB path exists on other hosts.
 #endif
 
     return devices;
