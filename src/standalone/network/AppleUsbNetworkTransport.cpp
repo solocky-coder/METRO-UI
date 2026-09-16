@@ -1,6 +1,15 @@
 #include "AppleUsbNetworkTransport.h"
 
 #if JUCE_WINDOWS
+ // Winsock2.h (and Ws2tcpip.h) must be included before Iphlpapi.h — the
+ // GetAdaptersAddresses()/IP_ADAPTER_ADDRESSES declarations in iphlpapi.h
+ // depend on Winsock2 types. juce_core.h (pulled in via
+ // AppleUsbNetworkTransport.h -> DeviceNetworkTransport.h) already includes
+ // <windows.h> earlier in this translation unit, so without this, iphlpapi.h
+ // silently fails to declare anything and every symbol below reads as
+ // undeclared.
+ #include <winsock2.h>
+ #include <ws2tcpip.h>
  #include <windows.h>
  #include <winusb.h>
  #include <setupapi.h>
@@ -11,6 +20,7 @@
  #include <optional>
  #include <sstream>
  #include <iomanip>
+ #pragma comment(lib, "ws2_32.lib")
  #pragma comment(lib, "setupapi.lib")
  #pragma comment(lib, "winusb.lib")
  #pragma comment(lib, "iphlpapi.lib")
