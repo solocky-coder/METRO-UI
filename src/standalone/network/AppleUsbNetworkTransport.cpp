@@ -1,29 +1,26 @@
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#include <winusb.h>
+#include <setupapi.h>
+#include <iphlpapi.h>
+
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "winusb.lib")
+#pragma comment(lib, "iphlpapi.lib")
+#endif
+
 #include "AppleUsbNetworkTransport.h"
 
 #if JUCE_WINDOWS
- // Winsock2.h (and Ws2tcpip.h) must be included before Iphlpapi.h — the
- // GetAdaptersAddresses()/IP_ADAPTER_ADDRESSES declarations in iphlpapi.h
- // depend on Winsock2 types. juce_core.h (pulled in via
- // AppleUsbNetworkTransport.h -> DeviceNetworkTransport.h) already includes
- // <windows.h> earlier in this translation unit, so without this, iphlpapi.h
- // silently fails to declare anything and every symbol below reads as
- // undeclared.
- #include <winsock2.h>
- #include <ws2tcpip.h>
- #include <windows.h>
- #include <winusb.h>
- #include <setupapi.h>
- #include <iphlpapi.h>
- #include <vector>
- #include <set>
- #include <algorithm>
- #include <optional>
- #include <sstream>
- #include <iomanip>
- #pragma comment(lib, "ws2_32.lib")
- #pragma comment(lib, "setupapi.lib")
- #pragma comment(lib, "winusb.lib")
- #pragma comment(lib, "iphlpapi.lib")
+#include <vector>
+#include <set>
+#include <algorithm>
+#include <optional>
+#include <sstream>
+#include <iomanip>
 #endif
 
 namespace
@@ -201,10 +198,6 @@ namespace
         return result;
     }
 
-    // Include all Ethernet PDOs while the Apple transition is in progress. A
-    // newly-created NCM adapter can initially report Dormant/Down before the
-    // network stack finishes binding it, so filtering on OperStatus here can
-    // miss the adapter entirely.
     static std::set<std::string> ethernetAdapters()
     {
         std::set<std::string> result;
@@ -287,7 +280,7 @@ std::vector<DeviceNetworkTransport::Device> AppleUsbNetworkTransport::enumerate(
         const auto text = (friendlyName + " " + description).toLowerCase();
         if (!text.contains("apple") && !text.contains("iphone") && !text.contains("ipad")) continue;
         Device device; device.kind = Kind::AppleUsb;
-        device.id = juce::String::toHexString(static_cast<juce::int64>(adapter->Luid.Value));
+        device.id = juce::String::formatted("%llX", static_cast<unsigned long long>(adapter->Luid.Value));
         device.name = friendlyName.isNotEmpty() ? friendlyName : description; device.interfaceName = device.name; device.connected = true;
         devices.push_back(device);
     }
@@ -327,7 +320,7 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
         currentStatus = "Apple USB: NCM selected but no new Windows Ethernet adapter appeared";
         currentState.store(State::Error, std::memory_order_release); return false;
     }
-    currentDeviceId = juce::String::toHexString(static_cast<juce::int64>(std::hash<std::string>{}(*adapter)));
+    currentDeviceId = juce::String::formatted("%llX", static_cast<unsigned long long>(std::hash<std::string>{}(*adapter)));
     currentInterfaceName = adapterNameForId(*adapter);
     currentStatus = "USB network interface ready — " + currentInterfaceName;
     currentState.store(State::Connected, std::memory_order_release); return true;
@@ -337,4 +330,9 @@ bool AppleUsbNetworkTransport::start(const juce::String& deviceId)
 void AppleUsbNetworkTransport::stop()
 {
     currentDeviceId.clear(); currentInterfaceName.clear(); currentStatus = "USB network transport stopped"; currentState.store(State::Stopped, std::memory_order_release);
+}
+
+juce::String AppleUsbNetworkTransport::status() const
+{
+    return currentStatus;
 }
