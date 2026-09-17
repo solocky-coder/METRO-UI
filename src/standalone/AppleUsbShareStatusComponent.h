@@ -242,7 +242,8 @@ private:
             }
             ipValue.setText (address.isNotEmpty() ? address : "—", juce::dontSendNotification);
             MIB_IF_ROW2 row {};
-            if (GetIfEntry2 (&row, a->IfIndex) == NO_ERROR)
+            row.InterfaceIndex = a->IfIndex;
+            if (GetIfEntry2 (&row) == NO_ERROR)
             {
                 const auto now = juce::Time::getMillisecondCounter();
                 const auto rx = row.InOctets;
