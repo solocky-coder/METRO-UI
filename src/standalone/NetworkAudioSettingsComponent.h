@@ -559,8 +559,14 @@ private:
 
     MetroLookAndFeel settingsLookAndFeel;
     bool showDeviceSelector = false;
+
+protected:
+    // Exposed so a derived settings view (e.g. MetroNetworkAudioSettingsSelector)
+    // can lay out an alternate full-page view using the same content region,
+    // without duplicating this class's layout constants.
     juce::Rectangle<int> devicePanelBounds, channelPanelBounds, connectionPanelBounds, sourcesPanelBounds;
 
+private:
     juce::AudioDeviceSelectorComponent audioSelector;
     MetroNetworkAudio* networkAudio = nullptr;
 

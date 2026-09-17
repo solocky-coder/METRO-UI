@@ -4,6 +4,7 @@
 #include "AppleUsbShareStatusComponent.h"
 #include "network/AppleUsbNetworkTransport.h"
 #include <tuple>
+#include <vector>
 
 namespace juce
 {
@@ -16,6 +17,15 @@ public:
         : ::NetworkAudioSettingsComponent (deviceManager, networkAudioToUse, showDeviceSelector),
           networkAudio (networkAudioToUse)
     {
+        // Snapshot every child the base class constructor already created
+        // (server/user/group fields, gain/pan, sources list, etc.) so the
+        // whole SonoBus/AOO page can be shown or hidden as a unit when the
+        // tab switcher below flips to the Apple USB page. Nothing added
+        // after this point (createTrackButton, the tab buttons, the USB
+        // page) is part of this snapshot.
+        for (auto* child : getChildren())
+            basePageChildren.push_back (child);
+
         createTrackButton.setButtonText ("+ Create Audio Track");
         createTrackButton.setTooltip ("Create a METRO audio track from a SonoBus/AOO source and choose its channel");
         createTrackButton.onClick = [this] { showCreateNetworkTrackMenu(); };
@@ -29,7 +39,7 @@ public:
         // integrated Apple USB/NCM service is controlled by the same switch.
         // The switch is deliberately initialized OFF every time this settings
         // view is created; opening the page must never start USB setup.
-        for (auto* child : getChildren())
+        for (auto* child : basePageChildren)
         {
             if (auto* button = dynamic_cast<juce::TextButton*> (child))
             {
@@ -69,12 +79,28 @@ public:
             }
         }
 
+        // Tab switcher between the SonoBus/AOO page (the base class's own
+        // content, captured above) and the Apple USB Internet Share page.
+        // Previously usbStatusComponent was just added as an extra child
+        // laid out over the right-hand side of the SonoBus content, so the
+        // two pages visually overlapped instead of being separate views.
+        tabSonoBusButton.setButtonText ("SonoBus / AOO");
+        tabSonoBusButton.setClickingTogglesState (false);
+        tabSonoBusButton.onClick = [this] { setUsbTabActive (false); };
+        addAndMakeVisible (tabSonoBusButton);
+
+        tabUsbButton.setButtonText ("Apple USB Share");
+        tabUsbButton.setClickingTogglesState (false);
+        tabUsbButton.onClick = [this] { setUsbTabActive (true); };
+        addAndMakeVisible (tabUsbButton);
+
         // The complete iPhoneUsbShare surface is embedded here as a child of
         // Network Audio. It is not a second process and does not create a
         // separate top-level window.
         usbStatusComponent = new ::AppleUsbShareStatusComponent (appleUsbService());
         addAndMakeVisible (usbStatusComponent);
-        resized();
+
+        setUsbTabActive (false);
     }
 
     ~MetroNetworkAudioSettingsSelector() override = default;
@@ -84,14 +110,48 @@ public:
         ::NetworkAudioSettingsComponent::resized();
         createTrackButton.setBounds (getWidth() - 222, 12, 206, 30);
 
-        // The embedded app surface is intentionally large enough to preserve
-        // the reference application's title, device card, connection metrics,
-        // activity area and Start/Stop/Diagnostics controls.
-        const int x = juce::jmax (390, getWidth() - 570);
-        usbStatusComponent->setBounds (x, 44, getWidth() - x - 16, 420);
+        // Tab switcher sits in the header row, in the space between the
+        // "NETWORK AUDIO" title (left-aligned, ~300px) and createTrackButton
+        // (right-aligned) — neither of which the base layout uses further in.
+        constexpr int kTabW = 150, kTabH = 28, kTabGap = 8, kTabX = 316;
+        tabSonoBusButton.setBounds (kTabX, 12, kTabW, kTabH);
+        tabUsbButton.setBounds (kTabX + kTabW + kTabGap, 12, kTabW, kTabH);
+
+        if (showingUsbTab)
+        {
+            // Fill the exact same content region the base class's own cards
+            // occupy (device/channel/connection/sources), rather than a
+            // narrow strip squeezed to one side of it.
+            auto full = channelPanelBounds;
+            if (! devicePanelBounds.isEmpty())
+                full = full.getUnion (devicePanelBounds);
+            full = full.getUnion (connectionPanelBounds).getUnion (sourcesPanelBounds);
+            usbStatusComponent->setBounds (full);
+        }
     }
 
 private:
+    void setUsbTabActive (bool active)
+    {
+        showingUsbTab = active;
+
+        for (auto* child : basePageChildren)
+            child->setVisible (! active);
+        usbStatusComponent->setVisible (active);
+
+        auto style = [] (juce::TextButton& b, bool isActive)
+        {
+            b.setColour (juce::TextButton::buttonColourId,
+                         isActive ? juce::Colour (0xff2d8fd6) : juce::Colour (0xff2a2a30));
+            b.setColour (juce::TextButton::textColourOffId,
+                         isActive ? juce::Colours::white : juce::Colours::lightgrey);
+        };
+        style (tabSonoBusButton, ! active);
+        style (tabUsbButton, active);
+
+        resized();
+    }
+
     static ::AppleUsbNetworkTransport& appleUsbService()
     {
         static ::AppleUsbNetworkTransport service;
@@ -196,6 +256,9 @@ private:
     }
 
     juce::TextButton createTrackButton;
+    juce::TextButton tabSonoBusButton, tabUsbButton;
+    std::vector<juce::Component*> basePageChildren;
+    bool showingUsbTab = false;
     ::MetroNetworkAudio* networkAudio = nullptr;
     ::AppleUsbShareStatusComponent* usbStatusComponent = nullptr;
 };
