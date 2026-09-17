@@ -1,12 +1,11 @@
 #pragma once
 
 #include "DeviceNetworkTransport.h"
+#include "AppleUsbShareEngine.h"
 
-// Apple USB/NCM transport used only by DYSEKT standalone.
-//
-// The audio engine remains transport-agnostic: once Windows exposes the Apple
-// CDC-NCM function as a network adapter, SonoBus/AOO continues to use ordinary
-// UDP. No audio protocol is implemented here.
+// Thin DYSEKT transport adapter around the native iPhoneUsbShare engine.
+// The complete USB/PnP/NCM/ICS state machine lives in AppleUsbShareEngine;
+// Network Audio only consumes the resulting Windows Ethernet interface.
 class AppleUsbNetworkTransport final : public DeviceNetworkTransport
 {
 public:
@@ -25,4 +24,5 @@ private:
     juce::String currentDeviceId;
     juce::String currentInterfaceName;
     juce::String currentStatus { "No USB device network interface detected" };
+    std::unique_ptr<AppleUsbShareEngine> engine;
 };
