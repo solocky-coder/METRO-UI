@@ -3,6 +3,7 @@
 #include "NetworkAudioSettingsComponent.h"
 #include "AppleUsbShareStatusComponent.h"
 #include "network/AppleUsbNetworkTransport.h"
+#include <memory>
 #include <tuple>
 #include <vector>
 
@@ -96,9 +97,15 @@ public:
 
         // The complete iPhoneUsbShare surface is embedded here as a child of
         // Network Audio. It is not a second process and does not create a
-        // separate top-level window.
-        usbStatusComponent = new ::AppleUsbShareStatusComponent (appleUsbService());
-        addAndMakeVisible (usbStatusComponent);
+        // separate top-level window. Owned via unique_ptr (not a leaked raw
+        // `new`) so its juce::Timer-driven refresh() actually stops when this
+        // settings view is destroyed - previously it leaked on every dialog
+        // close, leaving an orphaned timer ticking in the background for the
+        // rest of the process's life. Enough of those, still firing during
+        // final app shutdown after JUCE's own teardown has begun, produced
+        // the access-violation-at-null crash seen on exit.
+        usbStatusComponent = std::make_unique<::AppleUsbShareStatusComponent> (appleUsbService());
+        addAndMakeVisible (usbStatusComponent.get());
 
         setUsbTabActive (false);
     }
@@ -260,6 +267,6 @@ private:
     std::vector<juce::Component*> basePageChildren;
     bool showingUsbTab = false;
     ::MetroNetworkAudio* networkAudio = nullptr;
-    ::AppleUsbShareStatusComponent* usbStatusComponent = nullptr;
+    std::unique_ptr<::AppleUsbShareStatusComponent> usbStatusComponent;
 };
 }
