@@ -1,0 +1,35 @@
+; iPhoneUsbShare Apple USB composite-parent configuration override
+; Exact reference package content. A signed AppleUsbCompositeConfiguration.cat
+; must accompany this INF for Windows driver-store installation.
+[Version]
+Signature   = "$Windows NT$"
+Class       = USB
+ClassGUID   = {36FC9E60-C465-11CF-8056-444553540000}
+Provider    = %ManufacturerName%
+CatalogFile = AppleUsbCompositeConfiguration.cat
+DriverVer   = 09/15/2026,1.0.0.0
+PnpLockdown = 1
+
+[Manufacturer]
+%ManufacturerName% = Standard,NTamd64
+
+[Standard.NTamd64]
+%DeviceName% = Composite_Install, USB\VID_05AC&PID_12AB
+
+[Composite_Install]
+Include = usb.inf
+Needs   = Composite.Dev.NT
+
+[Composite_Install.Services]
+Include = usb.inf
+Needs   = Composite.Dev.NT.Services
+
+[Composite_Install.HW]
+AddReg = Composite_Install_AddReg
+
+[Composite_Install_AddReg]
+HKR,,OriginalConfigurationValue,0x00010001,5
+
+[Strings]
+ManufacturerName = "iPhoneUsbShare"
+DeviceName = "iPhoneUsbShare Apple USB Composite Configuration"
