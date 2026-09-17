@@ -70,15 +70,30 @@ public:
         diagnosticsButton.setButtonText ("Diagnostics");
         stopButton.setEnabled (false);
 
+        // USB sharing runs via a separate helper that must run elevated
+        // (see docs/APPLE_USB_SHARE_STANDALONE_MIGRATION.md); this is here
+        // so the resulting UAC prompt reads as expected rather than as a
+        // security scare.
+        uacNoteLabel.setText ("Windows will ask for administrator permission the first time you start sharing.",
+                               juce::dontSendNotification);
+        uacNoteLabel.setFont (juce::Font (12.0f));
+        uacNoteLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+        uacNoteLabel.setJustificationType (juce::Justification::centredLeft);
+
         startButton.onClick = [this]
         {
             startButton.setEnabled (false);
             stopButton.setEnabled (false);
             appendActivity ("Starting USB network path…");
-            const bool ok = usbTransport.start ({});
-            if (ok)
+            // start() is asynchronous now — a `true` return only means the
+            // elevated helper launch is underway (a UAC prompt is likely
+            // about to appear), not that sharing is live. poll(), called
+            // from timerCallback() below, is what resolves Starting into
+            // Connected/Error once the outcome is actually known.
+            const bool launchStarted = usbTransport.start ({});
+            if (launchStarted)
             {
-                appendActivity ("USB network path is ON.");
+                appendActivity ("Waiting for administrator permission…");
                 stopButton.setEnabled (true);
             }
             else
@@ -122,7 +137,7 @@ public:
             &title, &subtitle, &deviceCaption, &deviceLabel,
             &adapterLabel, &connectionCaption, &connectionLabel, &ipCaption, &ipValue,
             &rxCaption, &rxValue, &txCaption, &txValue, &activityTitle, &activityEditor,
-            &statusDot, &startButton, &stopButton, &diagnosticsButton
+            &statusDot, &startButton, &stopButton, &diagnosticsButton, &uacNoteLabel
         };
 
         for (auto* component : components)
@@ -158,6 +173,7 @@ public:
 
         activityTitle.setBounds (area.removeFromTop (20));
         auto buttons = area.removeFromBottom (32);
+        uacNoteLabel.setBounds (area.removeFromBottom (18));
         activityEditor.setBounds (area);
         diagnosticsButton.setBounds (buttons.removeFromRight (105));
         stopButton.setBounds (buttons.removeFromRight (72).reduced (2, 0));
@@ -183,7 +199,7 @@ private:
         activityEditor.setText (line + activityEditor.getText().substring (0, 14000), false);
     }
 
-    void timerCallback() override { refresh(); }
+    void timerCallback() override { usbTransport.poll(); refresh(); }
 
     void refresh()
     {
@@ -197,8 +213,19 @@ private:
         deviceLabel.setText (connected ? "iPhone / iPad detected" : "Connect your iPhone or iPad by USB", juce::dontSendNotification);
         adapterLabel.setText (adapter.isNotEmpty() ? "USB Ethernet: " + adapter : "USB Ethernet: not connected", juce::dontSendNotification);
         connectionLabel.setText (state == DeviceNetworkTransport::State::Connected ? "USB network path is ON"
-                                  : state == DeviceNetworkTransport::State::Starting ? "Starting"
+                                  : state == DeviceNetworkTransport::State::Starting ? "Waiting for administrator permission…"
                                   : state == DeviceNetworkTransport::State::Error ? "Error" : "Ready", juce::dontSendNotification);
+
+        // start() no longer resolves synchronously (see the onClick comment
+        // above), so this timer-driven refresh is now also what re-enables
+        // startButton once a Starting attempt settles into Error, and what
+        // disables stopButton once Stopped/Error is reached on its own
+        // (helper exited without the user pressing Stop).
+        if (state == DeviceNetworkTransport::State::Error || state == DeviceNetworkTransport::State::Stopped)
+        {
+            if (! startButton.isEnabled()) startButton.setEnabled (true);
+            if (stopButton.isEnabled()) stopButton.setEnabled (false);
+        }
 
 #if JUCE_WINDOWS
         updateNetworkMetrics (adapter);
@@ -267,7 +294,8 @@ private:
     AppleUsbNetworkTransport& usbTransport;
     juce::Label title, subtitle, deviceCaption, deviceLabel, adapterLabel,
                 connectionCaption, connectionLabel, ipCaption, ipValue,
-                rxCaption, rxValue, txCaption, txValue, activityTitle, statusDot;
+                rxCaption, rxValue, txCaption, txValue, activityTitle, statusDot,
+                uacNoteLabel;
     juce::TextEditor activityEditor;
     juce::TextButton startButton, stopButton, diagnosticsButton;
 #if JUCE_WINDOWS

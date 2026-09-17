@@ -10,7 +10,7 @@
 
 AppleUsbNetworkTransport::AppleUsbNetworkTransport()
 {
-    engine = std::make_unique<AppleUsbShareEngine> ([this] (const juce::String& message)
+    launcher = std::make_unique<AppleUsbShareLauncher> ([this] (const juce::String& message)
     {
         currentStatus = message;
     });
@@ -60,24 +60,53 @@ bool AppleUsbNetworkTransport::start (const juce::String& deviceId)
 {
     juce::ignoreUnused (deviceId);
     currentState.store (State::Starting, std::memory_order_release);
-    currentStatus = "Starting integrated iPhoneUsbShare USB engine";
+    currentStatus = "Requesting administrator permission to start USB sharing…";
 
-    const bool ok = engine != nullptr && engine->start();
-    currentDeviceId = engine != nullptr ? engine->deviceId() : juce::String();
-    currentInterfaceName = engine != nullptr ? engine->interfaceName() : juce::String();
-    currentStatus = engine != nullptr ? engine->status() : juce::String ("Apple USB engine unavailable");
-    currentState.store (ok ? State::Connected : State::Error, std::memory_order_release);
-    return ok;
+    const bool launchStarted = launcher != nullptr && launcher->start();
+    if (! launchStarted)
+    {
+        currentStatus = launcher != nullptr ? launcher->status() : juce::String ("Apple USB helper unavailable");
+        currentState.store (State::Error, std::memory_order_release);
+    }
+    // On success we deliberately leave state() at Starting — poll() (driven
+    // by the UI's existing 2Hz timer) is what promotes it to Connected once
+    // a usbncm adapter actually comes up, or to Error if the helper exits
+    // without one appearing. See AppleUsbShareLauncher::start()'s comment on
+    // why this can't be resolved synchronously anymore (UAC can block
+    // indefinitely; the USB mode-switch handshake takes several seconds).
+    return launchStarted;
 }
 
 void AppleUsbNetworkTransport::stop()
 {
-    if (engine != nullptr)
-        engine->stop();
-    currentDeviceId.clear();
-    currentInterfaceName.clear();
+    if (launcher != nullptr)
+        launcher->stop();
     currentStatus = "USB network transport stopped";
     currentState.store (State::Stopped, std::memory_order_release);
+}
+
+void AppleUsbNetworkTransport::poll()
+{
+    const auto state = currentState.load (std::memory_order_acquire);
+    if (state != State::Starting && state != State::Connected)
+        return; // Stopped/Error only change via start()/stop() themselves.
+
+    if (launcher != nullptr && ! launcher->isRunning())
+    {
+        // Helper process exited (crash, UAC denial, or it honoured a stop
+        // signal we didn't send) without us having called stop() ourselves.
+        currentStatus = launcher->status();
+        currentState.store (State::Error, std::memory_order_release);
+        return;
+    }
+
+    bool connected = false;
+    for (const auto& device : enumerate())
+        if (device.kind == Kind::AppleUsb && device.connected) { connected = true; break; }
+
+    currentState.store (connected ? State::Connected : State::Starting, std::memory_order_release);
+    if (connected)
+        currentStatus = "USB reverse tethering ready";
 }
 
 juce::String AppleUsbNetworkTransport::status() const

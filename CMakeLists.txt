@@ -120,6 +120,23 @@ if(MSVC)
     target_compile_options(Dysekt PRIVATE /utf-8)
 endif()
 
+set(DYSEKT_APPLE_USB_HELPER_EXE "${CMAKE_CURRENT_SOURCE_DIR}/src/standalone/network/AppleUsbShareDriver/iPhoneUsbShare.exe")
+if(NOT EXISTS "${DYSEKT_APPLE_USB_HELPER_EXE}")
+    message(WARNING
+        "Apple USB Share helper not found at ${DYSEKT_APPLE_USB_HELPER_EXE} — "
+        "publish iPhoneUsbShare (dotnet publish -c Release -r win-x64 "
+        "--self-contained true -p:PublishSingleFile=true) and place the "
+        "resulting exe there. AppleUsbShareLauncher::start() will fail at "
+        "runtime until this exists; the rest of the build is unaffected.")
+    # Embed a zero-byte placeholder, named identically so juce_add_binary_data
+    # still generates BinaryData::iPhoneUsbShare_exe (the symbol name is
+    # derived from the file name, not the full path) — AppleUsbShareLauncher.cpp
+    # references that symbol unconditionally, so it must exist to build even
+    # though extractHelperIfNeeded() will refuse to run a 0-byte helper.
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/apple_usb_helper_placeholder/iPhoneUsbShare.exe" "")
+    set(DYSEKT_APPLE_USB_HELPER_EXE "${CMAKE_CURRENT_BINARY_DIR}/apple_usb_helper_placeholder/iPhoneUsbShare.exe")
+endif()
+
 juce_add_binary_data(DysektFonts SOURCES
     docs/DYSEKT_User_Manual.pdf
     src/ui/fonts/BarlowCondensed-Regular.ttf
@@ -261,7 +278,13 @@ juce_add_gui_app(DysektStandalone
 
 if(MSVC)
     target_compile_options(DysektStandalone PRIVATE /utf-8)
-    target_link_options(DysektStandalone PRIVATE "/MANIFESTUAC:level='requireAdministrator' uiAccess='false'")
+    # DysektStandalone itself no longer needs to run elevated: Apple USB
+    # Share's driver/PnP work now lives entirely in the separate
+    # iPhoneUsbShare.exe helper (see AppleUsbShareLauncher and
+    # docs/APPLE_USB_SHARE_STANDALONE_MIGRATION.md), which requests
+    # elevation itself via ShellExecuteExW("runas"). Requiring the whole
+    # DAW-hosted standalone/plugin to run as Administrator just for one
+    # feature is what this migration removes.
 endif()
 
 target_sources(DysektStandalone PRIVATE
@@ -322,7 +345,7 @@ target_sources(DysektStandalone PRIVATE
     src/standalone/MainWindow.cpp
     src/standalone/network/DeviceNetworkTransport.cpp
     src/standalone/network/AppleUsbNetworkTransport.cpp
-    src/standalone/network/AppleUsbShareEngine.cpp
+    src/standalone/network/AppleUsbShareLauncher.cpp
     $<$<BOOL:${DYSEKT_HAS_AOO}>:src/network/MetroNetworkAudio.cpp>
 )
 
