@@ -117,13 +117,6 @@ juce_add_plugin(Dysekt
 )
 
 if(MSVC)
-    # /utf-8 (not just /source-charset:utf-8) so narrow string literals are
-    # also compiled with UTF-8 as the *execution* charset. Without this,
-    # MSVC re-encodes literals into the build machine's local codepage,
-    # corrupting non-ASCII characters like the em dash/ellipsis used in UI
-    # strings (e.g. "Ready — local Wi-Fi/LAN audio", "Looking for iPhone
-    # or iPad…") into invalid UTF-8 - which juce::String then renders as a
-    # missing-glyph box on top of the text.
     target_compile_options(Dysekt PRIVATE /utf-8)
 endif()
 
@@ -268,15 +261,6 @@ juce_add_gui_app(DysektStandalone
 
 if(MSVC)
     target_compile_options(DysektStandalone PRIVATE /utf-8)
-    # The Apple USB/NCM reverse-tethering path (AppleUsbNetworkTransport.cpp)
-    # writes under HKLM\SYSTEM\CurrentControlSet\Enum\...\Device Parameters
-    # and calls SetupDiCallClassInstaller(DIF_INSTALLDEVICE, ...) to bind the
-    # inbox WinUSB driver to the iPhone's MI_00 interface - both are
-    # privileged operations that silently fail for a non-elevated process
-    # ("Apple USB: could not bind Microsoft's inbox WinUSB driver to MI_00").
-    # Embed a manifest so Windows prompts for elevation automatically on
-    # launch instead of relying on the user remembering to right-click ->
-    # Run as administrator.
     target_link_options(DysektStandalone PRIVATE "/MANIFESTUAC:level='requireAdministrator' uiAccess='false'")
 endif()
 
@@ -338,6 +322,7 @@ target_sources(DysektStandalone PRIVATE
     src/standalone/MainWindow.cpp
     src/standalone/network/DeviceNetworkTransport.cpp
     src/standalone/network/AppleUsbNetworkTransport.cpp
+    src/standalone/network/AppleUsbShareEngine.cpp
     $<$<BOOL:${DYSEKT_HAS_AOO}>:src/network/MetroNetworkAudio.cpp>
 )
 
@@ -365,26 +350,6 @@ target_compile_definitions(DysektStandalone PUBLIC
     $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Windows>>:LINK_PLATFORM_WINDOWS=1>
     $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Darwin>>:LINK_PLATFORM_MACOSX=1>
     $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Linux>>:LINK_PLATFORM_LINUX=1>
-    # MIB_IF_ROW2 / GetIfEntry2 (used by AppleUsbShareStatusComponent.h) are
-    # Vista+ APIs. _WIN32_WINNT must be set on the compiler command line
-    # (/D), not in a header: Main.cpp and MainWindow.h include
-    # juce_gui_basics / juce_audio_utils before ever reaching
-    # AppleUsbShareStatusComponent.h, and those JUCE headers pull in
-    # <windows.h> transitively first. Once windows.h has been preprocessed
-    # once in a translation unit, its include guards make any later #define
-    # + re-#include a no-op, so the version target has to be locked in
-    # before the compiler opens the first header at all.
-    #
-    # Deliberately NOT setting NTDDI_VERSION here (tried it, broke the
-    # build worse): when _WIN32_WINNT is exactly _WIN32_WINNT_WIN10 (0x0A00)
-    # and NTDDI_VERSION is left undefined, the Windows SDK's own
-    # sdkddkver.h special-cases that combination and defaults NTDDI_VERSION
-    # to WDK_NTDDI_VERSION - the SDK's latest known revision, which is what
-    # JUCE's own juce_BasicNativeHeaders.h relies on and what HarfBuzz's
-    # DirectWrite5 variable-font code (IDWriteFontFace5 /
-    # DWRITE_FONT_AXIS_VALUE) needs. Pinning NTDDI_VERSION to the literal
-    # Win10-RTM baseline ourselves undercuts that and breaks DirectWrite5
-    # instead, so leave NTDDI_VERSION alone and let the SDK derive it.
     $<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0A00>
     $<$<PLATFORM_ID:Windows>:WINVER=0x0A00>
 )
