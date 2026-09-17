@@ -1,6 +1,12 @@
 #include "AppleUsbShareEngine.h"
 
 #if JUCE_WINDOWS
+#ifndef UNICODE
+#define UNICODE
+#endif
+#ifndef _UNICODE
+#define _UNICODE
+#endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -435,7 +441,9 @@ DeviceName = "iPhoneUsbShare Apple USB Control Interface"
 
         const auto parentInf = dir.getChildFile("AppleUsbCompositeConfiguration.inf");
         const auto controlInf = dir.getChildFile("WinUsbControl.inf");
-        runProcess(L"pnputil.exe /add-driver \"" + parentInf.getFullPathName().toWideCharPointer() + L"\" /install");
+        const std::wstring parentInfPath = parentInf.getFullPathName().toWideCharPointer();
+        const std::wstring controlInfPath = controlInf.getFullPathName().toWideCharPointer();
+        runProcess(L"pnputil.exe /add-driver \"" + parentInfPath + L"\" /install");
         BOOL reboot = FALSE;
         const bool parentOk = UpdateDriverForPlugAndPlayDevicesW(nullptr, parent.c_str(), parentInf.getFullPathName().toWideCharPointer(), InstallFlagForce, &reboot) != FALSE;
         if (!parentOk) log("Driver package migration: composite-parent force update failed, Win32Error=" + juce::String((int)GetLastError()));
@@ -447,7 +455,7 @@ DeviceName = "iPhoneUsbShare Apple USB Control Interface"
         const auto newParent = findAppleParent();
         const auto child = newParent.empty() ? mi00 : findAppleInterface(newParent, 0);
         if (child.empty()) return false;
-        runProcess(L"pnputil.exe /add-driver \"" + controlInf.getFullPathName().toWideCharPointer() + L"\" /install");
+        runProcess(L"pnputil.exe /add-driver \"" + controlInfPath + L"\" /install");
         reboot = FALSE;
         const bool childOk = UpdateDriverForPlugAndPlayDevicesW(nullptr, L"USB\\VID_05AC&PID_12AB&MI_00", controlInf.getFullPathName().toWideCharPointer(), InstallFlagForce, &reboot) != FALSE;
         if (!childOk) log("Driver package migration: MI_00 WinUSB force update failed, Win32Error=" + juce::String((int)GetLastError()));
