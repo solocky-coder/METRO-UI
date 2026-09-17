@@ -343,61 +343,6 @@ DeviceName = "iPhoneUsbShare Apple USB Control Interface"
         return !findAppleInterface(parent, 0).empty();
     }
 
-    static bool cfgMgrReenumerate(const std::wstring& id)
-    {
-        DEVINST devInst = 0;
-        if (CM_Locate_DevNodeW(&devInst, const_cast<wchar_t*>(id.c_str()), CmLocateDevNodeNormal) != CrSuccess) return false;
-        return CM_Reenumerate_DevNode(devInst, CmReenumerateSynchronous) == CrSuccess;
-    }
-
-    static std::optional<unsigned long> cfgMgrProblem(const std::wstring& id)
-    {
-        DEVINST devInst = 0;
-        if (CM_Locate_DevNodeW(&devInst, const_cast<wchar_t*>(id.c_str()), CmLocateDevNodeNormal) != CrSuccess) return std::nullopt;
-        ULONG status = 0, problem = 0;
-        if (CM_Get_DevNode_Status(&status, &problem, devInst, 0) != CrSuccess) return std::nullopt;
-        return (status & DN_HAS_PROBLEM) ? std::optional<unsigned long>(problem) : std::optional<unsigned long>(0);
-    }
-
-    static bool startupRecovery(const std::function<void(const juce::String&)>& log)
-    {
-        auto parent = findAppleParent();
-        if (parent.empty()) return true;
-        if (!findAppleInterface(parent, 0).empty()) return true;
-
-        if (const auto problem = cfgMgrProblem(parent); problem && *problem == 10)
-        {
-            log("Startup recovery: Apple composite parent is Code 10 with MI_00 absent; rebuilding the usbccgp device instance once.");
-            removeDeviceSubtree(parent);
-            Sleep(1200);
-            scanDevices();
-            for (int i = 0; i < 10; ++i)
-            {
-                Sleep(1000);
-                parent = findAppleParent();
-                if (!parent.empty() && !findAppleInterface(parent, 0).empty())
-                { log("Startup recovery: usbccgp Code 10 recovery restored MI_00."); return true; }
-            }
-        }
-
-        parent = findAppleParent();
-        if (parent.empty()) return false;
-        log("Startup recovery: MI_00 missing; requesting targeted ConfigMgr re-enumeration.");
-        cfgMgrReenumerate(parent);
-        Sleep(1800);
-        scanDevices();
-        Sleep(1800);
-        parent = findAppleParent();
-        if (!parent.empty() && !findAppleInterface(parent, 0).empty()) return true;
-
-        log("Startup recovery: targeted re-enumeration did not restore MI_00; trying one controlled parent restart.");
-        restartDevice(parent);
-        Sleep(3000);
-        parent = findAppleParent();
-        if (!parent.empty() && !findAppleInterface(parent, 0).empty()) return true;
-        log("Startup recovery: MI_00 remains absent; no further device-stack mutations will be attempted.");
-        return false;
-    }
 
     static bool writeTextFile(const juce::File& file, const char* text)
     {
@@ -926,12 +871,6 @@ bool AppleUsbShareEngine::start()
     auto parent = findAppleParent();
     if (parent.empty()) return fail ("Apple USB device not present");
     log ("Apple device found: " + juce::String(parent.c_str()));
-
-    if (!startupRecovery ([this] (const juce::String& m) { log (m); }))
-        return fail ("Startup recovery could not restore the Apple USB composite stack");
-
-    parent = findAppleParent();
-    if (parent.empty()) return fail ("Apple composite device disappeared during recovery");
 
     if (!configureUsbCgp(parent)) return fail ("Cannot configure usbccgp/AppleLowerFilter (run DYSEKT as Administrator)");
     if (!ensureWinUsbPath(parent, [this] (const juce::String& m) { log (m); }))
