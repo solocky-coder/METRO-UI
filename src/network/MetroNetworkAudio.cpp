@@ -413,6 +413,16 @@ public:
 
     bool start()
     {
+        return startWithBinding (0);
+    }
+
+    bool startDirect (int localPort)
+    {
+        return startWithBinding (localPort);
+    }
+
+    bool startWithBinding (int requestedPort)
+    {
         if (running.load (std::memory_order_acquire)) return true;
 #if defined(_WIN32)
         WSADATA wsa {};
@@ -425,7 +435,7 @@ public:
         sockaddr_in local {};
         local.sin_family = AF_INET;
         local.sin_addr.s_addr = htonl (INADDR_ANY);
-        local.sin_port = htons (0);
+        local.sin_port = htons (static_cast<uint16_t> (juce::jlimit (0, 65535, requestedPort)));
         if (::bind (socket, reinterpret_cast<const sockaddr*> (&local), sizeof (local)) != 0 || ! setNonBlocking (socket))
             return cleanupFailedStart();
 
@@ -491,6 +501,36 @@ public:
 #endif
     }
 
+    bool connectDirectPeer (const juce::String& peerHost, int peerPort, int sourceId)
+    {
+        if (! running.load (std::memory_order_acquire) || discoverySink == nullptr || peerHost.isEmpty() || peerPort <= 0 || peerPort > 65535)
+            return false;
+
+        sockaddr_in endpoint {};
+        endpoint.sin_family = AF_INET;
+        endpoint.sin_port = htons (static_cast<uint16_t> (peerPort));
+        if (inet_pton (AF_INET, peerHost.toRawUTF8(), &endpoint.sin_addr) != 1)
+            return false;
+
+        if (sourceId == AOO_ID_WILDCARD || sourceId == AOO_ID_NONE) return false;
+        auto* runtime = createRuntime (sourceId, &endpoint);
+        if (runtime == nullptr) return false;
+
+        {
+            std::lock_guard<std::mutex> lock (stateMutex);
+            auto existing = std::find_if (peers.begin(), peers.end(), [&endpoint] (const auto& peer) { return sameEndpoint (peer.endpoint.get(), &endpoint); });
+            if (existing == peers.end()) peers.push_back ({ std::make_shared<sockaddr_in> (endpoint), "USB", peerHost });
+        }
+        return true;
+    }
+
+    void disconnectDirectPeers ()
+    {
+        std::lock_guard<std::mutex> lock (stateMutex);
+        peers.clear();
+        sources.clear();
+        destroyRuntimeSlots();
+    }
     bool connectToServer (const juce::String& host, int port, const juce::String& username, const juce::String& password)
     {
         if (! running.load (std::memory_order_acquire) || client == nullptr) return false;
@@ -1197,6 +1237,7 @@ public:
 MetroNetworkAudio::MetroNetworkAudio() : impl (std::make_unique<Impl> (*this)) {}
 MetroNetworkAudio::~MetroNetworkAudio() { stop(); }
 bool MetroNetworkAudio::start() { return impl != nullptr && impl->start(); }
+bool MetroNetworkAudio::startDirect (int localPort) { return impl != nullptr && impl->startDirect (localPort); }
 void MetroNetworkAudio::stop() { if (impl != nullptr) impl->stop(); }
 bool MetroNetworkAudio::isRunning() const noexcept { return impl != nullptr && impl->running.load (std::memory_order_acquire); }
 
@@ -1204,6 +1245,9 @@ bool MetroNetworkAudio::connectToServer (const juce::String& host, int port, con
 {
     return impl != nullptr && impl->connectToServer (host, port, username, password);
 }
+
+bool MetroNetworkAudio::connectDirectPeer (const juce::String& peerHost, int peerPort, int sourceId) { return impl != nullptr && impl->connectDirectPeer (peerHost, peerPort, sourceId); }
+void MetroNetworkAudio::disconnectDirectPeers() { if (impl != nullptr) impl->disconnectDirectPeers(); }
 
 bool MetroNetworkAudio::joinGroup (const juce::String& group, const juce::String& password, bool isPublic)
 {
