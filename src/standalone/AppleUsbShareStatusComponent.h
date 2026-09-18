@@ -32,9 +32,9 @@ public:
     explicit AppleUsbShareStatusComponent (AppleUsbNetworkTransport& transport)
         : usbTransport (transport)
     {
-        title.setText ("Apple USB Internet Share", juce::dontSendNotification);
+        title.setText ("Apple USB Direct Network", juce::dontSendNotification);
         title.setFont (juce::Font (28.0f, juce::Font::bold));
-        subtitle.setText ("Share this PC's internet with your iPhone or iPad over USB", juce::dontSendNotification);
+        subtitle.setText ("Direct isolated USB network for iPhone / iPad - no Wi-Fi, router, or Internet sharing", juce::dontSendNotification);
         subtitle.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
         deviceCaption.setText ("Apple device", juce::dontSendNotification);
@@ -300,15 +300,24 @@ private:
             if (preferredAdapter.isNotEmpty() && name != preferredAdapter && ! name.containsIgnoreCase (preferredAdapter)) continue;
             if (preferredAdapter.isEmpty() && ! name.containsIgnoreCase ("UsbNcm") && ! name.containsIgnoreCase ("USB Ethernet")) continue;
             juce::String address;
+            juce::String fallbackIpv6;
             for (auto* u = a->FirstUnicastAddress; u != nullptr; u = u->Next)
             {
                 char host[NI_MAXHOST] = {};
                 if (u->Address.lpSockaddr != nullptr && getnameinfo (u->Address.lpSockaddr, static_cast<socklen_t> (u->Address.iSockaddrLength), host, sizeof (host), nullptr, 0, NI_NUMERICHOST) == 0)
                 {
                     const juce::String candidate (host);
-                    if (! candidate.contains (":") || candidate.startsWith ("fe80")) { address = candidate; break; }
+                    if (! candidate.contains (":"))
+                    {
+                        address = candidate;
+                        break;
+                    }
+                    if (fallbackIpv6.isEmpty() && candidate.startsWithIgnoreCase ("fe80"))
+                        fallbackIpv6 = candidate;
                 }
             }
+            if (address.isEmpty())
+                address = fallbackIpv6;
             ipValue.setText (address.isNotEmpty() ? address : "—", juce::dontSendNotification);
             MIB_IF_ROW2 row {};
             row.InterfaceIndex = a->IfIndex;
