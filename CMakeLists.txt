@@ -120,29 +120,8 @@ if(MSVC)
     target_compile_options(Dysekt PRIVATE /utf-8)
 endif()
 
-set(DYSEKT_APPLE_USB_HELPER_EXE "${CMAKE_CURRENT_SOURCE_DIR}/src/standalone/network/AppleUsbShareDriver/iPhoneUsbShare.exe")
-if(NOT EXISTS "${DYSEKT_APPLE_USB_HELPER_EXE}")
-    message(WARNING
-        "Apple USB Share helper not found at ${DYSEKT_APPLE_USB_HELPER_EXE} — "
-        "publish iPhoneUsbShare (dotnet publish -c Release -r win-x64 "
-        "--self-contained true -p:PublishSingleFile=true) and place the "
-        "resulting exe there. AppleUsbShareLauncher::start() will fail at "
-        "runtime until this exists; the rest of the build is unaffected.")
-    # Embed a zero-byte placeholder, named identically so juce_add_binary_data
-    # still generates BinaryData::iPhoneUsbShare_exe (the symbol name is
-    # derived from the file name, not the full path) — AppleUsbShareLauncher.cpp
-    # references that symbol unconditionally, so it must exist to build.
-    # There is no runtime guard against this: with the placeholder embedded,
-    # extractHelperIfNeeded() will happily write out a 0-byte "exe", and
-    # ShellExecuteExW will then fail to launch it (not a valid PE) — start()
-    # surfaces that as a normal launch-failure log line, not a crash.
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/apple_usb_helper_placeholder/iPhoneUsbShare.exe" "")
-    set(DYSEKT_APPLE_USB_HELPER_EXE "${CMAKE_CURRENT_BINARY_DIR}/apple_usb_helper_placeholder/iPhoneUsbShare.exe")
-endif()
-
 juce_add_binary_data(DysektFonts SOURCES
     docs/DYSEKT_User_Manual.pdf
-    "${DYSEKT_APPLE_USB_HELPER_EXE}"
     src/ui/fonts/BarlowCondensed-Regular.ttf
     src/ui/fonts/BarlowCondensed-SemiBold.ttf
     src/ui/fonts/JetBrainsMono-Regular.ttf
@@ -401,3 +380,32 @@ target_link_libraries(DysektStandalone
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+if(WIN32)
+    # Apple USB Share's elevated helper is a self-contained single-file
+    # publish (~150+ MB) — far too large to compile into a BinaryData
+    # C-array (and, separately, too large for a plain git push; see
+    # AppleUsbShareLauncher.h). It ships as a loose file next to
+    # DysektStandalone.exe instead: AppleUsbShareLauncher locates it via
+    # juce::File::currentApplicationFile, which only resolves correctly
+    # for the Standalone target, not a VST3 hosted inside a DAW — hence
+    # this whole block being WIN32-and-DysektStandalone-only.
+    set(DYSEKT_APPLE_USB_HELPER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/standalone/network/AppleUsbShareDriver/iPhoneUsbShare.exe")
+    if(EXISTS "${DYSEKT_APPLE_USB_HELPER_SRC}")
+        add_custom_command(TARGET DysektStandalone POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:DysektStandalone>/AppleUsbShareDriver"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${DYSEKT_APPLE_USB_HELPER_SRC}"
+                "$<TARGET_FILE_DIR:DysektStandalone>/AppleUsbShareDriver/iPhoneUsbShare.exe"
+            COMMENT "Copying iPhoneUsbShare.exe next to DysektStandalone"
+        )
+    else()
+        message(WARNING
+            "Apple USB Share helper not found at ${DYSEKT_APPLE_USB_HELPER_SRC} — "
+            "publish iPhoneUsbShare (dotnet publish -c Release -r win-x64 "
+            "--self-contained true -p:PublishSingleFile=true) and place the "
+            "resulting exe there. AppleUsbShareLauncher::start() will fail at "
+            "runtime until this exists; the rest of the build is unaffected.")
+    endif()
+endif()

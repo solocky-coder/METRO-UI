@@ -18,9 +18,17 @@
 // Replaces AppleUsbShareEngine (deleted). DYSEKT no longer reimplements the
 // USB/PnP/WinUSB/NCM/ICS state machine in-process; that logic stays in the
 // separate iPhoneUsbShare.exe helper, unmodified, running elevated. This
-// class only extracts, launches, and monitors that helper.
+// class only launches and monitors that helper.
 //
 // See docs/APPLE_USB_SHARE_STANDALONE_MIGRATION.md for the full design.
+//
+// The helper is NOT embedded into DysektStandalone — a self-contained
+// single-file .NET publish runs 150+ MB, which is both too large for a
+// plain git push and a bad fit for JUCE's BinaryData (compiling that much
+// data into a C-array is its own problem independent of git). Instead it
+// ships as a loose file, copied next to DysektStandalone.exe by CMake's
+// POST_BUILD step (see the WIN32 block in CMakeLists.txt), and located at
+// runtime via helperExecutablePath() below.
 //
 // IMPORTANT — start() is asynchronous. The helper must run elevated
 // (requireAdministrator in its manifest), so launching it triggers a UAC
@@ -38,12 +46,11 @@ public:
     explicit AppleUsbShareLauncher (LogCallback log = {});
     ~AppleUsbShareLauncher();
 
-    // Extracts the embedded helper if needed, then launches it elevated and
-    // hidden on a background thread which also tails its ActivityLog.txt.
-    // Returns false only for failures known synchronously (e.g. the
-    // embedded resource is missing, or the target directory couldn't be
-    // created) — everything past that point is reported through the log
-    // callback and isRunning()/status().
+    // Launches the helper elevated and hidden on a background thread, which
+    // also tails its ActivityLog.txt. Returns false only for failures known
+    // synchronously (e.g. the helper isn't present next to this exe) —
+    // everything past that point is reported through the log callback and
+    // isRunning()/status().
     bool start();
 
     // Signals the helper's named stop event and gives it a few seconds to
@@ -86,10 +93,11 @@ private:
     HANDLE stopEvent = nullptr;
     juce::String stopEventName;
 
-    static juce::File helperInstallDirectory();
+    // juce::File::currentApplicationFile resolves to DysektStandalone.exe
+    // itself only for the Standalone target — this deliberately doesn't
+    // need to work (and isn't linked) for the VST3 target.
     static juce::File helperExecutablePath();
     static juce::File activityLogPath();
-    bool extractHelperIfNeeded();
 #endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AppleUsbShareLauncher)

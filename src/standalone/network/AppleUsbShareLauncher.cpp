@@ -14,19 +14,6 @@
 #pragma comment(lib, "shell32.lib")
 #endif
 
-// BinaryData::iPhoneUsbShare_exe / _exeSize — embedded via the DysektFonts
-// binary-data target in CMakeLists.txt. Included here, not in the header,
-// so nothing outside this translation unit needs to know the resource name.
-#include "BinaryData.h"
-
-namespace
-{
-    // Bump this whenever iPhoneUsbShare.exe is re-embedded from an updated
-    // upstream build, so extractHelperIfNeeded() knows to re-extract instead
-    // of trusting a stale copy at the install path.
-    constexpr int helperVersion = 2;
-}
-
 AppleUsbShareLauncher::AppleUsbShareLauncher (LogCallback log)
     : logCallback (std::move (log))
 {
@@ -86,62 +73,22 @@ void AppleUsbShareLauncher::postLog (const juce::String& message)
 
 #if JUCE_WINDOWS
 
-juce::File AppleUsbShareLauncher::helperInstallDirectory()
-{
-    const auto localAppData = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
-    return juce::File (localAppData).getChildFile ("DYSEKT").getChildFile ("iPhoneUsbShare");
-}
-
 juce::File AppleUsbShareLauncher::helperExecutablePath()
 {
-    return helperInstallDirectory().getChildFile ("iPhoneUsbShare.exe");
+    // Copied here by CMake's POST_BUILD step (see the WIN32 block in
+    // CMakeLists.txt) — not embedded, not extracted anywhere. This only
+    // resolves correctly when running as DysektStandalone.exe itself.
+    return juce::File::getSpecialLocation (juce::File::currentApplicationFile)
+               .getSiblingFile ("AppleUsbShareDriver")
+               .getChildFile ("iPhoneUsbShare.exe");
 }
 
 juce::File AppleUsbShareLauncher::activityLogPath()
 {
     // Matches ShareEngine.cs: ActivityLogPath => Combine(AppDir, "ActivityLog.txt"),
-    // where AppDir is AppContext.BaseDirectory of the (extracted, self-contained)
-    // published exe — i.e. the same directory the exe runs from.
-    return helperInstallDirectory().getChildFile ("ActivityLog.txt");
-}
-
-bool AppleUsbShareLauncher::extractHelperIfNeeded()
-{
-    const auto installDir = helperInstallDirectory();
-    if (! installDir.exists() && ! installDir.createDirectory())
-    {
-        log ("ERROR: could not create " + installDir.getFullPathName());
-        return false;
-    }
-
-    const auto exePath = helperExecutablePath();
-    const auto versionFile = installDir.getChildFile ("helper_version.txt");
-    const auto embeddedSize = (int64_t) BinaryData::iPhoneUsbShare_exeSize;
-
-    const bool upToDate = exePath.existsAsFile()
-                          && versionFile.existsAsFile()
-                          && versionFile.loadFileAsString().trim().getIntValue() == helperVersion
-                          && exePath.getSize() == embeddedSize;
-    if (upToDate)
-        return true;
-
-    log (exePath.existsAsFile() ? "Updating bundled iPhoneUsbShare helper…"
-                                 : "Extracting bundled iPhoneUsbShare helper…");
-
-    if (exePath.existsAsFile() && ! exePath.deleteFile())
-    {
-        log ("ERROR: could not replace existing helper at " + exePath.getFullPathName());
-        return false;
-    }
-
-    if (! exePath.replaceWithData (BinaryData::iPhoneUsbShare_exe, BinaryData::iPhoneUsbShare_exeSize))
-    {
-        log ("ERROR: could not write helper to " + exePath.getFullPathName());
-        return false;
-    }
-
-    versionFile.replaceWithText (juce::String (helperVersion));
-    return true;
+    // where AppDir is AppContext.BaseDirectory of the running exe — i.e.
+    // the same AppleUsbShareDriver folder helperExecutablePath() resolves to.
+    return helperExecutablePath().getSiblingFile ("ActivityLog.txt");
 }
 
 // Owns the background thread that: launches the elevated helper, then tails
@@ -251,8 +198,13 @@ bool AppleUsbShareLauncher::start()
         return true;
     }
 
-    if (! extractHelperIfNeeded())
+    const auto exePath = helperExecutablePath();
+    if (! exePath.existsAsFile())
+    {
+        log ("ERROR: iPhoneUsbShare.exe not found at " + exePath.getFullPathName()
+             + " — it ships alongside DysektStandalone.exe and is not part of the installer zip yet.");
         return false;
+    }
 
     // DYSEKT creates the stop event unelevated and passes its name to the
     // elevated helper; an elevated process can open/signal an object a

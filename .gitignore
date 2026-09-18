@@ -40,3 +40,8 @@ review.md
 # Misc
 nul
 info/
+
+# Apple USB Share helper — too large for git; built separately and
+# fetched into place by CI (or copied in manually for local builds).
+# See the WIN32 block in CMakeLists.txt and AppleUsbShareLauncher.h.
+src/standalone/network/AppleUsbShareDriver/iPhoneUsbShare.exe
