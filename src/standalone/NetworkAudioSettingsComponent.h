@@ -218,7 +218,9 @@ public:
         }
     }
 
-    juce::ToggleButton& getDirectUsbButton() noexcept { return directUsbButton; }\n\n    void resized() override
+    juce::ToggleButton& getDirectUsbButton() noexcept { return directUsbButton; }
+
+    void resized() override
     {
         constexpr int kPad = 16;
         constexpr int kLabelColW = 100;
