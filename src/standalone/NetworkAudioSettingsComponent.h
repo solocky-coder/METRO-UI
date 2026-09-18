@@ -603,6 +603,7 @@ private:
 
     juce::Label networkTitle;
     juce::Label transportLabel;
+    juce::ToggleButton directUsbButton;
     juce::TextButton enableButton { "Network audio: OFF" };
     juce::Label channelTitle;
     juce::Label gainLabel;
