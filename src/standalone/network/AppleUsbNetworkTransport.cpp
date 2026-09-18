@@ -4,9 +4,50 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <iphlpapi.h>
+#include <setupapi.h>
 #include <vector>
+#include <string>
+#include <algorithm>
+#include <cctype>
 #pragma comment(lib, "iphlpapi.lib")
 #endif
+
+
+static bool appleUsbDevicePresent()
+{
+#if JUCE_WINDOWS
+    const auto info = SetupDiGetClassDevsA (nullptr, nullptr, nullptr, DIGCF_PRESENT | DIGCF_ALLCLASSES);
+    if (info == INVALID_HANDLE_VALUE)
+        return false;
+
+    bool found = false;
+    for (DWORD i = 0; ; ++i)
+    {
+        SP_DEVINFO_DATA data {};
+        data.cbSize = sizeof (data);
+        if (! SetupDiEnumDeviceInfo (info, i, &data))
+            break;
+
+        char id[512] {};
+        if (SetupDiGetDeviceInstanceIdA (info, &data, id, static_cast<DWORD> (sizeof (id)), nullptr))
+        {
+            std::string value = id;
+            std::transform (value.begin(), value.end(), value.begin(),
+                            [] (unsigned char ch) { return static_cast<char> (std::tolower (ch)); });
+            if (value.rfind ("usb\\vid_05ac&", 0) == 0)
+            {
+                found = true;
+                break;
+            }
+        }
+    }
+
+    SetupDiDestroyDeviceInfoList (info);
+    return found;
+#else
+    return false;
+#endif
+}
 
 AppleUsbNetworkTransport::AppleUsbNetworkTransport()
 {
@@ -87,14 +128,34 @@ void AppleUsbNetworkTransport::stop()
 
 void AppleUsbNetworkTransport::poll()
 {
+    const bool applePresent = appleUsbDevicePresent();
     const auto state = currentState.load (std::memory_order_acquire);
-    if (state != State::Starting && state != State::Connected)
-        return; // Stopped/Error only change via start()/stop() themselves.
+
+    if (state == State::Stopped)
+    {
+        if (applePresent)
+        {
+            currentStatus = "Apple USB device detected - starting USB sharing...";
+            if (! start (""))
+                currentStatus = "Apple USB sharing could not be started";
+        }
+        return;
+    }
+
+    if (state == State::Error)
+    {
+        // Avoid repeated UAC/helper launches after a failure. Physical
+        // removal resets the state so the next USB arrival gets a fresh try.
+        if (! applePresent)
+        {
+            currentState.store (State::Stopped, std::memory_order_release);
+            currentStatus = "Waiting for iPhone or iPad over USB";
+        }
+        return;
+    }
 
     if (launcher != nullptr && ! launcher->isRunning())
     {
-        // Helper process exited (crash, UAC denial, or it honoured a stop
-        // signal we didn't send) without us having called stop() ourselves.
         currentStatus = launcher->status();
         currentState.store (State::Error, std::memory_order_release);
         return;
@@ -102,7 +163,11 @@ void AppleUsbNetworkTransport::poll()
 
     bool connected = false;
     for (const auto& device : enumerate())
-        if (device.kind == Kind::AppleUsb && device.connected) { connected = true; break; }
+        if (device.kind == Kind::AppleUsb && device.connected)
+        {
+            connected = true;
+            break;
+        }
 
     currentState.store (connected ? State::Connected : State::Starting, std::memory_order_release);
     if (connected)
