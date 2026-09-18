@@ -115,7 +115,7 @@ public:
     void resized() override
     {
         ::NetworkAudioSettingsComponent::resized();
-        createTrackButton.setBounds (getWidth() - 222, 12, 206, 30);
+        createTrackButton.setBounds (getWidth() - 222, 12, 206, 30);\n\n        // Keep DIRECT USB in its own header slot. The integrated + Create Audio Track\n        // button occupies the far-right slot, so DIRECT USB must never share that\n        // rectangle or be painted underneath it.\n        getDirectUsbButton().setBounds (getWidth() - 372, 12, 140, 30);
 
         // Tab switcher sits in the header row, in the space between the
         // "NETWORK AUDIO" title (left-aligned, ~300px) and createTrackButton
