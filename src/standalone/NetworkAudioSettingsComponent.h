@@ -369,7 +369,11 @@ private:
                 return;
             }
 
-            if (! networkAudio->isRunning() && ! networkAudio->start())
+            const bool started = networkAudio->isRunning()
+                               || (directUsbButton.getToggleState()
+                                       ? networkAudio->startDirect (9000)
+                                       : networkAudio->start());
+            if (! started)
             {
                 enableButton.setToggleState (false, juce::dontSendNotification);
                 updateEnableButtonText();
@@ -387,6 +391,7 @@ private:
             if (networkAudio != nullptr)
             {
                 networkAudio->disconnect();
+                networkAudio->disconnectDirectPeers();
                 networkAudio->stop();
             }
             setNetworkControlEnabled (false);
