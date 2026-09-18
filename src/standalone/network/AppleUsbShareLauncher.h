@@ -6,6 +6,12 @@
 #include <memory>
 
 #if JUCE_WINDOWS
+ // winsock2.h must come before windows.h in every translation unit that
+ // (transitively) includes this header — see AppleUsbNetworkTransport.cpp,
+ // which pulls this header in before its own winsock2.h/windows.h pair.
+ // Getting this order backwards anywhere in the chain makes windows.h drag
+ // in the legacy winsock.h first, which then collides with winsock2.h.
+ #include <winsock2.h>
  #include <windows.h>
 #endif
 

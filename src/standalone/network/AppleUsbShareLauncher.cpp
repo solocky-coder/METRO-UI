@@ -8,6 +8,7 @@
 #ifndef _UNICODE
 #define _UNICODE
 #endif
+#include <winsock2.h>
 #include <windows.h>
 #include <shellapi.h>
 #pragma comment(lib, "shell32.lib")

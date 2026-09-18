@@ -131,14 +131,18 @@ if(NOT EXISTS "${DYSEKT_APPLE_USB_HELPER_EXE}")
     # Embed a zero-byte placeholder, named identically so juce_add_binary_data
     # still generates BinaryData::iPhoneUsbShare_exe (the symbol name is
     # derived from the file name, not the full path) — AppleUsbShareLauncher.cpp
-    # references that symbol unconditionally, so it must exist to build even
-    # though extractHelperIfNeeded() will refuse to run a 0-byte helper.
+    # references that symbol unconditionally, so it must exist to build.
+    # There is no runtime guard against this: with the placeholder embedded,
+    # extractHelperIfNeeded() will happily write out a 0-byte "exe", and
+    # ShellExecuteExW will then fail to launch it (not a valid PE) — start()
+    # surfaces that as a normal launch-failure log line, not a crash.
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/apple_usb_helper_placeholder/iPhoneUsbShare.exe" "")
     set(DYSEKT_APPLE_USB_HELPER_EXE "${CMAKE_CURRENT_BINARY_DIR}/apple_usb_helper_placeholder/iPhoneUsbShare.exe")
 endif()
 
 juce_add_binary_data(DysektFonts SOURCES
     docs/DYSEKT_User_Manual.pdf
+    "${DYSEKT_APPLE_USB_HELPER_EXE}"
     src/ui/fonts/BarlowCondensed-Regular.ttf
     src/ui/fonts/BarlowCondensed-SemiBold.ttf
     src/ui/fonts/JetBrainsMono-Regular.ttf
