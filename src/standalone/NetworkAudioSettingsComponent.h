@@ -39,8 +39,9 @@ public:
         transportLabel.setText ("AOO • Direct isolated USB or SonoBus / LAN", juce::dontSendNotification);
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
-        directUsbButton.setButtonText ("Direct USB (1–4 devices)");
+        directUsbButton.setButtonText ("DIRECT USB");
         directUsbButton.setToggleState (true, juce::dontSendNotification);
+        directUsbButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
         addAndMakeVisible (directUsbButton);
 
         // This is deliberately a TextButton rather than JUCE's ToggleButton.
@@ -166,6 +167,7 @@ public:
 
         const bool networkEnabled = enableButton.getToggleState();
         setNetworkControlEnabled (networkEnabled);
+        directUsbButton.setVisible (true);
 
         connectButton.onClick = [this] { connectClicked(); };
         addAndMakeVisible (connectButton);
@@ -229,7 +231,7 @@ public:
         auto area = getLocalBounds().reduced (kPad);
         auto headerRow = area.removeFromTop (26);
         networkTitle.setBounds (headerRow.removeFromLeft (300));
-        directUsbButton.setBounds (headerRow.removeFromRight (210));
+        directUsbButton.setBounds (headerRow.removeFromRight (180));
         area.removeFromTop (2);
         transportLabel.setBounds (area.removeFromTop (18));
         area.removeFromTop (kSectionGap);
