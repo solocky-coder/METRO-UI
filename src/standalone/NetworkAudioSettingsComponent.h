@@ -431,6 +431,7 @@ private:
         if (directUsbButton.getToggleState())
         {
             constexpr int kUsbPort = 9000;
+            if (networkAudio->isRunning()) networkAudio->disconnectDirectPeers();
             if (! networkAudio->isRunning() && ! networkAudio->startDirect (kUsbPort))
             {
                 updateStatus ("Could not start direct USB AOO backend");
