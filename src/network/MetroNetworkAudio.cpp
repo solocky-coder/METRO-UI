@@ -495,6 +495,7 @@ public:
         joined.store (false, std::memory_order_release);
         groupJoinPending.store (false, std::memory_order_release);
         activeAooSocket.store (nullptr, std::memory_order_release);
+        directMode.store (false, std::memory_order_release);
         if (client != nullptr) client->quit();
         if (ioThread.joinable()) ioThread.join();
         if (clientThread.joinable()) clientThread.join();
