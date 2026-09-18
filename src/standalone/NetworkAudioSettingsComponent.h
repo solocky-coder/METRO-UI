@@ -572,7 +572,7 @@ private:
             stateColour = juce::Colour (0xFFE05A4C);
 
         statusLabel.setColour (juce::Label::textColourId, stateColour);
-        statusLabel.setText ("•  " + text, juce::dontSendNotification);
+        statusLabel.setText ("STATUS  |  " + text, juce::dontSendNotification);
     }
 
     class SourceListModel : public juce::ListBoxModel
