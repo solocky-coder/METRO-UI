@@ -112,6 +112,25 @@ public:
 
     ~MetroNetworkAudioSettingsSelector() override = default;
 
+    void paint (juce::Graphics& g) override
+    {
+        if (! showingUsbTab)
+        {
+            ::NetworkAudioSettingsComponent::paint (g);
+            return;
+        }
+
+        g.fillAll (juce::Colour (0xff0d0d14));
+        if (usbStatusComponent != nullptr)
+        {
+            const auto panel = usbStatusComponent->getBounds().toFloat();
+            g.setColour (juce::Colour (0xff15151c));
+            g.fillRoundedRectangle (panel, 8.0f);
+            g.setColour (juce::Colour (0xff2a2a34));
+            g.drawRoundedRectangle (panel, 8.0f, 1.0f);
+        }
+    }
+
     void resized() override
     {
         ::NetworkAudioSettingsComponent::resized();
@@ -125,7 +144,7 @@ public:
         // Tab switcher sits in the header row, in the space between the
         // "NETWORK AUDIO" title (left-aligned, ~300px) and createTrackButton
         // (right-aligned) — neither of which the base layout uses further in.
-        constexpr int kTabW = 150, kTabH = 28, kTabGap = 8, kTabX = 316;
+        constexpr int kTabW = 140, kTabH = 28, kTabGap = 8, kTabX = 316;
         tabSonoBusButton.setBounds (kTabX, 12, kTabW, kTabH);
         tabUsbButton.setBounds (kTabX + kTabW + kTabGap, 12, kTabW, kTabH);
 
