@@ -36,9 +36,12 @@ public:
         networkTitle.setColour (juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible (networkTitle);
 
-        transportLabel.setText ("SonoBus / AOO", juce::dontSendNotification);
+        transportLabel.setText ("AOO • Direct isolated USB or SonoBus / LAN", juce::dontSendNotification);
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
+        directUsbButton.setButtonText ("Direct USB (1–4 devices)");
+        directUsbButton.setToggleState (true, juce::dontSendNotification);
+        addAndMakeVisible (directUsbButton);
 
         // This is deliberately a TextButton rather than JUCE's ToggleButton.
         // It is the service master switch: ON starts the network backend and
@@ -226,6 +229,7 @@ public:
         auto area = getLocalBounds().reduced (kPad);
         auto headerRow = area.removeFromTop (26);
         networkTitle.setBounds (headerRow.removeFromLeft (300));
+        directUsbButton.setBounds (headerRow.removeFromRight (210));
         area.removeFromTop (2);
         transportLabel.setBounds (area.removeFromTop (18));
         area.removeFromTop (kSectionGap);
@@ -335,6 +339,7 @@ private:
     {
         getNetworkAudioChannelState().enabled.store (enabled, std::memory_order_relaxed);
         connectButton.setEnabled (enabled);
+        directUsbButton.setEnabled (enabled);
         disconnectButton.setEnabled (enabled);
         serverEditor.setEnabled (enabled);
         portEditor.setEnabled (enabled);
@@ -418,6 +423,29 @@ private:
             return;
         }
 
+        if (directUsbButton.getToggleState())
+        {
+            constexpr int kUsbPort = 9000;
+            if (! networkAudio->isRunning() && ! networkAudio->startDirect (kUsbPort))
+            {
+                updateStatus ("Could not start direct USB AOO backend");
+                return;
+            }
+
+            constexpr const char* peers[] = {
+                "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2"
+            };
+            int connected = 0;
+            for (const auto* peer : peers)
+                if (networkAudio->connectDirectPeer (peer, kUsbPort, 0))
+                    ++connected;
+
+            updateStatus (connected > 0
+                              ? "Direct USB — listening on up to 4 Apple devices"
+                              : "Direct USB backend started; waiting for Apple sources");
+            return;
+        }
+
         if (! networkAudio->isRunning())
         {
             if (! networkAudio->start())
@@ -460,7 +488,10 @@ private:
     {
 #if DYSEKT_HAS_AOO
         if (networkAudio != nullptr)
+        {
             networkAudio->disconnect();
+            networkAudio->disconnectDirectPeers();
+        }
 #endif
         updateStatus ("Disconnected");
         refreshSources();
