@@ -526,11 +526,9 @@ public:
 
     void disconnectDirectPeers ()
     {
-        std::lock_guard<std::mutex> lock (stateMutex);
-        peers.clear();
-        sources.clear();
-        destroyRuntimeSlots();
+        stop();
     }
+
     bool connectToServer (const juce::String& host, int port, const juce::String& username, const juce::String& password)
     {
         if (! running.load (std::memory_order_acquire) || client == nullptr) return false;
