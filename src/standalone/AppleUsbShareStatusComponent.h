@@ -33,33 +33,37 @@ public:
         : usbTransport (transport)
     {
         title.setText ("Apple USB Internet Share", juce::dontSendNotification);
-        title.setFont (juce::Font (24.0f, juce::Font::bold));
+        title.setFont (juce::Font (28.0f, juce::Font::bold));
         subtitle.setText ("Share this PC's internet with your iPhone or iPad over USB", juce::dontSendNotification);
         subtitle.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
         deviceCaption.setText ("Apple device", juce::dontSendNotification);
-        deviceLabel.setText ("Looking for iPhone or iPad…", juce::dontSendNotification);
-        deviceLabel.setFont (juce::Font (17.0f));
+        deviceLabel.setText ("Looking for iPhone or iPad...", juce::dontSendNotification);
+        deviceLabel.setFont (juce::Font (21.0f));
         adapterLabel.setText ("USB Ethernet: not connected", juce::dontSendNotification);
         for (auto* label : { &deviceCaption, &adapterLabel, &connectionCaption, &ipCaption, &rxCaption, &txCaption, &activityTitle })
             label->setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
         connectionCaption.setText ("Connection", juce::dontSendNotification);
         connectionLabel.setText ("Not sharing", juce::dontSendNotification);
-        connectionLabel.setFont (juce::Font (19.0f, juce::Font::bold));
+        connectionLabel.setFont (juce::Font (22.0f, juce::Font::bold));
         ipCaption.setText ("Device IP", juce::dontSendNotification);
         rxCaption.setText ("Download", juce::dontSendNotification);
         txCaption.setText ("Upload", juce::dontSendNotification);
         ipValue.setText ("—", juce::dontSendNotification);
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
+        for (auto* value : { &ipValue, &rxValue, &txValue })
+            value->setFont (juce::Font (20.0f, juce::Font::bold));
+        for (auto* caption : { &ipCaption, &rxCaption, &txCaption, &connectionCaption, &deviceCaption })
+            caption->setFont (juce::Font (15.0f, juce::Font::bold));
 
         activityTitle.setText ("Activity", juce::dontSendNotification);
-        activityTitle.setFont (juce::Font (13.0f, juce::Font::bold));
+        activityTitle.setFont (juce::Font (17.0f, juce::Font::bold));
         activityEditor.setMultiLine (true);
         activityEditor.setReadOnly (true);
         activityEditor.setScrollbarsShown (true);
-        activityEditor.setFont (juce::Font (12.0f));
+        activityEditor.setFont (juce::Font (15.0f));
         activityEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff101017));
         activityEditor.setColour (juce::TextEditor::textColourId, juce::Colours::white);
         statusDot.setText ("●", juce::dontSendNotification);
@@ -76,7 +80,7 @@ public:
         // security scare.
         uacNoteLabel.setText ("Windows will ask for administrator permission the first time you start sharing.",
                                juce::dontSendNotification);
-        uacNoteLabel.setFont (juce::Font (12.0f));
+        uacNoteLabel.setFont (juce::Font (14.0f));
         uacNoteLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         uacNoteLabel.setJustificationType (juce::Justification::centredLeft);
 
@@ -156,10 +160,10 @@ public:
         subtitle.setBounds (area.removeFromTop (25));
 
         auto device = area.removeFromTop (78).reduced (10);
-        deviceCaption.setBounds (device.removeFromTop (18));
-        deviceLabel.setBounds (device.removeFromTop (24));
-        adapterLabel.setBounds (device);
-        statusDot.setBounds (getWidth() - 40, 58, 18, 18);
+        deviceCaption.setBounds (device.removeFromTop (24));
+        deviceLabel.setBounds (device.removeFromTop (34));
+        adapterLabel.setBounds (device.removeFromTop (28));
+        statusDot.setBounds (getWidth() - 46, 24, 24, 24);
 
         auto connection = area.removeFromTop (112).reduced (10);
         connectionCaption.setBounds (connection.removeFromTop (20));
@@ -205,32 +209,67 @@ private:
     {
         const auto state = usbTransport.state();
         const auto devices = usbTransport.enumerate();
-        juce::String adapter;
+
+        juce::String deviceText;
+        juce::String firstConnectedAdapter;
         bool connected = false;
+        int appleCount = 0;
+
         for (const auto& device : devices)
-            if (device.kind == DeviceNetworkTransport::Kind::AppleUsb) { adapter = device.name; connected = device.connected; break; }
+        {
+            if (device.kind != DeviceNetworkTransport::Kind::AppleUsb)
+                continue;
 
-        deviceLabel.setText (connected ? "iPhone / iPad detected" : "Connect your iPhone or iPad by USB", juce::dontSendNotification);
-        adapterLabel.setText (adapter.isNotEmpty() ? "USB Ethernet: " + adapter : "USB Ethernet: not connected", juce::dontSendNotification);
-        connectionLabel.setText (state == DeviceNetworkTransport::State::Connected ? "USB network path is ON"
-                                  : state == DeviceNetworkTransport::State::Starting ? "Waiting for administrator permission…"
-                                  : state == DeviceNetworkTransport::State::Error ? "Error" : "Ready", juce::dontSendNotification);
+            ++appleCount;
+            if (device.connected)
+            {
+                connected = true;
+                if (firstConnectedAdapter.isEmpty())
+                    firstConnectedAdapter = device.interfaceName.isNotEmpty() ? device.interfaceName : device.name;
+            }
 
-        // start() no longer resolves synchronously (see the onClick comment
-        // above), so this timer-driven refresh is now also what re-enables
-        // startButton once a Starting attempt settles into Error, and what
-        // disables stopButton once Stopped/Error is reached on its own
-        // (helper exited without the user pressing Stop).
+            if (deviceText.isNotEmpty())
+                deviceText << "\n";
+            deviceText << (device.connected ? "[USB] " : "[--] ")
+                       << (device.name.isNotEmpty() ? device.name : "Apple USB device")
+                       << "  |  " << (device.interfaceName.isNotEmpty() ? device.interfaceName : "USB Ethernet")
+                       << "  |  " << (device.connected ? "CONNECTED" : "WAITING");
+        }
+
+        if (appleCount == 0)
+            deviceText = "No Apple USB device detected";
+        else if (appleCount == 1 && connected)
+            deviceText = "iPhone / iPad detected\n" + deviceText;
+
+        deviceLabel.setText (deviceText, juce::dontSendNotification);
+        adapterLabel.setText (firstConnectedAdapter.isNotEmpty()
+                                   ? "USB Ethernet: " + firstConnectedAdapter
+                                   : "USB Ethernet: waiting for Apple NCM",
+                               juce::dontSendNotification);
+
+        connectionLabel.setText (
+            state == DeviceNetworkTransport::State::Connected ? "USB network path is ON"
+            : state == DeviceNetworkTransport::State::Starting ? "Detecting Apple USB device / starting service..."
+            : state == DeviceNetworkTransport::State::Error ? "USB service error"
+            : connected ? "Apple USB device detected - starting service..."
+                        : "Waiting for iPhone or iPad over USB",
+            juce::dontSendNotification);
+
         if (state == DeviceNetworkTransport::State::Error || state == DeviceNetworkTransport::State::Stopped)
         {
-            if (! startButton.isEnabled()) startButton.setEnabled (true);
-            if (stopButton.isEnabled()) stopButton.setEnabled (false);
+            if (state == DeviceNetworkTransport::State::Error && connected)
+                usbTransport.start ({});
+            else
+            {
+                if (! startButton.isEnabled()) startButton.setEnabled (true);
+                if (stopButton.isEnabled()) stopButton.setEnabled (false);
+            }
         }
 
 #if JUCE_WINDOWS
-        updateNetworkMetrics (adapter);
+        updateNetworkMetrics (firstConnectedAdapter);
 #else
-        ipValue.setText ("—", juce::dontSendNotification);
+        ipValue.setText ("-", juce::dontSendNotification);
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
 #endif
