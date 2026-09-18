@@ -218,18 +218,12 @@ private:
             juce::String message = "No online network sources with available channels were found.";
             if (discoveredSources > 0)
             {
-                message += "
-
-AOO discovery found " + juce::String (discoveredSources)
+                message += "\n\nAOO discovery found " + juce::String (discoveredSources)
                          + " source(s), but none has a negotiated audio format yet."
-                           "
-
-This is the network-audio handshake stage; the source must report its channel count and sample rate before a track can be created.";
+                           "\n\nThis is the network-audio handshake stage; the source must report its channel count and sample rate before a track can be created.";
 
                 for (const auto& source : sources)
-                    message += "
-
-" + (source.user.isNotEmpty() ? source.user : "Unknown source")
+                    message += "\n\n" + (source.user.isNotEmpty() ? source.user : "Unknown source")
                              + " | source #" + juce::String (source.sourceId)
                              + " | " + juce::String (source.channels) + " ch"
                              + " | " + juce::String (source.sampleRate, 0) + " Hz"
