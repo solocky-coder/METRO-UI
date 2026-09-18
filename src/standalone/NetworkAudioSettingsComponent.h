@@ -39,9 +39,11 @@ public:
         transportLabel.setText ("AOO • Direct isolated USB or SonoBus / LAN", juce::dontSendNotification);
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
-        directUsbButton.setButtonText ("DIRECT USB");
+        directUsbButton.setClickingTogglesState (true);
         directUsbButton.setToggleState (true, juce::dontSendNotification);
-        directUsbButton.setColour (juce::ToggleButton::textColourId, juce::Colours::white);
+        updateDirectUsbButtonText();
+        directUsbButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+        directUsbButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible (directUsbButton);
 
         // This is deliberately a TextButton rather than JUCE's ToggleButton.
@@ -168,6 +170,43 @@ public:
         const bool networkEnabled = enableButton.getToggleState();
         setNetworkControlEnabled (networkEnabled);
         directUsbButton.setVisible (true);
+        directUsbButton.onClick = [this]
+        {
+            updateDirectUsbButtonText();
+            if (networkAudio == nullptr || ! enableButton.getToggleState())
+                return;
+
+#if DYSEKT_HAS_AOO
+            networkAudio->disconnect();
+            networkAudio->disconnectDirectPeers();
+            networkAudio->stop();
+            if (directUsbButton.getToggleState())
+            {
+                if (! networkAudio->startDirect (9000))
+                {
+                    directUsbButton.setToggleState (false, juce::dontSendNotification);
+                    updateDirectUsbButtonText();
+                    updateStatus ("Could not start direct USB AOO backend");
+                    return;
+                }
+                constexpr const char* peers[] = {
+                    "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2"
+                };
+                int connected = 0;
+                for (const auto* peer : peers)
+                    if (networkAudio->connectDirectPeer (peer, 9000, 0)) ++connected;
+                updateStatus (connected > 0 ? "Direct USB — listening on up to 4 Apple devices"
+                                            : "Direct USB — waiting for Apple devices");
+            }
+            else
+            {
+                if (! networkAudio->start())
+                    updateStatus ("Could not start AOO network backend");
+                else
+                    updateStatus ("Ready — local Wi-Fi/LAN audio");
+            }
+#endif
+        };
 
         connectButton.onClick = [this] { connectClicked(); };
         addAndMakeVisible (connectButton);
@@ -218,7 +257,7 @@ public:
         }
     }
 
-    juce::ToggleButton& getDirectUsbButton() noexcept { return directUsbButton; }
+    juce::TextButton& getDirectUsbButton() noexcept { return directUsbButton; }
 
     void resized() override
     {
@@ -233,7 +272,7 @@ public:
         auto area = getLocalBounds().reduced (kPad);
         auto headerRow = area.removeFromTop (26);
         networkTitle.setBounds (headerRow.removeFromLeft (300));
-        directUsbButton.setBounds (headerRow.removeFromRight (180));
+        directUsbButton.setBounds (getWidth() - 372, 0, 140, 26);
         area.removeFromTop (2);
         transportLabel.setBounds (area.removeFromTop (18));
         area.removeFromTop (kSectionGap);
@@ -333,6 +372,14 @@ public:
     }
 
 private:
+    void updateDirectUsbButtonText()
+    {
+        directUsbButton.setButtonText (directUsbButton.getToggleState() ? "DIRECT USB: ON" : "DIRECT USB: OFF");
+        directUsbButton.setColour (juce::TextButton::buttonColourId,
+                                   directUsbButton.getToggleState() ? juce::Colour (0xff168c9e)
+                                                                    : juce::Colour (0xff2a2a30));
+    }
+
     void updateEnableButtonText()
     {
         const bool enabled = enableButton.getToggleState();
@@ -343,7 +390,7 @@ private:
     {
         getNetworkAudioChannelState().enabled.store (enabled, std::memory_order_relaxed);
         connectButton.setEnabled (enabled);
-        directUsbButton.setEnabled (enabled);
+        directUsbButton.setEnabled (enabled);\n        updateDirectUsbButtonText();
         disconnectButton.setEnabled (enabled);
         serverEditor.setEnabled (enabled);
         portEditor.setEnabled (enabled);
@@ -613,7 +660,7 @@ private:
 
     juce::Label networkTitle;
     juce::Label transportLabel;
-    juce::ToggleButton directUsbButton;
+    juce::TextButton directUsbButton;
     juce::TextButton enableButton { "Network audio: OFF" };
     juce::Label channelTitle;
     juce::Label gainLabel;
