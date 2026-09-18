@@ -254,6 +254,7 @@ public:
 
     MetroNetworkAudio& owner;
     std::atomic<bool> running { false };
+    std::atomic<bool> directMode { false };
     MetroSocket socket = metroInvalidSocket;
     aoo::net::iclient::pointer client;
     aoo::isink::pointer discoverySink;
@@ -298,6 +299,16 @@ public:
         for (const auto& peer : peers)
             if (sameEndpoint (peer.endpoint.get(), endpoint)) return &peer;
         return nullptr;
+    }
+
+    bool isDirectPeerAddress (const sockaddr_in* endpoint) const
+    {
+        std::lock_guard<std::mutex> lock (stateMutex);
+        for (const auto& peer : peers)
+            if (peer.endpoint != nullptr && endpoint != nullptr
+                && peer.endpoint->sin_addr.s_addr == endpoint->sin_addr.s_addr)
+                return true;
+        return false;
     }
 
     std::shared_ptr<sockaddr_in> findPeerEndpoint (const sockaddr_in* endpoint) const
@@ -454,6 +465,7 @@ public:
         discoverySink->set_resend_maxnumframes (16);
 
         activeAooSocket.store (&socket, std::memory_order_release);
+        directMode.store (requestedPort != 0, std::memory_order_release);
         running.store (true, std::memory_order_release);
         clientThread = std::thread ([this] { client->run(); });
         ioThread = std::thread ([this] { ioLoop(); });
@@ -463,6 +475,7 @@ public:
     bool cleanupFailedStart()
     {
         activeAooSocket.store (nullptr, std::memory_order_release);
+        directMode.store (false, std::memory_order_release);
         client.reset();
         discoverySink.reset();
         destroyRuntimeSlots();
@@ -594,6 +607,12 @@ public:
                 {
                     aooDiag ("RX packet bytes=" + juce::String (n)
                              + " from=" + endpointDebug (&from));
+
+                    if (directMode.load (std::memory_order_acquire) && ! isDirectPeerAddress (&from))
+                    {
+                        aooDiag ("RX direct USB filter dropped packet from=" + endpointDebug (&from));
+                        continue;
+                    }
 
                     client->handle_message (packet.data(), n, &from);
 
