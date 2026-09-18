@@ -390,7 +390,8 @@ private:
     {
         getNetworkAudioChannelState().enabled.store (enabled, std::memory_order_relaxed);
         connectButton.setEnabled (enabled);
-        directUsbButton.setEnabled (enabled);\n        updateDirectUsbButtonText();
+        directUsbButton.setEnabled (enabled);
+        updateDirectUsbButtonText();
         disconnectButton.setEnabled (enabled);
         serverEditor.setEnabled (enabled);
         portEditor.setEnabled (enabled);
