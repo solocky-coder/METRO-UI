@@ -257,8 +257,11 @@ private:
 
         if (state == DeviceNetworkTransport::State::Error || state == DeviceNetworkTransport::State::Stopped)
         {
-            if (state == DeviceNetworkTransport::State::Error && connected)
-                usbTransport.start ({});
+            if (state == DeviceNetworkTransport::State::Error)
+            {
+                if (! startButton.isEnabled()) startButton.setEnabled (true);
+                if (stopButton.isEnabled()) stopButton.setEnabled (false);
+            }
             else
             {
                 if (! startButton.isEnabled()) startButton.setEnabled (true);
