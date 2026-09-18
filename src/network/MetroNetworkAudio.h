@@ -37,6 +37,7 @@ public:
     MetroNetworkAudio& operator=(const MetroNetworkAudio&) = delete;
 
     bool start();
+    bool startDirect(int localPort = 9000);
     void stop();
     bool isRunning() const noexcept;
 
@@ -44,6 +45,9 @@ public:
                          int port,
                          const juce::String& username,
                          const juce::String& password);
+    bool connectDirectPeer(const juce::String& peerHost, int peerPort, int sourceId = 0);
+    void disconnectDirectPeers();
+
     bool joinGroup(const juce::String& group,
                    const juce::String& password = {},
                    bool isPublic = false);
