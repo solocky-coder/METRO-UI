@@ -24,7 +24,7 @@ namespace
     // Bump this whenever iPhoneUsbShare.exe is re-embedded from an updated
     // upstream build, so extractHelperIfNeeded() knows to re-extract instead
     // of trusting a stale copy at the install path.
-    constexpr int helperVersion = 1;
+    constexpr int helperVersion = 2;
 }
 
 AppleUsbShareLauncher::AppleUsbShareLauncher (LogCallback log)
