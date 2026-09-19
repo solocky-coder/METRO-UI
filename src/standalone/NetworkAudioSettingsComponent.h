@@ -174,9 +174,16 @@ public:
         directUsbButton.setVisible (true);
         directUsbButton.onClick = [this]
         {
-            updateDirectUsbButtonText();
             if (networkAudio == nullptr || ! enableButton.getToggleState())
+            {
+                directUsbButton.setToggleState (false, juce::dontSendNotification);
+                updateDirectUsbButtonText();
+                updateDirectUsbInstructions (false);
+                updateStatus ("Enable Network audio before using Direct USB");
                 return;
+            }
+
+            updateDirectUsbButtonText();
 
 #if DYSEKT_HAS_AOO
             networkAudio->disconnect();
@@ -270,6 +277,35 @@ public:
         }
     }
 
+    // AUDIT: none of this panel's toggle-style controls (the two TextButton
+    // toggles, plus the ToggleButton checkboxes) previously had any border —
+    // MetroLookAndFeel::drawButtonBackground only ever fills a flat rectangle
+    // (theme.button when off, theme.accent when on), with no outline drawn at
+    // any point. That made an OFF toggle pixel-identical to a plain one-shot
+    // action button (Connect / Join, Disconnect) — see the "Network audio:
+    // OFF" confusion this session started from. Framing every toggle here,
+    // drawn after children so it's never occluded, fixes that without
+    // touching the shared LookAndFeel (and therefore without changing how
+    // one-shot buttons look anywhere else in the app).
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        const auto& theme = getTheme();
+
+        auto frame = [&] (const juce::Component& c, bool on)
+        {
+            g.setColour (on ? theme.accent : theme.separator);
+            g.drawRoundedRectangle (c.getBounds().toFloat().expanded (3.0f), 3.0f, on ? 1.6f : 1.0f);
+        };
+
+        frame (enableButton,      enableButton.getToggleState());
+        frame (directUsbButton,   directUsbButton.getToggleState());
+        frame (muteButton,        muteButton.getToggleState());
+        frame (soloButton,        soloButton.getToggleState());
+        frame (recordArmButton,   recordArmButton.getToggleState());
+        frame (monitorButton,     monitorButton.getToggleState());
+        frame (publicGroupButton, publicGroupButton.getToggleState());
+    }
+
     juce::TextButton& getDirectUsbButton() noexcept { return directUsbButton; }
 
     void resized() override
@@ -310,6 +346,7 @@ public:
 
         auto channelHeaderRow = channelInner.removeFromTop (kRowH);
         enableButton.setBounds (channelHeaderRow.removeFromLeft (220));
+        channelHeaderRow.removeFromLeft (10);
         meterLabel.setBounds (channelHeaderRow);
         channelInner.removeFromTop (kRowGap);
 
@@ -327,11 +364,15 @@ public:
         panSlider.setBounds (panRow);
         channelInner.removeFromTop (kRowGap);
 
+        constexpr int kToggleGap = 8; // clearance so each toggle's frame stays visually separate
         auto toggleRow = channelInner.removeFromTop (kRowH);
         toggleRow.removeFromLeft (kLabelColW);
         muteButton.setBounds (toggleRow.removeFromLeft (70));
+        toggleRow.removeFromLeft (kToggleGap);
         soloButton.setBounds (toggleRow.removeFromLeft (70));
+        toggleRow.removeFromLeft (kToggleGap);
         recordArmButton.setBounds (toggleRow.removeFromLeft (100));
+        toggleRow.removeFromLeft (kToggleGap);
         monitorButton.setBounds (toggleRow.removeFromLeft (90));
         area.removeFromTop (kSectionGap);
 
