@@ -293,6 +293,8 @@ public:
 
         auto frame = [&] (const juce::Component& c, bool on)
         {
+            if (! c.isVisible())
+                return;
             g.setColour (on ? theme.accent : theme.separator);
             g.drawRoundedRectangle (c.getBounds().toFloat().expanded (3.0f), 3.0f, on ? 1.6f : 1.0f);
         };
