@@ -168,6 +168,10 @@ private:
 
         for (auto* child : basePageChildren)
             child->setVisible (! active);
+
+        // DIRECT USB is a shared transport control, not part of either
+        // page's content. Keep it visible in both tabs.
+        getDirectUsbButton().setVisible (true);
         usbStatusComponent->setVisible (active);
 
         auto style = [] (juce::TextButton& b, bool isActive)
