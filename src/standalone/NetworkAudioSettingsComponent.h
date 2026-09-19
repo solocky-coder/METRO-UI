@@ -12,14 +12,14 @@ class NetworkAudioSettingsComponent : public juce::Component,
 {
 public:
     explicit NetworkAudioSettingsComponent (juce::AudioDeviceManager& deviceManager,
-                                             MetroNetworkAudio* networkAudio,
+                                             MetroNetworkAudio* networkAudioIn,
                                              bool showDeviceSelectorIn = false)
         : audioSelector (deviceManager, 0, 0, 1, 2, false, false, false, false),
-          networkAudio (networkAudio),
-          sourceModel (networkAudio)
+          networkAudio (networkAudioIn),
+          sourceModel (networkAudioIn)
     {
         showDeviceSelector = showDeviceSelectorIn;
-        NetworkAudioProcessor::setActiveNetworkAudio (networkAudio);
+        NetworkAudioProcessor::setActiveNetworkAudio (networkAudioIn);
         setLookAndFeel (&settingsLookAndFeel);
 
         constexpr int kDeviceCardHeight = 2 * 10 + 260;
