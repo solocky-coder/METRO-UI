@@ -228,12 +228,10 @@ public:
 
         addAndMakeVisible (statusLabel);
 
-        directUsbInstructionsLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF7FE0EC));
-        directUsbInstructionsLabel.setFont (juce::Font (13.0f));
-        directUsbInstructionsLabel.setJustificationType (juce::Justification::topLeft);
-        directUsbInstructionsLabel.setMinimumHorizontalScale (1.0f);
-        directUsbInstructionsLabel.setVisible (false);
-        addAndMakeVisible (directUsbInstructionsLabel);
+        directUsbInfoButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xFF7FE0EC));
+        directUsbInfoButton.onClick = [this] { showDirectUsbInfoPopup(); };
+        directUsbInfoButton.setVisible (false);
+        addAndMakeVisible (directUsbInfoButton);
 
         updateStatus (networkEnabled
                           ? (networkAudio != nullptr && networkAudio->isRunning()
@@ -378,7 +376,7 @@ public:
         monitorButton.setBounds (toggleRow.removeFromLeft (90));
         area.removeFromTop (kSectionGap);
 
-        constexpr int kInstructionsH = 3 * 16; // up to 3 lines at the label's 13pt font
+        constexpr int kInstructionsH = kRowH; // single-line clickable prompt, not an inline text block
 
         auto connectionCardArea = area.removeFromTop (2 * kCardPad + 3 * kRowH + 2 * kRowGap
                                                         + (kRowGap + 6) + 30 + 8 + kRowH
@@ -425,7 +423,7 @@ public:
 
         auto instructionsRow = connectionInner.removeFromTop (kInstructionsH);
         instructionsRow.removeFromLeft (kLabelColW);
-        directUsbInstructionsLabel.setBounds (instructionsRow);
+        directUsbInfoButton.setBounds (instructionsRow.removeFromLeft (280));
         area.removeFromTop (kSectionGap);
 
         sourcesPanelBounds = area;
@@ -436,37 +434,66 @@ public:
     }
 
 private:
-    // Shown once DIRECT USB mode is actually listening, so the person on the
-    // other end (running real SonoBus, not DYSEKT) knows exactly what to type
-    // into its Connect Direct dialog. DYSEKT can guess the peer's address on
-    // its own side (see the hardcoded Apple gateway IPs above), but it has no
-    // way to push settings into SonoBus itself — this is the closest
-    // substitute: put the answer on screen instead of in a manual.
+    // getAllAddresses() returns every interface JUCE can see, including
+    // junk that's never a usable connection target: link-local autoconfig
+    // (169.254.0.0/16 — what Windows assigns an adapter that got no DHCP
+    // reply), multicast (224.0.0.0-239.255.255.255), and loopback. Left
+    // unfiltered, the instructions turned into an 11-address wall of text
+    // — that was the actual unreadability problem, not just the label's size.
+    static bool isUsableDirectUsbAddress (const juce::IPAddress& addr)
+    {
+        if (addr.isNull() || addr.isIPv6)
+            return false;
+        if (addr == juce::IPAddress::local())
+            return false;
+        if (addr.address[0] == 169 && addr.address[1] == 254)
+            return false;
+        if (addr.address[0] >= 224)
+            return false;
+        return true;
+    }
+
+    // Builds the connect-info text and drives the small clickable prompt;
+    // the actual readable display is the popup in showDirectUsbInfoPopup().
     void updateDirectUsbInstructions (bool visible, int respondingPeers = 0)
     {
         if (! visible)
         {
-            directUsbInstructionsLabel.setVisible (false);
-            directUsbInstructionsLabel.setText ({}, juce::dontSendNotification);
+            directUsbInfoButton.setVisible (false);
+            directUsbInfoText = {};
             return;
         }
 
         juce::StringArray hostAddresses;
         for (const auto& addr : juce::IPAddress::getAllAddresses (false))
-            if (! addr.isNull() && addr != juce::IPAddress::local())
+            if (isUsableDirectUsbAddress (addr))
                 hostAddresses.add (addr.toString());
 
         const auto hostText = hostAddresses.isEmpty()
                                    ? juce::String ("this computer's USB/LAN IP address")
                                    : hostAddresses.joinIntoString (" or ");
 
-        juce::String text = "On the other device, open SonoBus -> Connect Direct and enter:\n"
-                             "Host: " + hostText + "    Port: " + juce::String (kDirectUsbPort);
+        directUsbInfoText = "Host: " + hostText + "\nPort: " + juce::String (kDirectUsbPort);
         if (respondingPeers > 0)
-            text << "\n(" << respondingPeers << " Apple USB peer(s) already responding)";
+            directUsbInfoText << "\n\n" << respondingPeers << " Apple USB peer(s) already responding.";
 
-        directUsbInstructionsLabel.setText (text, juce::dontSendNotification);
-        directUsbInstructionsLabel.setVisible (true);
+        directUsbInfoButton.setButtonText (hostAddresses.size() == 1
+            ? ("SonoBus connect info (" + hostAddresses[0] + ":" + juce::String (kDirectUsbPort) + ")")
+            : "SonoBus connect info");
+        directUsbInfoButton.setVisible (true);
+    }
+
+    void showDirectUsbInfoPopup()
+    {
+        if (directUsbInfoText.isEmpty())
+            return;
+
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::AlertWindow::InfoIcon,
+            "Connect from SonoBus",
+            "On the other device, open SonoBus -> Connect Direct and enter:\n\n" + directUsbInfoText,
+            "OK",
+            this);
     }
 
     void updateDirectUsbButtonText()
@@ -791,7 +818,8 @@ private:
     juce::TextButton connectButton { "Connect / Join" };
     juce::TextButton disconnectButton { "Disconnect" };
     juce::Label statusLabel;
-    juce::Label directUsbInstructionsLabel;
+    juce::TextButton directUsbInfoButton { "SonoBus connect info" };
+    juce::String directUsbInfoText;
     juce::Label sourcesLabel;
     juce::ListBox sourceList;
     SourceListModel sourceModel;
