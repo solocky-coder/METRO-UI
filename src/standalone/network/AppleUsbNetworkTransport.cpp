@@ -101,6 +101,7 @@ std::vector<DeviceNetworkTransport::Device> AppleUsbNetworkTransport::enumerate(
 bool AppleUsbNetworkTransport::start (const juce::String& deviceId)
 {
     juce::ignoreUnused (deviceId);
+    manualStop.store (false, std::memory_order_release);
     currentState.store (State::Starting, std::memory_order_release);
     currentStatus = "Requesting administrator permission to start USB sharing…";
 
@@ -121,6 +122,7 @@ bool AppleUsbNetworkTransport::start (const juce::String& deviceId)
 
 void AppleUsbNetworkTransport::stop()
 {
+    manualStop.store (true, std::memory_order_release);
     if (launcher != nullptr)
         launcher->stop();
     currentStatus = "USB network transport stopped";
@@ -132,9 +134,25 @@ void AppleUsbNetworkTransport::poll()
     const bool applePresent = appleUsbDevicePresent();
     const auto state = currentState.load (std::memory_order_acquire);
 
+    // Physical removal is the reset point for auto-start suppression. This
+    // also tears down a live helper if the USB device disappears without the
+    // normal stop path running first.
+    if (! applePresent)
+    {
+        manualStop.store (false, std::memory_order_release);
+        if (state != State::Stopped)
+        {
+            if (launcher != nullptr)
+                launcher->stop();
+            currentStatus = "Waiting for iPhone or iPad over USB";
+            currentState.store (State::Stopped, std::memory_order_release);
+        }
+        return;
+    }
+
     if (state == State::Stopped)
     {
-        if (applePresent)
+        if (! manualStop.load (std::memory_order_acquire))
         {
             currentStatus = "Apple USB device detected - starting USB sharing...";
             if (! start (""))
