@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "setupapi.lib")
 #endif
 
 
