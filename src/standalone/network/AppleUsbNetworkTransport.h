@@ -34,6 +34,10 @@ public:
 
 private:
     std::atomic<State> currentState { State::Stopped };
+    // A manual Stop suppresses the arrival-triggered auto-start until the
+    // physical Apple USB device is removed. Removal clears this latch so
+    // the next insertion starts automatically again.
+    std::atomic<bool> manualStop { false };
     juce::String currentStatus { "No USB device network interface detected" };
     std::unique_ptr<AppleUsbShareLauncher> launcher;
 };
