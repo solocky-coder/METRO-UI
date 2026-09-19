@@ -11,6 +11,8 @@ class NetworkAudioSettingsComponent : public juce::Component,
                                        private juce::Timer
 {
 public:
+    static constexpr int kDirectUsbPort = 9000;
+
     explicit NetworkAudioSettingsComponent (juce::AudioDeviceManager& deviceManager,
                                              MetroNetworkAudio* networkAudioIn,
                                              bool showDeviceSelectorIn = false)
@@ -182,10 +184,11 @@ public:
             networkAudio->stop();
             if (directUsbButton.getToggleState())
             {
-                if (! networkAudio->startDirect (9000))
+                if (! networkAudio->startDirect (kDirectUsbPort))
                 {
                     directUsbButton.setToggleState (false, juce::dontSendNotification);
                     updateDirectUsbButtonText();
+                    updateDirectUsbInstructions (false);
                     updateStatus ("Could not start direct USB AOO backend");
                     return;
                 }
@@ -194,12 +197,14 @@ public:
                 };
                 int connected = 0;
                 for (const auto* peer : peers)
-                    if (networkAudio->connectDirectPeer (peer, 9000, 0)) ++connected;
+                    if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0)) ++connected;
                 updateStatus (connected > 0 ? "Direct USB — listening on up to 4 Apple devices"
                                             : "Direct USB — waiting for Apple devices");
+                updateDirectUsbInstructions (true, connected);
             }
             else
             {
+                updateDirectUsbInstructions (false);
                 if (! networkAudio->start())
                     updateStatus ("Could not start AOO network backend");
                 else
@@ -215,6 +220,14 @@ public:
         addAndMakeVisible (disconnectButton);
 
         addAndMakeVisible (statusLabel);
+
+        directUsbInstructionsLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF7FE0EC));
+        directUsbInstructionsLabel.setFont (juce::Font (13.0f));
+        directUsbInstructionsLabel.setJustificationType (juce::Justification::topLeft);
+        directUsbInstructionsLabel.setMinimumHorizontalScale (1.0f);
+        directUsbInstructionsLabel.setVisible (false);
+        addAndMakeVisible (directUsbInstructionsLabel);
+
         updateStatus (networkEnabled
                           ? (networkAudio != nullptr && networkAudio->isRunning()
                                  ? "Connected — waiting for network sources"
@@ -322,8 +335,11 @@ public:
         monitorButton.setBounds (toggleRow.removeFromLeft (90));
         area.removeFromTop (kSectionGap);
 
+        constexpr int kInstructionsH = 3 * 16; // up to 3 lines at the label's 13pt font
+
         auto connectionCardArea = area.removeFromTop (2 * kCardPad + 3 * kRowH + 2 * kRowGap
-                                                        + (kRowGap + 6) + 30 + 8 + kRowH);
+                                                        + (kRowGap + 6) + 30 + 8 + kRowH
+                                                        + kRowGap + kInstructionsH);
         connectionPanelBounds = connectionCardArea;
         auto connectionInner = connectionCardArea.reduced (kCardPad);
 
@@ -362,6 +378,11 @@ public:
         auto statusRow = connectionInner.removeFromTop (kRowH);
         statusRow.removeFromLeft (kLabelColW);
         statusLabel.setBounds (statusRow);
+        connectionInner.removeFromTop (kRowGap);
+
+        auto instructionsRow = connectionInner.removeFromTop (kInstructionsH);
+        instructionsRow.removeFromLeft (kLabelColW);
+        directUsbInstructionsLabel.setBounds (instructionsRow);
         area.removeFromTop (kSectionGap);
 
         sourcesPanelBounds = area;
@@ -372,6 +393,39 @@ public:
     }
 
 private:
+    // Shown once DIRECT USB mode is actually listening, so the person on the
+    // other end (running real SonoBus, not DYSEKT) knows exactly what to type
+    // into its Connect Direct dialog. DYSEKT can guess the peer's address on
+    // its own side (see the hardcoded Apple gateway IPs above), but it has no
+    // way to push settings into SonoBus itself — this is the closest
+    // substitute: put the answer on screen instead of in a manual.
+    void updateDirectUsbInstructions (bool visible, int respondingPeers = 0)
+    {
+        if (! visible)
+        {
+            directUsbInstructionsLabel.setVisible (false);
+            directUsbInstructionsLabel.setText ({}, juce::dontSendNotification);
+            return;
+        }
+
+        juce::StringArray hostAddresses;
+        for (const auto& addr : juce::IPAddress::getAllAddresses (false))
+            if (! addr.isNull() && addr != juce::IPAddress::local())
+                hostAddresses.add (addr.toString());
+
+        const auto hostText = hostAddresses.isEmpty()
+                                   ? juce::String ("this computer's USB/LAN IP address")
+                                   : hostAddresses.joinIntoString (" or ");
+
+        juce::String text = "On the other device, open SonoBus -> Connect Direct and enter:\n"
+                             "Host: " + hostText + "    Port: " + juce::String (kDirectUsbPort);
+        if (respondingPeers > 0)
+            text << "\n(" << respondingPeers << " Apple USB peer(s) already responding)";
+
+        directUsbInstructionsLabel.setText (text, juce::dontSendNotification);
+        directUsbInstructionsLabel.setVisible (true);
+    }
+
     void updateDirectUsbButtonText()
     {
         directUsbButton.setButtonText (directUsbButton.getToggleState() ? "DIRECT USB: ON" : "DIRECT USB: OFF");
@@ -423,19 +477,22 @@ private:
 
             const bool started = networkAudio->isRunning()
                                || (directUsbButton.getToggleState()
-                                       ? networkAudio->startDirect (9000)
+                                       ? networkAudio->startDirect (kDirectUsbPort)
                                        : networkAudio->start());
             if (! started)
             {
                 enableButton.setToggleState (false, juce::dontSendNotification);
                 updateEnableButtonText();
                 setNetworkControlEnabled (false);
+                updateDirectUsbInstructions (false);
                 updateStatus ("Could not start AOO network backend");
                 return;
             }
 
             setNetworkControlEnabled (true);
             updateEnableButtonText();
+            if (directUsbButton.getToggleState())
+                updateDirectUsbInstructions (true);
             updateStatus ("Ready — local Wi-Fi/LAN audio");
         }
         else
@@ -448,6 +505,7 @@ private:
             }
             setNetworkControlEnabled (false);
             updateEnableButtonText();
+            updateDirectUsbInstructions (false);
             updateStatus ("Disabled");
             refreshSources();
         }
@@ -482,10 +540,10 @@ private:
 
         if (directUsbButton.getToggleState())
         {
-            constexpr int kUsbPort = 9000;
             if (networkAudio->isRunning()) networkAudio->disconnectDirectPeers();
-            if (! networkAudio->isRunning() && ! networkAudio->startDirect (kUsbPort))
+            if (! networkAudio->isRunning() && ! networkAudio->startDirect (kDirectUsbPort))
             {
+                updateDirectUsbInstructions (false);
                 updateStatus ("Could not start direct USB AOO backend");
                 return;
             }
@@ -495,12 +553,13 @@ private:
             };
             int connected = 0;
             for (const auto* peer : peers)
-                if (networkAudio->connectDirectPeer (peer, kUsbPort, 0))
+                if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0))
                     ++connected;
 
             updateStatus (connected > 0
                               ? "Direct USB — listening on up to 4 Apple devices"
                               : "Direct USB backend started; waiting for Apple sources");
+            updateDirectUsbInstructions (true, connected);
             return;
         }
 
@@ -551,6 +610,7 @@ private:
             networkAudio->disconnectDirectPeers();
         }
 #endif
+        updateDirectUsbInstructions (false);
         updateStatus ("Disconnected");
         refreshSources();
     }
@@ -688,6 +748,7 @@ private:
     juce::TextButton connectButton { "Connect / Join" };
     juce::TextButton disconnectButton { "Disconnect" };
     juce::Label statusLabel;
+    juce::Label directUsbInstructionsLabel;
     juce::Label sourcesLabel;
     juce::ListBox sourceList;
     SourceListModel sourceModel;
