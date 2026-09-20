@@ -103,7 +103,7 @@ bool AppleUsbNetworkTransport::start (const juce::String& deviceId)
     juce::ignoreUnused (deviceId);
     manualStop.store (false, std::memory_order_release);
     currentState.store (State::Starting, std::memory_order_release);
-    currentStatus = "Requesting administrator permission to start USB sharing…";
+    currentStatus = "Starting USB sharing helper...";
 
     const bool launchStarted = launcher != nullptr && launcher->start();
     if (! launchStarted)
@@ -173,7 +173,12 @@ void AppleUsbNetworkTransport::poll()
         return;
     }
 
-    if (launcher != nullptr && ! launcher->isRunning())
+    // isRunning() only becomes true once the background thread has registered
+    // and started the helper, which takes longer than one 2 Hz poll tick.
+    // Treating "not running yet" as failure flipped the state to Error
+    // before the launch had even finished; only fail once the launch thread
+    // is done AND the helper is not running.
+    if (launcher != nullptr && ! launcher->isRunning() && ! launcher->isLaunching())
     {
         currentStatus = launcher->status();
         currentState.store (State::Error, std::memory_order_release);

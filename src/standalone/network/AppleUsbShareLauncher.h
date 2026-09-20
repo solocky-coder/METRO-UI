@@ -64,6 +64,11 @@ public:
     void stop();
 
     bool isRunning() const noexcept { return running.load (std::memory_order_acquire); }
+
+    // True while the background launch/monitor thread is alive - including
+    // the window after start() where the task is still being registered and
+    // the helper has not been spawned yet (isRunning() is false then).
+    bool isLaunching() const noexcept;
     juce::String status() const;
 
     // The old engine derived these from its own in-process adapter scan.

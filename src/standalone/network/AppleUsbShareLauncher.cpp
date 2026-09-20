@@ -334,7 +334,7 @@ public:
             return;
         }
 
-        owner.postLog ("Registering iPhoneUsbShare as a scheduled task (elevated, no repeat prompts)…");
+        owner.postLog ("Registering iPhoneUsbShare as a scheduled task (elevated, no repeat prompts)...");
 
         const auto exePath = AppleUsbShareLauncher::helperExecutablePath();
         if (const auto err = registerTask (exePath); err.isNotEmpty())
@@ -348,7 +348,7 @@ public:
             return;
         }
 
-        owner.postLog ("Starting iPhoneUsbShare via Task Scheduler…");
+        owner.postLog ("Starting iPhoneUsbShare via Task Scheduler...");
         juce::String runError;
         const DWORD pid = runRegisteredTask (runError);
         if (pid == 0)
@@ -370,7 +370,7 @@ public:
 
         owner.childProcess = process;
         owner.running.store (true, std::memory_order_release);
-        owner.postLog ("iPhoneUsbShare helper started (PID " + juce::String ((int) pid) + "); waiting for USB handshake…");
+        owner.postLog ("iPhoneUsbShare helper started (PID " + juce::String ((int) pid) + "); waiting for USB handshake...");
 
         const auto logFile = AppleUsbShareLauncher::activityLogPath();
         juce::int64 byteOffset = 0;
@@ -429,6 +429,15 @@ private:
 
 #endif // JUCE_WINDOWS
 
+bool AppleUsbShareLauncher::isLaunching() const noexcept
+{
+#if JUCE_WINDOWS
+    return launchThread != nullptr && launchThread->isThreadRunning();
+#else
+    return false;
+#endif
+}
+
 bool AppleUsbShareLauncher::start()
 {
 #if JUCE_WINDOWS
@@ -442,7 +451,7 @@ bool AppleUsbShareLauncher::start()
     if (! exePath.existsAsFile())
     {
         log ("ERROR: iPhoneUsbShare.exe not found at " + exePath.getFullPathName()
-             + " — it ships alongside DysektStandalone.exe and is not part of the installer zip yet.");
+             + " - it ships alongside DysektStandalone.exe and is not part of the installer zip yet.");
         return false;
     }
 

@@ -50,7 +50,7 @@ public:
         ipCaption.setText ("Device IP", juce::dontSendNotification);
         rxCaption.setText ("Download", juce::dontSendNotification);
         txCaption.setText ("Upload", juce::dontSendNotification);
-        ipValue.setText ("—", juce::dontSendNotification);
+        ipValue.setText ("-", juce::dontSendNotification);
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
         for (auto* value : { &ipValue, &rxValue, &txValue })
@@ -66,7 +66,7 @@ public:
         activityEditor.setFont (juce::Font (15.0f));
         activityEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff101017));
         activityEditor.setColour (juce::TextEditor::textColourId, juce::Colours::white);
-        statusDot.setText ("●", juce::dontSendNotification);
+        statusDot.setText (juce::String::fromUTF8 ("\xe2\x97\x8f"), juce::dontSendNotification);
         statusDot.setFont (juce::Font (15.0f, juce::Font::bold));
 
         startButton.setButtonText ("Start sharing");
@@ -88,7 +88,7 @@ public:
         {
             startButton.setEnabled (false);
             stopButton.setEnabled (false);
-            appendActivity ("Starting USB network path…");
+            appendActivity ("Starting USB network path...");
             // start() is asynchronous now — a `true` return only means the
             // elevated helper launch is underway (a UAC prompt is likely
             // about to appear), not that sharing is live. poll(), called
@@ -97,7 +97,7 @@ public:
             const bool launchStarted = usbTransport.start ({});
             if (launchStarted)
             {
-                appendActivity ("Waiting for administrator permission…");
+                appendActivity ("Launching USB helper (Windows may show an administrator prompt)...");
                 stopButton.setEnabled (true);
             }
             else
@@ -111,7 +111,7 @@ public:
         stopButton.onClick = [this]
         {
             stopButton.setEnabled (false);
-            appendActivity ("Stopping USB network path…");
+            appendActivity ("Stopping USB network path...");
             usbTransport.stop();
             startButton.setEnabled (true);
             appendActivity ("USB network path stopped.");
@@ -203,7 +203,20 @@ private:
         activityEditor.setText (line + activityEditor.getText().substring (0, 14000), false);
     }
 
-    void timerCallback() override { usbTransport.poll(); refresh(); }
+    void timerCallback() override
+    {
+        usbTransport.poll();
+        // Surface helper/launcher progress and failure reasons in the Activity
+        // box; previously only the two hard-coded lines from the Start button
+        // ever appeared, so a launch failure was invisible.
+        const auto status = usbTransport.status();
+        if (status.isNotEmpty() && status != lastLoggedStatus)
+        {
+            lastLoggedStatus = status;
+            appendActivity (status);
+        }
+        refresh();
+    }
 
     void refresh()
     {
@@ -289,7 +302,7 @@ private:
         ULONG size = 0;
         if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW)
         {
-            ipValue.setText ("—", juce::dontSendNotification); rxValue.setText ("0 KB/s", juce::dontSendNotification); txValue.setText ("0 KB/s", juce::dontSendNotification); return;
+            ipValue.setText ("-", juce::dontSendNotification); rxValue.setText ("0 KB/s", juce::dontSendNotification); txValue.setText ("0 KB/s", juce::dontSendNotification); return;
         }
         std::vector<unsigned char> buffer (size);
         auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*> (buffer.data());
@@ -318,7 +331,7 @@ private:
             }
             if (address.isEmpty())
                 address = fallbackIpv6;
-            ipValue.setText (address.isNotEmpty() ? address : "—", juce::dontSendNotification);
+            ipValue.setText (address.isNotEmpty() ? address : "-", juce::dontSendNotification);
             MIB_IF_ROW2 row {};
             row.InterfaceIndex = a->IfIndex;
             if (GetIfEntry2 (&row) == NO_ERROR)
@@ -336,7 +349,7 @@ private:
             }
             return;
         }
-        ipValue.setText ("—", juce::dontSendNotification);
+        ipValue.setText ("-", juce::dontSendNotification);
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
     }
@@ -348,6 +361,7 @@ private:
                 rxCaption, rxValue, txCaption, txValue, activityTitle, statusDot,
                 uacNoteLabel;
     juce::TextEditor activityEditor;
+    juce::String lastLoggedStatus;
     juce::TextButton startButton, stopButton, diagnosticsButton;
 #if JUCE_WINDOWS
     ULONG64 lastRx = 0, lastTx = 0;
