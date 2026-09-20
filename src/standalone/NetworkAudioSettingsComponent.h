@@ -218,7 +218,9 @@ public:
                 if (! networkAudio->start())
                     updateStatus ("Could not start AOO network backend");
                 else
-                    updateStatus (directUsbButton.getToggleState()\n                              ? utf8 ("Ready — Direct USB audio")\n                              : utf8 ("Ready — local Wi-Fi/LAN audio"));
+                    updateStatus (directUsbButton.getToggleState()
+                              ? utf8 ("Ready — Direct USB audio")
+                              : utf8 ("Ready — local Wi-Fi/LAN audio"));
             }
 #endif
         };
