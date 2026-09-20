@@ -43,7 +43,9 @@ public:
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
         directUsbButton.setClickingTogglesState (true);
-        // Direct USB is an optional transport mode. Normal AOO/SonoBus networking\n        // remains the default when Network Audio is enabled.\n        directUsbButton.setToggleState (false, juce::dontSendNotification);
+        // Direct USB is an optional transport mode. Normal AOO/SonoBus networking
+        // remains the default when Network Audio is enabled.
+        directUsbButton.setToggleState (false, juce::dontSendNotification);
         updateDirectUsbButtonText();
         directUsbButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         directUsbButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
