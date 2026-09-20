@@ -43,7 +43,7 @@ public:
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
         directUsbButton.setClickingTogglesState (true);
-        directUsbButton.setToggleState (true, juce::dontSendNotification);
+        // Direct USB is an optional transport mode. Normal AOO/SonoBus networking\n        // remains the default when Network Audio is enabled.\n        directUsbButton.setToggleState (false, juce::dontSendNotification);
         updateDirectUsbButtonText();
         directUsbButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         directUsbButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
@@ -216,7 +216,7 @@ public:
                 if (! networkAudio->start())
                     updateStatus ("Could not start AOO network backend");
                 else
-                    updateStatus (utf8 ("Ready — local Wi-Fi/LAN audio"));
+                    updateStatus (directUsbButton.getToggleState()\n                              ? utf8 ("Ready — Direct USB audio")\n                              : utf8 ("Ready — local Wi-Fi/LAN audio"));
             }
 #endif
         };
