@@ -30,14 +30,19 @@
 // POST_BUILD step (see the WIN32 block in CMakeLists.txt), and located at
 // runtime via helperExecutablePath() below.
 //
-// IMPORTANT — start() is asynchronous. The helper must run elevated
-// (requireAdministrator in its manifest), so launching it triggers a UAC
-// consent prompt that can block indefinitely on user response, followed by
-// the USB mode-switch handshake, which can itself take several seconds.
-// start() only kicks the launch off on a background thread and returns
-// once that thread has been started — it does NOT mean sharing is live.
-// Callers must poll status()/isRunning() (AppleUsbShareStatusComponent
-// already polls at 2Hz) rather than treat a `true` return as "connected".
+// IMPORTANT — start() is asynchronous. The first time it runs, it registers
+// a Task Scheduler task (\DYSEKT\iPhoneUsbShare) with TASK_RUNLEVEL_HIGHEST +
+// TASK_LOGON_INTERACTIVE_TOKEN, then calls IRegisteredTask::Run() on it —
+// this is the standard "elevate without a fresh UAC prompt every launch"
+// pattern, and it only works silently for an account that's already a local
+// Administrator (a split-token elevation Windows already trusts it to grant
+// itself); for a genuinely standard user, Windows will still prompt or the
+// registration will fail, and that failure is reported the normal way
+// through the log callback. Either way, start() only kicks the registration
+// + launch off on a background thread and returns once that thread has been
+// started — it does NOT mean sharing is live. Callers must poll
+// status()/isRunning() (AppleUsbShareStatusComponent already polls at 2Hz)
+// rather than treat a `true` return as "connected".
 class AppleUsbShareLauncher final
 {
 public:
@@ -91,7 +96,12 @@ private:
 
     HANDLE childProcess = nullptr;
     HANDLE stopEvent = nullptr;
-    juce::String stopEventName;
+    // No longer per-launch-unique: a Scheduled Task's action arguments are
+    // fixed at registration time (Run()'s params VARIANT only reaches
+    // COM-handler actions, not EXEC actions like this one), so the name has
+    // to be a fixed constant — see kStopEventName in the .cpp. That's fine;
+    // this feature is inherently single-instance (one user, one phone, one
+    // DYSEKT).
 
     // juce::File::currentApplicationFile resolves to DysektStandalone.exe
     // itself only for the Standalone target — this deliberately doesn't
