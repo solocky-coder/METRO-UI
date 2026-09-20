@@ -6,6 +6,7 @@
 #include "../network/NetworkAudioChannelState.h"
 #include "../metro/MetroLookAndFeel.h"
 #include "NetworkAudioProcessor.h"
+#include "Utf8Text.h"
 
 class NetworkAudioSettingsComponent : public juce::Component,
                                        private juce::Timer
@@ -38,7 +39,7 @@ public:
         networkTitle.setColour (juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible (networkTitle);
 
-        transportLabel.setText ("AOO • Direct isolated USB or SonoBus / LAN", juce::dontSendNotification);
+        transportLabel.setText (utf8 ("AOO • Direct isolated USB or SonoBus / LAN"), juce::dontSendNotification);
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
         directUsbButton.setClickingTogglesState (true);
@@ -205,8 +206,8 @@ public:
                 int connected = 0;
                 for (const auto* peer : peers)
                     if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0)) ++connected;
-                updateStatus (connected > 0 ? "Direct USB — listening on up to 4 Apple devices"
-                                            : "Direct USB — waiting for Apple devices");
+                updateStatus (connected > 0 ? utf8 ("Direct USB — listening on up to 4 Apple devices")
+                                            : utf8 ("Direct USB — waiting for Apple devices"));
                 updateDirectUsbInstructions (true, connected);
             }
             else
@@ -215,7 +216,7 @@ public:
                 if (! networkAudio->start())
                     updateStatus ("Could not start AOO network backend");
                 else
-                    updateStatus ("Ready — local Wi-Fi/LAN audio");
+                    updateStatus (utf8 ("Ready — local Wi-Fi/LAN audio"));
             }
 #endif
         };
@@ -235,8 +236,8 @@ public:
 
         updateStatus (networkEnabled
                           ? (networkAudio != nullptr && networkAudio->isRunning()
-                                 ? "Connected — waiting for network sources"
-                                 : "Ready — local Wi-Fi/LAN audio")
+                                 ? utf8 ("Connected — waiting for network sources")
+                                 : utf8 ("Ready — local Wi-Fi/LAN audio"))
                           : "Disabled");
 
         sourcesLabel.setText ("Sources", juce::dontSendNotification);
@@ -563,7 +564,7 @@ private:
             updateEnableButtonText();
             if (directUsbButton.getToggleState())
                 updateDirectUsbInstructions (true);
-            updateStatus ("Ready — local Wi-Fi/LAN audio");
+            updateStatus (utf8 ("Ready — local Wi-Fi/LAN audio"));
         }
         else
         {
@@ -627,8 +628,8 @@ private:
                     ++connected;
 
             updateStatus (connected > 0
-                              ? "Direct USB — listening on up to 4 Apple devices"
-                              : "Direct USB backend started; waiting for Apple sources");
+                              ? utf8 ("Direct USB — listening on up to 4 Apple devices")
+                              : utf8 ("Direct USB backend started; waiting for Apple sources"));
             updateDirectUsbInstructions (true, connected);
             return;
         }
@@ -661,7 +662,7 @@ private:
                 return;
 
             if (networkAudio->joinGroup (group, password, isPublic))
-                updateStatus ("Connected — waiting for network sources");
+                updateStatus (utf8 ("Connected — waiting for network sources"));
             else
                 updateStatus ("Connected, but group join could not be queued");
         });
