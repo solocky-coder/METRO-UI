@@ -178,11 +178,11 @@ public:
         const int fourth = connection.getWidth() / 4;
         auto cell = connection.removeFromLeft (fourth);
         ipCaption.setBounds (cell.removeFromTop (18)); ipValue.setBounds (cell);
+        cell = connection.removeFromLeft (fourth);
         peerIpCaption.setBounds (cell.removeFromTop (18)); peerIpValue.setBounds (cell);
         cell = connection.removeFromLeft (fourth);
         rxCaption.setBounds (cell.removeFromTop (18)); rxValue.setBounds (cell);
-        peerIpCaption.setBounds (cell.removeFromTop (18)); peerIpValue.setBounds (cell);
-        cell = connection.removeFromLeft (fourth);
+        cell = connection;
         txCaption.setBounds (cell.removeFromTop (18)); txValue.setBounds (cell);
 
         activityTitle.setBounds (area.removeFromTop (20));
@@ -351,6 +351,7 @@ private:
         updateNetworkMetrics (firstConnectedAdapter);
 #else
         ipValue.setText ("-", juce::dontSendNotification);
+        peerIpValue.setText ("-", juce::dontSendNotification);
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
 #endif
@@ -359,8 +360,10 @@ private:
         // configured after a session ends, so an IP here does not prove the
         // link is live. Only show it once the helper has ACKed a DHCP lease.
         if (state != DeviceNetworkTransport::State::Connected)
+        {
             ipValue.setText ("- (not linked yet)", juce::dontSendNotification);
             peerIpValue.setText ("- (not linked yet)", juce::dontSendNotification);
+        }
 
         const auto dot = connected && state == DeviceNetworkTransport::State::Connected ? juce::Colours::green
                        : connected ? juce::Colours::orange
@@ -425,6 +428,7 @@ private:
             return;
         }
         ipValue.setText ("-", juce::dontSendNotification);
+        peerIpValue.setText ("-", juce::dontSendNotification);
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
     }
@@ -433,6 +437,7 @@ private:
     AppleUsbNetworkTransport& usbTransport;
     juce::Label title, subtitle, deviceCaption, deviceLabel, adapterLabel,
                 connectionCaption, connectionLabel, ipCaption, ipValue,
+                peerIpCaption, peerIpValue,
                 rxCaption, rxValue, txCaption, txValue, activityTitle, statusDot,
                 uacNoteLabel;
     juce::TextEditor activityEditor;
