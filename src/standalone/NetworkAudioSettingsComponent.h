@@ -204,14 +204,14 @@ public:
                     updateStatus ("Could not start direct USB AOO backend");
                     return;
                 }
-                constexpr const char* peers[] = {
-                    "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2"
-                };
-                int configuredPeers = 0;
-                for (const auto* peer : peers)
-                    if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0)) ++configuredPeers;
-                updateStatus (configuredPeers > 0 ? utf8 ("Direct USB — listening on up to 4 Apple devices")
-                                                   : utf8 ("Direct USB — waiting for Apple devices"));
+                // The current isolated Apple USB Share link exposes one peer
+                // subnet at a time: Windows=.1, Apple device=.2. Do not create
+                // placeholder AOO runtimes for .100/.101/.102; those appear as
+                // phantom sources even when no additional Apple device exists.
+                constexpr const char* peer = "192.168.99.2";
+                const int configuredPeers = networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0) ? 1 : 0;
+                updateStatus (configuredPeers > 0 ? utf8 ("Direct USB — listening for Apple device")
+                                                   : utf8 ("Direct USB — waiting for Apple device"));
                 updateDirectUsbInstructions (true, configuredPeers);
             }
             else
@@ -489,8 +489,8 @@ private:
 
         directUsbInfoText = "Host: " + hostText + "\nPort: " + juce::String (kDirectUsbPort);
         if (configuredPeers > 0)
-            directUsbInfoText << "\n\nListening for up to " << configuredPeers
-                               << " Apple USB device(s). On the other device, open SonoBus and connect "
+            directUsbInfoText << "\n\nListening for " << configuredPeers
+                               << " Apple USB device. On the other device, open SonoBus and connect "
                                   "direct to the host/port above — nothing here confirms a device is "
                                   "connected yet.";
 
@@ -635,17 +635,15 @@ private:
                 return;
             }
 
-            constexpr const char* peers[] = {
-                "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2"
-            };
-            int configuredPeers = 0;
-            for (const auto* peer : peers)
-                if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0))
-                    ++configuredPeers;
+            // Only create the runtime for the Apple peer actually exposed by
+            // the current isolated USB network. Creating all four reserved
+            // subnets makes disconnected devices appear as phantom sources.
+            constexpr const char* peer = "192.168.99.2";
+            const int configuredPeers = networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0) ? 1 : 0;
 
             updateStatus (configuredPeers > 0
-                              ? utf8 ("Direct USB — listening on up to 4 Apple devices")
-                              : utf8 ("Direct USB backend started; waiting for Apple sources"));
+                              ? utf8 ("Direct USB — listening for Apple device")
+                              : utf8 ("Direct USB backend started; waiting for Apple source"));
             updateDirectUsbInstructions (true, configuredPeers);
             return;
         }
