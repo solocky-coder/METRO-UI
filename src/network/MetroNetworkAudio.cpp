@@ -1116,12 +1116,26 @@ public:
                 {
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     if (event->endpoint == nullptr || event->id == AOO_ID_WILDCARD) break;
-                    const auto key = makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id);
+
+                    const auto key =
+                        makeSourceKey (
+                            static_cast<const sockaddr_in*> (event->endpoint),
+                            event->id);
+
+                    // The runtime sink is now the sole owner of an invited
+                    // source. Do not mirror its format event into the
+                    // discovery sink.
                     auto* runtime = self->findRuntime (key);
                     if (runtime != nullptr && runtime->sink != nullptr)
-                        markFormat (self, key, runtime->sink.get(), event->endpoint, event->id);
-                    if (self->discoverySink != nullptr)
-                        markFormat (self, key, self->discoverySink.get(), event->endpoint, event->id);
+                    {
+                        markFormat (
+                            self,
+                            key,
+                            runtime->sink.get(),
+                            runtime->endpoint.get(),
+                            event->id);
+                    }
+
                     changed = true;
                     break;
                 }
