@@ -207,12 +207,12 @@ public:
                 constexpr const char* peers[] = {
                     "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2"
                 };
-                int connected = 0;
+                int configuredPeers = 0;
                 for (const auto* peer : peers)
-                    if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0)) ++connected;
-                updateStatus (connected > 0 ? utf8 ("Direct USB — listening on up to 4 Apple devices")
-                                            : utf8 ("Direct USB — waiting for Apple devices"));
-                updateDirectUsbInstructions (true, connected);
+                    if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0)) ++configuredPeers;
+                updateStatus (configuredPeers > 0 ? utf8 ("Direct USB — listening on up to 4 Apple devices")
+                                                   : utf8 ("Direct USB — waiting for Apple devices"));
+                updateDirectUsbInstructions (true, configuredPeers);
             }
             else
             {
@@ -462,7 +462,14 @@ private:
 
     // Builds the connect-info text and drives the small clickable prompt;
     // the actual readable display is the popup in showDirectUsbInfoPopup().
-    void updateDirectUsbInstructions (bool visible, int respondingPeers = 0)
+    //
+    // configuredPeers is how many of the hardcoded candidate addresses
+    // connectDirectPeer() accepted locally (valid IP string, backend
+    // running). AOO direct mode is UDP and connectDirectPeer() performs no
+    // handshake, so this count says nothing about whether a device is
+    // actually plugged in or listening on the other end — don't word the
+    // popup as if a peer has "responded".
+    void updateDirectUsbInstructions (bool visible, int configuredPeers = 0)
     {
         if (! visible)
         {
@@ -481,8 +488,11 @@ private:
                                    : hostAddresses.joinIntoString (" or ");
 
         directUsbInfoText = "Host: " + hostText + "\nPort: " + juce::String (kDirectUsbPort);
-        if (respondingPeers > 0)
-            directUsbInfoText << "\n\n" << respondingPeers << " Apple USB peer(s) already responding.";
+        if (configuredPeers > 0)
+            directUsbInfoText << "\n\nListening for up to " << configuredPeers
+                               << " Apple USB device(s). On the other device, open SonoBus and connect "
+                                  "direct to the host/port above — nothing here confirms a device is "
+                                  "connected yet.";
 
         directUsbInfoButton.setButtonText (hostAddresses.size() == 1
             ? ("SonoBus connect info (" + hostAddresses[0] + ":" + juce::String (kDirectUsbPort) + ")")
@@ -628,15 +638,15 @@ private:
             constexpr const char* peers[] = {
                 "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2"
             };
-            int connected = 0;
+            int configuredPeers = 0;
             for (const auto* peer : peers)
                 if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0))
-                    ++connected;
+                    ++configuredPeers;
 
-            updateStatus (connected > 0
+            updateStatus (configuredPeers > 0
                               ? utf8 ("Direct USB — listening on up to 4 Apple devices")
                               : utf8 ("Direct USB backend started; waiting for Apple sources"));
-            updateDirectUsbInstructions (true, connected);
+            updateDirectUsbInstructions (true, configuredPeers);
             return;
         }
 
