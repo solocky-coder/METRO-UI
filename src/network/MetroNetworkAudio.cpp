@@ -230,6 +230,17 @@ bool sameEndpoint (const sockaddr_in* a, const sockaddr_in* b) noexcept
         && a->sin_addr.s_addr == b->sin_addr.s_addr
         && a->sin_port == b->sin_port;
 }
+
+bool samePeerAddress (const sockaddr_in* a, const sockaddr_in* b) noexcept
+{
+    // AOO peer identity is the remote IP + source id. The UDP source port can
+    // change between the invited endpoint and the actual packets (for example
+    // iOS may send from an ephemeral port). Do not require the port to match
+    // when deciding which runtime owns an incoming packet.
+    return a != nullptr && b != nullptr
+        && a->sin_family == b->sin_family
+        && a->sin_addr.s_addr == b->sin_addr.s_addr;
+}
 }
 
 class MetroNetworkAudio::Impl
@@ -678,14 +689,29 @@ public:
                             || runtime->endpoint == nullptr)
                             continue;
 
-                        if (! sameEndpoint (runtime->endpoint.get(), &from))
+                        if (! samePeerAddress (runtime->endpoint.get(), &from))
                             continue;
+
+                        // The AOO source identity is keyed by peer address + source
+                        // ID, not by the UDP source port. A direct USB peer may have
+                        // been invited at port 9000 but send its actual UDP packets
+                        // from an ephemeral source port. Once a packet arrives,
+                        // retain the real packet endpoint so AOO replies and format
+                        // queries target the port that is actually sending traffic.
+                        if (runtime->endpoint != nullptr
+                            && ! sameEndpoint (runtime->endpoint.get(), &from))
+                        {
+                            aooDiag ("RX runtime endpoint updated from="
+                                     + endpointDebug (runtime->endpoint.get())
+                                     + " to=" + endpointDebug (&from));
+                            *runtime->endpoint = from;
+                        }
 
                         // The current packet path does not decode the AOO source
                         // ID before dispatch. For the existing METRO/SonoBus
                         // one-source-per-peer path, the matching runtime owns it.
-                        // If multiple sources share an endpoint, leave the packet
-                        // with discovery rather than guessing the wrong runtime.
+                        // If multiple sources share an IP, leave the packet with
+                        // discovery rather than guessing the wrong runtime.
                         if (targetRuntime != nullptr)
                         {
                             targetRuntime = nullptr;
