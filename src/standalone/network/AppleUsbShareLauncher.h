@@ -69,6 +69,17 @@ public:
     // the window after start() where the task is still being registered and
     // the helper has not been spawned yet (isRunning() is false then).
     bool isLaunching() const noexcept;
+
+    // Link progress parsed from the helper's ActivityLog.txt for the CURRENT
+    // session only (history from earlier sessions is skipped, and every flag
+    // is cleared on start()/stop() and when the helper logs a new session).
+    // "Windows sees a usbncm adapter" is NOT proof the phone is linked - a
+    // stale adapter from an earlier session stays "up" - so the UI uses these
+    // instead: the helper's isolated network is ready, the phone has sent a
+    // DHCP request, and the helper has ACKed a lease to it.
+    bool isUsbNetworkReady() const noexcept   { return networkReady.load (std::memory_order_acquire); }
+    bool hasSeenDhcpRequest() const noexcept  { return dhcpRequestSeen.load (std::memory_order_acquire); }
+    bool hasDhcpLease() const noexcept        { return dhcpLeased.load (std::memory_order_acquire); }
     juce::String status() const;
 
     // The old engine derived these from its own in-process adapter scan.
@@ -81,6 +92,12 @@ public:
 private:
     LogCallback logCallback;
     std::atomic<bool> running { false };
+
+    std::atomic<bool> networkReady { false };
+    std::atomic<bool> dhcpRequestSeen { false };
+    std::atomic<bool> dhcpLeased { false };
+    void resetLinkProgress() noexcept;
+    void noteHelperLogLine (const juce::String& line); // thread-safe; called from the tail thread
 
     juce::CriticalSection statusLock;
     juce::String currentStatus { "Apple USB service stopped" };

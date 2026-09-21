@@ -55,6 +55,8 @@ AppleUsbNetworkTransport::AppleUsbNetworkTransport()
     launcher = std::make_unique<AppleUsbShareLauncher> ([this] (const juce::String& message)
     {
         currentStatus = message;
+        if (activityCallback)
+            activityCallback (message);
     });
 }
 
@@ -185,17 +187,35 @@ void AppleUsbNetworkTransport::poll()
         return;
     }
 
-    bool connected = false;
-    for (const auto& device : enumerate())
-        if (device.kind == Kind::AppleUsb && device.connected)
-        {
-            connected = true;
-            break;
-        }
+    // Connected used to mean "some usbncm adapter reports up". That stays true
+    // after a session ends (Windows keeps the adapter), so a later run showed
+    // "ready" while the helper had not even started and the phone never linked.
+    // Now it requires the helper to have ACKed a DHCP lease to the phone in
+    // THIS session (parsed from its ActivityLog.txt).
+    const bool linkUp = launcher != nullptr && launcher->hasDhcpLease();
 
-    currentState.store (connected ? State::Connected : State::Starting, std::memory_order_release);
-    if (connected)
-        currentStatus = "USB reverse tethering ready";
+    currentState.store (linkUp ? State::Connected : State::Starting, std::memory_order_release);
+    if (linkUp)
+        currentStatus = "Direct USB link is up (isolated USB network, no Internet sharing)";
+}
+
+juce::String AppleUsbNetworkTransport::linkStatus() const
+{
+    const auto st = currentState.load (std::memory_order_acquire);
+    if (st != State::Starting && st != State::Connected)
+        return currentStatus;
+
+    if (launcher != nullptr)
+    {
+        if (launcher->hasDhcpLease())
+            return "Direct USB link is up (isolated USB network, no Internet sharing)";
+        if (launcher->hasSeenDhcpRequest())
+            return "DHCP request received - completing handshake...";
+        if (launcher->isUsbNetworkReady())
+            return "Waiting for Ios Device (no DHCP request yet)";
+    }
+
+    return "Starting Direct USB link...";
 }
 
 juce::String AppleUsbNetworkTransport::status() const

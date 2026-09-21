@@ -32,6 +32,20 @@ public:
     // don't need it.
     void poll();
 
+    // Text describing how far the Direct USB bring-up has got, for the UI
+    // while state() is Starting/Connected (otherwise the last status()).
+    // Connected is only reported once the helper has ACKed a DHCP lease to the
+    // phone in the current session; until the phone asks for an address this
+    // reads "Waiting for Ios Device (no DHCP request yet)".
+    juce::String linkStatus() const;
+
+    // Receives helper milestones/errors (already filtered) on the message
+    // thread so the UI can show them in its Activity box. Pass {} to clear.
+    void setActivityCallback (std::function<void (const juce::String&)> callback)
+    {
+        activityCallback = std::move (callback);
+    }
+
 private:
     std::atomic<State> currentState { State::Stopped };
     // A manual Stop suppresses the arrival-triggered auto-start until the
@@ -40,4 +54,5 @@ private:
     std::atomic<bool> manualStop { false };
     juce::String currentStatus { "No USB device network interface detected" };
     std::unique_ptr<AppleUsbShareLauncher> launcher;
+    std::function<void (const juce::String&)> activityCallback;
 };

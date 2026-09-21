@@ -63,6 +63,42 @@ void AppleUsbShareLauncher::log (const juce::String& message)
         logCallback (message);
 }
 
+void AppleUsbShareLauncher::resetLinkProgress() noexcept
+{
+    networkReady.store (false, std::memory_order_release);
+    dhcpRequestSeen.store (false, std::memory_order_release);
+    dhcpLeased.store (false, std::memory_order_release);
+}
+
+void AppleUsbShareLauncher::noteHelperLogLine (const juce::String& line)
+{
+    // A new helper session (or the end of one) invalidates whatever the
+    // previous session established.
+    if (line.contains ("iPhoneUsbShare session started")
+        || line.contains ("Stop signal received")
+        || line.contains ("Sharing stopped"))
+    {
+        resetLinkProgress();
+        return;
+    }
+
+    if (line.contains ("Isolated USB network ready"))
+    {
+        networkReady.store (true, std::memory_order_release);
+    }
+    else if (line.contains ("DHCP DISCOVER received")
+             || line.contains ("DHCP REQUEST received")
+             || line.contains ("DHCP OFFER sent"))
+    {
+        dhcpRequestSeen.store (true, std::memory_order_release);
+    }
+    else if (line.contains ("DHCP ACK sent"))
+    {
+        dhcpRequestSeen.store (true, std::memory_order_release);
+        dhcpLeased.store (true, std::memory_order_release);
+    }
+}
+
 void AppleUsbShareLauncher::postLog (const juce::String& message)
 {
     auto flag = aliveFlag;
@@ -307,6 +343,46 @@ namespace
     }
 }
 
+namespace
+{
+    // ActivityLog.txt is very chatty (hundreds of "SetupAPI candidate" lines,
+    // multi-line pnputil dumps). Only forward the lines a user needs to follow
+    // the bring-up, plus anything that looks like a failure.
+    bool isHelperMilestoneLine (const juce::String& line)
+    {
+        static const char* const milestones[] =
+        {
+            "Share mode:", "Apple device found", "Selecting NCM configuration",
+            "SET_CONFIGURATION", "SET_MODE", "UsbNcm produced a usable adapter",
+            "Isolated DHCP server listening", "Isolated USB network ready",
+            "DHCP ", "Stop signal received", "Sharing stopped",
+            "iPhoneUsbShare session started"
+        };
+
+        for (auto* m : milestones)
+            if (line.contains (m))
+                return true;
+
+        if (line.contains ("driver-state query failed") || line.contains ("SetupAPI candidate"))
+            return false;
+
+        return line.contains ("ERROR") || line.contains ("Exception") || line.containsIgnoreCase ("failed");
+    }
+
+    // Helper lines look like "[2026-09-21 12:12:33.441] message"; the UI adds
+    // its own timestamp, so drop the helper's.
+    juce::String stripHelperTimestamp (const juce::String& line)
+    {
+        if (line.startsWithChar ('['))
+        {
+            const auto rest = line.fromFirstOccurrenceOf ("] ", false, false);
+            if (rest.isNotEmpty())
+                return rest;
+        }
+        return line;
+    }
+}
+
 // Owns the background thread that: registers + runs the elevated task via
 // Task Scheduler, opens a normal process HANDLE for the PID it returns, then
 // tails ActivityLog.txt and watches that handle until stop() signals it to
@@ -333,6 +409,14 @@ public:
             owner.postLog (hrError ("could not initialize COM for Task Scheduler", com.hr));
             return;
         }
+
+        // Start tailing from the END of the existing log. Previously this
+        // began at byte 0 and replayed every earlier session, so a stale
+        // "DHCP ACK" from an old run could have looked like a live link.
+        // Captured before the helper is launched so nothing it writes is missed.
+        const auto logFile = AppleUsbShareLauncher::activityLogPath();
+        juce::int64 byteOffset = logFile.existsAsFile() ? logFile.getSize() : 0;
+        juce::String pendingText; // trailing partial line carried to the next read
 
         owner.postLog ("Registering iPhoneUsbShare as a scheduled task (elevated, no repeat prompts)...");
 
@@ -372,9 +456,6 @@ public:
         owner.running.store (true, std::memory_order_release);
         owner.postLog ("iPhoneUsbShare helper started (PID " + juce::String ((int) pid) + "); waiting for USB handshake...");
 
-        const auto logFile = AppleUsbShareLauncher::activityLogPath();
-        juce::int64 byteOffset = 0;
-
         while (! threadShouldExit())
         {
             // Tail ActivityLog.txt by byte offset — this is the entire IPC
@@ -390,17 +471,36 @@ public:
                     if (in.openedOk())
                     {
                         in.setPosition (byteOffset);
-                        const auto chunk = in.readString();
+                        auto chunk = pendingText + in.readString();
                         byteOffset = in.getPosition();
+                        pendingText = {};
+
+                        // Only act on complete lines: a marker split across two
+                        // reads would otherwise be missed and the UI would sit
+                        // on "waiting" forever.
+                        if (! chunk.endsWithChar ('\n'))
+                        {
+                            const int lastNewline = chunk.lastIndexOfChar ('\n');
+                            pendingText = lastNewline >= 0 ? chunk.substring (lastNewline + 1) : chunk;
+                            chunk = lastNewline >= 0 ? chunk.substring (0, lastNewline + 1) : juce::String();
+                        }
+
                         for (const auto& line : juce::StringArray::fromLines (chunk))
-                            if (line.isNotEmpty())
-                                owner.postLog (line);
+                        {
+                            if (line.isEmpty())
+                                continue;
+
+                            owner.noteHelperLogLine (line);
+                            if (isHelperMilestoneLine (line))
+                                owner.postLog (stripHelperTimestamp (line));
+                        }
                     }
                 }
                 else if (size < byteOffset)
                 {
                     // Helper's own log restarted (new session) — re-read from the top.
                     byteOffset = 0;
+                    pendingText = {};
                 }
             }
 
@@ -464,6 +564,7 @@ bool AppleUsbShareLauncher::start()
     }
 
     running.store (false, std::memory_order_release); // set true by LaunchThread once the process actually starts
+    resetLinkProgress();
     launchThread = std::make_unique<LaunchThread> (*this);
     launchThread->startThread();
     return true;
@@ -476,6 +577,7 @@ bool AppleUsbShareLauncher::start()
 
 void AppleUsbShareLauncher::stop()
 {
+    resetLinkProgress();
 #if JUCE_WINDOWS
     if (stopEvent != nullptr)
         SetEvent (stopEvent);

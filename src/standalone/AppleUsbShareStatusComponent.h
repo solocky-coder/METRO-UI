@@ -88,7 +88,7 @@ public:
         {
             startButton.setEnabled (false);
             stopButton.setEnabled (false);
-            appendActivity ("Starting USB network path...");
+            appendActivity ("Starting Direct USB link...");
             // start() is asynchronous now — a `true` return only means the
             // elevated helper launch is underway (a UAC prompt is likely
             // about to appear), not that sharing is live. poll(), called
@@ -97,7 +97,7 @@ public:
             const bool launchStarted = usbTransport.start ({});
             if (launchStarted)
             {
-                appendActivity ("Launching USB helper (Windows may show an administrator prompt)...");
+                appendActivity ("Launching Direct USB helper (Windows may show an administrator prompt)...");
                 stopButton.setEnabled (true);
             }
             else
@@ -111,10 +111,10 @@ public:
         stopButton.onClick = [this]
         {
             stopButton.setEnabled (false);
-            appendActivity ("Stopping USB network path...");
+            appendActivity ("Stopping Direct USB link...");
             usbTransport.stop();
             startButton.setEnabled (true);
-            appendActivity ("USB network path stopped.");
+            appendActivity ("Direct USB link stopped.");
             refresh();
         };
 
@@ -147,11 +147,16 @@ public:
         for (auto* component : components)
             addAndMakeVisible (*component);
 
+        usbTransport.setActivityCallback ([this] (const juce::String& message) { appendActivity (message); });
         startTimerHz (2);
         refresh();
     }
 
-    ~AppleUsbShareStatusComponent() override { stopTimer(); }
+    ~AppleUsbShareStatusComponent() override
+    {
+        usbTransport.setActivityCallback ({});
+        stopTimer();
+    }
 
     void resized() override
     {
@@ -206,14 +211,22 @@ private:
     void timerCallback() override
     {
         usbTransport.poll();
-        // Surface helper/launcher progress and failure reasons in the Activity
-        // box; previously only the two hard-coded lines from the Start button
-        // ever appeared, so a launch failure was invisible.
-        const auto status = usbTransport.status();
-        if (status.isNotEmpty() && status != lastLoggedStatus)
+        // Log each change of bring-up phase once (e.g. "Waiting for Ios Device
+        // (no DHCP request yet)" -> "Direct USB link is up"). Helper milestones
+        // and errors arrive separately through the transport's activity callback.
+        const auto st = usbTransport.state();
+        if (st == DeviceNetworkTransport::State::Starting || st == DeviceNetworkTransport::State::Connected)
         {
-            lastLoggedStatus = status;
-            appendActivity (status);
+            const auto phase = usbTransport.linkStatus();
+            if (phase != lastLoggedPhase)
+            {
+                lastLoggedPhase = phase;
+                appendActivity (phase);
+            }
+        }
+        else
+        {
+            lastLoggedPhase = {};
         }
         refresh();
     }
@@ -246,7 +259,7 @@ private:
             deviceText << (device.connected ? "[USB] " : "[--] ")
                        << (device.name.isNotEmpty() ? device.name : "Apple USB device")
                        << "  |  " << (device.interfaceName.isNotEmpty() ? device.interfaceName : "USB Ethernet")
-                       << "  |  " << (device.connected ? "CONNECTED" : "WAITING");
+                       << "  |  " << (device.connected ? "ADAPTER UP" : "WAITING");
         }
 
         if (appleCount == 0)
@@ -261,10 +274,10 @@ private:
                                juce::dontSendNotification);
 
         connectionLabel.setText (
-            state == DeviceNetworkTransport::State::Connected ? "USB network path is ON"
-            : state == DeviceNetworkTransport::State::Starting ? "Detecting Apple USB device / starting service..."
-            : state == DeviceNetworkTransport::State::Error ? "USB service error"
-            : connected ? "Apple USB device detected - starting service..."
+            state == DeviceNetworkTransport::State::Connected ? "DIRECT USB is ON - isolated USB link active"
+            : state == DeviceNetworkTransport::State::Starting ? usbTransport.linkStatus()
+            : state == DeviceNetworkTransport::State::Error ? "Direct USB error - see Activity"
+            : connected ? "Apple USB device detected - starting Direct USB..."
                         : "Waiting for iPhone or iPad over USB",
             juce::dontSendNotification);
 
@@ -361,7 +374,7 @@ private:
                 rxCaption, rxValue, txCaption, txValue, activityTitle, statusDot,
                 uacNoteLabel;
     juce::TextEditor activityEditor;
-    juce::String lastLoggedStatus;
+    juce::String lastLoggedPhase;
     juce::TextButton startButton, stopButton, diagnosticsButton;
 #if JUCE_WINDOWS
     ULONG64 lastRx = 0, lastTx = 0;
