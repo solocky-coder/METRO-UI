@@ -737,7 +737,7 @@ private:
             const auto sources = owner->getSources();
             int count = 0;
             for (const auto& source : sources)
-                if (source.online && source.channels > 0 && source.sampleRate > 0.0)
+                if (source.online)
                     ++count;
             return count;
 #else
@@ -756,7 +756,7 @@ private:
             int visibleRow = 0;
             for (const auto& candidate : sources)
             {
-                if (! candidate.online || candidate.channels <= 0 || candidate.sampleRate <= 0.0)
+                if (! candidate.online)
                     continue;
                 if (visibleRow++ == rowNumber)
                 {
@@ -772,8 +772,10 @@ private:
 
             const auto& s = *source;
             const auto name = s.user.isNotEmpty() ? s.user : "Unknown source";
-            const auto details = s.group + "  |  " + juce::String (s.channels)
-                               + " ch  |  " + juce::String (s.sampleRate, 0) + " Hz"
+            const auto details = s.group + "  |  "
+                               + (s.channels > 0 && s.sampleRate > 0.0
+                                      ? juce::String (s.channels) + " ch  |  " + juce::String (s.sampleRate, 0) + " Hz"
+                                      : juce::String ("waiting for source format"))
                                + "  |  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";
 
             g.setColour (s.online ? juce::Colours::white : juce::Colours::grey);
