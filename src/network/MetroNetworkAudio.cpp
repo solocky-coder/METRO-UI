@@ -373,7 +373,28 @@ public:
 
         // SOURCE_ADD and SOURCE_FORMAT may both reach this function. Once a
         // runtime exists, simply reuse it. Never invite an existing source.
-        if (auto* existing = findRuntime (sourceKey))
+        // Direct USB is special: the Apple source may change its UDP source
+        // port. Do not use the endpoint port as the runtime identity or a
+        // second runtime/source will be created for the same iPad.
+        SourceRuntime* existing = findRuntime (sourceKey);
+
+        if (directMode.load (std::memory_order_acquire))
+        {
+            for (auto& slot : runtimeSlots)
+            {
+                auto* candidate = slot.load (std::memory_order_acquire);
+                if (candidate != nullptr
+                    && candidate->sourceId == sourceId
+                    && candidate->endpoint != nullptr
+                    && samePeerAddress (candidate->endpoint.get(), endpoint))
+                {
+                    existing = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (existing != nullptr)
         {
             if (existing->endpoint != nullptr
                 && ! sameEndpoint (existing->endpoint.get(), endpoint))
