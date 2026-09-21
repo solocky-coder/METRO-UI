@@ -326,9 +326,20 @@ public:
 
     bool isDirectPeerAddress (const sockaddr_in* endpoint) const
     {
+        if (endpoint == nullptr)
+            return false;
+
+        // In Direct USB mode we no longer pre-create runtimes for possible
+        // Apple addresses. The isolated USB network uses 192.168.99.0/24,
+        // with the Apple peer normally at .2. Accept packets from that
+        // isolated subnet and let the first real packet create the runtime.
+        const auto hostOrder = ntohl (endpoint->sin_addr.s_addr);
+        if ((hostOrder & 0xFFFFFF00u) == 0xC0A86300u)
+            return true;
+
         std::lock_guard<std::mutex> lock (stateMutex);
         for (const auto& peer : peers)
-            if (peer.endpoint != nullptr && endpoint != nullptr
+            if (peer.endpoint != nullptr
                 && peer.endpoint->sin_addr.s_addr == endpoint->sin_addr.s_addr)
                 return true;
         return false;
@@ -700,10 +711,38 @@ public:
                              + endpointDebug (discoveryEndpoint.get()));
 
                     // Route each UDP packet to exactly one sink.
-                    // Once a dedicated runtime exists for this peer, it owns
-                    // the source traffic; discovery must not also consume the
-                    // same packet and generate a second AOO state machine.
+                    // In Direct USB mode runtimes are created lazily from the
+                    // first real packet. This prevents a disconnected/no-USB
+                    // state from manufacturing a visible source in the UI.
                     SourceRuntime* targetRuntime = nullptr;
+
+                    if (directMode.load (std::memory_order_acquire))
+                    {
+                        for (auto& slot : runtimeSlots)
+                        {
+                            auto* runtime = slot.load (std::memory_order_acquire);
+                            if (runtime != nullptr && runtime->endpoint != nullptr
+                                && samePeerAddress (runtime->endpoint.get(), &from))
+                            {
+                                targetRuntime = runtime;
+                                break;
+                            }
+                        }
+
+                        if (targetRuntime == nullptr)
+                        {
+                            targetRuntime = createRuntime (0, &from);
+                            if (targetRuntime != nullptr)
+                            {
+                                aooDiag ("RX direct USB created runtime from real peer packet"
+                                         " sourceId=0 endpoint=" + endpointDebug (&from));
+
+                                std::lock_guard<std::mutex> lock (stateMutex);
+                                peers.push_back ({ std::make_shared<sockaddr_in> (from), "USB",
+                                                   juce::String (inet_ntoa (from.sin_addr)) });
+                            }
+                        }
+                    }
 
                     // runtimeSlots is the cross-thread publication mechanism.
                     // Do not iterate the owning vector here: direct-peer runtimes
