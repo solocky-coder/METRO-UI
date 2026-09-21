@@ -184,6 +184,11 @@ private:
                          isActive ? juce::Colour (0xff2d8fd6) : juce::Colour (0xff2a2a30));
             b.setColour (juce::TextButton::textColourOffId,
                          isActive ? juce::Colours::white : juce::Colours::lightgrey);
+            // DysektLookAndFeel ignores buttonColourId for normal buttons; a
+            // toggled button is what it fills with the theme accent, so use
+            // the toggle state to make the active tab visibly highlighted.
+            b.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+            b.setToggleState (isActive, juce::dontSendNotification);
         };
         style (tabSonoBusButton, ! active);
         style (tabUsbButton, active);

@@ -74,6 +74,13 @@ public:
         diagnosticsButton.setButtonText ("Diagnostics");
         stopButton.setEnabled (false);
 
+        // DysektLookAndFeel draws a disabled button exactly like an enabled
+        // one and ignores buttonColourId unless "flatFill" is set. Opt these
+        // two in and colour them ourselves (see updateActionButtons()) so it
+        // is obvious at a glance which of Start / Stop can be pressed.
+        startButton.getProperties().set ("flatFill", true);
+        stopButton.getProperties().set ("flatFill", true);
+
         // USB sharing runs via a separate helper that must run elevated
         // (see docs/APPLE_USB_SHARE_STANDALONE_MIGRATION.md); this is here
         // so the resulting UAC prompt reads as expected rather than as a
@@ -86,34 +93,27 @@ public:
 
         startButton.onClick = [this]
         {
-            startButton.setEnabled (false);
-            stopButton.setEnabled (false);
             appendActivity ("Starting Direct USB link...");
             // start() is asynchronous now — a `true` return only means the
             // elevated helper launch is underway (a UAC prompt is likely
             // about to appear), not that sharing is live. poll(), called
             // from timerCallback() below, is what resolves Starting into
             // Connected/Error once the outcome is actually known.
-            const bool launchStarted = usbTransport.start ({});
-            if (launchStarted)
-            {
+            if (usbTransport.start ({}))
                 appendActivity ("Launching Direct USB helper (Windows may show an administrator prompt)...");
-                stopButton.setEnabled (true);
-            }
             else
-            {
                 appendActivity ("ERROR: " + usbTransport.status());
-                startButton.setEnabled (true);
-            }
+
+            // Which of Start / Stop is available is derived from the
+            // transport state in refresh(), so it is also correct when
+            // sharing was started automatically rather than by this button.
             refresh();
         };
 
         stopButton.onClick = [this]
         {
-            stopButton.setEnabled (false);
             appendActivity ("Stopping Direct USB link...");
             usbTransport.stop();
-            startButton.setEnabled (true);
             appendActivity ("Direct USB link stopped.");
             refresh();
         };
@@ -231,6 +231,63 @@ private:
         refresh();
     }
 
+    // Start / Stop availability follows the transport state, whichever path
+    // changed it (button, arrival auto-start, error, unplug):
+    //   Stopped / Error      -> Start available, Stop not
+    //   Starting / Connected -> Stop available, Start not
+    // Available buttons are solid (green / red) with white text; unavailable
+    // ones are flat dark with dim text, and the hint line says what to do.
+    void updateActionButtons (DeviceNetworkTransport::State state)
+    {
+        using S = DeviceNetworkTransport::State;
+        const bool canStart = (state == S::Stopped || state == S::Error);
+        const bool canStop  = (state == S::Starting || state == S::Connected);
+
+        if (startButton.isEnabled() != canStart) startButton.setEnabled (canStart);
+        if (stopButton.isEnabled()  != canStop)  stopButton.setEnabled (canStop);
+
+        styleActionButton (startButton, canStart, juce::Colour (0xff2a9d5c));
+        styleActionButton (stopButton,  canStop,  juce::Colour (0xffc23b3b));
+
+        juce::String hint, startTip, stopTip;
+        switch (state)
+        {
+            case S::Starting:
+                hint     = "Starting - please wait, this can take 30-40 seconds. Stop cancels it.";
+                startTip = "Already starting - wait for the link to come up.";
+                stopTip  = "Cancel and stop Direct USB sharing.";
+                break;
+            case S::Connected:
+                hint     = "Sharing is active. Click Stop to end it.";
+                startTip = "Sharing is already active.";
+                stopTip  = "Stop Direct USB sharing.";
+                break;
+            case S::Error:
+                hint     = "Sharing failed - see Activity, then click Start sharing to try again.";
+                startTip = "Try starting Direct USB sharing again.";
+                stopTip  = "Nothing to stop - sharing is not running.";
+                break;
+            default:
+                hint     = "Sharing is stopped. Click Start sharing to begin "
+                           "(Windows asks for administrator permission the first time).";
+                startTip = "Start Direct USB sharing.";
+                stopTip  = "Nothing to stop - sharing is not running.";
+                break;
+        }
+
+        uacNoteLabel.setText (hint, juce::dontSendNotification);
+        uacNoteLabel.setColour (juce::Label::textColourId,
+                                state == S::Error ? juce::Colours::orange : juce::Colours::lightgrey);
+        startButton.setTooltip (startTip);
+        stopButton.setTooltip (stopTip);
+    }
+
+    static void styleActionButton (juce::TextButton& b, bool available, juce::Colour availableFill)
+    {
+        b.setColour (juce::TextButton::buttonColourId, available ? availableFill : juce::Colour (0xff17171d));
+        b.setColour (juce::TextButton::textColourOffId, available ? juce::Colours::white : juce::Colour (0xff5c5c68));
+    }
+
     void refresh()
     {
         const auto state = usbTransport.state();
@@ -283,19 +340,7 @@ private:
                         : "Waiting for iPhone or iPad over USB",
             juce::dontSendNotification);
 
-        if (state == DeviceNetworkTransport::State::Error || state == DeviceNetworkTransport::State::Stopped)
-        {
-            if (state == DeviceNetworkTransport::State::Error)
-            {
-                if (! startButton.isEnabled()) startButton.setEnabled (true);
-                if (stopButton.isEnabled()) stopButton.setEnabled (false);
-            }
-            else
-            {
-                if (! startButton.isEnabled()) startButton.setEnabled (true);
-                if (stopButton.isEnabled()) stopButton.setEnabled (false);
-            }
-        }
+        updateActionButtons (state);
 
 #if JUCE_WINDOWS
         updateNetworkMetrics (firstConnectedAdapter);
