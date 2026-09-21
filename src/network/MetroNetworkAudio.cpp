@@ -431,6 +431,20 @@ public:
 
             runtimes.push_back (std::move (runtime));
 
+            // Direct USB peers do not pass through the AOO network client's
+            // PEER_JOIN/SOURCE_ADD discovery path. Publish the configured
+            // runtime as a source immediately so the UI can represent it;
+            // markFormat() will fill in the actual channel count/sample rate
+            // once the remote source completes the AOO format handshake.
+            SourceInfo info;
+            info.sourceKey = sourceKey;
+            info.sourceId = sourceId;
+            info.user = "USB";
+            info.group = "Direct USB";
+            info.online = true;
+            upsertSource (info);
+            notifySourceChange (this);
+
             // The only place a dedicated runtime is invited. This is the
             // New -> Invited transition and happens at most once per runtime.
             const auto result = raw->sink->invite_source (
