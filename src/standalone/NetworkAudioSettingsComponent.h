@@ -204,14 +204,11 @@ public:
                     updateStatus ("Could not start direct USB AOO backend");
                     return;
                 }
-                // The current isolated Apple USB Share link exposes one peer
-                // subnet at a time: Windows=.1, Apple device=.2. Do not create
-                // placeholder AOO runtimes for .100/.101/.102; those appear as
-                // phantom sources even when no additional Apple device exists.
-                constexpr const char* peer = "192.168.99.2";
-                const int configuredPeers = networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0) ? 1 : 0;
-                updateStatus (configuredPeers > 0 ? utf8 ("Direct USB — listening for Apple device")
-                                                   : utf8 ("Direct USB — waiting for Apple device"));
+                // Do not create an AOO runtime here. Direct USB runtimes are
+                // created lazily by MetroNetworkAudio when the first real UDP
+                // packet arrives from the isolated Apple peer. With no USB device
+                // connected, the Sources list must remain empty.
+                updateStatus (utf8 ("Direct USB — waiting for Apple device"));
                 updateDirectUsbInstructions (true, configuredPeers);
             }
             else
@@ -635,15 +632,11 @@ private:
                 return;
             }
 
-            // Only create the runtime for the Apple peer actually exposed by
-            // the current isolated USB network. Creating all four reserved
-            // subnets makes disconnected devices appear as phantom sources.
-            constexpr const char* peer = "192.168.99.2";
-            const int configuredPeers = networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0) ? 1 : 0;
+            // Do not pre-create a source. The AOO runtime is created only
+            // when an actual UDP packet arrives from the isolated Apple peer.
+            const int configuredPeers = 0;
 
-            updateStatus (configuredPeers > 0
-                              ? utf8 ("Direct USB — listening for Apple device")
-                              : utf8 ("Direct USB backend started; waiting for Apple source"));
+            updateStatus (utf8 ("Direct USB backend started; waiting for Apple source"));
             updateDirectUsbInstructions (true, configuredPeers);
             return;
         }
