@@ -730,7 +730,7 @@ public:
                             break;
                         }
 
-                        targetRuntime = runtime.get();
+                        targetRuntime = runtime;
                     }
 
                     if (targetRuntime != nullptr)
