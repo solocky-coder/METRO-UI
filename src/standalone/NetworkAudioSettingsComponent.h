@@ -208,6 +208,8 @@ public:
                 // created lazily by MetroNetworkAudio when the first real UDP
                 // packet arrives from the isolated Apple peer. With no USB device
                 // connected, the Sources list must remain empty.
+                const int configuredPeers = 0;
+
                 updateStatus (utf8 ("Direct USB — waiting for Apple device"));
                 updateDirectUsbInstructions (true, configuredPeers);
             }
