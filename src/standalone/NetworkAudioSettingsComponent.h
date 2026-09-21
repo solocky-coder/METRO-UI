@@ -142,9 +142,6 @@ public:
         };
         addAndMakeVisible (monitorButton);
 
-        meterLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-        addAndMakeVisible (meterLabel);
-
         serverLabel.setText ("Server", juce::dontSendNotification);
         portLabel.setText ("Port", juce::dontSendNotification);
         userLabel.setText ("User", juce::dontSendNotification);
@@ -327,7 +324,6 @@ public:
         auto area = getLocalBounds().reduced (kPad);
         auto headerRow = area.removeFromTop (26);
         networkTitle.setBounds (headerRow.removeFromLeft (300));
-        directUsbButton.setBounds (getWidth() - 372, 0, 140, 26);
         area.removeFromTop (2);
         transportLabel.setBounds (area.removeFromTop (18));
         area.removeFromTop (kSectionGap);
@@ -353,7 +349,7 @@ public:
         auto channelHeaderRow = channelInner.removeFromTop (kRowH);
         enableButton.setBounds (channelHeaderRow.removeFromLeft (220));
         channelHeaderRow.removeFromLeft (10);
-        meterLabel.setBounds (channelHeaderRow);
+        directUsbButton.setBounds (channelHeaderRow.removeFromLeft (140));
         channelInner.removeFromTop (kRowGap);
 
         auto gainRow = channelInner.removeFromTop (kRowH);
@@ -607,12 +603,6 @@ private:
     void timerCallback() override
     {
         refreshSources();
-        const auto& state = getNetworkAudioChannelState();
-        const float left = state.peakL.load (std::memory_order_relaxed);
-        const float right = state.peakR.load (std::memory_order_relaxed);
-        meterLabel.setText ("L " + juce::String (juce::Decibels::gainToDecibels (juce::jmax (left, 0.00001f)), 1)
-                            + " dB   R " + juce::String (juce::Decibels::gainToDecibels (juce::jmax (right, 0.00001f)), 1) + " dB",
-                            juce::dontSendNotification);
     }
 
     void connectClicked()
@@ -815,7 +805,6 @@ private:
     juce::ToggleButton soloButton;
     juce::ToggleButton recordArmButton;
     juce::ToggleButton monitorButton;
-    juce::Label meterLabel;
     juce::Label serverLabel;
     juce::TextEditor serverEditor;
     juce::Label portLabel;
