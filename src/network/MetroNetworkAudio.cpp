@@ -667,7 +667,10 @@ public:
                 if (n > 0)
                 {
                     aooDiag ("RX packet bytes=" + juce::String (n)
-                             + " from=" + endpointDebug (&from));
+                             + " from=" + endpointDebug (&from)
+                             + " head="
+                             + juce::String::toHexString (reinterpret_cast<const uint8_t*> (packet.data()),
+                                                          static_cast<int> (std::min (n, 24))));
 
                     if (directMode.load (std::memory_order_acquire) && ! isDirectPeerAddress (&from))
                     {
@@ -753,11 +756,15 @@ public:
                                  " sourceId=" + juce::String (targetRuntime->sourceId)
                                  + " endpoint=" + endpointDebug (targetRuntime->endpoint.get()));
 
-                        targetRuntime->sink->handle_message (
+                        const auto handled = targetRuntime->sink->handle_message (
                             packet.data(),
                             n,
                             targetRuntime->endpoint.get(),
                             sendAooReply);
+                        aooDiag ("RX runtime handle_message result="
+                                 + juce::String (handled)
+                                 + " sourceId=" + juce::String (targetRuntime->sourceId)
+                                 + " bytes=" + juce::String (n));
                     }
                     else if (discoverySink != nullptr)
                     {
@@ -786,7 +793,13 @@ public:
             {
                 auto* runtime = slot.load (std::memory_order_acquire);
                 if (runtime != nullptr && runtime->sink != nullptr)
-                    runtime->sink->send();
+                {
+                    const auto sent = runtime->sink->send();
+                    if (sent > 0)
+                        aooDiag ("TX runtime send result=" + juce::String (sent)
+                                 + " sourceId=" + juce::String (runtime->sourceId)
+                                 + " endpoint=" + endpointDebug (runtime->endpoint.get()));
+                }
             }
 
             if (! directMode.load (std::memory_order_acquire)
@@ -1173,6 +1186,7 @@ public:
     static int32_t sourceEventHandler (void* user, const aoo_event** events, int32_t count)
     {
         auto* self = static_cast<Impl*> (user);
+        aooDiag ("RUNTIME events count=" + juce::String (count));
         bool changed = false;
         for (int32_t i = 0; i < count; ++i)
         {
