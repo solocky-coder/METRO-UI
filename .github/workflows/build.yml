@@ -124,6 +124,31 @@ jobs:
       - name: Install FluidSynth via vcpkg (static)
         shell: pwsh
         run: |
+          # vcpkg's gcem port downloads a GitHub archive. GitHub's archive
+          # endpoint can transiently return 504 on hosted runners; prefetch
+          # the exact distfile into vcpkg's download cache with a longer
+          # retry window so vcpkg can consume the cached file.
+          $downloads = Join-Path $env:VCPKG_INSTALLATION_ROOT "downloads"
+          New-Item -ItemType Directory -Force -Path $downloads | Out-Null
+          $gcemUrl = "https://github.com/kthohr/gcem/archive/v1.18.0.tar.gz"
+          $gcemFile = Join-Path $downloads "kthohr-gcem-v1.18.0.tar.gz"
+          if (-not (Test-Path $gcemFile)) {
+            for ($attempt = 1; $attempt -le 8; $attempt++) {
+              try {
+                Write-Host "Downloading gcem v1.18.0 (attempt $attempt/8)..."
+                Invoke-WebRequest -Uri $gcemUrl -OutFile $gcemFile -UseBasicParsing -TimeoutSec 120
+                if ((Get-Item $gcemFile).Length -gt 10000) {
+                  break
+                }
+                Remove-Item -Force $gcemFile -ErrorAction SilentlyContinue
+                throw "Downloaded gcem archive is unexpectedly small."
+              } catch {
+                Remove-Item -Force $gcemFile -ErrorAction SilentlyContinue
+                if ($attempt -eq 8) { throw }
+                Start-Sleep -Seconds ([Math]::Min(30, 3 * $attempt))
+              }
+            }
+          }
           vcpkg install fluidsynth:x64-windows-static-md
           $vcpkgBin = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md\bin"
           if (Test-Path $vcpkgBin) {
