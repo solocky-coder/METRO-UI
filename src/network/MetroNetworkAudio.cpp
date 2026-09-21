@@ -661,7 +661,13 @@ public:
                         continue;
                     }
 
-                    client->handle_message (packet.data(), n, &from);
+                    // In direct USB mode there is no AOO server/client
+                    // control session. Feeding peer packets through the network
+                    // client can consume them as server traffic before the
+                    // dedicated source sink sees them. The source sink is the
+                    // sole owner of direct-peer packets.
+                    if (! directMode.load (std::memory_order_acquire))
+                        client->handle_message (packet.data(), n, &from);
 
                     // AOO identifies a sink source by the endpoint pointer, not
                     // by the sockaddr value. recvfrom() gives us a new stack
@@ -682,8 +688,14 @@ public:
                     // same packet and generate a second AOO state machine.
                     SourceRuntime* targetRuntime = nullptr;
 
-                    for (auto& runtime : runtimes)
+                    // runtimeSlots is the cross-thread publication mechanism.
+                    // Do not iterate the owning vector here: direct-peer runtimes
+                    // are created from the UI/message thread while ioLoop runs on
+                    // its own thread. Iterating the vector concurrently is a data
+                    // race and can make a freshly-created runtime invisible here.
+                    for (auto& slot : runtimeSlots)
                     {
+                        auto* runtime = slot.load (std::memory_order_acquire);
                         if (runtime == nullptr
                             || runtime->sink == nullptr
                             || runtime->endpoint == nullptr)
@@ -752,16 +764,31 @@ public:
                 }
             }
 
-            client->send();
-            if (discoverySink != nullptr) discoverySink->send();
-            for (auto& runtime : runtimes)
-                if (runtime != nullptr && runtime->sink != nullptr) runtime->sink->send();
+            if (! directMode.load (std::memory_order_acquire))
+                client->send();
 
-            if (client->events_available() > 0) client->handle_events (clientEventHandler, this);
-            if (discoverySink != nullptr && discoverySink->events_available() > 0) discoverySink->handle_events (discoveryEventHandler, this);
-            for (auto& runtime : runtimes)
-                if (runtime != nullptr && runtime->sink != nullptr && runtime->sink->events_available() > 0)
+            if (discoverySink != nullptr) discoverySink->send();
+            for (auto& slot : runtimeSlots)
+            {
+                auto* runtime = slot.load (std::memory_order_acquire);
+                if (runtime != nullptr && runtime->sink != nullptr)
+                    runtime->sink->send();
+            }
+
+            if (! directMode.load (std::memory_order_acquire)
+                && client->events_available() > 0)
+                client->handle_events (clientEventHandler, this);
+
+            if (discoverySink != nullptr && discoverySink->events_available() > 0)
+                discoverySink->handle_events (discoveryEventHandler, this);
+
+            for (auto& slot : runtimeSlots)
+            {
+                auto* runtime = slot.load (std::memory_order_acquire);
+                if (runtime != nullptr && runtime->sink != nullptr
+                    && runtime->sink->events_available() > 0)
                     runtime->sink->handle_events (sourceEventHandler, this);
+            }
         }
     }
 
