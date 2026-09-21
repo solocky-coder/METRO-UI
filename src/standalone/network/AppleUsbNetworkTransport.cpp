@@ -136,14 +136,25 @@ void AppleUsbNetworkTransport::poll()
     const bool applePresent = appleUsbDevicePresent();
     const auto state = currentState.load (std::memory_order_acquire);
 
+    if (applePresent)
+        absentPolls.store (0, std::memory_order_relaxed);
+
     // Physical removal is the reset point for auto-start suppression. This
     // also tears down a live helper if the USB device disappears without the
     // normal stop path running first.
     if (! applePresent)
     {
+        // ~4 s at the UI's 2 Hz poll: longer than a USB re-enumeration, far
+        // shorter than a real unplug that the user would notice.
+        constexpr int kAbsentGracePolls = 8;
+        if (absentPolls.fetch_add (1, std::memory_order_relaxed) + 1 < kAbsentGracePolls)
+            return;
+
         manualStop.store (false, std::memory_order_release);
         if (state != State::Stopped)
         {
+            if (activityCallback)
+                activityCallback ("Apple USB device gone for ~4 s; stopping helper.");
             if (launcher != nullptr)
                 launcher->stop();
             currentStatus = "Waiting for iPhone or iPad over USB";
@@ -157,6 +168,8 @@ void AppleUsbNetworkTransport::poll()
         if (! manualStop.load (std::memory_order_acquire))
         {
             currentStatus = "Apple USB device detected - starting USB sharing...";
+            if (activityCallback)
+                activityCallback ("Auto-start: Apple USB device present and no manual Stop.");
             if (! start (""))
                 currentStatus = "Apple USB sharing could not be started";
         }

@@ -52,6 +52,10 @@ private:
     // physical Apple USB device is removed. Removal clears this latch so
     // the next insertion starts automatically again.
     std::atomic<bool> manualStop { false };
+    // Consecutive poll() ticks with no Apple USB device on the bus. The phone
+    // legitimately drops off the bus for a moment while it re-enumerates
+    // during the NCM mode switch, so one missed tick must not stop the helper.
+    std::atomic<int> absentPolls { 0 };
     juce::String currentStatus { "No USB device network interface detected" };
     std::unique_ptr<AppleUsbShareLauncher> launcher;
     std::function<void (const juce::String&)> activityCallback;

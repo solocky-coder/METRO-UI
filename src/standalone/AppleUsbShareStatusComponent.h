@@ -259,7 +259,9 @@ private:
             deviceText << (device.connected ? "[USB] " : "[--] ")
                        << (device.name.isNotEmpty() ? device.name : "Apple USB device")
                        << "  |  " << (device.interfaceName.isNotEmpty() ? device.interfaceName : "USB Ethernet")
-                       << "  |  " << (device.connected ? "ADAPTER UP" : "WAITING");
+                       << "  |  " << (! device.connected ? "WAITING"
+                                             : state == DeviceNetworkTransport::State::Connected ? "LINK UP"
+                                                                                                  : "ADAPTER READY - LINK NOT UP YET");
         }
 
         if (appleCount == 0)
@@ -302,6 +304,12 @@ private:
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
 #endif
+
+        // Windows keeps the NCM adapter and its static 192.168.99.1 address
+        // configured after a session ends, so an IP here does not prove the
+        // link is live. Only show it once the helper has ACKed a DHCP lease.
+        if (state != DeviceNetworkTransport::State::Connected)
+            ipValue.setText ("- (not linked yet)", juce::dontSendNotification);
 
         const auto dot = connected && state == DeviceNetworkTransport::State::Connected ? juce::Colours::green
                        : connected ? juce::Colours::orange

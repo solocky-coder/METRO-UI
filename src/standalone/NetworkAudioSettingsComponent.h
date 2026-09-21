@@ -43,6 +43,8 @@ public:
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
         directUsbButton.setClickingTogglesState (true);
+        directUsbButton.setTooltip ("Starts/stops the AOO audio stream over the USB link. "
+                                    "The link itself is set up on the Apple USB Share tab.");
         // Direct USB is an optional transport mode. Normal AOO/SonoBus networking
         // remains the default when Network Audio is enabled.
         directUsbButton.setToggleState (false, juce::dontSendNotification);
@@ -503,7 +505,7 @@ private:
 
     void updateDirectUsbButtonText()
     {
-        directUsbButton.setButtonText (directUsbButton.getToggleState() ? "DIRECT USB: ON" : "DIRECT USB: OFF");
+        directUsbButton.setButtonText (directUsbButton.getToggleState() ? "USB AUDIO: ON" : "USB AUDIO: OFF");
         directUsbButton.setColour (juce::TextButton::buttonColourId,
                                    directUsbButton.getToggleState() ? juce::Colour (0xff168c9e)
                                                                     : juce::Colour (0xff2a2a30));

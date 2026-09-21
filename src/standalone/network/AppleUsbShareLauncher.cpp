@@ -543,8 +543,21 @@ bool AppleUsbShareLauncher::start()
 #if JUCE_WINDOWS
     if (launchThread != nullptr && launchThread->isThreadRunning())
     {
-        log ("USB sharing is already starting or running.");
-        return true;
+        if (! launchThread->threadShouldExit())
+        {
+            log ("USB sharing is already starting or running.");
+            return true;
+        }
+
+        // A previous stop() asked this thread to finish, but it has not
+        // returned yet. Wait for it (it is woken by stop() and normally exits
+        // within milliseconds) instead of treating the Start as a no-op -
+        // that used to leave the UI stuck on "Starting" with no helper.
+        if (! launchThread->waitForThreadToExit (3000))
+        {
+            log ("ERROR: previous Direct USB session is still shutting down - try again in a few seconds.");
+            return false;
+        }
     }
 
     const auto exePath = helperExecutablePath();
@@ -579,6 +592,17 @@ void AppleUsbShareLauncher::stop()
 {
     resetLinkProgress();
 #if JUCE_WINDOWS
+    // The log-tailing thread only leaves its loop when it sees the helper
+    // exit through owner.childProcess, and this function nulls that handle
+    // below. Without an explicit exit request the thread would spin forever
+    // after every Stop, and every later start() would be ignored as
+    // "already starting or running".
+    if (launchThread != nullptr)
+    {
+        launchThread->signalThreadShouldExit();
+        launchThread->notify();
+    }
+
     if (stopEvent != nullptr)
         SetEvent (stopEvent);
 
