@@ -41,7 +41,7 @@ public:
         deviceLabel.setText ("Looking for iPhone or iPad...", juce::dontSendNotification);
         deviceLabel.setFont (juce::Font (21.0f));
         adapterLabel.setText ("USB Ethernet: not connected", juce::dontSendNotification);
-        for (auto* label : { &deviceCaption, &adapterLabel, &connectionCaption, &ipCaption, &rxCaption, &txCaption, &activityTitle })
+        for (auto* label : { &deviceCaption, &adapterLabel, &connectionCaption, &ipCaption, &rxCaption, &txCaption, &peerIpCaption, &activityTitle })
             label->setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
         connectionCaption.setText ("Connection", juce::dontSendNotification);
@@ -55,9 +55,9 @@ public:
         peerIpValue.setText ("-", juce::dontSendNotification);
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
-        for (auto* value : { &ipValue, &rxValue, &txValue })
+        for (auto* value : { &ipValue, &peerIpValue, &rxValue, &txValue })
             value->setFont (juce::Font (20.0f, juce::Font::bold));
-        for (auto* caption : { &ipCaption, &rxCaption, &txCaption, &connectionCaption, &deviceCaption })
+        for (auto* caption : { &ipCaption, &peerIpCaption, &rxCaption, &txCaption, &connectionCaption, &deviceCaption })
             caption->setFont (juce::Font (15.0f, juce::Font::bold));
 
         activityTitle.setText ("Activity", juce::dontSendNotification);
