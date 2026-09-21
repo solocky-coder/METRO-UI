@@ -47,10 +47,12 @@ public:
         connectionCaption.setText ("Connection", juce::dontSendNotification);
         connectionLabel.setText ("Not sharing", juce::dontSendNotification);
         connectionLabel.setFont (juce::Font (22.0f, juce::Font::bold));
-        ipCaption.setText ("Device IP", juce::dontSendNotification);
+        ipCaption.setText ("Host IP", juce::dontSendNotification);
+        peerIpCaption.setText ("Apple device IP", juce::dontSendNotification);
         rxCaption.setText ("Download", juce::dontSendNotification);
         txCaption.setText ("Upload", juce::dontSendNotification);
         ipValue.setText ("-", juce::dontSendNotification);
+        peerIpValue.setText ("-", juce::dontSendNotification);
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
         for (auto* value : { &ipValue, &rxValue, &txValue })
@@ -140,7 +142,7 @@ public:
         {
             &title, &subtitle, &deviceCaption, &deviceLabel,
             &adapterLabel, &connectionCaption, &connectionLabel, &ipCaption, &ipValue,
-            &rxCaption, &rxValue, &txCaption, &txValue, &activityTitle, &activityEditor,
+            &peerIpCaption, &peerIpValue, &rxCaption, &rxValue, &txCaption, &txValue, &activityTitle, &activityEditor,
             &statusDot, &startButton, &stopButton, &diagnosticsButton, &uacNoteLabel
         };
 
@@ -173,12 +175,15 @@ public:
         auto connection = area.removeFromTop (112).reduced (10);
         connectionCaption.setBounds (connection.removeFromTop (20));
         connectionLabel.setBounds (connection.removeFromTop (28));
-        const int third = connection.getWidth() / 3;
-        auto cell = connection.removeFromLeft (third);
+        const int fourth = connection.getWidth() / 4;
+        auto cell = connection.removeFromLeft (fourth);
         ipCaption.setBounds (cell.removeFromTop (18)); ipValue.setBounds (cell);
-        cell = connection.removeFromLeft (third);
+        peerIpCaption.setBounds (cell.removeFromTop (18)); peerIpValue.setBounds (cell);
+        cell = connection.removeFromLeft (fourth);
         rxCaption.setBounds (cell.removeFromTop (18)); rxValue.setBounds (cell);
-        txCaption.setBounds (connection.removeFromTop (18)); txValue.setBounds (connection);
+        peerIpCaption.setBounds (cell.removeFromTop (18)); peerIpValue.setBounds (cell);
+        cell = connection.removeFromLeft (fourth);
+        txCaption.setBounds (cell.removeFromTop (18)); txValue.setBounds (cell);
 
         activityTitle.setBounds (area.removeFromTop (20));
         auto buttons = area.removeFromBottom (32);
@@ -355,6 +360,7 @@ private:
         // link is live. Only show it once the helper has ACKed a DHCP lease.
         if (state != DeviceNetworkTransport::State::Connected)
             ipValue.setText ("- (not linked yet)", juce::dontSendNotification);
+            peerIpValue.setText ("- (not linked yet)", juce::dontSendNotification);
 
         const auto dot = connected && state == DeviceNetworkTransport::State::Connected ? juce::Colours::green
                        : connected ? juce::Colours::orange
@@ -368,7 +374,7 @@ private:
         ULONG size = 0;
         if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW)
         {
-            ipValue.setText ("-", juce::dontSendNotification); rxValue.setText ("0 KB/s", juce::dontSendNotification); txValue.setText ("0 KB/s", juce::dontSendNotification); return;
+            ipValue.setText ("-", juce::dontSendNotification); peerIpValue.setText ("-", juce::dontSendNotification); rxValue.setText ("0 KB/s", juce::dontSendNotification); txValue.setText ("0 KB/s", juce::dontSendNotification); return;
         }
         std::vector<unsigned char> buffer (size);
         auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*> (buffer.data());
@@ -398,6 +404,9 @@ private:
             if (address.isEmpty())
                 address = fallbackIpv6;
             ipValue.setText (address.isNotEmpty() ? address : "-", juce::dontSendNotification);
+            // The isolated Apple USB subnet uses .1 for Windows and .2 for the Apple peer.
+            // Keep the peer address explicit rather than relabelling the host adapter address.
+            peerIpValue.setText ("192.168.99.2", juce::dontSendNotification);
             MIB_IF_ROW2 row {};
             row.InterfaceIndex = a->IfIndex;
             if (GetIfEntry2 (&row) == NO_ERROR)
