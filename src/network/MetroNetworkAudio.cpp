@@ -237,10 +237,23 @@ class MetroNetworkAudio::Impl
 public:
     struct SourceRuntime
     {
+        enum class HandshakeState
+        {
+            New,
+            Invited,
+            Formatted
+        };
+
         int64_t sourceKey = 0;
         int32_t sourceId = 0;
         std::shared_ptr<sockaddr_in> endpoint;
         aoo::isink::pointer sink;
+
+        // One-way source handshake:
+        // New -> Invited -> Formatted.
+        // Repeated discovery/format events must never re-invite a source.
+        HandshakeState handshake = HandshakeState::New;
+
         std::array<float, kAooChannels * kAooBlockSize> scratch {};
         std::array<aoo_sample*, kAooChannels> pointers {};
     };
@@ -259,7 +272,6 @@ public:
     aoo::net::iclient::pointer client;
     aoo::isink::pointer discoverySink;
     std::thread ioThread;
-    std::thread clientThread;
 
     mutable std::mutex stateMutex;
     std::vector<MetroNetworkAudio::SourceInfo> sources;
@@ -321,7 +333,9 @@ public:
 
     SourceRuntime* createRuntime (int32_t sourceId, const sockaddr_in* endpoint)
     {
-        if (sourceId == AOO_ID_WILDCARD || sourceId == AOO_ID_NONE || endpoint == nullptr)
+        if (sourceId == AOO_ID_WILDCARD
+            || sourceId == AOO_ID_NONE
+            || endpoint == nullptr)
         {
             aooDiag ("createRuntime REJECT sourceId="
                      + juce::String (sourceId)
@@ -335,28 +349,34 @@ public:
                  + " sourceKey=" + juce::String (sourceKey)
                  + " endpoint=" + endpointDebug (endpoint));
 
+        // SOURCE_ADD and SOURCE_FORMAT may both reach this function. Once a
+        // runtime exists, simply reuse it. Never invite an existing source.
         if (auto* existing = findRuntime (sourceKey))
         {
-            // Keep the runtime attached to the newest endpoint tuple while
-            // retaining the same logical sourceKey.
-            *existing->endpoint = *endpoint;
-
-            aooDiag ("createRuntime EXISTING runtime="
-                     + juce::String::toHexString (
-                         static_cast<juce::int64> (
-                             reinterpret_cast<uintptr_t> (existing)))
-                     + " sink="
-                     + juce::String::toHexString (
-                         static_cast<juce::int64> (
-                             reinterpret_cast<uintptr_t> (existing->sink.get())))
-                     + " endpoint=" + endpointDebug (existing->endpoint.get())
-                     + " -> invite_source(" + juce::String (sourceId) + ")");
-
-            const auto result = existing->sink->invite_source (
-                existing->endpoint.get(), sourceId, sendAooReply);
-
-            aooDiag ("createRuntime EXISTING invite_source result="
-                     + juce::String (result));
+            if (existing->endpoint != nullptr
+                && ! sameEndpoint (existing->endpoint.get(), endpoint))
+            {
+                *existing->endpoint = *endpoint;
+                aooDiag ("createRuntime EXISTING endpoint updated"
+                         " runtime="
+                         + juce::String::toHexString (
+                             static_cast<juce::int64> (
+                                 reinterpret_cast<uintptr_t> (existing)))
+                         + " endpoint="
+                         + endpointDebug (existing->endpoint.get()));
+            }
+            else
+            {
+                aooDiag ("createRuntime EXISTING no-op"
+                         " sourceId=" + juce::String (sourceId)
+                         + " handshake="
+                         + juce::String (
+                             existing->handshake == SourceRuntime::HandshakeState::New
+                                 ? "New"
+                                 : existing->handshake == SourceRuntime::HandshakeState::Invited
+                                     ? "Invited"
+                                     : "Formatted"));
+            }
 
             return existing;
         }
@@ -366,8 +386,18 @@ public:
         runtime->sourceId = sourceId;
         runtime->endpoint = std::make_shared<sockaddr_in> (*endpoint);
         runtime->sink.reset (aoo::isink::create (0));
-        if (runtime->sink == nullptr || runtime->sink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0)
+
+        if (runtime->sink == nullptr
+            || runtime->sink->setup (
+                   kAooSampleRate,
+                   kAooBlockSize,
+                   kAooChannels) <= 0)
+        {
+            aooDiag ("createRuntime FAILED sink setup"
+                     " sourceId=" + juce::String (sourceId)
+                     + " endpoint=" + endpointDebug (endpoint));
             return nullptr;
+        }
 
         runtime->sink->set_buffersize (kAooBufferMs);
         runtime->sink->set_dynamic_resampling (1);
@@ -377,39 +407,43 @@ public:
 
         auto* raw = runtime.get();
 
-        aooDiag ("createRuntime NEW runtime="
-                 + juce::String::toHexString (
-                     static_cast<juce::int64> (
-                         reinterpret_cast<uintptr_t> (raw)))
-                 + " sink="
-                 + juce::String::toHexString (
-                     static_cast<juce::int64> (
-                         reinterpret_cast<uintptr_t> (raw->sink.get())))
-                 + " endpoint=" + endpointDebug (raw->endpoint.get())
-                 + " sourceId=" + juce::String (sourceId));
-
         for (auto& slot : runtimeSlots)
         {
             SourceRuntime* expected = nullptr;
-            if (slot.compare_exchange_strong (expected, raw, std::memory_order_release, std::memory_order_relaxed))
+
+            if (! slot.compare_exchange_strong (
+                    expected,
+                    raw,
+                    std::memory_order_release,
+                    std::memory_order_relaxed))
+                continue;
+
+            runtimes.push_back (std::move (runtime));
+
+            // The only place a dedicated runtime is invited. This is the
+            // New -> Invited transition and happens at most once per runtime.
+            const auto result = raw->sink->invite_source (
+                raw->endpoint.get(),
+                sourceId,
+                sendAooReply);
+
+            if (result > 0)
             {
-                runtimes.push_back (std::move (runtime));
-
-                aooDiag ("createRuntime NEW invite_source sink="
-                         + juce::String::toHexString (
-                             static_cast<juce::int64> (
-                                 reinterpret_cast<uintptr_t> (raw->sink.get())))
+                raw->handshake = SourceRuntime::HandshakeState::Invited;
+                aooDiag ("SOURCE_HANDSHAKE New -> Invited"
+                         " sourceId=" + juce::String (sourceId)
                          + " endpoint=" + endpointDebug (raw->endpoint.get())
-                         + " sourceId=" + juce::String (sourceId));
-
-                const auto result = raw->sink->invite_source (
-                    raw->endpoint.get(), sourceId, sendAooReply);
-
-                aooDiag ("createRuntime NEW invite_source result="
-                         + juce::String (result));
-
-                return raw;
+                         + " result=" + juce::String (result));
             }
+            else
+            {
+                aooDiag ("SOURCE_HANDSHAKE invite FAILED"
+                         " sourceId=" + juce::String (sourceId)
+                         + " endpoint=" + endpointDebug (raw->endpoint.get())
+                         + " result=" + juce::String (result));
+            }
+
+            return raw;
         }
 
         aooDiag ("createRuntime FAILED: no free runtime slot");
@@ -467,7 +501,9 @@ public:
         activeAooSocket.store (&socket, std::memory_order_release);
         directMode.store (requestedPort != 0, std::memory_order_release);
         running.store (true, std::memory_order_release);
-        clientThread = std::thread ([this] { client->run(); });
+
+        // ioLoop() is the sole driver of the AOO client. It owns
+        // handle_message(), send(), and handle_events().
         ioThread = std::thread ([this] { ioLoop(); });
         return true;
     }
@@ -498,7 +534,6 @@ public:
         directMode.store (false, std::memory_order_release);
         if (client != nullptr) client->quit();
         if (ioThread.joinable()) ioThread.join();
-        if (clientThread.joinable()) clientThread.join();
         client.reset();
         discoverySink.reset();
         destroyRuntimeSlots();
@@ -630,32 +665,63 @@ public:
                              + " persistentPeerEndpoint="
                              + endpointDebug (discoveryEndpoint.get()));
 
-                    if (discoverySink != nullptr)
-                    {
-                        aooDiag ("RX -> discoverySink="
-                                 + juce::String::toHexString (
-                                     static_cast<juce::int64> (
-                                         reinterpret_cast<uintptr_t> (
-                                             discoverySink.get())))
-                                 + " endpoint="
-                                 + endpointDebug (discoveryEndpoint != nullptr
-                                                       ? discoveryEndpoint.get()
-                                                       : &from));
-
-                        discoverySink->handle_message (packet.data(), n,
-                                                       discoveryEndpoint != nullptr ? discoveryEndpoint.get() : &from,
-                                                       sendAooReply);
-                    }
+                    // Route each UDP packet to exactly one sink.
+                    // Once a dedicated runtime exists for this peer, it owns
+                    // the source traffic; discovery must not also consume the
+                    // same packet and generate a second AOO state machine.
+                    SourceRuntime* targetRuntime = nullptr;
 
                     for (auto& runtime : runtimes)
                     {
-                        if (runtime == nullptr || runtime->sink == nullptr || runtime->endpoint == nullptr)
+                        if (runtime == nullptr
+                            || runtime->sink == nullptr
+                            || runtime->endpoint == nullptr)
                             continue;
+
                         if (! sameEndpoint (runtime->endpoint.get(), &from))
                             continue;
 
-                        runtime->sink->handle_message (packet.data(), n,
-                                                       runtime->endpoint.get(), sendAooReply);
+                        // The current packet path does not decode the AOO source
+                        // ID before dispatch. For the existing METRO/SonoBus
+                        // one-source-per-peer path, the matching runtime owns it.
+                        // If multiple sources share an endpoint, leave the packet
+                        // with discovery rather than guessing the wrong runtime.
+                        if (targetRuntime != nullptr)
+                        {
+                            targetRuntime = nullptr;
+                            break;
+                        }
+
+                        targetRuntime = runtime.get();
+                    }
+
+                    if (targetRuntime != nullptr)
+                    {
+                        aooDiag ("RX -> runtime"
+                                 " sourceId=" + juce::String (targetRuntime->sourceId)
+                                 + " endpoint=" + endpointDebug (targetRuntime->endpoint.get()));
+
+                        targetRuntime->sink->handle_message (
+                            packet.data(),
+                            n,
+                            targetRuntime->endpoint.get(),
+                            sendAooReply);
+                    }
+                    else if (discoverySink != nullptr)
+                    {
+                        aooDiag ("RX -> discoverySink endpoint="
+                                 + endpointDebug (
+                                     discoveryEndpoint != nullptr
+                                         ? discoveryEndpoint.get()
+                                         : &from));
+
+                        discoverySink->handle_message (
+                            packet.data(),
+                            n,
+                            discoveryEndpoint != nullptr
+                                ? discoveryEndpoint.get()
+                                : &from,
+                            sendAooReply);
                     }
                 }
             }
@@ -835,32 +901,32 @@ public:
         if (callback) juce::MessageManager::callAsync (std::move (callback));
     }
 
-    static bool markFormat (Impl* self, int64_t key, aoo::isink* sink, void* endpoint, int32_t sourceId)
+    static bool markFormat (Impl* self,
+                            int64_t key,
+                            aoo::isink* sink,
+                            void* endpoint,
+                            int32_t sourceId)
     {
+        if (sink == nullptr || endpoint == nullptr)
+            return false;
+
         aooDiag ("get_source_format BEGIN"
                  " key=" + juce::String (key)
                  + " sourceId=" + juce::String (sourceId)
-                 + " sink="
-                 + juce::String::toHexString (
-                     static_cast<juce::int64> (
-                         reinterpret_cast<uintptr_t> (sink)))
                  + " endpoint="
-                 + endpointDebug (static_cast<const sockaddr_in*> (endpoint)));
-
-        if (sink == nullptr || endpoint == nullptr)
-        {
-            aooDiag ("get_source_format SKIP null sink/endpoint");
-            return false;
-        }
+                 + endpointDebug (
+                     static_cast<const sockaddr_in*> (endpoint)));
 
         aoo_format_storage format {};
-        const auto result = sink->get_source_format (endpoint, sourceId, format);
+        const auto result =
+            sink->get_source_format (endpoint, sourceId, format);
 
         aooDiag ("get_source_format RESULT result="
                  + juce::String (result)
                  + " sourceId=" + juce::String (sourceId)
                  + " endpoint="
-                 + endpointDebug (static_cast<const sockaddr_in*> (endpoint))
+                 + endpointDebug (
+                     static_cast<const sockaddr_in*> (endpoint))
                  + " channels="
                  + juce::String (format.header.nchannels)
                  + " sampleRate="
@@ -869,40 +935,45 @@ public:
         if (result <= 0
             || format.header.nchannels <= 0
             || format.header.samplerate <= 0.0)
-        {
-            aooDiag ("get_source_format INVALID/NOT_AVAILABLE"
-                     " result=" + juce::String (result)
-                     + " channels="
-                     + juce::String (format.header.nchannels)
-                     + " sampleRate="
-                     + juce::String (format.header.samplerate));
             return false;
-        }
 
         bool changed = false;
-        std::lock_guard<std::mutex> lock (self->stateMutex);
-        for (auto& source : self->sources)
+
         {
-            if (source.sourceKey != key)
-                continue;
+            std::lock_guard<std::mutex> lock (self->stateMutex);
 
-            changed = source.channels != format.header.nchannels
-                   || source.sampleRate != format.header.samplerate
-                   || ! source.online;
+            for (auto& source : self->sources)
+            {
+                if (source.sourceKey != key)
+                    continue;
 
-            source.channels = format.header.nchannels;
-            source.sampleRate = format.header.samplerate;
-            source.online = true;
-            break;
+                changed =
+                    source.channels != format.header.nchannels
+                    || source.sampleRate != format.header.samplerate
+                    || ! source.online;
+
+                source.channels = format.header.nchannels;
+                source.sampleRate = format.header.samplerate;
+                source.online = true;
+                break;
+            }
         }
 
-        aooDiag ("get_source_format ACCEPTED key="
-                 + juce::String (key)
-                 + " sourceId=" + juce::String (sourceId)
-                 + " channels="
-                 + juce::String (format.header.nchannels)
-                 + " sampleRate="
-                 + juce::String (format.header.samplerate));
+        // Valid format completes the source handshake. This transition is
+        // terminal until the runtime is destroyed; it never calls
+        // invite_source() and therefore cannot create an invite/format loop.
+        if (auto* runtime = self->findRuntime (key))
+        {
+            if (runtime->handshake != SourceRuntime::HandshakeState::Formatted)
+            {
+                runtime->handshake =
+                    SourceRuntime::HandshakeState::Formatted;
+
+                aooDiag ("SOURCE_HANDSHAKE Invited -> Formatted"
+                         " key=" + juce::String (key)
+                         + " sourceId=" + juce::String (sourceId));
+            }
+        }
 
         return changed;
     }
@@ -969,22 +1040,6 @@ public:
                         markFormat (self, info.sourceKey, runtime->sink.get(),
                                     runtime->endpoint.get(), event->id);
                     }
-                    if (self->discoverySink != nullptr)
-                    {
-                        aooDiag ("DISCOVERY SOURCE_ADD markFormat via discovery"
-                                 " sink="
-                                 + juce::String::toHexString (
-                                     static_cast<juce::int64> (
-                                         reinterpret_cast<uintptr_t> (
-                                             self->discoverySink.get())))
-                                 + " endpoint="
-                                 + endpointDebug (
-                                     static_cast<const sockaddr_in*> (
-                                         event->endpoint)));
-
-                        markFormat (self, info.sourceKey, self->discoverySink.get(),
-                                    event->endpoint, event->id);
-                    }
 
                     changed = true;
                     break;
@@ -994,26 +1049,36 @@ public:
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     if (event->endpoint == nullptr || event->id == AOO_ID_WILDCARD) break;
 
+                    const auto* endpoint =
+                        static_cast<const sockaddr_in*> (event->endpoint);
+                    const auto key = makeSourceKey (endpoint, event->id);
+
                     aooDiag ("DISCOVERY SOURCE_FORMAT"
                              " id=" + juce::String (event->id)
-                             + " endpoint="
-                             + endpointDebug (
-                                 static_cast<const sockaddr_in*> (
-                                     event->endpoint)));
+                             + " endpoint=" + endpointDebug (endpoint));
 
-                    const auto key = makeSourceKey (static_cast<const sockaddr_in*> (event->endpoint), event->id);
-                    auto* runtime = self->createRuntime (event->id, static_cast<const sockaddr_in*> (event->endpoint));
+                    // SOURCE_FORMAT is a state transition, not a reason to
+                    // create/invite another sink.
+                    auto* runtime = self->findRuntime (key);
 
-                    // Prefer the dedicated sink, then fall back to discovery.
                     if (runtime != nullptr && runtime->sink != nullptr)
                     {
-                        aooDiag ("DISCOVERY SOURCE_FORMAT markFormat via runtime");
-                        markFormat (self, key, runtime->sink.get(), event->endpoint, event->id);
+                        markFormat (
+                            self,
+                            key,
+                            runtime->sink.get(),
+                            runtime->endpoint.get(),
+                            event->id);
                     }
-                    if (self->discoverySink != nullptr)
+                    else if (self->discoverySink != nullptr)
                     {
-                        aooDiag ("DISCOVERY SOURCE_FORMAT markFormat via discovery");
-                        markFormat (self, key, self->discoverySink.get(), event->endpoint, event->id);
+                        // Fallback only when no dedicated runtime exists.
+                        markFormat (
+                            self,
+                            key,
+                            self->discoverySink.get(),
+                            event->endpoint,
+                            event->id);
                     }
 
                     changed = true;
