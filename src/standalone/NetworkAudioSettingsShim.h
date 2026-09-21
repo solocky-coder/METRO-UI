@@ -169,9 +169,13 @@ private:
         for (auto* child : basePageChildren)
             child->setVisible (! active);
 
-        // DIRECT USB is a shared transport control, not part of either
-        // page's content. Keep it visible in both tabs.
-        getDirectUsbButton().setVisible (true);
+        // USB AUDIO (the AOO direct-audio toggle) belongs to the SonoBus / AOO
+        // page: it requires "Network audio: ON" (an AOO-page control), it
+        // starts the AOO backend on the direct port, and the "SonoBus connect
+        // info" prompt it produces lives on that page too. Showing it on the
+        // Apple USB Share tab made it read as that tab's link status. That
+        // tab already has its own Start / Stop / Diagnostics for the link.
+        getDirectUsbButton().setVisible (! active);
         usbStatusComponent->setVisible (active);
 
         auto style = [] (juce::TextButton& b, bool isActive)
