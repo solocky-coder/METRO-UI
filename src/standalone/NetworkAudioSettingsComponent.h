@@ -633,11 +633,25 @@ private:
                 return;
             }
 
-            // Do not pre-create a source. The AOO runtime is created only
-            // when an actual UDP packet arrives from the isolated Apple peer.
-            const int configuredPeers = 0;
+            // Bootstrap all four reserved Apple USB peers immediately. These
+            // runtimes are internal AOO handshake state only: they are NOT
+            // published as sources until an iPad actually responds. This is
+            // important when hosted SonoBus/AUv3 waits for the host invite and
+            // does not emit the first packet itself.
+            const char* directPeers[] =
+            {
+                "192.168.99.2",
+                "192.168.100.2",
+                "192.168.101.2",
+                "192.168.102.2"
+            };
 
-            updateStatus (utf8 ("Direct USB backend started; waiting for Apple source"));
+            int configuredPeers = 0;
+            for (const auto* peer : directPeers)
+                if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0))
+                    ++configuredPeers;
+
+            updateStatus (utf8 ("Direct USB backend started; bootstrapping Apple peers"));
             updateDirectUsbInstructions (true, configuredPeers);
             return;
         }
