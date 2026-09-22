@@ -365,7 +365,8 @@ public:
             return nullptr;
         }
 
-        const auto sourceKey = makeSourceKey (endpoint, sourceId);
+        const auto identitySourceId = directMode.load (std::memory_order_acquire) ? 0 : sourceId;
+        const auto sourceKey = makeSourceKey (endpoint, identitySourceId);
 
         aooDiag ("createRuntime sourceId=" + juce::String (sourceId)
                  + " sourceKey=" + juce::String (sourceKey)
@@ -766,42 +767,48 @@ public:
                     }
 
                     // runtimeSlots is the cross-thread publication mechanism.
-                    // Do not iterate the owning vector here: direct-peer runtimes
-                    // are created from the UI/message thread while ioLoop runs on
-                    // its own thread. Iterating the vector concurrently is a data
-                    // race and can make a freshly-created runtime invisible here.
-                    for (auto& slot : runtimeSlots)
+                    // Direct USB has exactly one AOO source identity per Apple
+                    // peer. Never send the same packet through discovery as well
+                    // as the dedicated runtime; discovery can manufacture a
+                    // second source (for example source id 1) for the same iPad.
+                    if (directMode.load (std::memory_order_acquire))
                     {
-                        auto* runtime = slot.load (std::memory_order_acquire);
-                        if (runtime == nullptr
-                            || runtime->sink == nullptr
-                            || runtime->endpoint == nullptr)
-                            continue;
-
-                        if (! samePeerAddress (runtime->endpoint.get(), &from))
-                            continue;
-
-                        // The AOO source identity is keyed by peer address + source
-                        // ID, not by the UDP source port. A direct USB peer may have
-                        // been invited at port 9000 but send its actual UDP packets
-                        // from an ephemeral source port. Once a packet arrives,
-                        // retain the real packet endpoint so AOO replies and format
-                        // queries target the port that is actually sending traffic.
-                        if (runtime->endpoint != nullptr
-                            && ! sameEndpoint (runtime->endpoint.get(), &from))
+                        for (auto& slot : runtimeSlots)
                         {
-                            aooDiag ("RX runtime endpoint updated from="
-                                     + endpointDebug (runtime->endpoint.get())
-                                     + " to=" + endpointDebug (&from));
-                            *runtime->endpoint = from;
-                        }
+                            auto* runtime = slot.load (std::memory_order_acquire);
+                            if (runtime == nullptr || runtime->sink == nullptr
+                                || runtime->endpoint == nullptr
+                                || ! samePeerAddress (runtime->endpoint.get(), &from))
+                                continue;
 
-                        // The current packet path does not decode the AOO source
-                        // ID before dispatch. For the existing METRO/SonoBus
-                        // one-source-per-peer path, the matching runtime owns it.
-                        // If multiple sources share an IP, leave the packet with
-                        // discovery rather than guessing the wrong runtime.
-                        if (targetRuntime != nullptr)
+                            if (! sameEndpoint (runtime->endpoint.get(), &from))
+                            {
+                                aooDiag ("RX runtime endpoint updated from="
+                                         + endpointDebug (runtime->endpoint.get())
+                                         + " to=" + endpointDebug (&from));
+                                *runtime->endpoint = from;
+                            }
+
+                            targetRuntime = runtime;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        for (auto& slot : runtimeSlots)
+                        {
+                            auto* runtime = slot.load (std::memory_order_acquire);
+                            if (runtime == nullptr || runtime->sink == nullptr
+                                || runtime->endpoint == nullptr
+                                || ! samePeerAddress (runtime->endpoint.get(), &from))
+                                continue;
+
+                            targetRuntime = runtime;
+                            break;
+                        }
+                    }
+
+                    if (targetRuntime != nullptr)
                         {
                             targetRuntime = nullptr;
                             break;
