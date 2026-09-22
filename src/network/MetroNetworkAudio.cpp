@@ -330,12 +330,13 @@ public:
         if (endpoint == nullptr)
             return false;
 
-        // In Direct USB mode we no longer pre-create runtimes for possible
-        // Apple addresses. The isolated USB network uses 192.168.99.0/24,
-        // with the Apple peer normally at .2. Accept packets from that
-        // isolated subnet and let the first real packet create the runtime.
+        // Direct Apple USB links use one isolated /24 per USB NCM adapter.
+        // Keep all four reserved USB subnets routable so more than one
+        // iPhone/iPad can be attached at the same time. The Apple peer is
+        // normally .2 on each subnet: 192.168.99/24 .. 102/24.
         const auto hostOrder = ntohl (endpoint->sin_addr.s_addr);
-        if ((hostOrder & 0xFFFFFF00u) == 0xC0A86300u)
+        const auto subnet = (hostOrder >> 8) & 0xFFFFFFu;
+        if (subnet >= 0xC0A863u && subnet <= 0xC0A866u)
             return true;
 
         std::lock_guard<std::mutex> lock (stateMutex);
