@@ -264,6 +264,7 @@ public:
         // New -> Invited -> Formatted.
         // Repeated discovery/format events must never re-invite a source.
         HandshakeState handshake = HandshakeState::New;
+        bool directSourcePublished = false;
 
         std::array<float, kAooChannels * kAooBlockSize> scratch {};
         std::array<aoo_sample*, kAooChannels> pointers {};
@@ -351,6 +352,25 @@ public:
         for (const auto& peer : peers)
             if (sameEndpoint (peer.endpoint.get(), endpoint)) return peer.endpoint;
         return {};
+    }
+
+    void publishDirectRuntimeSource (SourceRuntime* runtime)
+    {
+        if (runtime == nullptr || ! directMode.load (std::memory_order_acquire)
+            || runtime->directSourcePublished)
+            return;
+
+        SourceInfo info;
+        info.sourceKey = runtime->sourceKey;
+        info.sourceId = runtime->sourceId;
+        info.user = "USB";
+        info.group = "Direct USB";
+        info.online = true;
+        upsertSource (info);
+        runtime->directSourcePublished = true;
+        notifySourceChange (this);
+        aooDiag ("DIRECT SOURCE published sourceId=" + juce::String (runtime->sourceId)
+                 + " endpoint=" + endpointDebug (runtime->endpoint.get()));
     }
 
     SourceRuntime* createRuntime (int32_t sourceId, const sockaddr_in* endpoint)
@@ -464,19 +484,10 @@ public:
 
             runtimes.push_back (std::move (runtime));
 
-            // Direct USB peers do not pass through the AOO network client's
-            // PEER_JOIN/SOURCE_ADD discovery path. Publish the configured
-            // runtime as a source immediately so the UI can represent it;
-            // markFormat() will fill in the actual channel count/sample rate
-            // once the remote source completes the AOO format handshake.
-            SourceInfo info;
-            info.sourceKey = sourceKey;
-            info.sourceId = sourceId;
-            info.user = "USB";
-            info.group = "Direct USB";
-            info.online = true;
-            upsertSource (info);
-            notifySourceChange (this);
+            // Direct USB runtimes may be proactively created for an Apple peer
+            // so an AUv3-hosted SonoBus instance can receive the AOO invite before
+            // it emits its first packet. Keep that bootstrap runtime invisible;
+            // publish it only after the peer actually responds.
 
             // The only place a dedicated runtime is invited. This is the
             // New -> Invited transition and happens at most once per runtime.
@@ -756,6 +767,7 @@ public:
                             targetRuntime = createRuntime (0, &from);
                             if (targetRuntime != nullptr)
                             {
+                                publishDirectRuntimeSource (targetRuntime);
                                 aooDiag ("RX direct USB created runtime from real peer packet"
                                          " sourceId=0 endpoint=" + endpointDebug (&from));
 
@@ -790,6 +802,8 @@ public:
                             }
 
                             targetRuntime = runtime;
+                            if (! runtime->directSourcePublished)
+                                publishDirectRuntimeSource (runtime);
                             break;
                         }
                     }
@@ -1202,6 +1216,7 @@ public:
 
                     if (runtime != nullptr && runtime->sink != nullptr)
                     {
+                        self->publishDirectRuntimeSource (runtime);
                         markFormat (
                             self,
                             key,
