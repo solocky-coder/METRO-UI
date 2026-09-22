@@ -243,6 +243,16 @@ public:
 
         addAndMakeVisible (statusLabel);
 
+        directUsbProgressLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+        directUsbProgressLabel.setFont (juce::Font (14.0f));
+        directUsbProgressLabel.setText ("USB connection: idle", juce::dontSendNotification);
+        addAndMakeVisible (directUsbProgressLabel);
+
+        directUsbProgress.setRange (0.0, 1.0, 0.0);
+        directUsbProgress.setValue (0.0, juce::dontSendNotification);
+        directUsbProgress.setTextToDisplay ("");
+        addAndMakeVisible (directUsbProgress);
+
         directUsbInfoButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xFF7FE0EC));
         directUsbInfoButton.onClick = [this] { showDirectUsbInfoPopup(); };
         directUsbInfoButton.setVisible (false);
@@ -435,6 +445,12 @@ public:
         statusLabel.setBounds (statusRow);
         connectionInner.removeFromTop (kRowGap);
 
+        auto progressRow = connectionInner.removeFromTop (kRowH + 6);
+        progressRow.removeFromLeft (kLabelColW);
+        directUsbProgressLabel.setBounds (progressRow.removeFromTop (kRowH));
+        directUsbProgress.setBounds (progressRow.reduced (0, 3));
+        connectionInner.removeFromTop (kRowGap);
+
         auto instructionsRow = connectionInner.removeFromTop (kInstructionsH);
         instructionsRow.removeFromLeft (kLabelColW);
         directUsbInfoButton.setBounds (instructionsRow.removeFromLeft (280));
@@ -484,6 +500,8 @@ private:
         {
             directUsbInfoButton.setVisible (false);
             directUsbInfoText = {};
+            directUsbProgressLabel.setText ("USB connection: idle", juce::dontSendNotification);
+            directUsbProgress.setValue (0.0, juce::dontSendNotification);
             return;
         }
 
@@ -612,6 +630,56 @@ private:
     void timerCallback() override
     {
         refreshSources();
+        updateDirectUsbProgress();
+    }
+
+    void updateDirectUsbProgress()
+    {
+        if (! directUsbButton.getToggleState() || networkAudio == nullptr)
+        {
+            directUsbProgressLabel.setText ("USB connection: idle", juce::dontSendNotification);
+            directUsbProgress.setValue (0.0, juce::dontSendNotification);
+            return;
+        }
+
+        const auto sources = networkAudio->getSources();
+        int responding = 0;
+        int audioReady = 0;
+
+        for (const auto& source : sources)
+        {
+            if (! source.online)
+                continue;
+
+            ++responding;
+            if (source.channels > 0 && source.sampleRate > 0.0)
+                ++audioReady;
+        }
+
+        responding = juce::jlimit (0, 4, responding);
+        audioReady = juce::jlimit (0, 4, audioReady);
+
+        if (audioReady >= 4)
+        {
+            directUsbProgressLabel.setText (
+                "USB connection: 4/4 devices connected • 4/4 audio ready",
+                juce::dontSendNotification);
+        }
+        else if (responding > 0)
+        {
+            directUsbProgressLabel.setText (
+                "USB connection: " + juce::String (responding) + "/4 responding • "
+                + juce::String (audioReady) + "/4 audio ready",
+                juce::dontSendNotification);
+        }
+        else
+        {
+            directUsbProgressLabel.setText (
+                "USB connection: waiting for Apple USB devices…",
+                juce::dontSendNotification);
+        }
+
+        directUsbProgress.setValue (responding / 4.0, juce::dontSendNotification);
     }
 
     void connectClicked()
@@ -842,6 +910,8 @@ private:
     juce::TextButton connectButton { "Connect / Join" };
     juce::TextButton disconnectButton { "Disconnect" };
     juce::Label statusLabel;
+    juce::Label directUsbProgressLabel;
+    juce::ProgressBar directUsbProgress;
     juce::TextButton directUsbInfoButton { "SonoBus connect info" };
     juce::String directUsbInfoText;
     juce::Label sourcesLabel;
