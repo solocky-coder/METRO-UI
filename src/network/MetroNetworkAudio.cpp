@@ -837,6 +837,27 @@ public:
                                  + juce::String (handled)
                                  + " sourceId=" + juce::String (targetRuntime->sourceId)
                                  + " bytes=" + juce::String (n));
+
+                        // Some hosted AUv3 SonoBus instances can complete the
+                        // AOO format exchange without surfacing the format event
+                        // on the sink event queue at the same moment as the
+                        // packet is handled. Query the sink immediately as a
+                        // second path. get_source_format() is harmless until
+                        // the remote format has actually arrived, so this also
+                        // removes a timing dependency from the UI metadata.
+                        if (directMode.load (std::memory_order_acquire)
+                            && targetRuntime->handshake != SourceRuntime::HandshakeState::Formatted)
+                        {
+                            const bool formatted = markFormat (
+                                this,
+                                targetRuntime->sourceKey,
+                                targetRuntime->sink.get(),
+                                targetRuntime->endpoint.get(),
+                                targetRuntime->sourceId);
+                            aooDiag ("RX runtime format probe result="
+                                     + juce::String (formatted ? 1 : 0)
+                                     + " sourceId=" + juce::String (targetRuntime->sourceId));
+                        }
                     }
                     else if (discoverySink != nullptr)
                     {
