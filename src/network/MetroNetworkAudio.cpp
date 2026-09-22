@@ -809,15 +809,6 @@ public:
                     }
 
                     if (targetRuntime != nullptr)
-                        {
-                            targetRuntime = nullptr;
-                            break;
-                        }
-
-                        targetRuntime = runtime;
-                    }
-
-                    if (targetRuntime != nullptr)
                     {
                         aooDiag ("RX -> runtime"
                                  " sourceId=" + juce::String (targetRuntime->sourceId)
