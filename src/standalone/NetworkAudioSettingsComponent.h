@@ -19,7 +19,8 @@ public:
                                              bool showDeviceSelectorIn = false)
         : audioSelector (deviceManager, 0, 0, 1, 2, false, false, false, false),
           networkAudio (networkAudioIn),
-          sourceModel (networkAudioIn)
+          sourceModel (networkAudioIn),
+          directUsbProgress (directUsbProgressValue)
     {
         showDeviceSelector = showDeviceSelectorIn;
         NetworkAudioProcessor::setActiveNetworkAudio (networkAudioIn);
@@ -248,8 +249,7 @@ public:
         directUsbProgressLabel.setText ("USB connection: idle", juce::dontSendNotification);
         addAndMakeVisible (directUsbProgressLabel);
 
-        directUsbProgress.setRange (0.0, 1.0, 0.0);
-        directUsbProgress.setValue (0.0, juce::dontSendNotification);
+        directUsbProgressValue = 0.0;
         directUsbProgress.setTextToDisplay ("");
         addAndMakeVisible (directUsbProgress);
 
@@ -501,7 +501,7 @@ private:
             directUsbInfoButton.setVisible (false);
             directUsbInfoText = {};
             directUsbProgressLabel.setText ("USB connection: idle", juce::dontSendNotification);
-            directUsbProgress.setValue (0.0, juce::dontSendNotification);
+            directUsbProgressValue = 0.0;
             return;
         }
 
@@ -638,7 +638,7 @@ private:
         if (! directUsbButton.getToggleState() || networkAudio == nullptr)
         {
             directUsbProgressLabel.setText ("USB connection: idle", juce::dontSendNotification);
-            directUsbProgress.setValue (0.0, juce::dontSendNotification);
+            directUsbProgressValue = 0.0;
             return;
         }
 
@@ -679,7 +679,8 @@ private:
                 juce::dontSendNotification);
         }
 
-        directUsbProgress.setValue (responding / 4.0, juce::dontSendNotification);
+        directUsbProgressValue = responding / 4.0;
+        directUsbProgress.repaint();
     }
 
     void connectClicked()
@@ -911,6 +912,7 @@ private:
     juce::TextButton disconnectButton { "Disconnect" };
     juce::Label statusLabel;
     juce::Label directUsbProgressLabel;
+    double directUsbProgressValue = 0.0;
     juce::ProgressBar directUsbProgress;
     juce::TextButton directUsbInfoButton { "SonoBus connect info" };
     juce::String directUsbInfoText;
