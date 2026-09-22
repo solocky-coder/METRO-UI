@@ -691,11 +691,46 @@ public:
         joined.store (false, std::memory_order_release);
     }
 
+    void retryDirectInvites()
+    {
+        if (! directMode.load (std::memory_order_acquire))
+            return;
+
+        for (auto& slot : runtimeSlots)
+        {
+            auto* runtime = slot.load (std::memory_order_acquire);
+            if (runtime == nullptr || runtime->endpoint == nullptr
+                || runtime->sink == nullptr
+                || runtime->handshake == SourceRuntime::HandshakeState::Formatted)
+                continue;
+
+            const auto result = runtime->sink->invite_source (
+                runtime->endpoint.get(),
+                runtime->sourceId,
+                sendAooReply);
+
+            if (result > 0)
+            {
+                runtime->handshake = SourceRuntime::HandshakeState::Invited;
+                aooDiag ("DIRECT_USB invite retry sourceId="
+                         + juce::String (runtime->sourceId)
+                         + " endpoint=" + endpointDebug (runtime->endpoint.get()));
+            }
+        }
+    }
+
     void ioLoop()
     {
         std::array<char, AOO_MAXPACKETSIZE> packet {};
+        int directInviteTicks = 0;
         while (running.load (std::memory_order_acquire))
         {
+            if (directMode.load (std::memory_order_acquire) && ++directInviteTicks >= 25)
+            {
+                directInviteTicks = 0;
+                retryDirectInvites();
+            }
+
             fd_set readSet;
             FD_ZERO (&readSet);
             FD_SET (socket, &readSet);
