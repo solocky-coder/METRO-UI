@@ -864,7 +864,8 @@ public:
                 && client->events_available() > 0)
                 client->handle_events (clientEventHandler, this);
 
-            if (discoverySink != nullptr && discoverySink->events_available() > 0)
+            if (! directMode.load (std::memory_order_acquire)
+                && discoverySink != nullptr && discoverySink->events_available() > 0)
                 discoverySink->handle_events (discoveryEventHandler, this);
 
             for (auto& slot : runtimeSlots)
@@ -1256,15 +1257,45 @@ public:
                     const auto* event = reinterpret_cast<const aoo_source_event*> (events[i]);
                     if (event->endpoint == nullptr || event->id == AOO_ID_WILDCARD) break;
 
-                    const auto key =
-                        makeSourceKey (
-                            static_cast<const sockaddr_in*> (event->endpoint),
-                            event->id);
+                    const auto* endpoint =
+                        static_cast<const sockaddr_in*> (event->endpoint);
 
-                    // The runtime sink is now the sole owner of an invited
-                    // source. Do not mirror its format event into the
-                    // discovery sink.
-                    auto* runtime = self->findRuntime (key);
+                    // Direct USB source identity is the Apple peer address,
+                    // not the transient UDP source port and not an AOO
+                    // descriptor that may be reported differently by the
+                    // remote SonoBus build. Resolve the event back to the
+                    // single runtime for that peer, then use that runtime's
+                    // stable source key when publishing the format.
+                    SourceRuntime* runtime = nullptr;
+                    int64_t key = makeSourceKey (endpoint, event->id);
+
+                    if (self->directMode.load (std::memory_order_acquire))
+                    {
+                        for (auto& slot : self->runtimeSlots)
+                        {
+                            auto* candidate = slot.load (std::memory_order_acquire);
+                            if (candidate != nullptr
+                                && candidate->sink != nullptr
+                                && candidate->endpoint != nullptr
+                                && samePeerAddress (candidate->endpoint.get(), endpoint))
+                            {
+                                runtime = candidate;
+                                key = candidate->sourceKey;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        runtime = self->findRuntime (key);
+                    }
+
+                    aooDiag ("RUNTIME SOURCE_FORMAT"
+                             " eventId=" + juce::String (event->id)
+                             + " endpoint=" + endpointDebug (endpoint)
+                             + " resolvedKey=" + juce::String (key)
+                             + " runtime=" + juce::String (runtime != nullptr ? 1 : 0));
+
                     if (runtime != nullptr && runtime->sink != nullptr)
                     {
                         markFormat (
