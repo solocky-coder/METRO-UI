@@ -201,14 +201,23 @@ public:
                     updateStatus ("Could not start direct USB AOO backend");
                     return;
                 }
-                // Prime the known Apple USB peer at the same UDP port shown
-                // in the Direct USB instructions. This is important for
-                // AUv3-hosted SonoBus: an extension may wait for the incoming
-                // AOO invite before emitting its first packet. The runtime stays
-                // invisible until the peer responds, so disconnected USB does
-                // not create a phantom source.
-                networkAudio->connectDirectPeer ("192.168.99.2", kDirectUsbPort, 0);
-                const int configuredPeers = 1;
+                // Prime the reserved Apple USB peer addresses at the same UDP
+                // port shown in the Direct USB instructions. Each isolated NCM
+                // adapter uses its own /24 (.99 through .102). This is important
+                // for AUv3-hosted SonoBus, which may wait for an incoming AOO
+                // invite before emitting its first packet. Runtimes remain
+                // invisible until a peer responds, so unused slots are harmless.
+                const char* directPeers[] =
+                {
+                    "192.168.99.2",
+                    "192.168.100.2",
+                    "192.168.101.2",
+                    "192.168.102.2"
+                };
+                int configuredPeers = 0;
+                for (const auto* peer : directPeers)
+                    if (networkAudio->connectDirectPeer (peer, kDirectUsbPort, 0))
+                        ++configuredPeers;
 
                 updateStatus (utf8 ("Direct USB — waiting for Apple device"));
                 updateDirectUsbInstructions (true, configuredPeers);
@@ -478,22 +487,20 @@ private:
             return;
         }
 
-        // Direct USB uses the isolated Apple USB subnet:
-        // Windows host = 192.168.99.1, Apple peer = 192.168.99.2.
-        // Do not present unrelated LAN adapter addresses here; this dialog
-        // specifically tells the user how to reach the USB-side UDP listener.
-        constexpr const char* directUsbHost = "192.168.99.1";
+        // Direct USB uses one isolated subnet per Apple NCM adapter. The
+        // Windows-side addresses are .1 and the Apple peers are .2 on the
+        // reserved .99-.102 subnets.
         constexpr int directUsbPort = kDirectUsbPort;
 
-        directUsbInfoText = "USB Host: " + juce::String (directUsbHost)
-                          + "\nPort: " + juce::String (directUsbPort)
-                          + "\n\nUse " + juce::String (directUsbHost) + ":"
-                          + juce::String (directUsbPort)
-                          + " in SonoBus on the iPad.";
+        directUsbInfoText =
+            "USB Direct peers:\n"
+            "  192.168.99.2:" + juce::String (directUsbPort) + "\n"
+            "  192.168.100.2:" + juce::String (directUsbPort) + "\n"
+            "  192.168.101.2:" + juce::String (directUsbPort) + "\n"
+            "  192.168.102.2:" + juce::String (directUsbPort)
+            + "\n\nUse the matching peer address in SonoBus on each iPad.";
 
-        directUsbInfoButton.setButtonText (
-            "SonoBus connect info (" + juce::String (directUsbHost)
-            + ":" + juce::String (directUsbPort) + ")");
+        directUsbInfoButton.setButtonText ("SonoBus connect info (4 USB peers)");
         directUsbInfoButton.setVisible (true);
     }
 
