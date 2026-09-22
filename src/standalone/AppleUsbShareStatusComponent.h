@@ -166,9 +166,9 @@ public:
         title.setBounds (area.removeFromTop (32));
         subtitle.setBounds (area.removeFromTop (25));
 
-        auto device = area.removeFromTop (78).reduced (10);
+        auto device = area.removeFromTop (150).reduced (10);
         deviceCaption.setBounds (device.removeFromTop (24));
-        deviceLabel.setBounds (device.removeFromTop (34));
+        deviceLabel.setBounds (device.removeFromTop (96));
         adapterLabel.setBounds (device.removeFromTop (28));
         statusDot.setBounds (getWidth() - 46, 24, 24, 24);
 
@@ -302,6 +302,7 @@ private:
         juce::String firstConnectedAdapter;
         bool connected = false;
         int appleCount = 0;
+        int connectedCount = 0;
 
         for (const auto& device : devices)
         {
@@ -312,24 +313,34 @@ private:
             if (device.connected)
             {
                 connected = true;
+                ++connectedCount;
                 if (firstConnectedAdapter.isEmpty())
                     firstConnectedAdapter = device.interfaceName.isNotEmpty() ? device.interfaceName : device.name;
             }
 
             if (deviceText.isNotEmpty())
                 deviceText << "\n";
-            deviceText << (device.connected ? "[USB] " : "[--] ")
+
+            // The helper assigns the four isolated Apple USB networks in slot
+            // order. Keep the desktop panel explicit about every adapter/peer
+            // instead of collapsing the display to the first adapter.
+            const int slot = appleCount;
+            const char* hosts[] = { "192.168.99.1", "192.168.100.1", "192.168.101.1", "192.168.102.1" };
+            const char* peers[] = { "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2" };
+            deviceText << "USB " << slot << "  "
+                       << (device.connected ? "[LINK UP] " : "[WAITING] ")
                        << (device.name.isNotEmpty() ? device.name : "Apple USB device")
                        << "  |  " << (device.interfaceName.isNotEmpty() ? device.interfaceName : "USB Ethernet")
-                       << "  |  " << (! device.connected ? "WAITING"
-                                             : state == DeviceNetworkTransport::State::Connected ? "LINK UP"
-                                                                                                  : "ADAPTER READY - LINK NOT UP YET");
+                       << "  |  " << hosts[juce::jlimit (0, 3, slot - 1)]
+                       << " -> " << peers[juce::jlimit (0, 3, slot - 1)];
         }
 
         if (appleCount == 0)
-            deviceText = "No Apple USB device detected";
-        else if (appleCount == 1 && connected)
-            deviceText = "iPhone / iPad detected\n" + deviceText;
+            deviceText = "No Apple USB network adapter detected";
+        else
+            deviceText = juce::String (appleCount) + " Apple USB network adapter" + (appleCount == 1 ? "" : "s")
+                        + "  |  " + juce::String (connectedCount) + " link" + (connectedCount == 1 ? "" : "s") + " up\n"
+                        + deviceText;
 
         deviceLabel.setText (deviceText, juce::dontSendNotification);
         adapterLabel.setText (firstConnectedAdapter.isNotEmpty()
@@ -407,9 +418,24 @@ private:
             if (address.isEmpty())
                 address = fallbackIpv6;
             ipValue.setText (address.isNotEmpty() ? address : "-", juce::dontSendNotification);
-            // The isolated Apple USB subnet uses .1 for Windows and .2 for the Apple peer.
-            // Keep the peer address explicit rather than relabelling the host adapter address.
-            peerIpValue.setText ("192.168.99.2", juce::dontSendNotification);
+            // The isolated Apple USB networks use .1 for Windows and .2 for the Apple peer.
+            // The desktop panel now reports every detected USB network rather than
+            // hard-coding the first peer address.
+            juce::String hostList, peerList;
+            const char* peers[] = { "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2" };
+            if (address.startsWith ("192.168.99.") || address.startsWith ("192.168.100.")
+                || address.startsWith ("192.168.101.") || address.startsWith ("192.168.102."))
+            {
+                const auto parts = juce::StringArray::fromTokens (address, ".", "");
+                if (parts.size() == 4 && parts[3] == "1")
+                {
+                    const int subnet = parts[2].getIntValue();
+                    const int slot = juce::jlimit (0, 3, subnet - 99);
+                    hostList = address;
+                    peerList = peers[slot];
+                }
+            }
+            peerIpValue.setText (peerList.isNotEmpty() ? peerList : "-", juce::dontSendNotification);
             MIB_IF_ROW2 row {};
             row.InterfaceIndex = a->IfIndex;
             if (GetIfEntry2 (&row) == NO_ERROR)
