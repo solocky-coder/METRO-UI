@@ -466,6 +466,8 @@ private:
     // popup as if a peer has "responded".
     void updateDirectUsbInstructions (bool visible, int configuredPeers = 0)
     {
+        juce::ignoreUnused (configuredPeers);
+
         if (! visible)
         {
             directUsbInfoButton.setVisible (false);
@@ -473,25 +475,22 @@ private:
             return;
         }
 
-        juce::StringArray hostAddresses;
-        for (const auto& addr : juce::IPAddress::getAllAddresses (false))
-            if (isUsableDirectUsbAddress (addr))
-                hostAddresses.add (addr.toString());
+        // Direct USB uses the isolated Apple USB subnet:
+        // Windows host = 192.168.99.1, Apple peer = 192.168.99.2.
+        // Do not present unrelated LAN adapter addresses here; this dialog
+        // specifically tells the user how to reach the USB-side UDP listener.
+        constexpr const char* directUsbHost = "192.168.99.1";
+        constexpr int directUsbPort = kDirectUsbPort;
 
-        const auto hostText = hostAddresses.isEmpty()
-                                   ? juce::String ("this computer's USB/LAN IP address")
-                                   : hostAddresses.joinIntoString (" or ");
+        directUsbInfoText = "USB Host: " + juce::String (directUsbHost)
+                          + "\nPort: " + juce::String (directUsbPort)
+                          + "\n\nUse " + juce::String (directUsbHost) + ":"
+                          + juce::String (directUsbPort)
+                          + " in SonoBus on the iPad.";
 
-        directUsbInfoText = "Host: " + hostText + "\nPort: " + juce::String (kDirectUsbPort);
-        if (configuredPeers > 0)
-            directUsbInfoText << "\n\nListening for " << configuredPeers
-                               << " Apple USB device. On the other device, open SonoBus and connect "
-                                  "direct to the host/port above — nothing here confirms a device is "
-                                  "connected yet.";
-
-        directUsbInfoButton.setButtonText (hostAddresses.size() == 1
-            ? ("SonoBus connect info (" + hostAddresses[0] + ":" + juce::String (kDirectUsbPort) + ")")
-            : "SonoBus connect info");
+        directUsbInfoButton.setButtonText (
+            "SonoBus connect info (" + juce::String (directUsbHost)
+            + ":" + juce::String (directUsbPort) + ")");
         directUsbInfoButton.setVisible (true);
     }
 
