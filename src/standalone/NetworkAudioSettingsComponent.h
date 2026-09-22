@@ -201,11 +201,14 @@ public:
                     updateStatus ("Could not start direct USB AOO backend");
                     return;
                 }
-                // Do not create an AOO runtime here. Direct USB runtimes are
-                // created lazily by MetroNetworkAudio when the first real UDP
-                // packet arrives from the isolated Apple peer. With no USB device
-                // connected, the Sources list must remain empty.
-                const int configuredPeers = 0;
+                // Prime the known Apple USB peer at the same UDP port shown
+                // in the Direct USB instructions. This is important for
+                // AUv3-hosted SonoBus: an extension may wait for the incoming
+                // AOO invite before emitting its first packet. The runtime stays
+                // invisible until the peer responds, so disconnected USB does
+                // not create a phantom source.
+                networkAudio->connectDirectPeer ("192.168.99.2", kDirectUsbPort, 0);
+                const int configuredPeers = 1;
 
                 updateStatus (utf8 ("Direct USB — waiting for Apple device"));
                 updateDirectUsbInstructions (true, configuredPeers);
