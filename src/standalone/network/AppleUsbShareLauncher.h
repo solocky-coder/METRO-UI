@@ -36,13 +36,19 @@
 // this is the standard "elevate without a fresh UAC prompt every launch"
 // pattern, and it only works silently for an account that's already a local
 // Administrator (a split-token elevation Windows already trusts it to grant
-// itself); for a genuinely standard user, Windows will still prompt or the
-// registration will fail, and that failure is reported the normal way
-// through the log callback. Either way, start() only kicks the registration
-// + launch off on a background thread and returns once that thread has been
-// started — it does NOT mean sharing is live. Callers must poll
-// status()/isRunning() (AppleUsbShareStatusComponent already polls at 2Hz)
-// rather than treat a `true` return as "connected".
+// itself, since Task Scheduler checks group membership, not the calling
+// process's current elevation state). A genuinely standard-user account has
+// no admin token for it to trust, so registration fails outright with
+// E_ACCESSDENIED and no prompt at all — in that specific case only, the
+// launch thread falls back to starting the helper directly via
+// ShellExecuteExW("runas", ...), which *does* prompt, every single launch,
+// since there's no way to avoid that for a non-admin account. Any other
+// registration failure is reported as-is through the log callback with no
+// fallback. Either way, start() only kicks the registration/launch off on a
+// background thread and returns once that thread has been started — it does
+// NOT mean sharing is live. Callers must poll status()/isRunning()
+// (AppleUsbShareStatusComponent already polls at 2Hz) rather than treat a
+// `true` return as "connected".
 class AppleUsbShareLauncher final
 {
 public:
@@ -50,6 +56,17 @@ public:
 
     explicit AppleUsbShareLauncher (LogCallback log = {});
     ~AppleUsbShareLauncher();
+
+    // Entry point for the one-shot elevated bootstrap process (see
+    // relaunchSelfElevatedToRegister() in the .cpp and the class comment
+    // above). The app relaunches itself with --register-usb-share-task and
+    // a UAC "runas" prompt; the elevated instance runs *only* this - no UI,
+    // no window - and exits immediately. It registers the \DYSEKT\
+    // iPhoneUsbShare task (which requires an elevated caller) and returns a
+    // process exit code: 0 on success, 1 on failure. After this succeeds
+    // once, every future launch can Run() the already-registered task
+    // without needing to be elevated itself.
+    static int runRegistrationBootstrap();
 
     // Launches the helper elevated and hidden on a background thread, which
     // also tails its ActivityLog.txt. Returns false only for failures known

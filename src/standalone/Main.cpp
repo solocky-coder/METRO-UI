@@ -15,6 +15,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "NetworkAudioSettingsShim.h"
 #include "MainWindow.h"
+#include "network/AppleUsbShareLauncher.h"
 
 //==============================================================================
 class DysektApplication : public juce::JUCEApplication
@@ -27,8 +28,23 @@ public:
     bool moreThanOneInstanceAllowed()          override { return true;      }
 
     //==========================================================================
-    void initialise (const juce::String& /*commandLine*/) override
+    void initialise (const juce::String& commandLine) override
     {
+#if JUCE_WINDOWS
+        // One-time elevated bootstrap for Apple USB Direct Network's Task
+        // Scheduler registration. DYSEKT relaunches itself with just this
+        // flag via ShellExecuteExW("runas", ...) when it needs to register
+        // the iPhoneUsbShare task (see relaunchSelfElevatedToRegister() in
+        // AppleUsbShareLauncher.cpp for why that step needs to be elevated).
+        // This instance does nothing but that, headlessly, and exits.
+        if (commandLine.contains ("--register-usb-share-task"))
+        {
+            setApplicationReturnValue (AppleUsbShareLauncher::runRegistrationBootstrap());
+            quit();
+            return;
+        }
+#endif
+
         // Apply OS-level DPI awareness before creating any windows
         juce::Desktop::getInstance().setGlobalScaleFactor (1.0f);
 

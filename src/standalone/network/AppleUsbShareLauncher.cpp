@@ -12,9 +12,11 @@
 #include <windows.h>
 #include <oleauto.h>
 #include <taskschd.h>
+#include <shellapi.h>
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "taskschd.lib")
+#pragma comment(lib, "shell32.lib")
 #endif
 
 AppleUsbShareLauncher::AppleUsbShareLauncher (LogCallback log)
@@ -200,25 +202,27 @@ namespace
     // runs because runRegisteredTask() below explicitly calls Run() on it.
     // Called on every start(): cheap, and keeps the registered path/arguments
     // in sync if the helper ever moves.
-    juce::String registerTask (const juce::File& exePath)
+    juce::String registerTask (const juce::File& exePath, HRESULT& hrOut)
     {
+        hrOut = S_OK;
+
         ComPtr<ITaskService> service;
         HRESULT hr = CoCreateInstance (CLSID_TaskScheduler, nullptr, CLSCTX_INPROC_SERVER,
                                         IID_ITaskService, (void**) service.address());
         if (FAILED (hr) || ! service)
-            return hrError ("could not create Task Scheduler service", hr);
+            { hrOut = hr; return hrError ("could not create Task Scheduler service", hr); }
 
         {
             EmptyVariant server, user, domain, password;
             hr = service->Connect (server, user, domain, password);
         }
         if (FAILED (hr))
-            return hrError ("could not connect to Task Scheduler", hr);
+            { hrOut = hr; return hrError ("could not connect to Task Scheduler", hr); }
 
         ComPtr<ITaskFolder> rootFolder;
         hr = service->GetFolder (Bstr (L"\\"), rootFolder.address());
         if (FAILED (hr) || ! rootFolder)
-            return hrError ("could not open Task Scheduler root folder", hr);
+            { hrOut = hr; return hrError ("could not open Task Scheduler root folder", hr); }
 
         ComPtr<ITaskFolder> dysektFolder;
         hr = rootFolder->GetFolder (Bstr (kTaskFolder), dysektFolder.address());
@@ -228,16 +232,16 @@ namespace
             EmptyVariant sddl;
             hr = rootFolder->CreateFolder (Bstr (kTaskFolder), sddl, created.address());
             if (FAILED (hr) && hr != HRESULT_FROM_WIN32 (ERROR_ALREADY_EXISTS))
-                return hrError ("could not create the DYSEKT task folder", hr);
+                { hrOut = hr; return hrError ("could not create the DYSEKT task folder", hr); }
             hr = rootFolder->GetFolder (Bstr (kTaskFolder), dysektFolder.address());
             if (FAILED (hr) || ! dysektFolder)
-                return hrError ("could not open the DYSEKT task folder", hr);
+                { hrOut = hr; return hrError ("could not open the DYSEKT task folder", hr); }
         }
 
         ComPtr<ITaskDefinition> task;
         hr = service->NewTask (0, task.address());
         if (FAILED (hr) || ! task)
-            return hrError ("could not create a task definition", hr);
+            { hrOut = hr; return hrError ("could not create a task definition", hr); }
 
         ComPtr<IRegistrationInfo> regInfo;
         if (SUCCEEDED (task->get_RegistrationInfo (regInfo.address())) && regInfo)
@@ -250,7 +254,7 @@ namespace
         ComPtr<IPrincipal> principal;
         hr = task->get_Principal (principal.address());
         if (FAILED (hr) || ! principal)
-            return hrError ("could not get the task's principal", hr);
+            { hrOut = hr; return hrError ("could not get the task's principal", hr); }
         principal->put_RunLevel (TASK_RUNLEVEL_HIGHEST);
         principal->put_LogonType (TASK_LOGON_INTERACTIVE_TOKEN);
 
@@ -267,17 +271,17 @@ namespace
         ComPtr<IActionCollection> actions;
         hr = task->get_Actions (actions.address());
         if (FAILED (hr) || ! actions)
-            return hrError ("could not get the task's action collection", hr);
+            { hrOut = hr; return hrError ("could not get the task's action collection", hr); }
 
         ComPtr<IAction> action;
         hr = actions->Create (TASK_ACTION_EXEC, action.address());
         if (FAILED (hr) || ! action)
-            return hrError ("could not create the task's action", hr);
+            { hrOut = hr; return hrError ("could not create the task's action", hr); }
 
         ComPtr<IExecAction> execAction;
         hr = action->QueryInterface (IID_IExecAction, (void**) execAction.address());
         if (FAILED (hr) || ! execAction)
-            return hrError ("could not query the exec action", hr);
+            { hrOut = hr; return hrError ("could not query the exec action", hr); }
 
         const auto args = juce::String ("--hidden --stop-event=") + juce::String (kStopEventName);
         execAction->put_Path (Bstr (exePath.getFullPathName()));
@@ -290,15 +294,75 @@ namespace
                                                     userId, password, TASK_LOGON_INTERACTIVE_TOKEN, sddl,
                                                     registered.address());
         if (FAILED (hr) || ! registered)
-            return hrError ("could not register the iPhoneUsbShare task", hr);
+            { hrOut = hr; return hrError ("could not register the iPhoneUsbShare task", hr); }
 
         return {};
     }
 
+    // RegisterTaskDefinition with RunLevel = TASK_RUNLEVEL_HIGHEST requires
+    // the *calling process* to already be running elevated - this is a
+    // documented Task Scheduler restriction (see "Security Contexts for
+    // Tasks" on learn.microsoft.com), independent of whether the signed-in
+    // account is an Administrator. DYSEKT normally runs non-elevated, so
+    // registerTask() called from here always fails with E_ACCESSDENIED,
+    // for every account. This relaunches DYSEKT itself, elevated, with
+    // nothing but --register-usb-share-task so it can register the task
+    // and immediately exit (see AppleUsbShareLauncher::runRegistrationBootstrap()
+    // and DysektApplication::initialise() in Main.cpp) - one UAC prompt,
+    // once. After that the task exists, and Run()'ing an already-registered
+    // highest-privilege task does NOT require the caller to be elevated
+    // (the elevation decision was made at registration time), so every
+    // future launch/plug-in goes through runRegisteredTask() silently.
+    bool relaunchSelfElevatedToRegister (juce::String& errorOut)
+    {
+        const auto selfPath = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
+
+        SHELLEXECUTEINFOW info {};
+        info.cbSize = sizeof (info);
+        info.fMask = SEE_MASK_NOCLOSEPROCESS;
+        info.lpVerb = L"runas";
+        info.lpFile = selfPath.getFullPathName().toWideCharPointer();
+        info.lpParameters = L"--register-usb-share-task";
+        info.lpDirectory = selfPath.getParentDirectory().getFullPathName().toWideCharPointer();
+        info.nShow = SW_HIDE;
+
+        if (! ShellExecuteExW (&info) || info.hProcess == nullptr)
+        {
+            const auto err = GetLastError();
+            errorOut = err == ERROR_CANCELLED
+                           ? "USB sharing needs administrator permission to continue."
+                           : "ERROR: could not start the registration step (Win32 error " + juce::String ((int) err) + ")";
+            return false;
+        }
+
+        // This is a short, synchronous, one-shot step (register the task,
+        // exit) - 15s is generous; once the UAC prompt is answered it
+        // should complete in well under a second.
+        const DWORD waitResult = WaitForSingleObject (info.hProcess, 15000);
+        DWORD exitCode = 1;
+        if (waitResult == WAIT_OBJECT_0)
+            GetExitCodeProcess (info.hProcess, &exitCode);
+        CloseHandle (info.hProcess);
+
+        if (waitResult != WAIT_OBJECT_0)
+        {
+            errorOut = "ERROR: registration step did not finish in time";
+            return false;
+        }
+        if (exitCode != 0)
+        {
+            errorOut = "ERROR: registration step failed (exit code " + juce::String ((int) exitCode) + ")";
+            return false;
+        }
+        return true;
+    }
+
     // Runs the already-registered task and returns its PID, or 0 on failure
     // (with errorOut explaining why).
-    DWORD runRegisteredTask (juce::String& errorOut)
+    DWORD runRegisteredTask (juce::String& errorOut, bool& taskNotFound)
     {
+        taskNotFound = false;
+
         ComPtr<ITaskService> service;
         HRESULT hr = CoCreateInstance (CLSID_TaskScheduler, nullptr, CLSCTX_INPROC_SERVER,
                                         IID_ITaskService, (void**) service.address());
@@ -310,13 +374,25 @@ namespace
         }
         if (FAILED (hr)) { errorOut = hrError ("could not connect to Task Scheduler", hr); return 0; }
 
+        // Folder not existing yet means this is a first-ever run: nothing
+        // has been registered at all, not even the \DYSEKT folder itself.
         ComPtr<ITaskFolder> folder;
         hr = service->GetFolder (Bstr (kTaskFolder), folder.address());
-        if (FAILED (hr) || ! folder) { errorOut = hrError ("could not open the DYSEKT task folder", hr); return 0; }
+        if (FAILED (hr) || ! folder)
+        {
+            errorOut = hrError ("could not open the DYSEKT task folder", hr);
+            taskNotFound = true;
+            return 0;
+        }
 
         ComPtr<IRegisteredTask> registeredTask;
         hr = folder->GetTask (Bstr (kTaskName), registeredTask.address());
-        if (FAILED (hr) || ! registeredTask) { errorOut = hrError ("the iPhoneUsbShare task is not registered", hr); return 0; }
+        if (FAILED (hr) || ! registeredTask)
+        {
+            errorOut = hrError ("the iPhoneUsbShare task is not registered", hr);
+            taskNotFound = true;
+            return 0;
+        }
 
         ComPtr<IRunningTask> runningTask;
         EmptyVariant params;
@@ -341,6 +417,21 @@ namespace
 
         return pid;
     }
+}
+
+int AppleUsbShareLauncher::runRegistrationBootstrap()
+{
+#if JUCE_WINDOWS
+    ComInitGuard com;
+    if (! com.ok())
+        return 1;
+
+    HRESULT hr = S_OK;
+    const auto err = registerTask (helperExecutablePath(), hr);
+    return err.isEmpty() ? 0 : 1;
+#else
+    return 1;
+#endif
 }
 
 namespace
@@ -383,13 +474,14 @@ namespace
     }
 }
 
-// Owns the background thread that: registers + runs the elevated task via
-// Task Scheduler, opens a normal process HANDLE for the PID it returns, then
-// tails ActivityLog.txt and watches that handle until stop() signals it to
-// exit or the process dies on its own. Everything past the launch step is
-// unchanged from the old ShellExecuteExW-based version — a HANDLE obtained
-// via OpenProcess behaves identically to one returned by ShellExecuteExW for
-// WaitForSingleObject/TerminateProcess/CloseHandle purposes.
+// Owns the background thread that: tries to Run() the already-registered
+// \DYSEKT\iPhoneUsbShare task (silent, no elevation needed by this
+// process — see the header comment above the class), and only if that task
+// isn't registered yet, does the one-time elevated bootstrap that registers
+// it (relaunchSelfElevatedToRegister()) before retrying. Either way it ends
+// up with a process HANDLE via OpenProcess(pid), then tails ActivityLog.txt
+// and watches that handle until stop() signals it to exit or the process
+// dies on its own.
 class AppleUsbShareLauncher::LaunchThread final : public juce::Thread
 {
 public:
@@ -418,23 +510,35 @@ public:
         juce::int64 byteOffset = logFile.existsAsFile() ? logFile.getSize() : 0;
         juce::String pendingText; // trailing partial line carried to the next read
 
-        owner.postLog ("Registering iPhoneUsbShare as a scheduled task (elevated, no repeat prompts)...");
+        // Run() on an already-registered TASK_RUNLEVEL_HIGHEST task does NOT
+        // require this (non-elevated) caller to be elevated - only
+        // registering/updating one does (see relaunchSelfElevatedToRegister()'s
+        // comment). So try the fast, silent path first every time, and only
+        // pay the one-time elevated-registration cost when the task genuinely
+        // isn't registered yet.
+        owner.postLog ("Starting iPhoneUsbShare via Task Scheduler...");
+        HANDLE process = nullptr;
+        juce::String runError;
+        bool taskNotFound = false;
+        DWORD pid = runRegisteredTask (runError, taskNotFound);
 
-        const auto exePath = AppleUsbShareLauncher::helperExecutablePath();
-        if (const auto err = registerTask (exePath); err.isNotEmpty())
+        if (pid == 0 && taskNotFound)
         {
-            owner.running.store (false, std::memory_order_release);
-            // Registering a TASK_RUNLEVEL_HIGHEST task only self-elevates
-            // silently for an account that's already a local Administrator;
-            // a genuinely standard-user account will see this fail (or
-            // still get prompted), which is exactly what should happen.
-            owner.postLog (err);
-            return;
+            owner.postLog ("iPhoneUsbShare isn't registered yet. Requesting a one-time administrator "
+                            "prompt to register it - future launches won't need this.");
+
+            juce::String bootstrapErr;
+            if (! relaunchSelfElevatedToRegister (bootstrapErr))
+            {
+                owner.running.store (false, std::memory_order_release);
+                owner.postLog (bootstrapErr);
+                return;
+            }
+
+            owner.postLog ("Registered. Starting iPhoneUsbShare via Task Scheduler...");
+            pid = runRegisteredTask (runError, taskNotFound);
         }
 
-        owner.postLog ("Starting iPhoneUsbShare via Task Scheduler...");
-        juce::String runError;
-        const DWORD pid = runRegisteredTask (runError);
         if (pid == 0)
         {
             owner.running.store (false, std::memory_order_release);
@@ -442,8 +546,8 @@ public:
             return;
         }
 
-        HANDLE process = OpenProcess (SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
-                                       FALSE, pid);
+        process = OpenProcess (SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+                                FALSE, pid);
         if (process == nullptr)
         {
             owner.running.store (false, std::memory_order_release);
@@ -454,7 +558,8 @@ public:
 
         owner.childProcess = process;
         owner.running.store (true, std::memory_order_release);
-        owner.postLog ("iPhoneUsbShare helper started (PID " + juce::String ((int) pid) + "); waiting for USB handshake...");
+        owner.postLog ("iPhoneUsbShare helper started (PID " + juce::String ((int) GetProcessId (process))
+                        + "); waiting for USB handshake...");
 
         while (! threadShouldExit())
         {
