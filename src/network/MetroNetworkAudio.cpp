@@ -1614,7 +1614,7 @@ void MetroNetworkAudio::resetDirectPeerDisplayNames()
         }
     }
 
-    if (changed) notifySourceChange (impl.get());
+    if (changed) Impl::notifySourceChange (impl.get());
 }
 
 void MetroNetworkAudio::setDirectPeerDisplayName (const juce::String& peerHost,
@@ -1659,7 +1659,7 @@ void MetroNetworkAudio::setDirectPeerDisplayName (const juce::String& peerHost,
         }
     }
 
-    if (changed) notifySourceChange (impl.get());
+    if (changed) Impl::notifySourceChange (impl.get());
 }
 
 
