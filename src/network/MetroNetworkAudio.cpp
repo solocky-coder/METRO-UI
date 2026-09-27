@@ -1588,6 +1588,81 @@ bool MetroNetworkAudio::connectToServer (const juce::String& host, int port, con
 bool MetroNetworkAudio::connectDirectPeer (const juce::String& peerHost, int peerPort, int sourceId) { return impl != nullptr && impl->connectDirectPeer (peerHost, peerPort, sourceId); }
 void MetroNetworkAudio::disconnectDirectPeers() { if (impl != nullptr) impl->disconnectDirectPeers(); }
 
+void MetroNetworkAudio::resetDirectPeerDisplayNames()
+{
+    if (impl == nullptr) return;
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock (impl->stateMutex);
+        for (auto& peer : impl->peers)
+            if (impl->isDirectPeerAddress (peer.endpoint.get()))
+                peer.user = "USB";
+
+        for (auto& source : impl->sources)
+        {
+            if (! source.online || source.group != "Direct USB")
+                continue;
+
+            auto* runtime = impl->findRuntime (source.sourceKey);
+            if (runtime != nullptr && runtime->endpoint != nullptr
+                && impl->isDirectPeerAddress (runtime->endpoint.get())
+                && source.user != "USB")
+            {
+                source.user = "USB";
+                changed = true;
+            }
+        }
+    }
+
+    if (changed) notifySourceChange (impl.get());
+}
+
+void MetroNetworkAudio::setDirectPeerDisplayName (const juce::String& peerHost,
+                                                   const juce::String& displayName)
+{
+    if (impl == nullptr) return;
+
+    sockaddr_in address {};
+    address.sin_family = AF_INET;
+    address.sin_port = htons (9000);
+    if (inet_pton (AF_INET, peerHost.toRawUTF8(), &address.sin_addr) != 1)
+        return;
+
+    const auto endpoint = impl->findPeerEndpoint (&address);
+    if (endpoint == nullptr)
+        return;
+
+    const auto name = displayName.trim();
+    if (name.isEmpty())
+        return;
+
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock (impl->stateMutex);
+        for (auto& peer : impl->peers)
+            if (samePeerAddress (peer.endpoint.get(), endpoint.get()))
+                peer.user = name;
+
+        for (auto& source : impl->sources)
+        {
+            if (! source.online || source.group != "Direct USB")
+                continue;
+
+            auto* runtime = impl->findRuntime (source.sourceKey);
+            if (runtime != nullptr && runtime->endpoint != nullptr
+                && samePeerAddress (runtime->endpoint.get(), endpoint.get())
+                && source.user != name)
+            {
+                source.user = name;
+                changed = true;
+            }
+        }
+    }
+
+    if (changed) notifySourceChange (impl.get());
+}
+
+
 bool MetroNetworkAudio::joinGroup (const juce::String& group, const juce::String& password, bool isPublic)
 {
     return impl != nullptr && impl->joinGroup (group, password, isPublic);
