@@ -13,6 +13,7 @@
 #include <cstring>
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "advapi32.lib")
 #endif
 
 
@@ -266,15 +267,79 @@ static std::vector<std::pair<uint32_t,std::string>> muxDevices()
 
 static std::string deviceName(uint32_t id)
 {
-    SocketGuard g;if(!localConnect(g.s,27015))return{};
-    static std::atomic<uint32_t>tag{100};unsigned char h[16]{};putle(h,24);putle(h+4,1);putle(h+8,2);putle(h+12,tag++);
-    unsigned char c[8]{};c[0]=(unsigned char)id;c[1]=(unsigned char)(id>>8);c[2]=(unsigned char)(id>>16);c[3]=(unsigned char)(id>>24);uint16_t port=htons(0xf27e);memcpy(c+4,&port,2);
-    if(!sendAll(g.s,h,16)||!sendAll(g.s,c,8)||!recvAll(g.s,h,20)||le32(h+16)!=0)return{};
-    static constexpr char req[]="<?xml version=\"1.0\" encoding=\"UTF-8\"?><plist version=\"1.0\"><dict><key>Key</key><string>DeviceName</string><key>Request</key><string>GetValue</string></dict></plist>";
-    uint32_t n=htonl((uint32_t)sizeof(req)-1);if(!sendAll(g.s,&n,4)||!sendAll(g.s,req,sizeof(req)-1))return{};
-    unsigned char lb[4]{};if(!recvAll(g.s,lb,4))return{};auto len=be32(lb);if(!len||len>1024*1024)return{};std::string body(len,'\0');if(!recvAll(g.s,body.data(),len))return{};return plistString(body,"Value");
-}
+    SocketGuard g;
+    if (! localConnect (g.s, 27015))
+        return {};
 
+    static std::atomic<uint32_t> tag { 100 };
+    const auto currentTag = tag.fetch_add (1, std::memory_order_relaxed);
+
+    const auto muxPort = htons (0xf27e);
+    const auto portNumber = static_cast<unsigned int> (muxPort);
+    const auto request = std::string (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<plist version=\"1.0\"><dict>"
+        "<key>MessageType</key><string>Connect</string>"
+        "<key>ClientVersionString</key><string>DYSEKT-SF</string>"
+        "<key>ProgName</key><string>DYSEKT-SF</string>"
+        "<key>DeviceID</key><integer>") + std::to_string (id)
+        + "</integer><key>PortNumber</key><integer>"
+        + std::to_string (portNumber)
+        + "</integer></dict></plist>";
+
+    unsigned char header[16] {};
+    putle (header, static_cast<uint32_t> (sizeof (header) + request.size()));
+    putle (header + 4, 1);
+    putle (header + 8, 8);
+    putle (header + 12, currentTag);
+
+    if (! sendAll (g.s, header, sizeof (header))
+        || ! sendAll (g.s, request.data(), request.size()))
+        return {};
+
+    unsigned char replyHeader[16] {};
+    if (! recvAll (g.s, replyHeader, sizeof (replyHeader)))
+        return {};
+
+    const auto replyLength = le32 (replyHeader);
+    if (replyLength < sizeof (replyHeader) || replyLength > 1024 * 1024)
+        return {};
+
+    std::string reply (replyLength - sizeof (replyHeader), '\0');
+    if (! reply.empty() && ! recvAll (g.s, reply.data(), reply.size()))
+        return {};
+
+    const auto number = plistString (reply, "Number");
+    if (number != "0")
+        return {};
+
+    static constexpr char lockdownRequest[] =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<plist version=\"1.0\"><dict>"
+        "<key>Key</key><string>DeviceName</string>"
+        "<key>Request</key><string>GetValue</string>"
+        "</dict></plist>";
+
+    const auto requestSize = static_cast<uint32_t> (sizeof (lockdownRequest) - 1);
+    const auto beLength = htonl (requestSize);
+    if (! sendAll (g.s, &beLength, sizeof (beLength))
+        || ! sendAll (g.s, lockdownRequest, requestSize))
+        return {};
+
+    unsigned char lengthBytes[4] {};
+    if (! recvAll (g.s, lengthBytes, sizeof (lengthBytes)))
+        return {};
+
+    const auto responseSize = be32 (lengthBytes);
+    if (responseSize == 0 || responseSize > 1024 * 1024)
+        return {};
+
+    std::string lockdownReply (responseSize, '\0');
+    if (! recvAll (g.s, lockdownReply.data(), lockdownReply.size()))
+        return {};
+
+    return plistString (lockdownReply, "Value");
+}
 static std::string pnpIdForAdapter(const char*name)
 {
     if(!name||!*name)return{};std::string guid=name;if(guid.front()=='{')guid.erase(0,1);if(!guid.empty()&&guid.back()=='}')guid.pop_back();
