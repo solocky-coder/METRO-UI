@@ -2,6 +2,7 @@
 
 #include "DeviceNetworkTransport.h"
 #include "AppleUsbShareLauncher.h"
+#include <utility>
 
 // Thin DYSEKT transport adapter around the separate, elevated iPhoneUsbShare
 // helper process. AppleUsbShareLauncher only launches/monitors that helper;
