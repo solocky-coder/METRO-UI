@@ -235,3 +235,50 @@ juce::String AppleUsbNetworkTransport::status() const
 {
     return currentStatus;
 }
+
+std::vector<std::pair<juce::String, juce::String>> AppleUsbNetworkTransport::liveDirectPeerNames() const
+{
+    std::vector<std::pair<juce::String, juce::String>> result;
+#if JUCE_WINDOWS
+    ULONG size = 0;
+    if (GetAdaptersAddresses (AF_INET, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW)
+        return result;
+
+    std::vector<unsigned char> buffer (size);
+    auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*> (buffer.data());
+    if (GetAdaptersAddresses (AF_INET, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR)
+        return result;
+
+    for (auto* adapter = adapters; adapter != nullptr; adapter = adapter->Next)
+    {
+        if (adapter->IfType != IF_TYPE_ETHERNET_CSMACD || adapter->OperStatus != IfOperStatusUp)
+            continue;
+
+        const auto friendly = adapter->FriendlyName ? juce::String (adapter->FriendlyName) : juce::String();
+        const auto description = adapter->Description ? juce::String (adapter->Description) : juce::String();
+        const auto adapterText = (friendly + " " + description).toLowerCase();
+        if (! adapterText.contains ("usbncm") && ! adapterText.contains ("usb ncm"))
+            continue;
+
+        for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next)
+        {
+            if (unicast->Address.lpSockaddr == nullptr
+                || unicast->Address.lpSockaddr->sa_family != AF_INET)
+                continue;
+
+            const auto* address = reinterpret_cast<const sockaddr_in*> (unicast->Address.lpSockaddr);
+            const auto hostOrder = ntohl (address->sin_addr.s_addr);
+            const auto subnet = (hostOrder >> 8) & 0xFFFFFFu;
+            if (subnet < 0xC0A863u || subnet > 0xC0A866u)
+                continue;
+
+            const auto peerHost = "192.168." + juce::String ((subnet >> 8) & 0xffu) + ".2";
+            const auto displayName = friendly.isNotEmpty() ? friendly : description;
+            if (displayName.isNotEmpty())
+                result.emplace_back (peerHost, displayName);
+            break;
+        }
+    }
+#endif
+    return result;
+}
