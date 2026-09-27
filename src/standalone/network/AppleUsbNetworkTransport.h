@@ -40,9 +40,10 @@ public:
     // reads "Waiting for Ios Device (no DHCP request yet)".
     juce::String linkStatus() const;
 
-    // Returns names only for currently present Apple USB NCM adapters,
-    // keyed by their live reserved Direct USB peer address. No name is cached
-    // after an adapter disappears.
+    // Returns the actual user-assigned Apple DeviceName for currently present
+    // Direct USB NCM peers, keyed by their live reserved peer address. The
+    // physical Apple device is matched through its USB serial; no enumeration
+    // order or IP-slot guessing is used, and no name survives device removal.
     std::vector<std::pair<juce::String, juce::String>> liveDirectPeerNames() const;
 
     // Receives helper milestones/errors (already filtered) on the message
