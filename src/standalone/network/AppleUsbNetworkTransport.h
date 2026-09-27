@@ -39,6 +39,11 @@ public:
     // reads "Waiting for Ios Device (no DHCP request yet)".
     juce::String linkStatus() const;
 
+    // Returns names only for currently present Apple USB NCM adapters,
+    // keyed by their live reserved Direct USB peer address. No name is cached
+    // after an adapter disappears.
+    std::vector<std::pair<juce::String, juce::String>> liveDirectPeerNames() const;
+
     // Receives helper milestones/errors (already filtered) on the message
     // thread so the UI can show them in its Activity box. Pass {} to clear.
     void setActivityCallback (std::function<void (const juce::String&)> callback)
