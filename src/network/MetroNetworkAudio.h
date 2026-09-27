@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <utility>
 
 // METRO-facing adapter over the SonoBus/AOO network engine.
 // AOO source IDs are only unique within a peer, so sourceKey is the opaque
@@ -47,6 +48,11 @@ public:
                          const juce::String& password);
     bool connectDirectPeer(const juce::String& peerHost, int peerPort, int sourceId = 0);
     void disconnectDirectPeers();
+
+    // Display metadata for live Direct USB peers is supplied by the
+    // standalone Apple USB transport. No device discovery happens here.
+    void setDirectPeerDisplayName(const juce::String& peerHost, const juce::String& displayName);
+    void resetDirectPeerDisplayNames();
 
     bool joinGroup(const juce::String& group,
                    const juce::String& password = {},
