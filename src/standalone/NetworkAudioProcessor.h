@@ -120,16 +120,19 @@ public:
         struct BlockTimer
         {
             MetroNetworkAudio* audio;
+            juce::AudioBuffer<float>* out;
             int numSamples;
             juce::int64 startTicks = juce::Time::getHighResolutionTicks();
             ~BlockTimer()
             {
                 if (audio != nullptr)
-                    audio->noteHostBlock (numSamples, (int64_t) (juce::Time::highResolutionTicksToSeconds (
-                        juce::Time::getHighResolutionTicks() - startTicks) * 1.0e6));
+                    audio->noteHostBlock (numSamples,
+                                          (int64_t) (juce::Time::highResolutionTicksToSeconds (
+                                              juce::Time::getHighResolutionTicks() - startTicks) * 1.0e6),
+                                          out != nullptr && numSamples > 0 ? out->getMagnitude (0, numSamples) : 0.0f);
             }
         } blockTimer { networkAudio != nullptr ? networkAudio : activeNetworkAudio.load (std::memory_order_acquire),
-                       buffer.getNumSamples() };
+                       &buffer, buffer.getNumSamples() };
 
         DysektProcessor::processBlock (buffer, midi);
 

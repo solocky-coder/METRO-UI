@@ -293,6 +293,10 @@ public:
         std::atomic<uint32_t> diagProduced { 0 };   // ...of which sink->process() returned audio
         std::atomic<float>    diagPeak { 0.0f };    // peak of audio actually delivered
         std::atomic<int>      diagHostSamples { 0 };// host callback size (numSamples)
+
+        // io-thread diagnostics: UDP packets actually routed to this source.
+        std::atomic<uint32_t> diagRxPackets { 0 };
+        std::atomic<uint32_t> diagRxBytes { 0 };
     };
 
     struct PeerInfo
@@ -324,9 +328,16 @@ public:
     std::atomic<int64_t>  hostMaxMicros { 0 };    // slowest whole processBlock since last stats line
     std::atomic<int64_t>  hostSumMicros { 0 };
     std::atomic<int>      hostLastBlock { 0 };
+    std::atomic<float>    hostOutPeak { 0.0f };   // peak of the FINAL output buffer after all mixing
+    std::array<std::atomic<uint32_t>, 32> eventTypeCounts {};   // sink events by numeric type
 
-    void noteHostBlock (int numSamples, int64_t elapsedMicros) noexcept
+    void noteHostBlock (int numSamples, int64_t elapsedMicros, float outputPeak) noexcept
     {
+        {
+            auto prevPeak = hostOutPeak.load (std::memory_order_relaxed);
+            while (outputPeak > prevPeak
+                   && ! hostOutPeak.compare_exchange_weak (prevPeak, outputPeak, std::memory_order_relaxed)) {}
+        }
         hostBlocks.fetch_add (1, std::memory_order_relaxed);
         hostSumMicros.fetch_add (elapsedMicros, std::memory_order_relaxed);
         hostLastBlock.store (numSamples, std::memory_order_relaxed);
@@ -772,7 +783,15 @@ public:
             aooDiag ("HOST_STATS processBlockCalls=" + juce::String ((int) blocks)
                      + " avgMicros=" + juce::String (blocks > 0 ? (int64_t) (sum / (int64_t) blocks) : 0)
                      + " maxMicros=" + juce::String ((juce::int64) mx)
-                     + " lastBlock=" + juce::String (hostLastBlock.load (std::memory_order_relaxed)));
+                     + " lastBlock=" + juce::String (hostLastBlock.load (std::memory_order_relaxed))
+                     + " outPeak=" + juce::String (hostOutPeak.exchange (0.0f, std::memory_order_relaxed), 5));
+
+            juce::String types;
+            for (size_t t = 0; t < eventTypeCounts.size(); ++t)
+                if (const auto n = eventTypeCounts[t].exchange (0, std::memory_order_relaxed))
+                    types << " type" << juce::String ((int) t) << "=" << juce::String ((int) n);
+            if (types.isNotEmpty())
+                aooDiag ("EVENT_TYPES (sink events this second, by numeric type)" + types);
         }
 
         for (auto& slot : runtimeSlots)
@@ -784,10 +803,14 @@ public:
             const auto produced = runtime->diagProduced.exchange (0, std::memory_order_relaxed);
             const auto peak = runtime->diagPeak.exchange (0.0f, std::memory_order_relaxed);
             const auto hostSamples = runtime->diagHostSamples.load (std::memory_order_relaxed);
+            const auto rxPackets = runtime->diagRxPackets.exchange (0, std::memory_order_relaxed);
+            const auto rxBytes = runtime->diagRxBytes.exchange (0, std::memory_order_relaxed);
             if (calls == 0 && runtime->handshake != SourceRuntime::HandshakeState::Formatted) continue;
 
             aooDiag ("AUDIO_STATS endpoint=" + endpointString (runtime->endpoint.get())
                      + " sourceKey=" + juce::String (runtime->sourceKey)
+                     + " rxPackets=" + juce::String ((int) rxPackets)
+                     + " rxBytes=" + juce::String ((int) rxBytes)
                      + " audioCallbacks=" + juce::String ((int) calls)
                      + " producedAudio=" + juce::String ((int) produced)
                      + " peak=" + juce::String (peak, 5)
@@ -946,6 +969,8 @@ public:
 
                     if (targetRuntime != nullptr)
                     {
+                        targetRuntime->diagRxPackets.fetch_add (1, std::memory_order_relaxed);
+                        targetRuntime->diagRxBytes.fetch_add ((uint32_t) n, std::memory_order_relaxed);
                         aooDiag ("RX -> runtime"
                                  " sourceId=" + juce::String (targetRuntime->sourceId)
                                  + " endpoint=" + endpointDebug (targetRuntime->endpoint.get()));
@@ -1408,6 +1433,11 @@ public:
         for (int32_t i = 0; i < count; ++i)
         {
             if (events[i] == nullptr) continue;
+            {
+                const int evType = (int) events[i]->type;
+                if (evType >= 0 && evType < (int) self->eventTypeCounts.size())
+                    self->eventTypeCounts[(size_t) evType].fetch_add (1, std::memory_order_relaxed);
+            }
             switch (events[i]->type)
             {
                 case AOO_SOURCE_FORMAT_EVENT:
@@ -1702,9 +1732,9 @@ void MetroNetworkAudio::process (juce::AudioBuffer<float>& destination, int numS
     if (impl != nullptr) impl->processLegacyMix (destination, numSamples);
 }
 
-void MetroNetworkAudio::noteHostBlock (int numSamples, int64_t elapsedMicros) noexcept
+void MetroNetworkAudio::noteHostBlock (int numSamples, int64_t elapsedMicros, float outputPeak) noexcept
 {
-    if (impl != nullptr) impl->noteHostBlock (numSamples, elapsedMicros);
+    if (impl != nullptr) impl->noteHostBlock (numSamples, elapsedMicros, outputPeak);
 }
 
 bool MetroNetworkAudio::processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate,
