@@ -70,6 +70,11 @@ constexpr size_t kMaxNetworkSources = 64;
 // -------------------------------------------------------------------------
 constexpr bool kAooDiagnostics = true;
 
+// Per-packet lines (4+ log lines and one flush per received UDP packet, ~1,600
+// flushed writes/s with two iPads) are off by default. State changes, format
+// results, errors and the 1 Hz AUDIO_STATS lines below are always kept.
+constexpr bool kAooPacketDiagnostics = false;
+
 std::mutex aooLogMutex;
 std::unique_ptr<juce::FileOutputStream> aooLogStream;
 
@@ -83,6 +88,18 @@ void aooDiag (const juce::String& message)
 {
     if (! kAooDiagnostics)
         return;
+
+    if (! kAooPacketDiagnostics)
+    {
+        static const char* const noisy[] = {
+            "RX packet", "RX discovery routing", "RX -> runtime",
+            "RX runtime handle_message", "RX runtime format probe",
+            "TX runtime send", "sendAooReply endpoint=",
+            "DIRECT_USB invite retry", "RUNTIME events count" };
+        for (const auto* prefix : noisy)
+            if (message.startsWith (prefix))
+                return;
+    }
 
     // Still visible in a debugger/console when JUCE_DEBUG is on.
     DBG ("[METRO-AOO] " + message);
@@ -268,6 +285,14 @@ public:
 
         std::array<float, kAooChannels * kAooBlockSize> scratch {};
         std::array<aoo_sample*, kAooChannels> pointers {};
+
+        // Audio-thread diagnostics: written with relaxed atomics by
+        // processSourceChannel(), read and reset once a second by the io
+        // thread (logAudioStats). No logging or allocation on the audio thread.
+        std::atomic<uint32_t> diagCalls { 0 };      // audio callbacks that pulled from this source
+        std::atomic<uint32_t> diagProduced { 0 };   // ...of which sink->process() returned audio
+        std::atomic<float>    diagPeak { 0.0f };    // peak of audio actually delivered
+        std::atomic<int>      diagHostSamples { 0 };// host callback size (numSamples)
     };
 
     struct PeerInfo
@@ -294,6 +319,7 @@ public:
     std::array<float, kAooChannels * kAooBlockSize> mixScratch {};
     std::array<aoo_sample*, kAooChannels> mixPointers {};
 
+    std::atomic<double> hostSampleRate { 0.0 };   // what the audio callback says it runs at
     std::atomic<bool> connected { false };
     std::atomic<bool> joined { false };
     juce::String group;
@@ -719,12 +745,48 @@ public:
         }
     }
 
+    // Once a second: how much the audio callback actually pulled from each
+    // source. calls==0 on a Formatted source means no track/route is reading it;
+    // calls>0 with produced==0 means the sink has nothing decoded to hand back;
+    // produced>0 with peak==0 means silent audio is arriving.
+    void logAudioStats()
+    {
+        for (auto& slot : runtimeSlots)
+        {
+            auto* runtime = slot.load (std::memory_order_acquire);
+            if (runtime == nullptr || runtime->sink == nullptr) continue;
+
+            const auto calls = runtime->diagCalls.exchange (0, std::memory_order_relaxed);
+            const auto produced = runtime->diagProduced.exchange (0, std::memory_order_relaxed);
+            const auto peak = runtime->diagPeak.exchange (0.0f, std::memory_order_relaxed);
+            const auto hostSamples = runtime->diagHostSamples.load (std::memory_order_relaxed);
+            if (calls == 0 && runtime->handshake != SourceRuntime::HandshakeState::Formatted) continue;
+
+            aooDiag ("AUDIO_STATS endpoint=" + endpointString (runtime->endpoint.get())
+                     + " sourceKey=" + juce::String (runtime->sourceKey)
+                     + " audioCallbacks=" + juce::String ((int) calls)
+                     + " producedAudio=" + juce::String ((int) produced)
+                     + " peak=" + juce::String (peak, 5)
+                     + " hostBlock=" + juce::String (hostSamples)
+                     + " hostRate=" + juce::String (hostSampleRate.load (std::memory_order_relaxed), 1)
+                     + " aooRate=" + juce::String (kAooSampleRate)
+                     + " aooBlock=" + juce::String (kAooBlockSize));
+        }
+    }
+
     void ioLoop()
     {
         std::array<char, AOO_MAXPACKETSIZE> packet {};
         int directInviteTicks = 0;
+        auto lastAudioStatsMs = juce::Time::getMillisecondCounter();
         while (running.load (std::memory_order_acquire))
         {
+            if (juce::Time::getMillisecondCounter() - lastAudioStatsMs >= 1000)
+            {
+                lastAudioStatsMs = juce::Time::getMillisecondCounter();
+                logAudioStats();
+            }
+
             if (directMode.load (std::memory_order_acquire) && ++directInviteTicks >= 25)
             {
                 directInviteTicks = 0;
@@ -1502,7 +1564,11 @@ public:
         auto* runtime = findRuntime (sourceKey);
         if (runtime == nullptr || runtime->sink == nullptr || sourceChannel >= kAooChannels) return false;
 
+        runtime->diagCalls.fetch_add (1, std::memory_order_relaxed);
+        runtime->diagHostSamples.store (numSamples, std::memory_order_relaxed);
+
         bool produced = false;
+        float blockPeak = 0.0f;
         int offset = 0;
         while (offset < numSamples)
         {
@@ -1518,9 +1584,19 @@ public:
                 const auto* src = runtime->pointers[(size_t) sourceChannel];
                 if (destination.getNumChannels() > 0) destination.copyFrom (0, offset, src, block);
                 if (destination.getNumChannels() > 1) destination.copyFrom (1, offset, src, block);
+                const auto range = juce::FloatVectorOperations::findMinAndMax (src, block);
+                blockPeak = juce::jmax (blockPeak, std::abs (range.getStart()), std::abs (range.getEnd()));
                 produced = true;
             }
             offset += block;
+        }
+
+        if (produced)
+        {
+            runtime->diagProduced.fetch_add (1, std::memory_order_relaxed);
+            auto prev = runtime->diagPeak.load (std::memory_order_relaxed);
+            while (blockPeak > prev
+                   && ! runtime->diagPeak.compare_exchange_weak (prev, blockPeak, std::memory_order_relaxed)) {}
         }
         return produced;
     }
@@ -1588,81 +1664,6 @@ bool MetroNetworkAudio::connectToServer (const juce::String& host, int port, con
 bool MetroNetworkAudio::connectDirectPeer (const juce::String& peerHost, int peerPort, int sourceId) { return impl != nullptr && impl->connectDirectPeer (peerHost, peerPort, sourceId); }
 void MetroNetworkAudio::disconnectDirectPeers() { if (impl != nullptr) impl->disconnectDirectPeers(); }
 
-void MetroNetworkAudio::resetDirectPeerDisplayNames()
-{
-    if (impl == nullptr) return;
-    bool changed = false;
-    {
-        std::lock_guard<std::mutex> lock (impl->stateMutex);
-        for (auto& peer : impl->peers)
-            if (impl->isDirectPeerAddress (peer.endpoint.get()))
-                peer.user = "USB";
-
-        for (auto& source : impl->sources)
-        {
-            if (! source.online || source.group != "Direct USB")
-                continue;
-
-            auto* runtime = impl->findRuntime (source.sourceKey);
-            if (runtime != nullptr && runtime->endpoint != nullptr
-                && impl->isDirectPeerAddress (runtime->endpoint.get())
-                && source.user != "USB")
-            {
-                source.user = "USB";
-                changed = true;
-            }
-        }
-    }
-
-    if (changed) Impl::notifySourceChange (impl.get());
-}
-
-void MetroNetworkAudio::setDirectPeerDisplayName (const juce::String& peerHost,
-                                                   const juce::String& displayName)
-{
-    if (impl == nullptr) return;
-
-    sockaddr_in address {};
-    address.sin_family = AF_INET;
-    address.sin_port = htons (9000);
-    if (inet_pton (AF_INET, peerHost.toRawUTF8(), &address.sin_addr) != 1)
-        return;
-
-    const auto endpoint = impl->findPeerEndpoint (&address);
-    if (endpoint == nullptr)
-        return;
-
-    const auto name = displayName.trim();
-    if (name.isEmpty())
-        return;
-
-    bool changed = false;
-    {
-        std::lock_guard<std::mutex> lock (impl->stateMutex);
-        for (auto& peer : impl->peers)
-            if (samePeerAddress (peer.endpoint.get(), endpoint.get()))
-                peer.user = name;
-
-        for (auto& source : impl->sources)
-        {
-            if (! source.online || source.group != "Direct USB")
-                continue;
-
-            auto* runtime = impl->findRuntime (source.sourceKey);
-            if (runtime != nullptr && runtime->endpoint != nullptr
-                && samePeerAddress (runtime->endpoint.get(), endpoint.get())
-                && source.user != name)
-            {
-                source.user = name;
-                changed = true;
-            }
-        }
-    }
-
-    if (changed) Impl::notifySourceChange (impl.get());
-}
-
-
 bool MetroNetworkAudio::joinGroup (const juce::String& group, const juce::String& password, bool isPublic)
 {
     return impl != nullptr && impl->joinGroup (group, password, isPublic);
@@ -1680,7 +1681,7 @@ void MetroNetworkAudio::process (juce::AudioBuffer<float>& destination, int numS
 bool MetroNetworkAudio::processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate,
                                               int64_t sourceKey, int sourceChannel)
 {
-    juce::ignoreUnused (sampleRate);
+    if (impl != nullptr) impl->hostSampleRate.store (sampleRate, std::memory_order_relaxed);
     return impl != nullptr && impl->processSourceChannel (destination, numSamples, sourceKey, sourceChannel);
 }
 

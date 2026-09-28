@@ -7,13 +7,6 @@
 #include "../metro/MetroLookAndFeel.h"
 #include "NetworkAudioProcessor.h"
 #include "Utf8Text.h"
-#include "network/AppleUsbNetworkTransport.h"
-
-inline AppleUsbNetworkTransport& getAppleUsbNetworkTransport()
-{
-    static AppleUsbNetworkTransport service;
-    return service;
-}
 
 class NetworkAudioSettingsComponent : public juce::Component,
                                        private juce::Timer
@@ -637,17 +630,6 @@ private:
     void timerCallback() override
     {
         refreshSources();
-
-        if (directUsbButton.getToggleState() && networkAudio != nullptr)
-        {
-            // Refresh from the live NCM adapters on every UI tick. This keeps
-            // the display name tied to the currently connected USB peer and
-            // prevents a later device from inheriting a stale name.
-            networkAudio->resetDirectPeerDisplayNames();
-            for (const auto& [peerHost, displayName] : getAppleUsbNetworkTransport().liveDirectPeerNames())
-                networkAudio->setDirectPeerDisplayName (peerHost, displayName);
-        }
-
         updateDirectUsbProgress();
     }
 

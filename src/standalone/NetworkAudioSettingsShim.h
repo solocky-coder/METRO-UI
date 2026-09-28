@@ -197,7 +197,8 @@ private:
 
     static ::AppleUsbNetworkTransport& appleUsbService()
     {
-        return ::getAppleUsbNetworkTransport();
+        static ::AppleUsbNetworkTransport service;
+        return service;
     }
 
     void showCreateNetworkTrackMenu()

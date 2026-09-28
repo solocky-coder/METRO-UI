@@ -2,7 +2,6 @@
 
 #include "DeviceNetworkTransport.h"
 #include "AppleUsbShareLauncher.h"
-#include <utility>
 
 // Thin DYSEKT transport adapter around the separate, elevated iPhoneUsbShare
 // helper process. AppleUsbShareLauncher only launches/monitors that helper;
@@ -39,12 +38,6 @@ public:
     // phone in the current session; until the phone asks for an address this
     // reads "Waiting for Ios Device (no DHCP request yet)".
     juce::String linkStatus() const;
-
-    // Returns the actual user-assigned Apple DeviceName for currently present
-    // Direct USB NCM peers, keyed by their live reserved peer address. The
-    // physical Apple device is matched through its USB serial; no enumeration
-    // order or IP-slot guessing is used, and no name survives device removal.
-    std::vector<std::pair<juce::String, juce::String>> liveDirectPeerNames() const;
 
     // Receives helper milestones/errors (already filtered) on the message
     // thread so the UI can show them in its Activity box. Pass {} to clear.
