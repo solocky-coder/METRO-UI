@@ -320,6 +320,20 @@ public:
     std::array<aoo_sample*, kAooChannels> mixPointers {};
 
     std::atomic<double> hostSampleRate { 0.0 };   // what the audio callback says it runs at
+    std::atomic<uint32_t> hostBlocks { 0 };       // host audio callbacks since last stats line
+    std::atomic<int64_t>  hostMaxMicros { 0 };    // slowest whole processBlock since last stats line
+    std::atomic<int64_t>  hostSumMicros { 0 };
+    std::atomic<int>      hostLastBlock { 0 };
+
+    void noteHostBlock (int numSamples, int64_t elapsedMicros) noexcept
+    {
+        hostBlocks.fetch_add (1, std::memory_order_relaxed);
+        hostSumMicros.fetch_add (elapsedMicros, std::memory_order_relaxed);
+        hostLastBlock.store (numSamples, std::memory_order_relaxed);
+        auto prev = hostMaxMicros.load (std::memory_order_relaxed);
+        while (elapsedMicros > prev
+               && ! hostMaxMicros.compare_exchange_weak (prev, elapsedMicros, std::memory_order_relaxed)) {}
+    }
     std::atomic<bool> connected { false };
     std::atomic<bool> joined { false };
     juce::String group;
@@ -751,6 +765,16 @@ public:
     // produced>0 with peak==0 means silent audio is arriving.
     void logAudioStats()
     {
+        {
+            const auto blocks = hostBlocks.exchange (0, std::memory_order_relaxed);
+            const auto sum = hostSumMicros.exchange (0, std::memory_order_relaxed);
+            const auto mx = hostMaxMicros.exchange (0, std::memory_order_relaxed);
+            aooDiag ("HOST_STATS processBlockCalls=" + juce::String ((int) blocks)
+                     + " avgMicros=" + juce::String (blocks > 0 ? (int64_t) (sum / (int64_t) blocks) : 0)
+                     + " maxMicros=" + juce::String ((juce::int64) mx)
+                     + " lastBlock=" + juce::String (hostLastBlock.load (std::memory_order_relaxed)));
+        }
+
         for (auto& slot : runtimeSlots)
         {
             auto* runtime = slot.load (std::memory_order_acquire);
@@ -1676,6 +1700,11 @@ void MetroNetworkAudio::process (juce::AudioBuffer<float>& destination, int numS
 {
     juce::ignoreUnused (sampleRate);
     if (impl != nullptr) impl->processLegacyMix (destination, numSamples);
+}
+
+void MetroNetworkAudio::noteHostBlock (int numSamples, int64_t elapsedMicros) noexcept
+{
+    if (impl != nullptr) impl->noteHostBlock (numSamples, elapsedMicros);
 }
 
 bool MetroNetworkAudio::processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate,

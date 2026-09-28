@@ -114,6 +114,23 @@ public:
 
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
     {
+        // Diagnostics only: measures the whole callback (including the base
+        // DysektProcessor::processBlock) and reports it to MetroNetworkAudio,
+        // which logs calls/sec and avg/max duration once a second.
+        struct BlockTimer
+        {
+            MetroNetworkAudio* audio;
+            int numSamples;
+            juce::int64 startTicks = juce::Time::getHighResolutionTicks();
+            ~BlockTimer()
+            {
+                if (audio != nullptr)
+                    audio->noteHostBlock (numSamples, (int64_t) (juce::Time::highResolutionTicksToSeconds (
+                        juce::Time::getHighResolutionTicks() - startTicks) * 1.0e6));
+            }
+        } blockTimer { networkAudio != nullptr ? networkAudio : activeNetworkAudio.load (std::memory_order_acquire),
+                       buffer.getNumSamples() };
+
         DysektProcessor::processBlock (buffer, midi);
 
         // Recorded AudioClip playback. Deliberately runs independent of the

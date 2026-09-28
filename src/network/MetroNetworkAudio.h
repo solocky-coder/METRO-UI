@@ -73,6 +73,10 @@ public:
                               int64_t sourceKey,
                               int sourceChannel);
 
+    // Diagnostics: called once per host audio callback (audio thread, lock-free)
+    // with the callback's block size and how long the whole processBlock took.
+    void noteHostBlock(int numSamples, int64_t elapsedMicros) noexcept;
+
     std::vector<SourceInfo> getSources() const;
     void setSourceListener(SourceListener listener);
 
