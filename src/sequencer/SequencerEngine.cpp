@@ -1622,9 +1622,9 @@ int SequencerEngine::addNetworkAudioTrack (int64_t routeId, int32_t sourceId, in
 
     auto track = SequencerTrack::makeAudio (input);
     if (userName.isNotEmpty() && sourceName.isNotEmpty())
-        track->name = userName + " | " + sourceName + " Ch " + juce::String (sourceChannel + 1);
+        track->name = userName + " | " + sourceName + " " + networkChannelLabel (sourceChannel);
     else if (sourceName.isNotEmpty())
-        track->name = sourceName + " Ch " + juce::String (sourceChannel + 1);
+        track->name = sourceName + " " + networkChannelLabel (sourceChannel);
 
     const int newTrackIndex = (int) current->size();
     auto next = std::make_shared<Impl::TrackList> (*current);

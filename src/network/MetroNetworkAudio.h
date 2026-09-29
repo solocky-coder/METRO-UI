@@ -17,6 +17,25 @@
 class MetroNetworkAudio
 {
 public:
+    // Route channel selector. Values >= 0 select one AOO channel (mono, sent
+    // to both sides). kStereoPair selects AOO channels 1+2 as one stereo pair.
+    // The value is stored in the same int as a single-channel route, so the
+    // project stream format does not change and old projects load unchanged.
+    static constexpr int kStereoPair = 1000;
+    static constexpr bool isStereoRoute (int sourceChannel) noexcept { return sourceChannel == kStereoPair; }
+
+    // What a source is doing right now, derived once a second on the io thread.
+    enum class LinkState
+    {
+        Unknown,           // no data yet
+        WaitingForFormat,  // invited, remote format not received
+        ReadyNoTrack,      // format negotiated, no METRO track is reading it
+        Buffering,         // a track reads it, but the sink has decoded nothing yet
+        Receiving,         // audio arriving with signal
+        Silent,            // audio arriving but only silence for a couple of seconds
+        NoData             // a track reads it, but no packets are arriving
+    };
+
     struct SourceInfo
     {
         int64_t sourceKey = 0;
@@ -27,6 +46,11 @@ public:
         double sampleRate = 0.0;
         bool online = false;
         float packetLoss = 0.0f;
+
+        // Live status for the UI (updated about once a second).
+        LinkState linkState = LinkState::Unknown;
+        float peakLevel = 0.0f;       // linear peak delivered to tracks over the last second
+        int rxPacketsPerSec = 0;      // UDP packets routed to this source over the last second
     };
 
     using SourceListener = std::function<void()>;
@@ -41,6 +65,7 @@ public:
     bool startDirect(int localPort = 9000);
     void stop();
     bool isRunning() const noexcept;
+    bool isDirectMode() const noexcept;
 
     bool connectToServer(const juce::String& host,
                          int port,

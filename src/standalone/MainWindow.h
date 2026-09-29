@@ -6,6 +6,7 @@
 #include "../sequencer/MidiClip.h"
 #include "MidiRouter.h"
 #include "NetworkAudioProcessor.h"
+#include "NetworkAudioAutoTrack.h"
 #include "NetworkAudioSettingsShim.h"
 
 class MainWindow : public juce::DocumentWindow,
@@ -49,6 +50,7 @@ public:
         networkAudio = std::make_unique<MetroNetworkAudio>();
         networkAudio->start();
         processor->setNetworkAudio (networkAudio.get());
+        autoTrack = std::make_unique<NetworkAudioAutoTrack> (networkAudio.get());
 
         setContentNonOwned (editor.get(), true);
         menuBar = std::make_unique<juce::MenuBarComponent> (this);
@@ -81,6 +83,8 @@ public:
             if (midiRouter != nullptr)
                 deviceManager.removeMidiInputDeviceCallback (id, midiRouter.get());
         }
+
+        autoTrack.reset();
 
         if (networkAudio != nullptr)
             networkAudio->stop();
@@ -452,6 +456,7 @@ private:
     juce::StringArray registeredMidiInputIds;
     std::unique_ptr<MidiRouter> midiRouter;
     std::unique_ptr<MetroNetworkAudio> networkAudio;
+    std::unique_ptr<NetworkAudioAutoTrack> autoTrack;
     std::unique_ptr<NetworkAudioProcessor> processor;
     std::unique_ptr<DysektEditor> editor;
     std::unique_ptr<juce::MenuBarComponent> menuBar;

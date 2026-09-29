@@ -24,6 +24,24 @@ public:
         if (processor == nullptr) return -1;
         return processor->sequencer.addNetworkAudioTrack (sourceKey, sourceId, juce::jmax (0, sourceChannel), sourceName, userName);
     }
+    // True if any Audio track already routes this source (any channel selection).
+    // Message-thread use; reads the sequencer's published track snapshot.
+    static bool hasActiveNetworkAudioTrack (int64_t sourceKey) noexcept
+    {
+        auto* processor = activeProcessor.load (std::memory_order_acquire);
+        if (processor == nullptr) return false;
+
+        const int numTracks = processor->sequencer.getNumTracks();
+        for (int i = 0; i < numTracks; ++i)
+        {
+            int64_t key = 0;
+            int32_t id = 0;
+            int channel = 0;
+            if (processor->sequencer.getNetworkAudioRoute (i, key, id, channel) && key == sourceKey)
+                return true;
+        }
+        return false;
+    }
     static void setActiveNetworkSource (int64_t sourceKey, int sourceChannel) noexcept
     {
         activeSourceKey.store (sourceKey, std::memory_order_release);
@@ -222,9 +240,20 @@ public:
 
             const float gain = juce::Decibels::decibelsToGain (info.volumeDb);
             const float pan = juce::jlimit (-1.0f, 1.0f, info.pan);
-            const float angle = (pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
-            const float leftGain = gain * std::cos (angle);
-            const float rightGain = gain * std::sin (angle);
+            float leftGain, rightGain;
+            if (MetroNetworkAudio::isStereoRoute (sourceChannel))
+            {
+                // True stereo: the pan control acts as a balance, unity at
+                // centre. (Constant-power pan would drop both sides ~3 dB.)
+                leftGain = gain * juce::jmin (1.0f, 1.0f - pan);
+                rightGain = gain * juce::jmin (1.0f, 1.0f + pan);
+            }
+            else
+            {
+                const float angle = (pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
+                leftGain = gain * std::cos (angle);
+                rightGain = gain * std::sin (angle);
+            }
             if (buffer.getNumChannels() > 0) buffer.addFrom (0, 0, networkBuffer, 0, 0, numSamples, leftGain);
             if (buffer.getNumChannels() > 1) buffer.addFrom (1, 0, networkBuffer, 1, 0, numSamples, rightGain);
             renderedTrack = true;

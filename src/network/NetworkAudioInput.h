@@ -8,6 +8,14 @@
 // A METRO network-track route. sourceKey is the stable adapter-owned identity
 // for one remote endpoint + AOO source. sourceId is retained only as backend
 // metadata/debug information.
+// Display label for a route's channel selector: "Ch 3" for one channel,
+// "Ch 1+2" for a stereo pair.
+inline juce::String networkChannelLabel (int sourceChannel)
+{
+    return MetroNetworkAudio::isStereoRoute (sourceChannel) ? juce::String ("Ch 1+2")
+                                                            : "Ch " + juce::String (sourceChannel + 1);
+}
+
 struct NetworkAudioInput
 {
     int64_t routeId = 0;

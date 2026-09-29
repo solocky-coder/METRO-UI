@@ -297,6 +297,11 @@ public:
         // io-thread diagnostics: UDP packets actually routed to this source.
         std::atomic<uint32_t> diagRxPackets { 0 };
         std::atomic<uint32_t> diagRxBytes { 0 };
+
+        // io-thread only (logAudioStats): debounce counters for the UI status.
+        int silentSeconds = 0;
+        int noDataSeconds = 0;
+        MetroNetworkAudio::LinkState lastLinkState = MetroNetworkAudio::LinkState::Unknown;
     };
 
     struct PeerInfo
@@ -770,6 +775,63 @@ public:
         }
     }
 
+    // Below this the delivered signal counts as silence (about -80 dBFS).
+    static constexpr float kSilencePeak = 1.0e-4f;
+
+    // Derives the UI status for one source from the last second of counters.
+    // Runs on the io thread only, so the debounce counters need no locking.
+    static MetroNetworkAudio::LinkState computeLinkState (SourceRuntime& rt, uint32_t calls, uint32_t produced,
+                                                          float peak, uint32_t rxPackets)
+    {
+        using LS = MetroNetworkAudio::LinkState;
+
+        if (rt.handshake != SourceRuntime::HandshakeState::Formatted)
+        {
+            rt.silentSeconds = 0;
+            rt.noDataSeconds = 0;
+            return LS::WaitingForFormat;
+        }
+
+        if (calls == 0)   // no METRO track is pulling from this sink
+        {
+            rt.silentSeconds = 0;
+            rt.noDataSeconds = 0;
+            return LS::ReadyNoTrack;
+        }
+
+        rt.noDataSeconds = rxPackets == 0 ? rt.noDataSeconds + 1 : 0;
+        if (rt.noDataSeconds >= 2)
+            return LS::NoData;
+
+        if (produced == 0)
+            return LS::Buffering;
+
+        if (peak > kSilencePeak)
+        {
+            rt.silentSeconds = 0;
+            return LS::Receiving;
+        }
+
+        ++rt.silentSeconds;
+        // A short gap right after real audio still reads as Receiving.
+        if (rt.silentSeconds < 2 && rt.lastLinkState == LS::Receiving)
+            return LS::Receiving;
+        return LS::Silent;
+    }
+
+    void publishLinkState (const SourceRuntime& rt, MetroNetworkAudio::LinkState state, float peak, uint32_t rxPackets)
+    {
+        std::lock_guard<std::mutex> lock (stateMutex);
+        for (auto& source : sources)
+        {
+            if (source.sourceKey != rt.sourceKey) continue;
+            source.linkState = state;
+            source.peakLevel = peak;
+            source.rxPacketsPerSec = (int) rxPackets;
+            break;
+        }
+    }
+
     // Once a second: how much the audio callback actually pulled from each
     // source. calls==0 on a Formatted source means no track/route is reading it;
     // calls>0 with produced==0 means the sink has nothing decoded to hand back;
@@ -805,6 +867,11 @@ public:
             const auto hostSamples = runtime->diagHostSamples.load (std::memory_order_relaxed);
             const auto rxPackets = runtime->diagRxPackets.exchange (0, std::memory_order_relaxed);
             const auto rxBytes = runtime->diagRxBytes.exchange (0, std::memory_order_relaxed);
+
+            const auto linkState = computeLinkState (*runtime, calls, produced, peak, rxPackets);
+            runtime->lastLinkState = linkState;
+            publishLinkState (*runtime, linkState, peak, rxPackets);
+
             if (calls == 0 && runtime->handshake != SourceRuntime::HandshakeState::Formatted) continue;
 
             aooDiag ("AUDIO_STATS endpoint=" + endpointString (runtime->endpoint.get())
@@ -1615,8 +1682,16 @@ public:
     {
         destination.clear();
         if (! running.load (std::memory_order_acquire) || numSamples <= 0 || sourceChannel < 0) return false;
+
+        // A stereo route reads AOO channels 1+2 with a single sink->process()
+        // per block. A mono route reads one channel and feeds it to both sides.
+        const bool stereo = MetroNetworkAudio::isStereoRoute (sourceChannel);
+        const int leftChannel = stereo ? 0 : sourceChannel;
+        const int rightChannel = stereo ? 1 : sourceChannel;
+
         auto* runtime = findRuntime (sourceKey);
-        if (runtime == nullptr || runtime->sink == nullptr || sourceChannel >= kAooChannels) return false;
+        if (runtime == nullptr || runtime->sink == nullptr
+            || leftChannel >= kAooChannels || rightChannel >= kAooChannels) return false;
 
         runtime->diagCalls.fetch_add (1, std::memory_order_relaxed);
         runtime->diagHostSamples.store (numSamples, std::memory_order_relaxed);
@@ -1635,11 +1710,17 @@ public:
 
             if (runtime->sink->process (runtime->pointers.data(), block, aoo_osctime_get()) > 0)
             {
-                const auto* src = runtime->pointers[(size_t) sourceChannel];
-                if (destination.getNumChannels() > 0) destination.copyFrom (0, offset, src, block);
-                if (destination.getNumChannels() > 1) destination.copyFrom (1, offset, src, block);
-                const auto range = juce::FloatVectorOperations::findMinAndMax (src, block);
-                blockPeak = juce::jmax (blockPeak, std::abs (range.getStart()), std::abs (range.getEnd()));
+                const auto* srcL = runtime->pointers[(size_t) leftChannel];
+                const auto* srcR = runtime->pointers[(size_t) rightChannel];
+                if (destination.getNumChannels() > 0) destination.copyFrom (0, offset, srcL, block);
+                if (destination.getNumChannels() > 1) destination.copyFrom (1, offset, srcR, block);
+                const auto rangeL = juce::FloatVectorOperations::findMinAndMax (srcL, block);
+                blockPeak = juce::jmax (blockPeak, std::abs (rangeL.getStart()), std::abs (rangeL.getEnd()));
+                if (stereo)
+                {
+                    const auto rangeR = juce::FloatVectorOperations::findMinAndMax (srcR, block);
+                    blockPeak = juce::jmax (blockPeak, std::abs (rangeR.getStart()), std::abs (rangeR.getEnd()));
+                }
                 produced = true;
             }
             offset += block;
@@ -1709,6 +1790,8 @@ bool MetroNetworkAudio::start() { return impl != nullptr && impl->start(); }
 bool MetroNetworkAudio::startDirect (int localPort) { return impl != nullptr && impl->startDirect (localPort); }
 void MetroNetworkAudio::stop() { if (impl != nullptr) impl->stop(); }
 bool MetroNetworkAudio::isRunning() const noexcept { return impl != nullptr && impl->running.load (std::memory_order_acquire); }
+
+bool MetroNetworkAudio::isDirectMode() const noexcept { return impl != nullptr && impl->directMode.load (std::memory_order_acquire); }
 
 bool MetroNetworkAudio::connectToServer (const juce::String& host, int port, const juce::String& username, const juce::String& password)
 {

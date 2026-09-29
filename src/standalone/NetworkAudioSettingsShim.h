@@ -3,6 +3,7 @@
 #include "NetworkAudioSettingsComponent.h"
 #include "AppleUsbShareStatusComponent.h"
 #include "network/AppleUsbNetworkTransport.h"
+#include "NetworkAudioAutoTrack.h"
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -31,6 +32,13 @@ public:
         createTrackButton.setTooltip ("Create a METRO audio track from a SonoBus/AOO source and choose its channel");
         createTrackButton.onClick = [this] { showCreateNetworkTrackMenu(); };
         addAndMakeVisible (createTrackButton);
+
+        autoTrackToggle.setButtonText ("Auto-create");
+        autoTrackToggle.setTooltip ("When a USB audio source finishes connecting, automatically create a METRO audio track for it "
+                                    "(stereo if the source has two or more channels). Applies while USB AUDIO is on.");
+        autoTrackToggle.setToggleState (NetworkAudioAutoTrack::isEnabled(), juce::dontSendNotification);
+        autoTrackToggle.onClick = [this] { NetworkAudioAutoTrack::setEnabled (autoTrackToggle.getToggleState()); };
+        addAndMakeVisible (autoTrackToggle);
 
 #if ! DYSEKT_HAS_AOO
         createTrackButton.setEnabled (false);
@@ -135,6 +143,7 @@ public:
     {
         ::NetworkAudioSettingsComponent::resized();
         createTrackButton.setBounds (getWidth() - 222, 12, 206, 30);
+        autoTrackToggle.setBounds (getWidth() - 222 - 8 - 120, 12, 120, 30);
 
         // The USB AUDIO button is laid out by the base class, inside the
         // Network Audio Channel card next to the "Network audio" switch. It is
@@ -232,15 +241,26 @@ private:
                                    + " | " + juce::String (source.channels) + " ch";
 
             juce::PopupMenu channels;
-            const int sourceBaseId = nextItemId;
+            int itemId = nextItemId;
+
+            // A source with two or more channels is offered first as one
+            // stereo track; the single-channel entries below stay available
+            // for splitting a feed or picking one side.
+            if (source.channels >= 2)
+            {
+                channels.addItem (itemId++, "Stereo (Channel 1+2)");
+                choices.emplace_back (source.sourceKey, source.sourceId, MetroNetworkAudio::kStereoPair,
+                                      "source #" + juce::String (source.sourceId), user);
+                channels.addSeparator();
+            }
+
             for (int channel = 0; channel < source.channels; ++channel)
             {
-                const int itemId = sourceBaseId + channel;
-                channels.addItem (itemId, "Channel " + juce::String (channel + 1));
+                channels.addItem (itemId++, "Channel " + juce::String (channel + 1));
                 choices.emplace_back (source.sourceKey, source.sourceId, channel,
                                       "source #" + juce::String (source.sourceId), user);
             }
-            nextItemId += juce::jmax (source.channels, 1);
+            nextItemId = itemId;
             menu.addSubMenu (sourceLabel, channels, true);
         }
 
@@ -289,7 +309,7 @@ private:
                 trackIndex >= 0 ? juce::AlertWindow::InfoIcon : juce::AlertWindow::WarningIcon,
                 trackIndex >= 0 ? "Audio Track Created" : "Audio Track Not Created",
                 trackIndex >= 0
-                    ? userName + " | " + sourceName + " — Channel " + juce::String (sourceChannel + 1) + " is now a METRO audio track."
+                    ? userName + " | " + sourceName + " — " + (MetroNetworkAudio::isStereoRoute (sourceChannel) ? juce::String ("Stereo (Channel 1+2)") : "Channel " + juce::String (sourceChannel + 1)) + " is now a METRO audio track."
                     : "The standalone audio processor is not available.",
                 "OK");
         });
@@ -299,6 +319,7 @@ private:
     }
 
     juce::TextButton createTrackButton;
+    juce::ToggleButton autoTrackToggle;
     juce::TextButton tabSonoBusButton, tabUsbButton;
     std::vector<juce::Component*> basePageChildren;
     bool showingUsbTab = false;

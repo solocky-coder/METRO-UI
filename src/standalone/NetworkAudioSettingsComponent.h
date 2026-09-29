@@ -853,19 +853,74 @@ private:
                                       : juce::String ("waiting for source format"))
                                + "  |  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";
 
+            // Live link status: LED + label on the name line, level meter on the
+            // details line (meter only while a track is actually reading audio).
+            const auto status = describeLinkState (s);
+            constexpr int kLedD = 14, kStatusW = 340, kMeterW = 150, kMeterH = 8;
+
+            const float ledY = (float) (height / 2 - kLedD) * 0.5f + 3.0f;
+            g.setColour (status.colour);
+            g.fillEllipse (12.0f, ledY, (float) kLedD, (float) kLedD);
+
+            const int nameX = 12 + kLedD + 10;
             g.setColour (s.online ? juce::Colours::white : juce::Colours::grey);
             g.setFont (juce::Font (22.0f, juce::Font::bold));
-            g.drawText (name, 10, 3, width - 20, height / 2, juce::Justification::centredLeft);
+            g.drawText (name, nameX, 3, width - nameX - kStatusW - 20, height / 2, juce::Justification::centredLeft);
+
+            g.setColour (status.colour);
+            g.setFont (juce::Font (16.0f, juce::Font::bold));
+            g.drawText (status.text, width - kStatusW - 10, 3, kStatusW, height / 2, juce::Justification::centredRight);
+
+            const bool showMeter = s.linkState == MetroNetworkAudio::LinkState::Receiving
+                                || s.linkState == MetroNetworkAudio::LinkState::Silent;
+            const int detailsW = width - nameX - 10 - (showMeter ? kMeterW + 20 : 0);
             g.setColour (juce::Colours::lightgrey);
             g.setFont (juce::Font (16.0f));
-            g.drawText (details, 10, height / 2, width - 20, height / 2 - 2,
+            g.drawText (details, nameX, height / 2, detailsW, height / 2 - 2,
                         juce::Justification::centredLeft);
+
+            if (showMeter)
+            {
+                const float dB = juce::Decibels::gainToDecibels (s.peakLevel, -60.0f);
+                const float fill = juce::jlimit (0.0f, 1.0f, juce::jmap (dB, -60.0f, 0.0f, 0.0f, 1.0f));
+                const juce::Rectangle<float> bar ((float) (width - kMeterW - 10),
+                                                  (float) (height / 2 + (height / 2 - 2 - kMeterH) / 2),
+                                                  (float) kMeterW, (float) kMeterH);
+                g.setColour (juce::Colour (0xFF30303A));
+                g.fillRoundedRectangle (bar, 3.0f);
+                g.setColour (s.peakLevel >= 1.0f ? juce::Colour (0xFFE05A4C)          // clipping
+                             : dB > -6.0f        ? juce::Colour (0xFFE0A83D)          // hot
+                                                 : juce::Colour (0xFF4CAF50));
+                g.fillRoundedRectangle (bar.withWidth (bar.getWidth() * fill), 3.0f);
+            }
 #else
             juce::ignoreUnused (rowNumber, g, width, height, rowIsSelected);
 #endif
         }
 
     private:
+        struct LinkStatusView { juce::String text; juce::Colour colour; };
+
+        static LinkStatusView describeLinkState (const MetroNetworkAudio::SourceInfo& s)
+        {
+            using LS = MetroNetworkAudio::LinkState;
+            const juce::Colour grey (0xFF8A8A94), blue (0xFF7FA6C9), green (0xFF4CAF50),
+                               amber (0xFFE0A83D), red (0xFFE05A4C);
+            switch (s.linkState)
+            {
+                case LS::WaitingForFormat: return { "WAITING FOR FORMAT", grey };
+                case LS::ReadyNoTrack:     return { s.rxPacketsPerSec > 0
+                                                        ? "READY - NO TRACK YET  |  " + juce::String (s.rxPacketsPerSec) + " pkt/s"
+                                                        : juce::String ("READY - NO PACKETS"), blue };
+                case LS::Buffering:        return { "BUFFERING", amber };
+                case LS::Receiving:        return { "RECEIVING AUDIO", green };
+                case LS::Silent:           return { "RECEIVING SILENCE - CHECK IPAD INPUT", amber };
+                case LS::NoData:           return { "NO DATA", red };
+                case LS::Unknown:          break;
+            }
+            return { {}, grey };
+        }
+
         MetroNetworkAudio* owner = nullptr;
     };
 
