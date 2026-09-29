@@ -679,6 +679,23 @@ private:
                 juce::dontSendNotification);
         }
 
+        // The main STATUS line used to be written once when Direct USB was
+        // enabled ("waiting for Apple device") and then never updated. The
+        // progress row, however, is refreshed every timer tick from the live
+        // source list. Keep the main status in sync with that same source of
+        // truth so it cannot claim that no Apple device is present while
+        // responding/audio-ready sources are already visible below.
+        if (responding > 0)
+        {
+            updateStatus (utf8 ("Direct USB — ")
+                          + juce::String (responding) + "/4 devices responding • "
+                          + juce::String (audioReady) + "/4 audio ready");
+        }
+        else
+        {
+            updateStatus (utf8 ("Direct USB — waiting for Apple device"));
+        }
+
         directUsbProgressValue = responding / 4.0;
         directUsbProgress.repaint();
     }
