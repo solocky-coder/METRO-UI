@@ -44,6 +44,29 @@ public:
         transportLabel.setText (utf8 ("AOO • Direct isolated USB or SonoBus / LAN"), juce::dontSendNotification);
         transportLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
         addAndMakeVisible (transportLabel);
+        latencyProfileLabel.setText ("Latency", juce::dontSendNotification);
+        latencyProfileLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+        addAndMakeVisible (latencyProfileLabel);
+
+        latencyProfileBox.addItem ("Normal", 1);
+        latencyProfileBox.addItem ("Low", 2);
+        latencyProfileBox.addItem ("Ultra-low", 3);
+        latencyProfileBox.setSelectedId (1, juce::dontSendNotification);
+        latencyProfileBox.onChange = [this]
+        {
+#if DYSEKT_HAS_AOO
+            if (networkAudio == nullptr) return;
+            switch (latencyProfileBox.getSelectedId())
+            {
+                case 2: networkAudio->setLatencyProfile (MetroNetworkAudio::LatencyProfile::Low); break;
+                case 3: networkAudio->setLatencyProfile (MetroNetworkAudio::LatencyProfile::UltraLow); break;
+                case 1:
+                default: networkAudio->setLatencyProfile (MetroNetworkAudio::LatencyProfile::Normal); break;
+            }
+#endif
+        };
+        addAndMakeVisible (latencyProfileBox);
+
         directUsbButton.setClickingTogglesState (true);
         directUsbButton.setTooltip ("Starts/stops the AOO audio stream over the USB link. "
                                     "The link itself is set up on the Apple USB Share tab.");
@@ -364,7 +387,7 @@ public:
             devicePanelBounds = {};
         }
 
-        auto channelCardArea = area.removeFromTop (2 * kCardPad + 18 + kRowGap + 4 * kRowH + 3 * kRowGap);
+        auto channelCardArea = area.removeFromTop (2 * kCardPad + 18 + kRowGap + 5 * kRowH + 4 * kRowGap);
         channelPanelBounds = channelCardArea;
         auto channelInner = channelCardArea.reduced (kCardPad);
         channelTitle.setBounds (channelInner.removeFromTop (18));
@@ -374,6 +397,11 @@ public:
         enableButton.setBounds (channelHeaderRow.removeFromLeft (220));
         channelHeaderRow.removeFromLeft (10);
         directUsbButton.setBounds (channelHeaderRow.removeFromLeft (140));
+        channelInner.removeFromTop (kRowGap);
+
+        auto latencyRow = channelInner.removeFromTop (kRowH);
+        latencyProfileLabel.setBounds (latencyRow.removeFromLeft (kLabelColW));
+        latencyProfileBox.setBounds (latencyRow);
         channelInner.removeFromTop (kRowGap);
 
         auto gainRow = channelInner.removeFromTop (kRowH);
@@ -1059,6 +1087,8 @@ private:
     juce::Label networkTitle;
     juce::Label transportLabel;
     juce::TextButton directUsbButton;
+    juce::Label latencyProfileLabel;
+    juce::ComboBox latencyProfileBox;
     juce::TextButton enableButton { "Network audio: OFF" };
     juce::Label channelTitle;
     juce::Label gainLabel;
