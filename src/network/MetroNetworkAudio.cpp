@@ -43,7 +43,7 @@ namespace
 constexpr int kAooSampleRate = 48000;
 constexpr int kAooBlockSize = 512;
 constexpr int kAooChannels = 64;
-constexpr int kAooBufferMs = 120;
+constexpr int kAooBufferMs = 10;
 constexpr size_t kMaxNetworkSources = 64;
 
 // -------------------------------------------------------------------------
@@ -1038,7 +1038,7 @@ public:
             FD_ZERO (&readSet);
             FD_SET (socket, &readSet);
             timeval timeout {};
-            timeout.tv_usec = 20000;
+            timeout.tv_usec = 1000;
             const auto ready = select (static_cast<int> (socket + 1), &readSet, nullptr, nullptr, &timeout);
 
             if (ready > 0 && FD_ISSET (socket, &readSet))
