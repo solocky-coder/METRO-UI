@@ -477,6 +477,14 @@ public:
                 continue;
             runtime->sink->set_buffersize (desired);
             runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
+            aooDiag ("ADAPTIVE_BUFFER endpoint=" + endpointString (runtime->endpoint.get())
+                     + " profile=" + juce::String (static_cast<int> (latencyProfile.load (std::memory_order_relaxed)))
+                     + " jitterMs=" + juce::String (jitter, 2)
+                     + " oldMs=" + juce::String (previous)
+                     + " newMs=" + juce::String (desired)
+                     + " baseMs=" + juce::String (base)
+                     + " minMs=" + juce::String (cfg.minBufferMs)
+                     + " maxMs=" + juce::String (cfg.maxBufferMs));
         }
     }
 
@@ -1227,7 +1235,14 @@ public:
                      + " hostBlock=" + juce::String (hostSamples)
                      + " hostRate=" + juce::String (hostSampleRate.load (std::memory_order_relaxed), 1)
                      + " aooRate=" + juce::String (kAooSampleRate)
-                     + " aooBlock=" + juce::String (aooBlockSize.load (std::memory_order_relaxed)));
+                     + " aooBlock=" + juce::String (aooBlockSize.load (std::memory_order_relaxed))
+                     + " latencyProfile=" + juce::String (static_cast<int> (latencyProfile.load (std::memory_order_relaxed)))
+                     + " packetIntervalMs=" + juce::String (runtime->packetIntervalMs.load (std::memory_order_relaxed), 2)
+                     + " jitterMs=" + juce::String (runtime->jitterMs.load (std::memory_order_relaxed), 2)
+                     + " adaptiveBufferMs=" + juce::String (runtime->adaptiveBufferMs.load (std::memory_order_relaxed))
+                     + " baseBufferMs=" + juce::String ((directMode.load (std::memory_order_relaxed)
+                                                           ? latencyConfig().directBufferMs
+                                                           : latencyConfig().networkBufferMs)));
         }
     }
 
