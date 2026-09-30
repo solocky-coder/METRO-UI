@@ -17,7 +17,11 @@ public:
             activeProcessor.store (nullptr, std::memory_order_release);
     }
 
-    static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept { activeNetworkAudio.store (audio, std::memory_order_release); }
+    static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept
+    {
+        activeNetworkAudio.store (audio, std::memory_order_release);
+        applyPreparedFormat (audio);   // the device may have been prepared before this object existed
+    }
     static int createActiveNetworkAudioTrack (int64_t sourceKey, int32_t sourceId, int sourceChannel, const juce::String& sourceName, const juce::String& userName = {}) noexcept
     {
         auto* processor = activeProcessor.load (std::memory_order_acquire);
@@ -125,6 +129,14 @@ public:
     {
         DysektProcessor::prepareToPlay (sampleRate, samplesPerBlock);
         networkSampleRate = sampleRate;
+
+        // Tell the AOO sinks the host's block size (message thread, not the
+        // audio callback). Remembered so a MetroNetworkAudio attached later
+        // is configured too - see applyPreparedFormat().
+        preparedSampleRate.store (sampleRate, std::memory_order_release);
+        preparedBlockSize.store (samplesPerBlock, std::memory_order_release);
+        applyPreparedFormat (networkAudio != nullptr ? networkAudio
+                                                     : activeNetworkAudio.load (std::memory_order_acquire));
         const int capacity = juce::jmax (4096, samplesPerBlock > 0 ? samplesPerBlock : 512);
         networkBuffer.setSize (2, capacity, false, true, true);
         audioClipScratch.setSize (2, capacity, false, true, true);
@@ -287,6 +299,18 @@ public:
     }
 
 private:
+    // Pushes the last prepareToPlay() format into a MetroNetworkAudio. Cheap and
+    // idempotent (prepare() does nothing when the block size is unchanged).
+    static void applyPreparedFormat (MetroNetworkAudio* audio) noexcept
+    {
+        const int block = preparedBlockSize.load (std::memory_order_acquire);
+        if (audio == nullptr || block <= 0) return;
+        try { audio->prepare (preparedSampleRate.load (std::memory_order_acquire), block); }
+        catch (...) {}
+    }
+
+    inline static std::atomic<double> preparedSampleRate { 0.0 };
+    inline static std::atomic<int> preparedBlockSize { 0 };
     inline static std::atomic<MetroNetworkAudio*> activeNetworkAudio { nullptr };
     inline static std::atomic<NetworkAudioProcessor*> activeProcessor { nullptr };
     inline static std::atomic<int64_t> activeSourceKey { 0 };

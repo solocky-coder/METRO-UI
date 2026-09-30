@@ -41,10 +41,23 @@
 namespace
 {
 constexpr int kAooSampleRate = 48000;
-constexpr int kAooBlockSize = 512;
+// The AOO sink block size is a runtime setting (Impl::aooBlockSize). It starts
+// at the default below and follows the host's block size once the audio device
+// has been prepared (MetroNetworkAudio::prepare). The sink's clock-tracking DLL
+// assumes one process() call per sink block, so the sink block must match the
+// host callback size or dynamic resampling is silently disabled.
+constexpr int kAooDefaultBlockSize = 512;
+constexpr int kAooMinBlockSize = 16;
+constexpr int kAooMaxBlockSize = 4096;   // larger host callbacks are processed in chunks
 static_assert (kAooSampleRate == (int) MetroNetworkAudio::kNominalSampleRate
-                   && kAooBlockSize == MetroNetworkAudio::kNominalBlockSize,
-               "MetroNetworkAudio::kNominal* must match the AOO sink setup constants");
+                   && kAooDefaultBlockSize == MetroNetworkAudio::kNominalBlockSize,
+               "MetroNetworkAudio::kNominal* must match the AOO sink default setup constants");
+
+int chooseAooBlockSize (int hostBlockSize) noexcept
+{
+    return hostBlockSize > 0 ? std::clamp (hostBlockSize, kAooMinBlockSize, kAooMaxBlockSize)
+                             : kAooDefaultBlockSize;
+}
 constexpr int kAooChannels = 64;
 constexpr int kAooBufferMs = 120;
 constexpr int kAooDirectBufferMs = 10;
@@ -287,7 +300,10 @@ public:
         HandshakeState handshake = HandshakeState::New;
         bool directSourcePublished = false;
 
-        std::array<float, kAooChannels * kAooBlockSize> scratch {};
+        // Sized kAooChannels * aooBlockSize. Only touched by the audio thread
+        // (inside audioGate) and by reconfigureBlockSize()/createRuntime()
+        // while they hold blockConfigMutex.
+        std::vector<float> scratch;
         std::array<aoo_sample*, kAooChannels> pointers {};
 
         // Audio-thread diagnostics: written with relaxed atomics by
@@ -338,8 +354,20 @@ public:
     std::vector<PeerInfo> peers;
     std::vector<std::unique_ptr<SourceRuntime>> runtimes;
     std::array<std::atomic<SourceRuntime*>, kMaxNetworkSources> runtimeSlots {};
-    std::array<float, kAooChannels * kAooBlockSize> mixScratch {};
+    std::vector<float> mixScratch;   // kAooChannels * aooBlockSize, guarded like SourceRuntime::scratch
     std::array<aoo_sample*, kAooChannels> mixPointers {};
+
+    // AOO block-size configuration.
+    //  - aooBlockSize:      current sink block size (samples).
+    //  - blockConfigMutex:  serialises everything that sets up / tears down /
+    //                       reconfigures sinks (non-audio threads only).
+    //  - audioGate:         held by reconfigureBlockSize() while sinks and scratch
+    //                       are being changed. The audio thread only ever
+    //                       try-locks it and outputs silence if it is busy, so
+    //                       it can never block on a reconfigure.
+    std::atomic<int> aooBlockSize { kAooDefaultBlockSize };
+    std::recursive_mutex blockConfigMutex;
+    juce::SpinLock audioGate;
 
     std::atomic<double> hostSampleRate { 0.0 };   // what the audio callback says it runs at
     std::atomic<int> hostBlockSize { 0 };         // samples in the most recent audio callback
@@ -374,6 +402,7 @@ public:
     explicit Impl (MetroNetworkAudio& ownerIn) : owner (ownerIn)
     {
         for (auto& slot : runtimeSlots) slot.store (nullptr, std::memory_order_relaxed);
+        mixScratch.assign ((size_t) kAooChannels * (size_t) kAooDefaultBlockSize, 0.0f);
     }
 
     ~Impl() { stop(); }
@@ -583,7 +612,14 @@ public:
             return existing;
         }
 
+        // Held until return: the block size read below must still be current
+        // when this runtime is published, or a concurrent prepare() could
+        // reconfigure every *other* sink and leave this one at the old size.
+        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
+        const int blockSize = aooBlockSize.load (std::memory_order_relaxed);
+
         auto runtime = std::make_unique<SourceRuntime>();
+        runtime->scratch.assign ((size_t) kAooChannels * (size_t) blockSize, 0.0f);
         runtime->sourceKey = sourceKey;
         runtime->sourceId = sourceId;
         runtime->endpoint = std::make_shared<sockaddr_in> (*endpoint);
@@ -592,7 +628,7 @@ public:
         if (runtime->sink == nullptr
             || runtime->sink->setup (
                    kAooSampleRate,
-                   kAooBlockSize,
+                   blockSize,
                    kAooChannels) <= 0)
         {
             aooDiag ("createRuntime FAILED sink setup"
@@ -665,6 +701,60 @@ public:
         runtimes.clear();
     }
 
+    // Destroys every sink. Takes blockConfigMutex so a concurrent prepare()
+    // can never reconfigure a sink that is being deleted.
+    void teardownSinks()
+    {
+        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
+        discoverySink.reset();
+        destroyRuntimeSlots();
+    }
+
+    // Message thread (via prepare()). Moves every sink to a new block size.
+    // Must never run on the audio thread: sink->setup() allocates and resets
+    // each source's jitter queues (they refill on the next packets, so expect
+    // one short gap - the same as any device/buffer-size change).
+    void reconfigureBlockSize (int newBlockSize)
+    {
+        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
+        if (newBlockSize == aooBlockSize.load (std::memory_order_relaxed)) return;
+
+        // From here the audio thread's try-lock fails and it outputs silence
+        // instead of touching a half-reconfigured sink.
+        const juce::SpinLock::ScopedLockType gate (audioGate);
+
+        aooBlockSize.store (newBlockSize, std::memory_order_relaxed);
+        mixScratch.assign ((size_t) kAooChannels * (size_t) newBlockSize, 0.0f);
+
+        if (discoverySink != nullptr
+            && discoverySink->setup (kAooSampleRate, newBlockSize, kAooChannels) <= 0)
+            aooDiag ("reconfigureBlockSize FAILED discovery sink block=" + juce::String (newBlockSize));
+
+        int reconfigured = 0;
+        for (auto& slot : runtimeSlots)
+        {
+            auto* runtime = slot.load (std::memory_order_acquire);
+            if (runtime == nullptr || runtime->sink == nullptr) continue;
+
+            runtime->scratch.assign ((size_t) kAooChannels * (size_t) newBlockSize, 0.0f);
+            if (runtime->sink->setup (kAooSampleRate, newBlockSize, kAooChannels) <= 0)
+                aooDiag ("reconfigureBlockSize FAILED sink sourceKey=" + juce::String (runtime->sourceKey)
+                         + " block=" + juce::String (newBlockSize));
+            else
+                ++reconfigured;
+        }
+
+        aooDiag ("AOO block size -> " + juce::String (newBlockSize)
+                 + " (" + juce::String (reconfigured) + " sink(s) reconfigured)");
+    }
+
+    // Message thread. Called when the audio device is (re)prepared.
+    void prepare (double sampleRate, int maxBlockSize)
+    {
+        hostSampleRate.store (sampleRate, std::memory_order_relaxed);
+        reconfigureBlockSize (chooseAooBlockSize (maxBlockSize));
+    }
+
     bool start()
     {
         return startWithBinding (0);
@@ -698,9 +788,14 @@ public:
             return cleanupFailedStart();
 
         client.reset (aoo::net::iclient::create (&socket, sendUdp, ntohs (local.sin_port)));
+
+        // Read the block size and publish the sink under one lock so a
+        // concurrent prepare() either sees this sink or is seen by it.
+        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
         discoverySink.reset (aoo::isink::create (0));
         if (client == nullptr || discoverySink == nullptr) return cleanupFailedStart();
-        if (discoverySink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0) return cleanupFailedStart();
+        if (discoverySink->setup (kAooSampleRate, aooBlockSize.load (std::memory_order_relaxed), kAooChannels) <= 0)
+            return cleanupFailedStart();
         discoverySink->set_buffersize (requestedPort != 0
                                          ? kAooDirectBufferMs
                                          : kAooBufferMs);
@@ -724,8 +819,7 @@ public:
         activeAooSocket.store (nullptr, std::memory_order_release);
         directMode.store (false, std::memory_order_release);
         client.reset();
-        discoverySink.reset();
-        destroyRuntimeSlots();
+        teardownSinks();
         closeSocket (socket);
         socket = metroInvalidSocket;
         stopAooLifetime();
@@ -746,8 +840,7 @@ public:
         if (client != nullptr) client->quit();
         if (ioThread.joinable()) ioThread.join();
         client.reset();
-        discoverySink.reset();
-        destroyRuntimeSlots();
+        teardownSinks();
         closeSocket (socket);
         socket = metroInvalidSocket;
         {
@@ -1020,7 +1113,7 @@ public:
                      + " hostBlock=" + juce::String (hostSamples)
                      + " hostRate=" + juce::String (hostSampleRate.load (std::memory_order_relaxed), 1)
                      + " aooRate=" + juce::String (kAooSampleRate)
-                     + " aooBlock=" + juce::String (kAooBlockSize));
+                     + " aooBlock=" + juce::String (aooBlockSize.load (std::memory_order_relaxed)));
         }
     }
 
@@ -1862,6 +1955,14 @@ public:
         if (runtime == nullptr || runtime->sink == nullptr
             || leftChannel >= kAooChannels || rightChannel >= kAooChannels) return false;
 
+        // Never block: if the block size is being reconfigured, this callback
+        // is silent and the next one proceeds normally.
+        const juce::SpinLock::ScopedTryLockType gate (audioGate);
+        if (! gate.isLocked()) return false;
+
+        const int aooBlock = aooBlockSize.load (std::memory_order_relaxed);
+        if (runtime->scratch.size() < (size_t) kAooChannels * (size_t) aooBlock) return false;
+
         runtime->diagCalls.fetch_add (1, std::memory_order_relaxed);
         runtime->diagHostSamples.store (numSamples, std::memory_order_relaxed);
 
@@ -1870,10 +1971,10 @@ public:
         int offset = 0;
         while (offset < numSamples)
         {
-            const int block = std::min (kAooBlockSize, numSamples - offset);
+            const int block = std::min (aooBlock, numSamples - offset);
             for (int c = 0; c < kAooChannels; ++c)
             {
-                runtime->pointers[(size_t) c] = runtime->scratch.data() + (size_t) c * kAooBlockSize;
+                runtime->pointers[(size_t) c] = runtime->scratch.data() + (size_t) c * (size_t) aooBlock;
                 std::fill (runtime->pointers[(size_t) c], runtime->pointers[(size_t) c] + block, 0.0f);
             }
 
@@ -1924,12 +2025,18 @@ public:
         float peakL = 0.0f, peakR = 0.0f;
         int offset = 0;
 
+        const juce::SpinLock::ScopedTryLockType gate (audioGate);
+        if (! gate.isLocked()) return;   // block size being reconfigured: silent for this callback
+
+        const int aooBlock = aooBlockSize.load (std::memory_order_relaxed);
+        if (mixScratch.size() < (size_t) kAooChannels * (size_t) aooBlock) return;
+
         while (offset < numSamples)
         {
-            const int block = std::min (kAooBlockSize, numSamples - offset);
+            const int block = std::min (aooBlock, numSamples - offset);
             for (int c = 0; c < kAooChannels; ++c)
             {
-                mixPointers[(size_t) c] = mixScratch.data() + (size_t) c * kAooBlockSize;
+                mixPointers[(size_t) c] = mixScratch.data() + (size_t) c * (size_t) aooBlock;
                 std::fill (mixPointers[(size_t) c], mixPointers[(size_t) c] + block, 0.0f);
             }
 
@@ -1971,8 +2078,19 @@ MetroNetworkAudio::HostTiming MetroNetworkAudio::getHostTiming() const noexcept
     {
         timing.sampleRate = impl->hostSampleRate.load (std::memory_order_relaxed);
         timing.blockSize = impl->hostBlockSize.load (std::memory_order_relaxed);
+        timing.aooBlockSize = impl->aooBlockSize.load (std::memory_order_relaxed);
     }
     return timing;
+}
+
+void MetroNetworkAudio::prepare (double sampleRate, int maxBlockSize)
+{
+    if (impl != nullptr) impl->prepare (sampleRate, maxBlockSize);
+}
+
+int MetroNetworkAudio::getAooBlockSize() const noexcept
+{
+    return impl != nullptr ? impl->aooBlockSize.load (std::memory_order_relaxed) : kAooDefaultBlockSize;
 }
 
 juce::String MetroNetworkAudio::defaultSourceLabel (const juce::String& peerAddress)

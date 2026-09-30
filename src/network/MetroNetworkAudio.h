@@ -24,10 +24,12 @@ public:
     // project stream format does not change and old projects load unchanged.
     static constexpr int kStereoPair = 1000;
 
-    // The AOO sinks are set up for 48 kHz audio in 512-sample blocks and their
-    // timing model assumes the audio callback matches. A device running at
-    // another rate or block size still works, but the sink's clock tracking is
-    // then working outside its design point.
+    // The AOO sinks run at 48 kHz. Their block size starts at kNominalBlockSize
+    // and follows the host's callback size once prepare() has been called. The
+    // sink's clock tracking (dynamic resampling) assumes one process() call per
+    // sink block, so a host callback that is not a whole multiple of the sink
+    // block size - or a device not running at 48 kHz - puts it outside its
+    // design point.
     static constexpr double kNominalSampleRate = 48000.0;
     static constexpr int kNominalBlockSize = 512;
 
@@ -35,12 +37,13 @@ public:
     {
         double sampleRate = 0.0;   // 0 until a track has pulled audio at least once
         int blockSize = 0;         // samples in the most recent audio callback
+        int aooBlockSize = kNominalBlockSize;   // block size the AOO sinks are currently set up for
 
         bool isKnown() const noexcept { return sampleRate > 0.0 && blockSize > 0; }
         bool matchesAoo() const noexcept
         {
             return isKnown() && std::abs (sampleRate - kNominalSampleRate) < 1.0
-                             && blockSize == kNominalBlockSize;
+                             && aooBlockSize > 0 && blockSize % aooBlockSize == 0;
         }
     };
 
@@ -99,6 +102,13 @@ public:
     bool isRunning() const noexcept;
     bool isDirectMode() const noexcept;
     HostTiming getHostTiming() const noexcept;
+
+    // Call from the message thread whenever the audio device is (re)prepared
+    // (AudioProcessor::prepareToPlay). Sets the AOO sink block size to the
+    // host's block size and reconfigures any existing sinks. Never call this
+    // from the audio callback.
+    void prepare(double sampleRate, int maxBlockSize);
+    int getAooBlockSize() const noexcept;
 
     // Direct USB device labels. SonoBus sends no device name over a direct
     // link, so each source defaults to "USB 1".."USB 4" (by subnet) and the

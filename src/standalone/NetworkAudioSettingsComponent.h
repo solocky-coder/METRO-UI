@@ -786,9 +786,10 @@ private:
         updateHostTimingHint();
     }
 
-    // The AOO sinks assume 48 kHz / 512-sample callbacks. Flag a device that runs
-    // differently, but only while there are sources to hear (and only after a
-    // track has pulled audio, which is when the callback format becomes known).
+    // The AOO sinks run at 48 kHz and use a block size that follows the host
+    // callback. Flag a device whose rate or callback size the sinks cannot
+    // track, but only while there are sources to hear (and only after a track
+    // has pulled audio, which is when the callback format becomes known).
     void updateHostTimingHint()
     {
         juce::String text = "Sources";
@@ -802,7 +803,8 @@ private:
             {
                 text += "   |   DEVICE " + juce::String (timing.sampleRate, 0) + " Hz / "
                         + juce::String (timing.blockSize)
-                        + " samples - USB AUDIO IS TUNED FOR 48000 Hz / 512";
+                        + " samples - USB AUDIO IS TUNED FOR 48000 Hz / "
+                        + juce::String (timing.aooBlockSize);
                 colour = juce::Colour (0xFFE0A83D);
             }
         }
