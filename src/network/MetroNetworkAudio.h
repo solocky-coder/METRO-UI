@@ -51,6 +51,12 @@ public:
         LinkState linkState = LinkState::Unknown;
         float peakLevel = 0.0f;       // linear peak delivered to tracks over the last second
         int rxPacketsPerSec = 0;      // UDP packets routed to this source over the last second
+
+        // Direct USB: packets from a second UDP port on the same peer address
+        // (a second SonoBus socket or instance). They are dropped, never mixed
+        // into the active stream, and reported here so the UI can flag them.
+        int strayPacketsPerSec = 0;
+        int strayPort = 0;            // most recent stray source port, 0 if none
     };
 
     using SourceListener = std::function<void()>;

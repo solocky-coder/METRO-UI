@@ -679,23 +679,6 @@ private:
                 juce::dontSendNotification);
         }
 
-        // The main STATUS line used to be written once when Direct USB was
-        // enabled ("waiting for Apple device") and then never updated. The
-        // progress row, however, is refreshed every timer tick from the live
-        // source list. Keep the main status in sync with that same source of
-        // truth so it cannot claim that no Apple device is present while
-        // responding/audio-ready sources are already visible below.
-        if (responding > 0)
-        {
-            updateStatus (utf8 ("Direct USB — ")
-                          + juce::String (responding) + "/4 devices responding • "
-                          + juce::String (audioReady) + "/4 audio ready");
-        }
-        else
-        {
-            updateStatus (utf8 ("Direct USB — waiting for Apple device"));
-        }
-
         directUsbProgressValue = responding / 4.0;
         directUsbProgress.repaint();
     }
@@ -868,7 +851,11 @@ private:
                                + (s.channels > 0 && s.sampleRate > 0.0
                                       ? juce::String (s.channels) + " ch  |  " + juce::String (s.sampleRate, 0) + " Hz"
                                       : juce::String ("waiting for source format"))
-                               + "  |  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%";
+                               + "  |  loss " + juce::String (s.packetLoss * 100.0f, 1) + "%"
+                               + (s.strayPacketsPerSec > 0
+                                      ? "  |  EXTRA SENDER ON PORT " + juce::String (s.strayPort)
+                                            + " - CLOSE THE OTHER SONOBUS"
+                                      : juce::String());
 
             // Live link status: LED + label on the name line, level meter on the
             // details line (meter only while a track is actually reading audio).
@@ -891,7 +878,7 @@ private:
             const bool showMeter = s.linkState == MetroNetworkAudio::LinkState::Receiving
                                 || s.linkState == MetroNetworkAudio::LinkState::Silent;
             const int detailsW = width - nameX - 10 - (showMeter ? kMeterW + 20 : 0);
-            g.setColour (juce::Colours::lightgrey);
+            g.setColour (s.strayPacketsPerSec > 0 ? juce::Colour (0xFFE0A83D) : juce::Colours::lightgrey);
             g.setFont (juce::Font (16.0f));
             g.drawText (details, nameX, height / 2, detailsW, height / 2 - 2,
                         juce::Justification::centredLeft);

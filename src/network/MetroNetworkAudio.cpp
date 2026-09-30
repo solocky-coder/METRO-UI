@@ -298,6 +298,13 @@ public:
         std::atomic<uint32_t> diagRxPackets { 0 };
         std::atomic<uint32_t> diagRxBytes { 0 };
 
+        // Direct USB endpoint tracking. lastRxMs is the time of the last packet
+        // accepted from the active endpoint (0 = none heard yet); it is written
+        // on the io thread and read by createRuntime() on the UI thread.
+        std::atomic<uint32_t> lastRxMs { 0 };
+        std::atomic<uint32_t> diagStrayPackets { 0 };   // packets from a non-active port on the same peer
+        std::atomic<int> lastStrayPort { 0 };
+
         // io-thread only (logAudioStats): debounce counters for the UI status.
         int silentSeconds = 0;
         int noDataSeconds = 0;
@@ -474,7 +481,15 @@ public:
 
         if (existing != nullptr)
         {
+            // In direct mode, once the peer has actually sent packets, its
+            // active endpoint is owned by the receive loop (which fails over
+            // only when that port goes quiet). Priming or events must not
+            // rewrite it back to a stale port.
+            const bool peerActive = directMode.load (std::memory_order_acquire)
+                                    && existing->lastRxMs.load (std::memory_order_relaxed) != 0;
+
             if (existing->endpoint != nullptr
+                && ! peerActive
                 && ! sameEndpoint (existing->endpoint.get(), endpoint))
             {
                 *existing->endpoint = *endpoint;
@@ -775,6 +790,10 @@ public:
         }
     }
 
+    // Direct USB: how long the active UDP port must be quiet before packets from
+    // another port on the same peer address are accepted as the new endpoint.
+    static constexpr uint32_t kEndpointFailoverMs = 1500;
+
     // Below this the delivered signal counts as silence (about -80 dBFS).
     static constexpr float kSilencePeak = 1.0e-4f;
 
@@ -819,7 +838,8 @@ public:
         return LS::Silent;
     }
 
-    void publishLinkState (const SourceRuntime& rt, MetroNetworkAudio::LinkState state, float peak, uint32_t rxPackets)
+    void publishLinkState (const SourceRuntime& rt, MetroNetworkAudio::LinkState state, float peak, uint32_t rxPackets,
+                           uint32_t strayPackets, int strayPort)
     {
         std::lock_guard<std::mutex> lock (stateMutex);
         for (auto& source : sources)
@@ -828,6 +848,8 @@ public:
             source.linkState = state;
             source.peakLevel = peak;
             source.rxPacketsPerSec = (int) rxPackets;
+            source.strayPacketsPerSec = (int) strayPackets;
+            source.strayPort = strayPackets > 0 ? strayPort : 0;
             break;
         }
     }
@@ -870,7 +892,9 @@ public:
 
             const auto linkState = computeLinkState (*runtime, calls, produced, peak, rxPackets);
             runtime->lastLinkState = linkState;
-            publishLinkState (*runtime, linkState, peak, rxPackets);
+            const auto strayPackets = runtime->diagStrayPackets.exchange (0, std::memory_order_relaxed);
+            publishLinkState (*runtime, linkState, peak, rxPackets, strayPackets,
+                              runtime->lastStrayPort.load (std::memory_order_relaxed));
 
             if (calls == 0 && runtime->handshake != SourceRuntime::HandshakeState::Formatted) continue;
 
@@ -995,6 +1019,8 @@ public:
                     // peer. Never send the same packet through discovery as well
                     // as the dedicated runtime; discovery can manufacture a
                     // second source (for example source id 1) for the same iPad.
+                    bool strayPacket = false;
+
                     if (directMode.load (std::memory_order_acquire))
                     {
                         for (auto& slot : runtimeSlots)
@@ -1005,14 +1031,33 @@ public:
                                 || ! samePeerAddress (runtime->endpoint.get(), &from))
                                 continue;
 
+                            const auto nowMs = juce::Time::getMillisecondCounter();
+
                             if (! sameEndpoint (runtime->endpoint.get(), &from))
                             {
-                                aooDiag ("RX runtime endpoint updated from="
+                                // Same peer address, different UDP port. Stay on the
+                                // active endpoint while it is still talking: mixing a
+                                // second socket's packets into this source would
+                                // interleave two streams. Only fail over when the
+                                // active port has gone quiet (the peer really moved).
+                                const auto lastMs = runtime->lastRxMs.load (std::memory_order_relaxed);
+                                const bool activeQuiet = lastMs == 0 || (nowMs - lastMs) >= kEndpointFailoverMs;
+
+                                if (! activeQuiet)
+                                {
+                                    runtime->diagStrayPackets.fetch_add (1, std::memory_order_relaxed);
+                                    runtime->lastStrayPort.store ((int) ntohs (from.sin_port), std::memory_order_relaxed);
+                                    strayPacket = true;
+                                    break;
+                                }
+
+                                aooDiag ("RX runtime endpoint failover from="
                                          + endpointDebug (runtime->endpoint.get())
                                          + " to=" + endpointDebug (&from));
                                 *runtime->endpoint = from;
                             }
 
+                            runtime->lastRxMs.store (nowMs, std::memory_order_relaxed);
                             targetRuntime = runtime;
                             if (! runtime->directSourcePublished)
                                 publishDirectRuntimeSource (runtime);
@@ -1033,6 +1078,12 @@ public:
                             break;
                         }
                     }
+
+                    // A second socket on the same peer: it was counted above and
+                    // must reach neither this source nor the discovery sink (which
+                    // would manufacture a second source for it).
+                    if (strayPacket)
+                        continue;
 
                     if (targetRuntime != nullptr)
                     {
