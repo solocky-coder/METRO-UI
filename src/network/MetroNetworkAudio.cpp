@@ -308,6 +308,7 @@ public:
         // io-thread only (logAudioStats): debounce counters for the UI status.
         int silentSeconds = 0;
         int noDataSeconds = 0;
+        int idleSeconds = 0;   // consecutive seconds with no packets from a Formatted peer (re-invite pacing)
         MetroNetworkAudio::LinkState lastLinkState = MetroNetworkAudio::LinkState::Unknown;
     };
 
@@ -794,6 +795,47 @@ public:
     // another port on the same peer address are accepted as the new endpoint.
     static constexpr uint32_t kEndpointFailoverMs = 1500;
 
+    // Re-invite pacing for a Formatted direct peer that stopped sending
+    // (iPad unplugged, SonoBus restarted): a hosted AUv3 SonoBus may wait for
+    // an invite before it sends again. Start after this many quiet seconds,
+    // then invite every 2 s for the first 30 s of silence and every 10 s after
+    // that, so a source that was paused on purpose is not nagged forever.
+    static constexpr int kReinviteAfterSeconds = 3;
+
+    static bool shouldReinvite (int idleSeconds) noexcept
+    {
+        if (idleSeconds < kReinviteAfterSeconds) return false;
+        return idleSeconds < 30 ? (idleSeconds % 2 == 0) : (idleSeconds % 10 == 0);
+    }
+
+    // Once a second, io thread. Keeps the handshake state as it is (the UI
+    // already shows NO DATA / READY - NO PACKETS); it only re-sends the invite.
+    void reinviteIfPeerWentQuiet (SourceRuntime& runtime, uint32_t rxPackets)
+    {
+        if (! directMode.load (std::memory_order_acquire)
+            || runtime.handshake != SourceRuntime::HandshakeState::Formatted
+            || runtime.endpoint == nullptr || runtime.sink == nullptr)
+        {
+            runtime.idleSeconds = 0;
+            return;
+        }
+
+        if (rxPackets > 0)
+        {
+            runtime.idleSeconds = 0;
+            return;
+        }
+
+        ++runtime.idleSeconds;
+        if (! shouldReinvite (runtime.idleSeconds))
+            return;
+
+        const auto result = runtime.sink->invite_source (runtime.endpoint.get(), runtime.sourceId, sendAooReply);
+        aooDiag ("DIRECT_USB re-invite quiet peer idleSeconds=" + juce::String (runtime.idleSeconds)
+                 + " result=" + juce::String ((int) result)
+                 + " endpoint=" + endpointDebug (runtime.endpoint.get()));
+    }
+
     // Below this the delivered signal counts as silence (about -80 dBFS).
     static constexpr float kSilencePeak = 1.0e-4f;
 
@@ -892,6 +934,7 @@ public:
 
             const auto linkState = computeLinkState (*runtime, calls, produced, peak, rxPackets);
             runtime->lastLinkState = linkState;
+            reinviteIfPeerWentQuiet (*runtime, rxPackets);
             const auto strayPackets = runtime->diagStrayPackets.exchange (0, std::memory_order_relaxed);
             publishLinkState (*runtime, linkState, peak, rxPackets, strayPackets,
                               runtime->lastStrayPort.load (std::memory_order_relaxed));
