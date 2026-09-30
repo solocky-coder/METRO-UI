@@ -294,7 +294,7 @@ private:
     // inside a Viewport and clamp the *window's* size to the actual screen. If the full size
     // fits, this is invisible (no visible scrollbars); if it doesn't, the dialog scrolls
     // instead of clipping. Takes ownership of comp via the viewport.
-    void launchScrollableSettingsDialog (juce::Component* comp, const juce::String& title)
+    void launchScrollableSettingsDialog (juce::Component* comp, const juce::String& title, bool allowResize = true)
     {
         auto* viewport = new juce::Viewport();
         viewport->setViewedComponent (comp, true); // viewport now owns and deletes comp
@@ -315,7 +315,7 @@ private:
         opts.dialogBackgroundColour = juce::Colour (0xFF0D0D14);
         opts.escapeKeyTriggersCloseButton = true;
         opts.useNativeTitleBar = true;
-        opts.resizable = true; // belt-and-braces, in case someone still wants more room
+        opts.resizable = allowResize; // Network Audio passes false: fixed-size window
         opts.launchAsync();
     }
 
@@ -327,7 +327,7 @@ private:
     void showNetworkAudioSettings()
     {
         auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false);
-        launchScrollableSettingsDialog (comp, "Network Audio");
+        launchScrollableSettingsDialog (comp, "Network Audio", false);
     }
 
     class MidiOnlySettingsComponent : public juce::Component
