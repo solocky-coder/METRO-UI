@@ -783,6 +783,36 @@ private:
     {
         sourceList.updateContent();
         sourceList.repaint();
+        updateHostTimingHint();
+    }
+
+    // The AOO sinks assume 48 kHz / 512-sample callbacks. Flag a device that runs
+    // differently, but only while there are sources to hear (and only after a
+    // track has pulled audio, which is when the callback format becomes known).
+    void updateHostTimingHint()
+    {
+        juce::String text = "Sources";
+        auto colour = juce::Colours::white;
+
+#if DYSEKT_HAS_AOO
+        if (networkAudio != nullptr && sourceModel.getNumRows() > 0)
+        {
+            const auto timing = networkAudio->getHostTiming();
+            if (timing.isKnown() && ! timing.matchesAoo())
+            {
+                text += "   |   DEVICE " + juce::String (timing.sampleRate, 0) + " Hz / "
+                        + juce::String (timing.blockSize)
+                        + " samples - USB AUDIO IS TUNED FOR 48000 Hz / 512";
+                colour = juce::Colour (0xFFE0A83D);
+            }
+        }
+#endif
+
+        if (sourcesLabel.getText() != text)
+        {
+            sourcesLabel.setText (text, juce::dontSendNotification);
+            sourcesLabel.setColour (juce::Label::textColourId, colour);
+        }
     }
 
     void updateStatus (const juce::String& text)

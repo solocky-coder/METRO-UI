@@ -42,8 +42,11 @@ namespace
 {
 constexpr int kAooSampleRate = 48000;
 constexpr int kAooBlockSize = 512;
+static_assert (kAooSampleRate == (int) MetroNetworkAudio::kNominalSampleRate
+                   && kAooBlockSize == MetroNetworkAudio::kNominalBlockSize,
+               "MetroNetworkAudio::kNominal* must match the AOO sink setup constants");
 constexpr int kAooChannels = 64;
-constexpr int kAooBufferMs = 10;
+constexpr int kAooBufferMs = 120;
 constexpr size_t kMaxNetworkSources = 64;
 
 // -------------------------------------------------------------------------
@@ -338,6 +341,7 @@ public:
     std::array<aoo_sample*, kAooChannels> mixPointers {};
 
     std::atomic<double> hostSampleRate { 0.0 };   // what the audio callback says it runs at
+    std::atomic<int> hostBlockSize { 0 };         // samples in the most recent audio callback
     std::atomic<uint32_t> hostBlocks { 0 };       // host audio callbacks since last stats line
     std::atomic<int64_t>  hostMaxMicros { 0 };    // slowest whole processBlock since last stats line
     std::atomic<int64_t>  hostSumMicros { 0 };
@@ -1038,7 +1042,7 @@ public:
             FD_ZERO (&readSet);
             FD_SET (socket, &readSet);
             timeval timeout {};
-            timeout.tv_usec = 1000;
+            timeout.tv_usec = 20000;
             const auto ready = select (static_cast<int> (socket + 1), &readSet, nullptr, nullptr, &timeout);
 
             if (ready > 0 && FD_ISSET (socket, &readSet))
@@ -1950,6 +1954,17 @@ bool MetroNetworkAudio::isDirectMode() const noexcept { return impl != nullptr &
 
 // "192.168.99.x" .. "192.168.102.x" are the four reserved Apple USB networks,
 // one per attached device in slot order -> "USB 1" .. "USB 4".
+MetroNetworkAudio::HostTiming MetroNetworkAudio::getHostTiming() const noexcept
+{
+    HostTiming timing;
+    if (impl != nullptr)
+    {
+        timing.sampleRate = impl->hostSampleRate.load (std::memory_order_relaxed);
+        timing.blockSize = impl->hostBlockSize.load (std::memory_order_relaxed);
+    }
+    return timing;
+}
+
 juce::String MetroNetworkAudio::defaultSourceLabel (const juce::String& peerAddress)
 {
     const auto parts = juce::StringArray::fromTokens (peerAddress, ".", "");
@@ -2007,7 +2022,11 @@ void MetroNetworkAudio::noteHostBlock (int numSamples, int64_t elapsedMicros, fl
 bool MetroNetworkAudio::processSourceChannel (juce::AudioBuffer<float>& destination, int numSamples, double sampleRate,
                                               int64_t sourceKey, int sourceChannel)
 {
-    if (impl != nullptr) impl->hostSampleRate.store (sampleRate, std::memory_order_relaxed);
+    if (impl != nullptr)
+    {
+        impl->hostSampleRate.store (sampleRate, std::memory_order_relaxed);
+        impl->hostBlockSize.store (numSamples, std::memory_order_relaxed);
+    }
     return impl != nullptr && impl->processSourceChannel (destination, numSamples, sourceKey, sourceChannel);
 }
 

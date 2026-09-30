@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -22,6 +23,27 @@ public:
     // The value is stored in the same int as a single-channel route, so the
     // project stream format does not change and old projects load unchanged.
     static constexpr int kStereoPair = 1000;
+
+    // The AOO sinks are set up for 48 kHz audio in 512-sample blocks and their
+    // timing model assumes the audio callback matches. A device running at
+    // another rate or block size still works, but the sink's clock tracking is
+    // then working outside its design point.
+    static constexpr double kNominalSampleRate = 48000.0;
+    static constexpr int kNominalBlockSize = 512;
+
+    struct HostTiming
+    {
+        double sampleRate = 0.0;   // 0 until a track has pulled audio at least once
+        int blockSize = 0;         // samples in the most recent audio callback
+
+        bool isKnown() const noexcept { return sampleRate > 0.0 && blockSize > 0; }
+        bool matchesAoo() const noexcept
+        {
+            return isKnown() && std::abs (sampleRate - kNominalSampleRate) < 1.0
+                             && blockSize == kNominalBlockSize;
+        }
+    };
+
     static constexpr bool isStereoRoute (int sourceChannel) noexcept { return sourceChannel == kStereoPair; }
 
     // What a source is doing right now, derived once a second on the io thread.
@@ -76,6 +98,7 @@ public:
     void stop();
     bool isRunning() const noexcept;
     bool isDirectMode() const noexcept;
+    HostTiming getHostTiming() const noexcept;
 
     // Direct USB device labels. SonoBus sends no device name over a direct
     // link, so each source defaults to "USB 1".."USB 4" (by subnet) and the
