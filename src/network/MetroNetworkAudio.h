@@ -50,6 +50,13 @@ public:
     static constexpr bool isStereoRoute (int sourceChannel) noexcept { return sourceChannel == kStereoPair; }
 
     // What a source is doing right now, derived once a second on the io thread.
+    enum class LatencyProfile
+    {
+        Normal,
+        Low,
+        UltraLow
+    };
+
     enum class LinkState
     {
         Unknown,           // no data yet
@@ -102,6 +109,9 @@ public:
     bool isRunning() const noexcept;
     bool isDirectMode() const noexcept;
     HostTiming getHostTiming() const noexcept;
+
+    void setLatencyProfile (LatencyProfile profile);
+    LatencyProfile getLatencyProfile() const noexcept;
 
     // Call from the message thread whenever the audio device is (re)prepared
     // (AudioProcessor::prepareToPlay). Sets the AOO sink block size to the
