@@ -47,6 +47,7 @@ static_assert (kAooSampleRate == (int) MetroNetworkAudio::kNominalSampleRate
                "MetroNetworkAudio::kNominal* must match the AOO sink setup constants");
 constexpr int kAooChannels = 64;
 constexpr int kAooBufferMs = 120;
+constexpr int kAooDirectBufferMs = 10;
 constexpr size_t kMaxNetworkSources = 64;
 
 // -------------------------------------------------------------------------
@@ -600,7 +601,9 @@ public:
             return nullptr;
         }
 
-        runtime->sink->set_buffersize (kAooBufferMs);
+        runtime->sink->set_buffersize (directMode.load (std::memory_order_acquire)
+                                          ? kAooDirectBufferMs
+                                          : kAooBufferMs);
         runtime->sink->set_dynamic_resampling (1);
         runtime->sink->set_resend_limit (5);
         runtime->sink->set_resend_interval (10);
@@ -698,7 +701,9 @@ public:
         discoverySink.reset (aoo::isink::create (0));
         if (client == nullptr || discoverySink == nullptr) return cleanupFailedStart();
         if (discoverySink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0) return cleanupFailedStart();
-        discoverySink->set_buffersize (kAooBufferMs);
+        discoverySink->set_buffersize (requestedPort != 0
+                                         ? kAooDirectBufferMs
+                                         : kAooBufferMs);
         discoverySink->set_dynamic_resampling (1);
         discoverySink->set_resend_limit (5);
         discoverySink->set_resend_interval (10);
@@ -1042,17 +1047,22 @@ public:
             FD_ZERO (&readSet);
             FD_SET (socket, &readSet);
             timeval timeout {};
-            timeout.tv_usec = 20000;
+            timeout.tv_usec = 1000;
             const auto ready = select (static_cast<int> (socket + 1), &readSet, nullptr, nullptr, &timeout);
 
             if (ready > 0 && FD_ISSET (socket, &readSet))
             {
-                sockaddr_in from {};
-                socklen_t fromLength = sizeof (from);
-                const auto n = recvfrom (socket, packet.data(), static_cast<int> (packet.size()), 0,
-                                         reinterpret_cast<sockaddr*> (&from), &fromLength);
-                if (n > 0)
+                // One wake-up can correspond to many queued UDP datagrams.
+                // Drain the non-blocking socket before sleeping again so a
+                // packet burst does not pay the select timeout per packet.
+                for (;;)
                 {
+                    sockaddr_in from {};
+                    socklen_t fromLength = sizeof (from);
+                    const auto n = recvfrom (socket, packet.data(), static_cast<int> (packet.size()), 0,
+                                             reinterpret_cast<sockaddr*> (&from), &fromLength);
+                    if (n <= 0)
+                        break;
                     aooDiag ("RX packet bytes=" + juce::String (n)
                              + " from=" + endpointDebug (&from)
                              + " head="
