@@ -47,6 +47,7 @@ static_assert (kAooSampleRate == (int) MetroNetworkAudio::kNominalSampleRate
                "MetroNetworkAudio::kNominal* must match the AOO sink setup constants");
 constexpr int kAooChannels = 64;
 constexpr int kAooBufferMs = 120;
+constexpr int kAooDirectBufferMs = 10;
 constexpr size_t kMaxNetworkSources = 64;
 
 // -------------------------------------------------------------------------
@@ -600,7 +601,9 @@ public:
             return nullptr;
         }
 
-        runtime->sink->set_buffersize (kAooBufferMs);
+        runtime->sink->set_buffersize (directMode.load (std::memory_order_acquire)
+                                          ? kAooDirectBufferMs
+                                          : kAooBufferMs);
         runtime->sink->set_dynamic_resampling (1);
         runtime->sink->set_resend_limit (5);
         runtime->sink->set_resend_interval (10);
@@ -698,7 +701,9 @@ public:
         discoverySink.reset (aoo::isink::create (0));
         if (client == nullptr || discoverySink == nullptr) return cleanupFailedStart();
         if (discoverySink->setup (kAooSampleRate, kAooBlockSize, kAooChannels) <= 0) return cleanupFailedStart();
-        discoverySink->set_buffersize (kAooBufferMs);
+        discoverySink->set_buffersize (requestedPort != 0
+                                         ? kAooDirectBufferMs
+                                         : kAooBufferMs);
         discoverySink->set_dynamic_resampling (1);
         discoverySink->set_resend_limit (5);
         discoverySink->set_resend_interval (10);
