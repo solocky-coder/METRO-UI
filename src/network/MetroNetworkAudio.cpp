@@ -1042,17 +1042,22 @@ public:
             FD_ZERO (&readSet);
             FD_SET (socket, &readSet);
             timeval timeout {};
-            timeout.tv_usec = 20000;
+            timeout.tv_usec = 1000;
             const auto ready = select (static_cast<int> (socket + 1), &readSet, nullptr, nullptr, &timeout);
 
             if (ready > 0 && FD_ISSET (socket, &readSet))
             {
-                sockaddr_in from {};
-                socklen_t fromLength = sizeof (from);
-                const auto n = recvfrom (socket, packet.data(), static_cast<int> (packet.size()), 0,
-                                         reinterpret_cast<sockaddr*> (&from), &fromLength);
-                if (n > 0)
+                // One wake-up can correspond to many queued UDP datagrams.
+                // Drain the non-blocking socket before sleeping again so a
+                // packet burst does not pay the select timeout per packet.
+                for (;;)
                 {
+                    sockaddr_in from {};
+                    socklen_t fromLength = sizeof (from);
+                    const auto n = recvfrom (socket, packet.data(), static_cast<int> (packet.size()), 0,
+                                             reinterpret_cast<sockaddr*> (&from), &fromLength);
+                    if (n <= 0)
+                        break;
                     aooDiag ("RX packet bytes=" + juce::String (n)
                              + " from=" + endpointDebug (&from)
                              + " head="
