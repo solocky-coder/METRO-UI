@@ -7,6 +7,7 @@
 #include "MidiRouter.h"
 #include "NetworkAudioProcessor.h"
 #include "NetworkAudioAutoTrack.h"
+#include "NetworkAudioLabels.h"
 #include "NetworkAudioSettingsShim.h"
 
 class MainWindow : public juce::DocumentWindow,
@@ -48,6 +49,7 @@ public:
         }
 
         networkAudio = std::make_unique<MetroNetworkAudio>();
+        networkAudio->setSourceLabels (NetworkAudioLabels::load());
         networkAudio->start();
         processor->setNetworkAudio (networkAudio.get());
         autoTrack = std::make_unique<NetworkAudioAutoTrack> (networkAudio.get());

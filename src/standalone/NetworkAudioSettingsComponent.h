@@ -3,6 +3,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../network/MetroNetworkAudio.h"
+#include "NetworkAudioLabels.h"
 #include "../network/NetworkAudioChannelState.h"
 #include "../metro/MetroLookAndFeel.h"
 #include "NetworkAudioProcessor.h"
@@ -269,6 +270,7 @@ public:
         sourcesLabel.setFont (juce::Font (15.0f, juce::Font::bold));
         addAndMakeVisible (sourcesLabel);
 
+        sourceModel.onLabelChanged = [this] { refreshSources(); };
         sourceList.setModel (&sourceModel);
         sourceList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF111118));
         sourceList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF30303A));
@@ -803,6 +805,37 @@ private:
     public:
         explicit SourceListModel (MetroNetworkAudio* owner) : owner (owner) {}
 
+        // Set by the settings component so the list refreshes after a rename.
+        std::function<void()> onLabelChanged;
+
+        // Right-click a Direct USB source to rename it (SonoBus sends no device
+        // name over a direct link) or reset it to the default "USB n" name.
+        void listBoxItemClicked (int row, const juce::MouseEvent& e) override
+        {
+#if DYSEKT_HAS_AOO
+            if (owner == nullptr || ! e.mods.isPopupMenu())
+                return;
+
+            const auto sources = owner->getSources();
+            int visibleRow = 0;
+            for (const auto& candidate : sources)
+            {
+                if (! candidate.online)
+                    continue;
+                if (visibleRow++ != row)
+                    continue;
+
+                if (candidate.peerAddress.isEmpty())
+                    return;   // group sources carry their own names
+
+                showRenameMenu (candidate.peerAddress, candidate.user);
+                return;
+            }
+#else
+            juce::ignoreUnused (row, e);
+#endif
+        }
+
         int getNumRows() override
         {
 #if DYSEKT_HAS_AOO
@@ -903,6 +936,56 @@ private:
         }
 
     private:
+        void showRenameMenu (const juce::String& address, const juce::String& currentLabel)
+        {
+            const bool hasOverride = currentLabel != MetroNetworkAudio::defaultSourceLabel (address);
+
+            juce::PopupMenu menu;
+            menu.addSectionHeader (address);
+            menu.addItem (1, "Rename device...");
+            menu.addItem (2, "Reset name to default (" + MetroNetworkAudio::defaultSourceLabel (address) + ")", hasOverride);
+
+            menu.showMenuAsync (juce::PopupMenu::Options(),
+                                [this, address, currentLabel] (int choice)
+                                {
+                                    if (choice == 1)
+                                        askForNewLabel (address, currentLabel);
+                                    else if (choice == 2)
+                                        applyLabel (address, {});
+                                });
+        }
+
+        void askForNewLabel (const juce::String& address, const juce::String& currentLabel)
+        {
+            auto* window = new juce::AlertWindow ("Rename device",
+                                                  "Name shown for the device at " + address
+                                                      + ". New tracks created from it use this name.",
+                                                  juce::MessageBoxIconType::NoIcon);
+            window->addTextEditor ("label", currentLabel, "Name:");
+            window->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
+            window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+            juce::Component::SafePointer<juce::AlertWindow> safeWindow (window);
+            window->enterModalState (true,
+                                     juce::ModalCallbackFunction::create ([this, address, safeWindow] (int result)
+                                     {
+                                         if (result == 1 && safeWindow != nullptr)
+                                             applyLabel (address, safeWindow->getTextEditorContents ("label"));
+                                     }),
+                                     true);
+        }
+
+        void applyLabel (const juce::String& address, const juce::String& label)
+        {
+            if (owner == nullptr)
+                return;
+
+            owner->setSourceLabel (address, label);
+            NetworkAudioLabels::save (owner->getSourceLabels());
+            if (onLabelChanged)
+                onLabelChanged();
+        }
+
         struct LinkStatusView { juce::String text; juce::Colour colour; };
 
         static LinkStatusView describeLinkState (const MetroNetworkAudio::SourceInfo& s)

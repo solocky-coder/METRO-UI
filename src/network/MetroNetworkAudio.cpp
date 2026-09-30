@@ -322,6 +322,7 @@ public:
     MetroNetworkAudio& owner;
     std::atomic<bool> running { false };
     std::atomic<bool> directMode { false };
+    juce::StringPairArray labelOverrides;   // peer IP -> user-chosen label; guarded by stateMutex
     MetroSocket socket = metroInvalidSocket;
     aoo::net::iclient::pointer client;
     aoo::isink::pointer discoverySink;
@@ -419,6 +420,64 @@ public:
         return {};
     }
 
+    static juce::String addressString (const sockaddr_in* endpoint)
+    {
+        if (endpoint == nullptr) return {};
+        char buffer[INET_ADDRSTRLEN] = {};
+        if (inet_ntop (AF_INET, &endpoint->sin_addr, buffer, sizeof (buffer)) == nullptr) return {};
+        return juce::String (buffer);
+    }
+
+    // User override if there is one, otherwise the subnet-based default.
+    juce::String labelForAddress (const juce::String& address)
+    {
+        {
+            std::lock_guard<std::mutex> lock (stateMutex);
+            const auto overrideLabel = labelOverrides.getValue (address, {});
+            if (overrideLabel.isNotEmpty()) return overrideLabel;
+        }
+        return MetroNetworkAudio::defaultSourceLabel (address);
+    }
+
+    void setSourceLabel (const juce::String& address, const juce::String& label)
+    {
+        if (address.isEmpty()) return;
+        const auto trimmed = label.trim();
+        {
+            std::lock_guard<std::mutex> lock (stateMutex);
+            if (trimmed.isEmpty()) labelOverrides.remove (juce::StringRef (address));
+            else                   labelOverrides.set (address, trimmed);
+
+            const auto effective = trimmed.isNotEmpty() ? trimmed : MetroNetworkAudio::defaultSourceLabel (address);
+            for (auto& source : sources)
+                if (source.peerAddress == address)
+                    source.user = effective;
+        }
+        notifySourceChange (this);
+    }
+
+    void setSourceLabels (const juce::StringPairArray& labels)
+    {
+        {
+            std::lock_guard<std::mutex> lock (stateMutex);
+            labelOverrides = labels;
+            for (auto& source : sources)
+                if (source.peerAddress.isNotEmpty())
+                {
+                    const auto overrideLabel = labelOverrides.getValue (source.peerAddress, {});
+                    source.user = overrideLabel.isNotEmpty() ? overrideLabel
+                                                             : MetroNetworkAudio::defaultSourceLabel (source.peerAddress);
+                }
+        }
+        notifySourceChange (this);
+    }
+
+    juce::StringPairArray getSourceLabels()
+    {
+        std::lock_guard<std::mutex> lock (stateMutex);
+        return labelOverrides;
+    }
+
     void publishDirectRuntimeSource (SourceRuntime* runtime)
     {
         if (runtime == nullptr || ! directMode.load (std::memory_order_acquire)
@@ -428,7 +487,8 @@ public:
         SourceInfo info;
         info.sourceKey = runtime->sourceKey;
         info.sourceId = runtime->sourceId;
-        info.user = "USB";
+        info.peerAddress = addressString (runtime->endpoint.get());
+        info.user = labelForAddress (info.peerAddress);
         info.group = "Direct USB";
         info.online = true;
         upsertSource (info);
@@ -1698,6 +1758,7 @@ public:
         {
             it->sourceId = info.sourceId;
             if (info.user.isNotEmpty()) it->user = info.user;
+            if (info.peerAddress.isNotEmpty()) it->peerAddress = info.peerAddress;
             if (info.group.isNotEmpty()) it->group = info.group;
             it->online = true;
         }
@@ -1886,6 +1947,35 @@ void MetroNetworkAudio::stop() { if (impl != nullptr) impl->stop(); }
 bool MetroNetworkAudio::isRunning() const noexcept { return impl != nullptr && impl->running.load (std::memory_order_acquire); }
 
 bool MetroNetworkAudio::isDirectMode() const noexcept { return impl != nullptr && impl->directMode.load (std::memory_order_acquire); }
+
+// "192.168.99.x" .. "192.168.102.x" are the four reserved Apple USB networks,
+// one per attached device in slot order -> "USB 1" .. "USB 4".
+juce::String MetroNetworkAudio::defaultSourceLabel (const juce::String& peerAddress)
+{
+    const auto parts = juce::StringArray::fromTokens (peerAddress, ".", "");
+    if (parts.size() == 4 && parts[0] == "192" && parts[1] == "168")
+    {
+        const int subnet = parts[2].getIntValue();
+        if (subnet >= 99 && subnet <= 102)
+            return "USB " + juce::String (subnet - 98);
+    }
+    return peerAddress.isNotEmpty() ? "USB " + peerAddress : juce::String ("USB");
+}
+
+void MetroNetworkAudio::setSourceLabel (const juce::String& peerAddress, const juce::String& label)
+{
+    if (impl != nullptr) impl->setSourceLabel (peerAddress, label);
+}
+
+void MetroNetworkAudio::setSourceLabels (const juce::StringPairArray& labelsByAddress)
+{
+    if (impl != nullptr) impl->setSourceLabels (labelsByAddress);
+}
+
+juce::StringPairArray MetroNetworkAudio::getSourceLabels() const
+{
+    return impl != nullptr ? impl->getSourceLabels() : juce::StringPairArray();
+}
 
 bool MetroNetworkAudio::connectToServer (const juce::String& host, int port, const juce::String& username, const juce::String& password)
 {

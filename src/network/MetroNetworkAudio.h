@@ -57,6 +57,10 @@ public:
         // into the active stream, and reported here so the UI can flag them.
         int strayPacketsPerSec = 0;
         int strayPort = 0;            // most recent stray source port, 0 if none
+
+        // Direct USB only: the peer's IP address (e.g. "192.168.99.2"). This is
+        // the stable key for a user-chosen device label; empty for group sources.
+        juce::String peerAddress;
     };
 
     using SourceListener = std::function<void()>;
@@ -72,6 +76,15 @@ public:
     void stop();
     bool isRunning() const noexcept;
     bool isDirectMode() const noexcept;
+
+    // Direct USB device labels. SonoBus sends no device name over a direct
+    // link, so each source defaults to "USB 1".."USB 4" (by subnet) and the
+    // user can rename it. Overrides are keyed by peer IP address; an empty
+    // label restores the default. Safe to call from the message thread.
+    static juce::String defaultSourceLabel (const juce::String& peerAddress);
+    void setSourceLabel (const juce::String& peerAddress, const juce::String& label);
+    void setSourceLabels (const juce::StringPairArray& labelsByAddress);
+    juce::StringPairArray getSourceLabels() const;
 
     bool connectToServer(const juce::String& host,
                          int port,
