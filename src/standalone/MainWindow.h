@@ -305,8 +305,18 @@ private:
                                       .getDisplayForRect (getScreenBounds())
                                       ->userArea;
         constexpr int kScreenMargin = 80; // room for the OS title bar, taskbar/dock, etc.
-        const int viewportWidth = juce::jmin (idealSize.getWidth(), displayArea.getWidth() - kScreenMargin);
-        const int viewportHeight = juce::jmin (idealSize.getHeight(), displayArea.getHeight() - kScreenMargin);
+        const int maxW = displayArea.getWidth()  - kScreenMargin;
+        const int maxH = displayArea.getHeight() - kScreenMargin;
+
+        // Only show a scrollbar on an axis that genuinely doesn't fit on screen. When a vertical
+        // bar is needed, widen the viewport by its thickness so it doesn't squeeze the content
+        // and spuriously trigger a horizontal bar (and vice versa).
+        const int sb = viewport->getScrollBarThickness();
+        const bool needsV = idealSize.getHeight() > maxH;
+        const bool needsH = idealSize.getWidth() + (needsV ? sb : 0) > maxW;
+        const int viewportWidth  = juce::jmin (idealSize.getWidth()  + (needsV ? sb : 0), maxW);
+        const int viewportHeight = juce::jmin (idealSize.getHeight() + (needsH ? sb : 0), maxH);
+        viewport->setScrollBarsShown (needsV, needsH);
         viewport->setSize (viewportWidth, viewportHeight);
 
         juce::DialogWindow::LaunchOptions opts;
