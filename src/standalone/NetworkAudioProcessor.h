@@ -3,6 +3,7 @@
 #include "../PluginProcessor.h"
 #include "../network/MetroNetworkAudio.h"
 #include "../network/NetworkAudioRecorder.h"
+#include "../network/NetworkTrackMeters.h"
 #include "../sequencer/AudioClipPlayer.h"
 #include <atomic>
 
@@ -268,6 +269,16 @@ public:
             }
             if (buffer.getNumChannels() > 0) buffer.addFrom (0, 0, networkBuffer, 0, 0, numSamples, leftGain);
             if (buffer.getNumChannels() > 1) buffer.addFrom (1, 0, networkBuffer, 1, 0, numSamples, rightGain);
+            // Post-fader/pan sample peaks for this track's horizontal header meter
+            // (read by TrackHeaderStrip on the UI thread). Lock-free, no allocation.
+            {
+                const float peakL = networkBuffer.getMagnitude (0, 0, numSamples) * leftGain;
+                const float peakR = networkBuffer.getNumChannels() > 1
+                                        ? networkBuffer.getMagnitude (1, 0, numSamples) * rightGain
+                                        : peakL;
+                NetworkTrackMeters::push (trackIndex, peakL, peakR,
+                                          MetroNetworkAudio::isStereoRoute (sourceChannel));
+            }
             renderedTrack = true;
 
             // Push the selected route before the scratch buffer is reused for

@@ -2,19 +2,22 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
 #include "DysektLookAndFeel.h"
+#include "HorizontalLevelMeter.h"
+#include "../network/NetworkTrackMeters.h"
 
 //==============================================================================
 //  TrackHeaderStrip — vertical list of track headers.
 //  Shows: colour swatch | track name | MIDI-RX dot | mute button
 //
 //  MIDI receive indicator blinks green when the sequencer fires notes on that
-//  track.  The 10-Hz timer polls SequencerEngine::getMidiActivityAndClear().
+//  track.  The timer polls SequencerEngine::getMidiActivityAndClear() at ~10 Hz and
+//  Network Audio track peak meters (NetworkTrackMeters) at ~30 Hz.
 //==============================================================================
 class TrackHeaderStrip : public juce::Component,
                          private juce::Timer
 {
 public:
-    explicit TrackHeaderStrip (SequencerEngine& seq) : engine (seq) { startTimerHz (10); }
+    explicit TrackHeaderStrip (SequencerEngine& seq) : engine (seq) { startTimerHz (HorizontalLevelMeter::kUpdateHz); }
     ~TrackHeaderStrip() override { stopTimer(); }
 
     void setTrackHeight (int h) { trackH = juce::jmax (18, h); repaint(); }
@@ -125,13 +128,19 @@ public:
             const auto meterR = muteR.withTrimmedLeft (-(btnGap + 5))
                                       .withWidth (3)
                                       .translated (-(muteR.getWidth() + btnGap + 5), 0);
-            const bool rxActive  = (i < kMaxTracks && midiHoldCounters[i] > 0);
-            g.setColour (theme.separator);
-            g.fillRect (meterR);
-            if (rxActive)
+            //
+            // Network Audio tracks get a real horizontal peak meter instead (drawn
+            // below, under the name), so this MIDI proxy is skipped for them.
+            if (info.type != TrackType::Audio)
             {
-                g.setColour (theme.accent);
-                g.fillRect (meterR.withTrimmedTop (meterR.getHeight() * 3 / 5));
+                const bool rxActive  = (i < kMaxTracks && midiHoldCounters[i] > 0);
+                g.setColour (theme.separator);
+                g.fillRect (meterR);
+                if (rxActive)
+                {
+                    g.setColour (theme.accent);
+                    g.fillRect (meterR.withTrimmedTop (meterR.getHeight() * 3 / 5));
+                }
             }
 
             // Track name — width trimmed to clear the M/S/R + meter cluster
@@ -152,15 +161,54 @@ public:
             const int reservedRight = rowR.getRight() - meterR.getX() + 6;
             g.setFont (juce::Font (juce::jlimit (12.0f, 16.0f, (float)trackH * 0.25f), juce::Font::bold));
             g.setColour (theme.foreground);
-            g.drawText (info.name, rowR.getX() + 14, rowR.getY(),
+
+            // Network Audio rows stack name over a horizontal stereo/mono peak meter,
+            // vertically centred as one block. Rows too short for both (< 34 px) keep
+            // the name centred and get a slim 3 px meter along the bottom edge.
+            const bool audioRow      = (info.type == TrackType::Audio);
+            const bool audioMeterRow = audioRow && trackH >= 34;
+            constexpr int kAudioNameH = 18, kAudioMeterH = 8, kAudioBlockGap = 5;
+            const int audioBlockTop = rowR.getY() + (trackH - (kAudioNameH + kAudioBlockGap + kAudioMeterH)) / 2;
+
+            g.drawText (info.name, rowR.getX() + 14,
+                        audioMeterRow ? audioBlockTop : rowR.getY(),
                         rowR.getWidth() - reservedRight - 14,
-                        trackH, juce::Justification::centredLeft, true);
+                        audioMeterRow ? kAudioNameH : trackH,
+                        juce::Justification::centredLeft, true);
+
+            if (audioRow && i < kMaxTracks)
+            {
+                int meterX = rowR.getX() + 14;
+                const int meterRight = muteR.getX() - 10;
+
+                if (audioMeterRow)
+                {
+                    const int meterY = audioBlockTop + kAudioNameH + kAudioBlockGap;
+
+                    // Small "NET" tag left of the meter when there is room for both.
+                    if (meterRight - (meterX + 28) >= 48)
+                    {
+                        g.setFont (juce::Font (9.5f));
+                        g.setColour (theme.foreground.withAlpha (0.55f));
+                        g.drawText ("NET", meterX, meterY - 2, 26, kAudioMeterH + 4,
+                                    juce::Justification::centredLeft, false);
+                        meterX += 28;
+                    }
+                    netMeters[i].paint (g, { meterX, meterY, meterRight - meterX, kAudioMeterH },
+                                        theme.separator);
+                }
+                else
+                {
+                    netMeters[i].paint (g, { meterX, rowR.getBottom() - 5, meterRight - meterX, 3 },
+                                        theme.separator);
+                }
+            }
 
             // Type + channel badge — same readability fix as the name above,
             // theme.foreground at reduced alpha instead of info.colour at
             // reduced alpha, preserving the existing dimmer-than-the-name
             // hierarchy without the colour-contrast risk.
-            if (trackH >= 32)
+            if (trackH >= 32 && info.type != TrackType::Audio)
             {
                 juce::String badge;
                 switch (info.type)
@@ -168,6 +216,7 @@ public:
                     case TrackType::MainSlice:      badge = "SL"; break;
                     case TrackType::ChromaticSlice: badge = "CH"; break;
                     case TrackType::SfPlayer:       badge = "SF"; break;
+                    case TrackType::Audio:          badge = "NET"; break;
                 }
                 g.setFont (juce::Font (juce::jlimit (9.0f, 11.0f, (float)trackH * 0.17f)));
                 g.setColour (theme.foreground.withAlpha (0.55f));
@@ -282,6 +331,18 @@ private:
     {
         const int n = juce::jmin (engine.getNumTracks(), kMaxTracks);
         bool needsRepaint = false;
+
+        // Network Audio level meters: every tick (~30 Hz). Only rows whose meter is
+        // (or just stopped being) active are repainted.
+        for (int i = 0; i < n; ++i)
+            if (netMeters[i].update (NetworkTrackMeters::consume (i)))
+                repaint (getRowBounds (i));
+
+        // MIDI-activity proxy meter: kept at its original ~10 Hz cadence.
+        if (++midiTickDivider < kMidiTickDivisor)
+            return;
+        midiTickDivider = 0;
+
         for (int i = 0; i < n; ++i)
         {
             if (engine.getMidiActivityAndClear (i))
@@ -305,6 +366,11 @@ private:
     static constexpr int kMaxTracks = SequencerEngine::kActivityFlagCount;
     static constexpr int kHoldTicks = 3;
     int midiHoldCounters[kMaxTracks] = {};
+
+    // The timer now runs at the meter rate; the MIDI proxy still updates every 3rd tick.
+    static constexpr int kMidiTickDivisor = HorizontalLevelMeter::kUpdateHz / 10;
+    int midiTickDivider = 0;
+    HorizontalLevelMeter netMeters[kMaxTracks];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrackHeaderStrip)
 };
