@@ -6,6 +6,7 @@
 #include <aoo/aoo_net.hpp>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -62,6 +63,37 @@ constexpr int kAooChannels = 64;
 constexpr int kAooBufferMs = 120;
 constexpr int kAooDirectBufferMs = 10;
 constexpr size_t kMaxNetworkSources = 64;
+
+struct LatencyProfileConfig
+{
+    int networkBufferMs;
+    int directBufferMs;
+    int minBufferMs;
+    int maxBufferMs;
+    int resendLimit;
+    int resendInterval;
+    int resendMaxFrames;
+};
+
+LatencyProfileConfig getLatencyProfileConfig (MetroNetworkAudio::LatencyProfile profile) noexcept
+{
+    switch (profile)
+    {
+        case MetroNetworkAudio::LatencyProfile::Low:
+            return { 60, 10, 10, 80, 4, 8, 12 };
+        case MetroNetworkAudio::LatencyProfile::UltraLow:
+            return { 30, 8, 8, 60, 2, 5, 8 };
+        case MetroNetworkAudio::LatencyProfile::Normal:
+        default:
+            return { kAooBufferMs, kAooDirectBufferMs, 10, 120, 5, 10, 16 };
+    }
+}
+
+int64_t monotonicMicros() noexcept
+{
+    return std::chrono::duration_cast<std::chrono::microseconds> (
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 // -------------------------------------------------------------------------
 // AOO diagnostic logging
@@ -322,6 +354,10 @@ public:
         // accepted from the active endpoint (0 = none heard yet); it is written
         // on the io thread and read by createRuntime() on the UI thread.
         std::atomic<uint32_t> lastRxMs { 0 };
+        std::atomic<int64_t> lastPacketMicros { 0 };
+        std::atomic<float> packetIntervalMs { 0.0f };
+        std::atomic<float> jitterMs { 0.0f };
+        std::atomic<int> adaptiveBufferMs { 0 };
         std::atomic<uint32_t> diagStrayPackets { 0 };   // packets from a non-active port on the same peer
         std::atomic<int> lastStrayPort { 0 };
 
@@ -366,6 +402,7 @@ public:
     //                       try-locks it and outputs silence if it is busy, so
     //                       it can never block on a reconfigure.
     std::atomic<int> aooBlockSize { kAooDefaultBlockSize };
+    std::atomic<MetroNetworkAudio::LatencyProfile> latencyProfile { MetroNetworkAudio::LatencyProfile::Normal };
     std::recursive_mutex blockConfigMutex;
     juce::SpinLock audioGate;
 
@@ -377,6 +414,89 @@ public:
     std::atomic<int>      hostLastBlock { 0 };
     std::atomic<float>    hostOutPeak { 0.0f };   // peak of the FINAL output buffer after all mixing
     std::array<std::atomic<uint32_t>, 32> eventTypeCounts {};   // sink events by numeric type
+
+    LatencyProfileConfig latencyConfig() const noexcept
+    {
+        return getLatencyProfileConfig (latencyProfile.load (std::memory_order_relaxed));
+    }
+
+    void configureSink (aoo::isink* sink, bool direct) noexcept
+    {
+        if (sink == nullptr) return;
+        const auto cfg = latencyConfig();
+        sink->set_buffersize (direct ? cfg.directBufferMs : cfg.networkBufferMs);
+        sink->set_dynamic_resampling (1);
+        sink->set_resend_limit (cfg.resendLimit);
+        sink->set_resend_interval (cfg.resendInterval);
+        sink->set_resend_maxnumframes (cfg.resendMaxFrames);
+    }
+
+    void observePacketArrival (SourceRuntime& runtime) noexcept
+    {
+        const auto now = monotonicMicros();
+        const auto previous = runtime.lastPacketMicros.exchange (now, std::memory_order_relaxed);
+        if (previous <= 0) return;
+        const float interval = static_cast<float> (now - previous) / 1000.0f;
+        if (interval <= 0.0f || interval > 1000.0f) return;
+
+        const float previousInterval = runtime.packetIntervalMs.load (std::memory_order_relaxed);
+        if (previousInterval <= 0.0f)
+        {
+            runtime.packetIntervalMs.store (interval, std::memory_order_relaxed);
+            return;
+        }
+
+        const float deviation = std::abs (interval - previousInterval);
+        runtime.packetIntervalMs.store (previousInterval + 0.1f * (interval - previousInterval),
+                                         std::memory_order_relaxed);
+        const float previousJitter = runtime.jitterMs.load (std::memory_order_relaxed);
+        runtime.jitterMs.store (previousJitter + 0.1f * (deviation - previousJitter),
+                                std::memory_order_relaxed);
+    }
+
+    void adaptJitterBuffers()
+    {
+        const auto cfg = latencyConfig();
+        const bool direct = directMode.load (std::memory_order_acquire);
+        const juce::SpinLock::ScopedTryLockType gate (audioGate);
+        if (! gate.isLocked())
+            return;
+        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
+
+        for (const auto& runtimePtr : runtimes)
+        {
+            auto* runtime = runtimePtr.get();
+            if (runtime == nullptr || runtime->sink == nullptr)
+                continue;
+            const float jitter = runtime->jitterMs.load (std::memory_order_relaxed);
+            const int base = direct ? cfg.directBufferMs : cfg.networkBufferMs;
+            const int desired = juce::jlimit (cfg.minBufferMs, cfg.maxBufferMs,
+                                              (int) std::lround (base + 4.0f * jitter));
+            const int previous = runtime->adaptiveBufferMs.load (std::memory_order_relaxed);
+            if (previous != 0 && std::abs (desired - previous) < 2)
+                continue;
+            runtime->sink->set_buffersize (desired);
+            runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
+        }
+    }
+
+    void applyLatencyProfile()
+    {
+        const auto cfg = latencyConfig();
+        const bool direct = directMode.load (std::memory_order_acquire);
+        const juce::SpinLock::ScopedTryLockType gate (audioGate);
+        if (! gate.isLocked())
+            return;
+        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
+        configureSink (discoverySink.get(), direct);
+        for (const auto& runtimePtr : runtimes)
+            if (runtimePtr != nullptr && runtimePtr->sink != nullptr)
+            {
+                configureSink (runtimePtr->sink.get(), direct);
+                runtimePtr->adaptiveBufferMs.store (direct ? cfg.directBufferMs : cfg.networkBufferMs,
+                                                    std::memory_order_relaxed);
+            }
+    }
 
     void noteHostBlock (int numSamples, int64_t elapsedMicros, float outputPeak) noexcept
     {
@@ -637,13 +757,11 @@ public:
             return nullptr;
         }
 
-        runtime->sink->set_buffersize (directMode.load (std::memory_order_acquire)
-                                          ? kAooDirectBufferMs
-                                          : kAooBufferMs);
-        runtime->sink->set_dynamic_resampling (1);
-        runtime->sink->set_resend_limit (5);
-        runtime->sink->set_resend_interval (10);
-        runtime->sink->set_resend_maxnumframes (16);
+        configureSink (runtime->sink.get(), directMode.load (std::memory_order_acquire));
+        runtime->adaptiveBufferMs.store (directMode.load (std::memory_order_acquire)
+                                             ? latencyConfig().directBufferMs
+                                             : latencyConfig().networkBufferMs,
+                                         std::memory_order_relaxed);
 
         auto* raw = runtime.get();
 
@@ -796,13 +914,7 @@ public:
         if (client == nullptr || discoverySink == nullptr) return cleanupFailedStart();
         if (discoverySink->setup (kAooSampleRate, aooBlockSize.load (std::memory_order_relaxed), kAooChannels) <= 0)
             return cleanupFailedStart();
-        discoverySink->set_buffersize (requestedPort != 0
-                                         ? kAooDirectBufferMs
-                                         : kAooBufferMs);
-        discoverySink->set_dynamic_resampling (1);
-        discoverySink->set_resend_limit (5);
-        discoverySink->set_resend_interval (10);
-        discoverySink->set_resend_maxnumframes (16);
+        configureSink (discoverySink.get(), requestedPort != 0);
 
         activeAooSocket.store (&socket, std::memory_order_release);
         directMode.store (requestedPort != 0, std::memory_order_release);
@@ -1064,6 +1176,8 @@ public:
     // produced>0 with peak==0 means silent audio is arriving.
     void logAudioStats()
     {
+        adaptJitterBuffers();
+
         {
             const auto blocks = hostBlocks.exchange (0, std::memory_order_relaxed);
             const auto sum = hostSumMicros.exchange (0, std::memory_order_relaxed);
@@ -1299,6 +1413,7 @@ public:
                     {
                         targetRuntime->diagRxPackets.fetch_add (1, std::memory_order_relaxed);
                         targetRuntime->diagRxBytes.fetch_add ((uint32_t) n, std::memory_order_relaxed);
+                        observePacketArrival (*targetRuntime);
                         aooDiag ("RX -> runtime"
                                  " sourceId=" + juce::String (targetRuntime->sourceId)
                                  + " endpoint=" + endpointDebug (targetRuntime->endpoint.get()));
@@ -2068,6 +2183,20 @@ void MetroNetworkAudio::stop() { if (impl != nullptr) impl->stop(); }
 bool MetroNetworkAudio::isRunning() const noexcept { return impl != nullptr && impl->running.load (std::memory_order_acquire); }
 
 bool MetroNetworkAudio::isDirectMode() const noexcept { return impl != nullptr && impl->directMode.load (std::memory_order_acquire); }
+
+void MetroNetworkAudio::setLatencyProfile (LatencyProfile profile)
+{
+    if (impl == nullptr) return;
+    impl->latencyProfile.store (profile, std::memory_order_release);
+    impl->applyLatencyProfile();
+}
+
+MetroNetworkAudio::LatencyProfile MetroNetworkAudio::getLatencyProfile() const noexcept
+{
+    return impl != nullptr
+        ? impl->latencyProfile.load (std::memory_order_acquire)
+        : LatencyProfile::Normal;
+}
 
 // "192.168.99.x" .. "192.168.102.x" are the four reserved Apple USB networks,
 // one per attached device in slot order -> "USB 1" .. "USB 4".
