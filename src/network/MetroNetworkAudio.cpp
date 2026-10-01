@@ -458,10 +458,14 @@ public:
     {
         const auto cfg = latencyConfig();
         const bool direct = directMode.load (std::memory_order_acquire);
+
+        // Keep the lock order identical to reconfigureBlockSize()/applyLatencyProfile():
+        // blockConfigMutex -> audioGate. Taking these in the opposite order can
+        // deadlock the IO/message thread against a concurrent block-size change.
+        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
         const juce::SpinLock::ScopedTryLockType gate (audioGate);
         if (! gate.isLocked())
             return;
-        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
 
         for (const auto& runtimePtr : runtimes)
         {
