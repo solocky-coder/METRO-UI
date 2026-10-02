@@ -108,6 +108,10 @@ public:
     void stop();
     bool isRunning() const noexcept;
     bool isDirectMode() const noexcept;
+
+    // Writes one line to the same [METRO-AOO] log file (Documents/metro-aoo-log.txt).
+    // Thread-safe; used by the UI to mark panel open/close in the capture.
+    static void logDiagnostic (const juce::String& message);
     HostTiming getHostTiming() const noexcept;
 
     void setLatencyProfile (LatencyProfile profile);

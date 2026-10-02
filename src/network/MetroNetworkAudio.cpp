@@ -2262,6 +2262,7 @@ void MetroNetworkAudio::stop() { if (impl != nullptr) impl->stop(); }
 bool MetroNetworkAudio::isRunning() const noexcept { return impl != nullptr && impl->running.load (std::memory_order_acquire); }
 
 bool MetroNetworkAudio::isDirectMode() const noexcept { return impl != nullptr && impl->directMode.load (std::memory_order_acquire); }
+void MetroNetworkAudio::logDiagnostic (const juce::String& message) { aooDiag (message); }
 
 void MetroNetworkAudio::setLatencyProfile (LatencyProfile profile)
 {

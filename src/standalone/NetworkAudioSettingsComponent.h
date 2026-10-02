@@ -311,11 +311,30 @@ public:
         sourceList.setRowHeight (64);
         addAndMakeVisible (sourceList);
 
+        logPanelState ("PANEL open");
+
         startTimerHz (10);
+    }
+
+    // Marks panel open/close in metro-aoo-log.txt together with the live backend
+    // state the panel read, so a capture proves the reopen and what it showed.
+    void logPanelState (const juce::String& tag) const
+    {
+        const bool running = networkAudio != nullptr && networkAudio->isRunning();
+        const bool direct  = running && networkAudio->isDirectMode();
+        const bool enabled = getNetworkAudioChannelState().enabled.load (std::memory_order_relaxed);
+
+        MetroNetworkAudio::logDiagnostic (tag
+            + " backendRunning=" + juce::String (running ? 1 : 0)
+            + " directMode="     + juce::String (direct ? 1 : 0)
+            + " channelEnabled=" + juce::String (enabled ? 1 : 0)
+            + " switchNetwork="  + juce::String (enableButton.getToggleState() ? 1 : 0)
+            + " switchUsb="      + juce::String (directUsbButton.getToggleState() ? 1 : 0));
     }
 
     ~NetworkAudioSettingsComponent() override
     {
+        logPanelState ("PANEL close");
         stopTimer();
         sourceList.setModel (nullptr);
         setLookAndFeel (nullptr);
