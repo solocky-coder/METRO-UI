@@ -40,7 +40,10 @@ public:
         for (int i = 0; i < n; ++i)
         {
             const auto info  = engine.getTrackInfo (i);
-            const bool recordArmed = (i == engine.getRecordingTrackIndex());
+            // Audio tracks show their own (multi-arm) audio record arm; every other
+            // track type shows whether it is the single MIDI recording target.
+            const bool recordArmed = (info.type == TrackType::Audio) ? info.audioRecordArm
+                                                                     : (i == engine.getRecordingTrackIndex());
             const auto rowR  = getRowBounds (i);
             const bool sel   = (i == selectedTrack);
 
@@ -275,7 +278,10 @@ public:
             // — selecting a different track to inspect it does NOT move the
             // arm (see ArrangeView::selectTrack()), so arming track 3 here
             // and then clicking over to track 1 leaves track 3 armed.
-            engine.setRecordingTrack (i == engine.getRecordingTrackIndex() ? -1 : i);
+            if (info.type == TrackType::Audio)
+                engine.setAudioRecordArm (i, ! info.audioRecordArm);   // multi-arm: other tracks keep their state
+            else
+                engine.setRecordingTrack (i == engine.getRecordingTrackIndex() ? -1 : i);
         }
         else
         {

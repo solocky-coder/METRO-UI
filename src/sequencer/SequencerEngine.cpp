@@ -597,6 +597,7 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.type        = t.type;
     info.enabled     = t.enabled.load (std::memory_order_relaxed);
     info.solo        = t.solo.load (std::memory_order_relaxed);
+    info.audioRecordArm = t.audioRecordArm.load (std::memory_order_relaxed);
     info.volumeDb    = t.volumeDb.load (std::memory_order_relaxed);
     info.pan         = t.pan.load (std::memory_order_relaxed);
     info.name        = t.name;
@@ -635,6 +636,21 @@ void SequencerEngine::setTrackSolo (int i, bool solo)
     auto snap = impl->getTracks();
     if (juce::isPositiveAndBelow (i, (int) snap->size()))
         (*snap)[(size_t) i]->solo.store (solo, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setAudioRecordArm (int i, bool armed)
+{
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (i, (int) snap->size()) && (*snap)[(size_t) i]->type == TrackType::Audio)
+        (*snap)[(size_t) i]->audioRecordArm.store (armed, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setAllAudioRecordArm (bool armed)
+{
+    auto snap = impl->getTracks();
+    for (auto& track : *snap)
+        if (track->type == TrackType::Audio)
+            track->audioRecordArm.store (armed, std::memory_order_relaxed);
 }
 
 void SequencerEngine::setTrackVolumeDb (int i, float volumeDb)

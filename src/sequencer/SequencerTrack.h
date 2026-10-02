@@ -35,6 +35,11 @@ struct SequencerTrack
     TrackType type = TrackType::MainSlice;
     std::atomic<bool> enabled { true };
     std::atomic<bool> solo { false };
+    // Audio tracks only: whether this track records its network input while the
+    // transport records. Independent per track (several can be armed at once).
+    // Defaults to armed so a new network track records without extra setup;
+    // not saved with the project.
+    std::atomic<bool> audioRecordArm { true };
     std::atomic<float> volumeDb { 0.0f };
     std::atomic<float> pan { 0.0f };
     juce::String name;

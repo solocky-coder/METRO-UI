@@ -51,6 +51,46 @@ public:
         }
         return false;
     }
+    // Record arm for every Audio track that has a network route. Message thread.
+    // (Per-track arm is on each track's R button; these drive all routed tracks at once.)
+    static void setAllNetworkTracksRecordArm (bool armed) noexcept
+    {
+        auto* processor = activeProcessor.load (std::memory_order_acquire);
+        if (processor == nullptr) return;
+
+        const int numTracks = processor->sequencer.getNumTracks();
+        for (int i = 0; i < numTracks; ++i)
+        {
+            int64_t key = 0;
+            int32_t id = 0;
+            int channel = 0;
+            if (processor->sequencer.getNetworkAudioRoute (i, key, id, channel))
+                processor->sequencer.setAudioRecordArm (i, armed);
+        }
+    }
+
+    // True when at least one network track exists and all of them are armed.
+    static bool areAllNetworkTracksRecordArmed() noexcept
+    {
+        auto* processor = activeProcessor.load (std::memory_order_acquire);
+        if (processor == nullptr) return false;
+
+        bool any = false;
+        const int numTracks = processor->sequencer.getNumTracks();
+        for (int i = 0; i < numTracks; ++i)
+        {
+            int64_t key = 0;
+            int32_t id = 0;
+            int channel = 0;
+            if (! processor->sequencer.getNetworkAudioRoute (i, key, id, channel))
+                continue;
+            any = true;
+            if (! processor->sequencer.getTrackInfo (i).audioRecordArm)
+                return false;
+        }
+        return any;
+    }
+
     static void setActiveNetworkSource (int64_t sourceKey, int sourceChannel) noexcept
     {
         activeSourceKey.store (sourceKey, std::memory_order_release);
@@ -213,9 +253,9 @@ public:
         const bool transportRecording = sequencer.isRecording() && sequencer.isPlaying();
         const int64_t playheadTick = sequencer.getPlayheadTick();
 
-        // Every enabled Audio track that has a network route records its own
-        // take while the transport records, each into its own file and clip.
-        // (There is no audio arm control yet, so routed means armed.)
+        // Every enabled, record-armed Audio track that has a network route
+        // records its own take while the transport records, each into its own
+        // file and clip. Arm is per track (see SequencerEngine::setAudioRecordArm).
         for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex)
         {
             const auto info = sequencer.getTrackInfo (trackIndex);
@@ -227,7 +267,9 @@ public:
             if (! sequencer.getNetworkAudioRoute (trackIndex, sourceKey, sourceId, sourceChannel)) continue;
             sourceChannel = juce::jmax (0, sourceChannel);
 
-            TrackRecorder* slot = trackIndex < kMaxRecordTracks ? &trackRecorders[(size_t) trackIndex] : nullptr;
+            // A track that is not armed is never "seen" by the recorder, so
+            // disarming mid-take finalizes that take at the end of this block.
+            TrackRecorder* slot = (trackIndex < kMaxRecordTracks && info.audioRecordArm) ? &trackRecorders[(size_t) trackIndex] : nullptr;
             if (slot != nullptr) slot->seenThisBlock = true;
 
             networkBuffer.clear();

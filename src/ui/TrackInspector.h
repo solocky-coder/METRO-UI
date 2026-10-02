@@ -169,7 +169,13 @@ public:
             // show "on" while a totally different track (or none) was
             // actually armed, and clicking it didn't arm the selected
             // track at all.
-            engine.setRecordingTrack (selectedTrack == engine.getRecordingTrackIndex() ? -1 : selectedTrack);
+            // Audio tracks arm for audio recording independently of every other
+            // track (multi-arm); other track types use the single MIDI target.
+            const auto trackInfo = engine.getTrackInfo (selectedTrack);
+            if (trackInfo.type == TrackType::Audio)
+                engine.setAudioRecordArm (selectedTrack, ! trackInfo.audioRecordArm);
+            else
+                engine.setRecordingTrack (selectedTrack == engine.getRecordingTrackIndex() ? -1 : selectedTrack);
         };
         soloButton.onClick    = [this]
         {
@@ -213,7 +219,9 @@ public:
         const auto info = engine.getTrackInfo (selectedTrack);
         muteButton.setToggleState    (! info.enabled, juce::dontSendNotification);
         soloButton.setToggleState    (info.solo, juce::dontSendNotification);
-        recordButton.setToggleState  (selectedTrack == engine.getRecordingTrackIndex(), juce::dontSendNotification);
+        recordButton.setToggleState  (info.type == TrackType::Audio ? info.audioRecordArm
+                                                                    : selectedTrack == engine.getRecordingTrackIndex(),
+                                      juce::dontSendNotification);
         volumeSlider.setValue (info.volumeDb, juce::dontSendNotification);
         panSlider.setValue (info.pan * 100.0, juce::dontSendNotification);
 
@@ -612,7 +620,9 @@ private:
             // (It's deliberately NOT touched by track selection — see
             // ArrangeView::selectTrack() — so this poll is just to stay in
             // sync with the *other* arm control, not with selection.)
-            const bool shouldBeArmed = selectedTrack == engine.getRecordingTrackIndex();
+            const auto armInfo = engine.getTrackInfo (selectedTrack);
+            const bool shouldBeArmed = armInfo.type == TrackType::Audio ? armInfo.audioRecordArm
+                                                                        : selectedTrack == engine.getRecordingTrackIndex();
             if (recordButton.getToggleState() != shouldBeArmed)
                 recordButton.setToggleState (shouldBeArmed, juce::dontSendNotification);
 

@@ -152,10 +152,12 @@ public:
         addAndMakeVisible (soloButton);
 
         recordArmButton.setButtonText ("Record Arm");
-        recordArmButton.setToggleState (getNetworkAudioChannelState().recordArm.load(), juce::dontSendNotification);
+        recordArmButton.setTooltip ("Arms or disarms every network audio track for recording at once. "
+                                    "Each track's own R button arms just that track.");
+        recordArmButton.setToggleState (NetworkAudioProcessor::areAllNetworkTracksRecordArmed(), juce::dontSendNotification);
         recordArmButton.onClick = [this]
         {
-            getNetworkAudioChannelState().recordArm.store (recordArmButton.getToggleState(), std::memory_order_relaxed);
+            NetworkAudioProcessor::setAllNetworkTracksRecordArm (recordArmButton.getToggleState());
         };
         addAndMakeVisible (recordArmButton);
 
@@ -661,6 +663,11 @@ private:
     {
         refreshSources();
         updateDirectUsbProgress();
+
+        // Stay in step with the tracks' own R buttons.
+        const bool allArmed = NetworkAudioProcessor::areAllNetworkTracksRecordArmed();
+        if (recordArmButton.getToggleState() != allArmed)
+            recordArmButton.setToggleState (allArmed, juce::dontSendNotification);
     }
 
     void updateDirectUsbProgress()

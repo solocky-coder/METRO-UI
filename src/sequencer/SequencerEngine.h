@@ -12,7 +12,7 @@ struct SelectedLiveTarget { LiveTargetPlayer player = LiveTargetPlayer::none; in
 struct SequencerTrackInfo
 {
     TrackType type = TrackType::MainSlice;
-    bool enabled = true; bool solo = false; float volumeDb = 0.0f; float pan = 0.0f;
+    bool enabled = true; bool solo = false; bool audioRecordArm = true; float volumeDb = 0.0f; float pan = 0.0f;
     juce::String name; juce::Colour colour = juce::Colour (0xFF3A6080);
     int sliceIdx = -1; int midiChannel = 0; Sf2PresetInfo preset; int numClips = 0;
     bool isSfzInstrument = false;
@@ -38,6 +38,8 @@ public:
     void setSyncToHost(bool v); void setBpm(float b); void setHostBpm(float b); void seekToTick(int64_t tick); void setLoopRange(int64_t startTick, int64_t endTick); void resetLoopRangeToDefault(); void setLengthTicks(int64_t ticks);
 
     int getNumTracks() const; SequencerTrackInfo getTrackInfo(int i) const; void setTrackEnabled(int i, bool enabled); void setTrackSolo(int i, bool solo);
+    // Audio record arm: per track, multi-arm. setAll* touches Audio tracks only.
+    void setAudioRecordArm(int i, bool armed); void setAllAudioRecordArm(bool armed);
     void setTrackVolumeDb(int i, float volumeDb); void setTrackPan(int i, float pan); void setTrackColour(int i, juce::Colour colour);
     int findSfTrackForChannel(int midiChannel0Based) const;
     void addMainTrack(); void addChromaticTrack(int sliceIdx, int chromaticChannel, const juce::String& name, juce::Colour colour); void removeChromaticTrack(int sliceIdx);
