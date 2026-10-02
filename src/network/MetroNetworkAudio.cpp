@@ -358,6 +358,14 @@ public:
         std::atomic<float> packetIntervalMs { 0.0f };
         std::atomic<float> jitterMs { 0.0f };
         std::atomic<int> adaptiveBufferMs { 0 };
+
+        // Adaptive-buffer hysteresis is maintained by the IO thread
+        // (adaptJitterBuffers runs there once per second). A short burst of
+        // jitter must persist before we add latency; recovery is deliberately
+        // slower so the buffer does not hunt during marginal network periods.
+        int adaptiveIncreaseSeconds = 0;
+        int adaptiveStableSeconds = 0;
+
         std::atomic<uint32_t> diagStrayPackets { 0 };   // packets from a non-active port on the same peer
         std::atomic<int> lastStrayPort { 0 };
 
@@ -459,9 +467,8 @@ public:
         const auto cfg = latencyConfig();
         const bool direct = directMode.load (std::memory_order_acquire);
 
-        // Keep the lock order identical to reconfigureBlockSize()/applyLatencyProfile():
-        // blockConfigMutex -> audioGate. Taking these in the opposite order can
-        // deadlock the IO/message thread against a concurrent block-size change.
+        // All non-audio sink configuration uses the same lock order:
+        // blockConfigMutex -> audioGate.
         std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
         const juce::SpinLock::ScopedTryLockType gate (audioGate);
         if (! gate.isLocked())
@@ -472,15 +479,70 @@ public:
             auto* runtime = runtimePtr.get();
             if (runtime == nullptr || runtime->sink == nullptr)
                 continue;
+
             const float jitter = runtime->jitterMs.load (std::memory_order_relaxed);
             const int base = direct ? cfg.directBufferMs : cfg.networkBufferMs;
             const int desired = juce::jlimit (cfg.minBufferMs, cfg.maxBufferMs,
                                               (int) std::lround (base + 4.0f * jitter));
             const int previous = runtime->adaptiveBufferMs.load (std::memory_order_relaxed);
-            if (previous != 0 && std::abs (desired - previous) < 2)
+
+            if (previous == 0)
+            {
+                runtime->sink->set_buffersize (base);
+                runtime->adaptiveBufferMs.store (base, std::memory_order_relaxed);
+                runtime->adaptiveIncreaseSeconds = 0;
+                runtime->adaptiveStableSeconds = 0;
                 continue;
-            runtime->sink->set_buffersize (desired);
-            runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
+            }
+
+            const int delta = desired - previous;
+
+            if (delta >= 2)
+            {
+                // Increase after two consecutive one-second observations.
+                // This prevents a single packet-timing spike from adding
+                // unnecessary latency, while still reacting quickly enough
+                // to protect the audio queue during sustained jitter.
+                ++runtime->adaptiveIncreaseSeconds;
+                runtime->adaptiveStableSeconds = 0;
+
+                if (runtime->adaptiveIncreaseSeconds < 2)
+                    continue;
+
+                runtime->sink->set_buffersize (desired);
+                runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
+                runtime->adaptiveIncreaseSeconds = 0;
+            }
+            else if (delta <= -2)
+            {
+                // Recovery is intentionally slower than protection. Require
+                // five consecutive stable observations before reducing the
+                // buffer, avoiding oscillation when jitter briefly improves.
+                runtime->adaptiveStableSeconds++;
+                runtime->adaptiveIncreaseSeconds = 0;
+
+                if (runtime->adaptiveStableSeconds < 5)
+                    continue;
+
+                runtime->sink->set_buffersize (desired);
+                runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
+                runtime->adaptiveStableSeconds = 0;
+            }
+            else
+            {
+                runtime->adaptiveIncreaseSeconds = 0;
+                runtime->adaptiveStableSeconds = 0;
+            }
+
+            aooDiag ("ADAPTIVE_BUFFER endpoint=" + endpointString (runtime->endpoint.get())
+                     + " jitterMs=" + juce::String (jitter, 2)
+                     + " desiredMs=" + juce::String (desired)
+                     + " bufferMs=" + juce::String (runtime->adaptiveBufferMs.load (std::memory_order_relaxed))
+                     + " baseMs=" + juce::String (base)
+                     + " minMs=" + juce::String (cfg.minBufferMs)
+                     + " maxMs=" + juce::String (cfg.maxBufferMs)
+                     + " increaseSec=" + juce::String (runtime->adaptiveIncreaseSeconds)
+                     + " stableSec=" + juce::String (runtime->adaptiveStableSeconds));
         }
     }
 
@@ -488,10 +550,14 @@ public:
     {
         const auto cfg = latencyConfig();
         const bool direct = directMode.load (std::memory_order_acquire);
+
+        // Keep the same lock order as reconfigureBlockSize() and
+        // adaptJitterBuffers(): blockConfigMutex -> audioGate.
+        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
         const juce::SpinLock::ScopedTryLockType gate (audioGate);
         if (! gate.isLocked())
             return;
-        std::lock_guard<std::recursive_mutex> configLock (blockConfigMutex);
+
         configureSink (discoverySink.get(), direct);
         for (const auto& runtimePtr : runtimes)
             if (runtimePtr != nullptr && runtimePtr->sink != nullptr)
@@ -499,6 +565,8 @@ public:
                 configureSink (runtimePtr->sink.get(), direct);
                 runtimePtr->adaptiveBufferMs.store (direct ? cfg.directBufferMs : cfg.networkBufferMs,
                                                     std::memory_order_relaxed);
+                runtimePtr->adaptiveIncreaseSeconds = 0;
+                runtimePtr->adaptiveStableSeconds = 0;
             }
     }
 
