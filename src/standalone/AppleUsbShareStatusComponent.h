@@ -57,7 +57,10 @@ public:
         rxValue.setText ("0 KB/s", juce::dontSendNotification);
         txValue.setText ("0 KB/s", juce::dontSendNotification);
         for (auto* value : { &ipValue, &peerIpValue, &rxValue, &txValue })
-            value->setFont (juce::Font (20.0f, juce::Font::bold));
+        {
+            value->setFont (juce::Font (17.0f, juce::Font::bold));
+            value->setMinimumHorizontalScale (0.85f);
+        }
         for (auto* caption : { &ipCaption, &peerIpCaption, &rxCaption, &txCaption, &connectionCaption, &deviceCaption })
             caption->setFont (juce::Font (15.0f, juce::Font::bold));
 
@@ -173,7 +176,7 @@ public:
         adapterLabel.setBounds (device.removeFromTop (28));
         statusDot.setBounds (getWidth() - 46, 24, 24, 24);
 
-        auto connection = area.removeFromTop (112).reduced (10);
+        auto connection = area.removeFromTop (150).reduced (10);
         connectionCaption.setBounds (connection.removeFromTop (20));
         connectionLabel.setBounds (connection.removeFromTop (28));
         const int fourth = connection.getWidth() / 4;
