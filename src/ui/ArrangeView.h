@@ -1200,15 +1200,19 @@ private:
     mutable std::unordered_map<juce::String, std::vector<std::pair<float, float>>> audioWaveformCache;
 
     // Live "recording in progress" state — polled once per frame in
-    // timerCallback() from NetworkAudioProcessor::getLiveRecordingSnapshot()
+    // timerCallback() from NetworkAudioProcessor::getLiveRecordingSnapshots()
     // and painted by paintLiveRecordingClip(). -1 track means nothing is
     // currently recording (the common case), so most frames this is just
     // one cheap check, not a real snapshot copy.
-    int    liveRecordingTrack        = -1;
-    int64_t liveRecordingStartTick   = 0;
-    int64_t liveRecordingSamplesDone = 0;
-    double liveRecordingSampleRate   = 0.0;
-    std::vector<std::pair<float, float>> liveRecordingPeaks;
+    struct LiveRecording
+    {
+        int track = -1;
+        int64_t startTick = 0;
+        int64_t samplesDone = 0;
+        double sampleRate = 0.0;
+        std::vector<std::pair<float, float>> peaks;
+    };
+    std::vector<LiveRecording> liveRecordings;   // one per track recording right now
 
     // Multi-clip selection — (trackIdx, clipIdx) pairs. selectedTrack/
     // selectedClip above still track the "primary" clip (whichever was
@@ -1250,18 +1254,22 @@ private:
 
             // Live "recording in progress" clip + waveform — see
             // paintLiveRecordingClip(). Cheap when nothing is recording:
-            // getLiveRecordingSnapshot() only copies the peaks vector once
+            // getLiveRecordingSnapshots() only copies the peaks vector once
             // isRecording is confirmed true.
-            const auto live = networkAudioProcessor->getLiveRecordingSnapshot();
-            liveRecordingTrack = live.trackIndex;
-            if (liveRecordingTrack >= 0)
+            auto live = networkAudioProcessor->getLiveRecordingSnapshots();
+            liveRecordings.clear();
+            for (auto& entry : live)
             {
-                liveRecordingStartTick   = live.snapshot.startTick;
-                liveRecordingSamplesDone = live.snapshot.recordedSamples;
-                liveRecordingSampleRate  = live.snapshot.sampleRate;
-                liveRecordingPeaks       = std::move (live.snapshot.peaks);
-                repaint(); // keeps the growing clip + pulsing border animating every frame while recording
+                LiveRecording rec;
+                rec.track       = entry.trackIndex;
+                rec.startTick   = entry.snapshot.startTick;
+                rec.samplesDone = entry.snapshot.recordedSamples;
+                rec.sampleRate  = entry.snapshot.sampleRate;
+                rec.peaks       = std::move (entry.snapshot.peaks);
+                liveRecordings.push_back (std::move (rec));
             }
+            if (! liveRecordings.empty())
+                repaint(); // keeps the growing clips + pulsing borders animating every frame while recording
         }
 #endif
 
@@ -1419,24 +1427,24 @@ private:
         return -1;
     }
 
-    /** Screen rect for the in-progress recording (see liveRecordingTrack et
-     *  al., populated each frame in timerCallback()) — mirrors
+    /** Screen rect for one in-progress recording (see liveRecordings,
+     *  populated each frame in timerCallback()) — mirrors
      *  audioClipRectForClip() above but computes its length live from
      *  samples-recorded-so-far rather than reading a finished AudioClip. */
-    juce::Rectangle<int> liveRecordingRect() const
+    juce::Rectangle<int> liveRecordingRect (const LiveRecording& rec) const
     {
-        if (liveRecordingTrack < 0 || clipGridBounds.isEmpty() || liveRecordingSampleRate <= 0.0)
+        if (rec.track < 0 || clipGridBounds.isEmpty() || rec.sampleRate <= 0.0)
             return {};
 
         const double bpm = engine.getBpm();
         if (bpm <= 0.0) return {};
 
         const int64_t lengthTicks = juce::jmax<int64_t> (1, (int64_t) std::llround (
-            (double) liveRecordingSamplesDone * bpm * (double) MidiClip::kPPQ / (liveRecordingSampleRate * 60.0)));
+            (double) rec.samplesDone * bpm * (double) MidiClip::kPPQ / (rec.sampleRate * 60.0)));
 
         const int w = juce::jmax (kMinClipPx, (int) (lengthTicks * pixelsPerTick));
-        const int x = clipGridBounds.getX() + (int) (liveRecordingStartTick * pixelsPerTick - scrollX);
-        const int y = trackTopY (liveRecordingTrack);
+        const int x = clipGridBounds.getX() + (int) (rec.startTick * pixelsPerTick - scrollX);
+        const int y = trackTopY (rec.track);
         return { x, y, w, trackH - 1 };
     }
 
@@ -2579,8 +2587,9 @@ private:
             // the instant commitLastRecordedClipToTimeline() (called just
             // before this repaint, in timerCallback()) turns it into a real
             // one drawn by the loop above.
-            if (liveRecordingTrack == i)
-                paintLiveRecordingClip (g, info);
+            for (const auto& rec : liveRecordings)
+                if (rec.track == i)
+                    paintLiveRecordingClip (g, info, rec);
         }
         else
         {
@@ -2880,20 +2889,20 @@ private:
     }
 
     /** The growing "recording now" clip on an Audio track — see
-     *  liveRecordingTrack/liveRecordingRect() above, populated each frame
-     *  in timerCallback() from NetworkAudioProcessor::getLiveRecordingSnapshot().
+     *  liveRecordings/liveRecordingRect() above, populated each frame
+     *  in timerCallback() from NetworkAudioProcessor::getLiveRecordingSnapshots().
      *  Visually distinct from a finished paintAudioClip() tile via the
      *  pulsing red border and "REC" label, since there's nothing to
      *  double-click/right-click/drag on yet — it's still being written. */
-    void paintLiveRecordingClip (juce::Graphics& g, const SequencerTrackInfo& info) const
+    void paintLiveRecordingClip (juce::Graphics& g, const SequencerTrackInfo& info, const LiveRecording& rec) const
     {
-        const auto clipR = liveRecordingRect();
+        const auto clipR = liveRecordingRect (rec);
         if (clipR.isEmpty() || ! clipGridBounds.intersects (clipR)) return;
 
         g.setColour (info.colour.withMultipliedBrightness (0.75f));
         g.fillRect (clipR.reduced (1, 1));
 
-        paintPeaksInRect (g, clipR, liveRecordingPeaks, juce::Colours::black.withAlpha (0.55f));
+        paintPeaksInRect (g, clipR, rec.peaks, juce::Colours::black.withAlpha (0.55f));
 
         // Pulsing border — the only cue (besides "REC") that this tile is
         // still being written to, not a finished, clickable recording.

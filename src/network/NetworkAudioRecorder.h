@@ -87,7 +87,7 @@ public:
         recordedSamples.fetch_add (samples, std::memory_order_relaxed);
 
         // Live waveform peaks for the in-progress take — see LiveSnapshot /
-        // NetworkAudioProcessor::getLiveRecordingSnapshot() / ArrangeView's
+        // NetworkAudioProcessor::getLiveRecordingSnapshots() / ArrangeView's
         // "recording now" rect. livePartial* below is touched only from
         // this thread (push() calls are already serialized by the audio
         // thread itself), so only the finished-bucket append needs the lock.

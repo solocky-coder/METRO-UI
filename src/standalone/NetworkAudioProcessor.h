@@ -5,7 +5,10 @@
 #include "../network/NetworkAudioRecorder.h"
 #include "../network/NetworkTrackMeters.h"
 #include "../sequencer/AudioClipPlayer.h"
+#include <array>
 #include <atomic>
+#include <utility>
+#include <vector>
 
 class NetworkAudioProcessor final : public DysektProcessor
 {
@@ -13,7 +16,8 @@ public:
     NetworkAudioProcessor() { activeProcessor.store (this, std::memory_order_release); }
     ~NetworkAudioProcessor() override
     {
-        stopNetworkRecording();
+        for (auto& slot : trackRecorders)   // finalize any take still being written
+            slot.recorder.stop();
         if (activeProcessor.load (std::memory_order_acquire) == this)
             activeProcessor.store (nullptr, std::memory_order_release);
     }
@@ -52,70 +56,69 @@ public:
         activeSourceKey.store (sourceKey, std::memory_order_release);
         activeSourceChannel.store (juce::jmax (0, sourceChannel), std::memory_order_release);
     }
-    static bool startActiveNetworkRecording (const juce::File& file, int channels = 2) noexcept
-    {
-        auto* processor = activeProcessor.load (std::memory_order_acquire);
-        return processor != nullptr && processor->startNetworkRecording (file, channels, processor->sequencer.getPlayheadTick());
-    }
-    static void stopActiveNetworkRecording() noexcept { if (auto* p = activeProcessor.load (std::memory_order_acquire)) p->stopNetworkRecording(); }
-    static bool isActiveNetworkRecording() noexcept { auto* p = activeProcessor.load (std::memory_order_acquire); return p != nullptr && p->recorder.isRecording(); }
-
     void setNetworkAudio (MetroNetworkAudio* audio) noexcept { networkAudio = audio; setActiveNetworkAudio (audio); }
-    bool startNetworkRecording (const juce::File& file, int channels = 2, int64_t startTick = 0) noexcept
-    {
-        const double rate = networkSampleRate > 0.0 ? networkSampleRate : 44100.0;
-        return recorder.start (file, rate, juce::jlimit (1, 64, channels), startTick);
-    }
-    void stopNetworkRecording() noexcept { lastRecordedClip = recorder.stop(); }
-    NetworkAudioRecorder::Clip getLastRecordedNetworkClip() const { return lastRecordedClip; }
-
     // Called from the message thread (see ArrangeView::timerCallback()).
-    // processBlock() finalizes the recorder and stashes the result in
-    // lastRecordedClip/recordTrackArmed on the audio thread; this just moves
+    // processBlock() finalizes each track's recorder and publishes the result
+    // in that track's slot on the audio thread; this just moves
     // that already-captured data into the timeline, so it does no recording
     // work of its own and touches no realtime state.
+    //
+    // Every routed Audio track records its own take, so several can finish in
+    // the same frame. Returns true if at least one clip was committed.
     bool commitLastRecordedClipToTimeline()
     {
-        if (! lastRecordedClip.isValid())
-            return false;
+        bool committedAny = false;
 
-        const int trackIndex = recordTrackArmed;
-        if (trackIndex < 0)
-            return false;
+        for (int trackIndex = 0; trackIndex < kMaxRecordTracks; ++trackIndex)
+        {
+            auto& slot = trackRecorders[(size_t) trackIndex];
 
-        const auto clip = lastRecordedClip;
-        lastRecordedClip = {};
+            // The audio thread only writes `published` while the flag is clear,
+            // and this thread only touches it while the flag is set.
+            if (! slot.publishedReady.load (std::memory_order_acquire))
+                continue;
 
-        const bool committed = sequencer.addRecordedAudioClip(
-            trackIndex,
-            clip.file,
-            clip.sampleRate,
-            clip.channels,
-            clip.startTick,
-            clip.lengthSamples);
+            const auto clip = slot.published;
+            slot.published = {};
+            slot.publishedReady.store (false, std::memory_order_release);
 
-        return committed;
+            if (! clip.isValid())
+                continue;
+
+            committedAny |= sequencer.addRecordedAudioClip (trackIndex, clip.file, clip.sampleRate, clip.channels,
+                                                            clip.startTick, clip.lengthSamples);
+        }
+
+        return committedAny;
     }
 
     // Live "recording in progress" info for ArrangeView to draw a growing
     // clip + waveform before the take is committed above. Same
     // message-thread-from-audio-thread-state pattern as
-    // commitLastRecordedClipToTimeline(): recordTrackArmed is written on
-    // the audio thread and read here unsynchronized, same as that existing
-    // read of it just above — a plain int read/write on every real target
-    // this project builds for, so consistent with the level of rigor
-    // already accepted elsewhere in this file, not a new risk.
+    // commitLastRecordedClipToTimeline(): each recorder's live state is read
+    // through NetworkAudioRecorder::getLiveSnapshot(), which takes its own lock.
     struct LiveRecordingInfo
     {
         NetworkAudioRecorder::LiveSnapshot snapshot;
         int trackIndex = -1;
     };
-    LiveRecordingInfo getLiveRecordingSnapshot() const
+    // One entry per track that is recording right now; empty (and cheap)
+    // when nothing is.
+    std::vector<LiveRecordingInfo> getLiveRecordingSnapshots() const
     {
-        LiveRecordingInfo info;
-        info.snapshot = recorder.getLiveSnapshot();
-        info.trackIndex = info.snapshot.isRecording ? recordTrackArmed : -1;
-        return info;
+        std::vector<LiveRecordingInfo> result;
+        for (int trackIndex = 0; trackIndex < kMaxRecordTracks; ++trackIndex)
+        {
+            auto snapshot = trackRecorders[(size_t) trackIndex].recorder.getLiveSnapshot();
+            if (! snapshot.isRecording)
+                continue;
+
+            LiveRecordingInfo info;
+            info.snapshot = std::move (snapshot);
+            info.trackIndex = trackIndex;
+            result.push_back (std::move (info));
+        }
+        return result;
     }
 
     // Rebuilds the AudioClip reader cache from the current arrangement.
@@ -206,37 +209,13 @@ public:
         if (numSamples <= 0 || numSamples > networkBuffer.getNumSamples()) return;
 
         bool renderedTrack = false;
-        bool capturedTrack = false;
         const int numTracks = sequencer.getNumTracks();
         const bool transportRecording = sequencer.isRecording() && sequencer.isPlaying();
         const int64_t playheadTick = sequencer.getPlayheadTick();
 
-        // Audio record-arm is deliberately separate from the MIDI recording
-        // track. Until an audio-arm control exists, the first enabled Audio
-        // track is the active capture route.
-        int recordTrackIndex = -1;
-        for (int i = 0; i < numTracks; ++i)
-        {
-            const auto info = sequencer.getTrackInfo (i);
-            if (info.type == TrackType::Audio && info.enabled) { recordTrackIndex = i; break; }
-        }
-
-        // The sequencer holds the playhead at tick 0 during count-in. Start
-        // capture only after the first real post-count-in tick is observable.
-        if (transportRecording && recordTrackIndex >= 0 && playheadTick > 0 && ! recorder.isRecording())
-        {
-            const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("DYSEKT-SF Recordings");
-            const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
-            auto safeName = sequencer.getTrackInfo (recordTrackIndex).name;
-            safeName = safeName.replaceCharacters ("\\/:*?\"<>|", "_________");
-            const auto file = dir.getNonexistentChildFile (safeName.isEmpty() ? "AOO" : safeName, "_" + stamp + ".wav");
-            recordTrackArmed = recordTrackIndex;
-            recorder.start (file, networkSampleRate, 2, playheadTick);
-        }
-
-        if ((! transportRecording || recordTrackIndex < 0) && recorder.isRecording())
-            lastRecordedClip = recorder.stop();
-
+        // Every enabled Audio track that has a network route records its own
+        // take while the transport records, each into its own file and clip.
+        // (There is no audio arm control yet, so routed means armed.)
         for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex)
         {
             const auto info = sequencer.getTrackInfo (trackIndex);
@@ -248,8 +227,26 @@ public:
             if (! sequencer.getNetworkAudioRoute (trackIndex, sourceKey, sourceId, sourceChannel)) continue;
             sourceChannel = juce::jmax (0, sourceChannel);
 
+            TrackRecorder* slot = trackIndex < kMaxRecordTracks ? &trackRecorders[(size_t) trackIndex] : nullptr;
+            if (slot != nullptr) slot->seenThisBlock = true;
+
             networkBuffer.clear();
-            if (! audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate, sourceKey, sourceChannel)) continue;
+            if (! audio->processSourceChannel (networkBuffer, numSamples, networkSampleRate, sourceKey, sourceChannel))
+            {
+                // Source not delivering this block. If this track is already
+                // recording, write silence so its clip stays aligned with the
+                // other tracks' clips instead of drifting early.
+                if (slot != nullptr && transportRecording && slot->recorder.isRecording())
+                    slot->recorder.push (networkBuffer, numSamples);
+                continue;
+            }
+
+            // The sequencer holds the playhead at tick 0 during count-in. Start
+            // capture only after the first real post-count-in tick is observable.
+            // A track starts with its first delivered audio, and the clip's start
+            // tick records exactly where on the timeline that was.
+            if (slot != nullptr && transportRecording && playheadTick > 0 && ! slot->recorder.isRecording())
+                startTrackRecording (*slot, info.name, playheadTick);
 
             const float gain = juce::Decibels::decibelsToGain (info.volumeDb);
             const float pan = juce::jlimit (-1.0f, 1.0f, info.pan);
@@ -281,15 +278,14 @@ public:
             }
             renderedTrack = true;
 
-            // Push the selected route before the scratch buffer is reused for
-            // another Audio track. No allocation/copy is performed on the
+            // Push this track's route before the scratch buffer is reused for
+            // the next Audio track. No allocation/copy is performed on the
             // audio thread.
-            if (recorder.isRecording() && trackIndex == recordTrackArmed && ! capturedTrack)
-            {
-                recorder.push (networkBuffer, numSamples);
-                capturedTrack = true;
-            }
+            if (slot != nullptr && transportRecording && slot->recorder.isRecording())
+                slot->recorder.push (networkBuffer, numSamples);
         }
+
+        finishRecordings (transportRecording);
 
         // Settings/source-list fallback is playback-only and can never be
         // accidentally captured when no Audio track exists.
@@ -310,6 +306,57 @@ public:
     }
 
 private:
+    // Upper bound on tracks that can record network audio at once (indexed by
+    // track number). A fixed array keeps all of this allocation-free on the
+    // audio thread.
+    static constexpr int kMaxRecordTracks = 64;
+
+    struct TrackRecorder
+    {
+        NetworkAudioRecorder recorder;
+
+        // Finished take, handed from the audio thread to the message thread.
+        // `staged` is audio-thread-only. `published` is written by the audio
+        // thread only while publishedReady is false and read/cleared by the
+        // message thread only while it is true.
+        NetworkAudioRecorder::Clip staged;
+        NetworkAudioRecorder::Clip published;
+        std::atomic<bool> publishedReady { false };
+
+        bool seenThisBlock = false;   // audio thread only
+    };
+
+    void startTrackRecording (TrackRecorder& slot, const juce::String& trackName, int64_t startTick) noexcept
+    {
+        const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("DYSEKT-SF Recordings");
+        const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
+        auto safeName = trackName.replaceCharacters ("\\/:*?\"<>|", "_________");
+        const auto file = dir.getNonexistentChildFile (safeName.isEmpty() ? "AOO" : safeName, "_" + stamp + ".wav");
+        slot.recorder.start (file, networkSampleRate, 2, startTick);
+    }
+
+    // End of each network callback: stop every recorder whose track is no
+    // longer being fed (transport stopped, or the track was disabled, unrouted
+    // or deleted), then publish finished takes to the message thread.
+    void finishRecordings (bool transportRecording) noexcept
+    {
+        for (auto& slot : trackRecorders)
+        {
+            if (slot.recorder.isRecording() && (! transportRecording || ! slot.seenThisBlock))
+                slot.staged = slot.recorder.stop();
+            slot.seenThisBlock = false;
+
+            // A finished take waits in `staged` until the message thread has
+            // collected the previous one, so no take is ever overwritten.
+            if (slot.staged.channels > 0 && ! slot.publishedReady.load (std::memory_order_acquire))
+            {
+                slot.published = std::move (slot.staged);
+                slot.staged = {};
+                slot.publishedReady.store (true, std::memory_order_release);
+            }
+        }
+    }
+
     // Pushes the last prepareToPlay() format into a MetroNetworkAudio. Cheap and
     // idempotent (prepare() does nothing when the block size is unchanged).
     static void applyPreparedFormat (MetroNetworkAudio* audio) noexcept
@@ -328,10 +375,8 @@ private:
     inline static std::atomic<int> activeSourceChannel { 0 };
     MetroNetworkAudio* networkAudio = nullptr;
     double networkSampleRate = 44100.0;
-    int recordTrackArmed = -1;
     juce::AudioBuffer<float> networkBuffer;
-    NetworkAudioRecorder recorder;
-    NetworkAudioRecorder::Clip lastRecordedClip;
+    std::array<TrackRecorder, kMaxRecordTracks> trackRecorders;
     AudioClipPlayer audioClipPlayer;
     juce::AudioBuffer<float> audioClipScratch;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NetworkAudioProcessor)
