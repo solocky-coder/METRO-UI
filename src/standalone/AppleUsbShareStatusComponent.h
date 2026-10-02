@@ -22,6 +22,7 @@
 #include "network/AppleUsbNetworkTransport.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <vector>
+#include <array>
 
 // Embedded iPhoneUsbShare application surface. This is a child of the DYSEKT
 // Network Audio panel: no second process and no second top-level window.
@@ -299,7 +300,6 @@ private:
         const auto devices = usbTransport.enumerate();
 
         juce::String deviceText;
-        juce::String firstConnectedAdapter;
         bool connected = false;
         int appleCount = 0;
         int connectedCount = 0;
@@ -314,8 +314,6 @@ private:
             {
                 connected = true;
                 ++connectedCount;
-                if (firstConnectedAdapter.isEmpty())
-                    firstConnectedAdapter = device.interfaceName.isNotEmpty() ? device.interfaceName : device.name;
             }
 
             if (deviceText.isNotEmpty())
@@ -343,8 +341,9 @@ private:
                         + deviceText;
 
         deviceLabel.setText (deviceText, juce::dontSendNotification);
-        adapterLabel.setText (firstConnectedAdapter.isNotEmpty()
-                                   ? "USB Ethernet: " + firstConnectedAdapter
+        adapterLabel.setText (connectedCount > 0
+                                   ? "USB Ethernet: " + juce::String (connectedCount) + " active link"
+                                     + (connectedCount == 1 ? "" : "s")
                                    : "USB Ethernet: waiting for Apple NCM",
                                juce::dontSendNotification);
 
@@ -359,7 +358,7 @@ private:
         updateActionButtons (state);
 
 #if JUCE_WINDOWS
-        updateNetworkMetrics (firstConnectedAdapter);
+        updateNetworkMetrics (devices);
 #else
         ipValue.setText ("-", juce::dontSendNotification);
         peerIpValue.setText ("-", juce::dontSendNotification);
@@ -367,14 +366,9 @@ private:
         txValue.setText ("0 KB/s", juce::dontSendNotification);
 #endif
 
-        // Windows keeps the NCM adapter and its static 192.168.99.1 address
-        // configured after a session ends, so an IP here does not prove the
-        // link is live. Only show it once the helper has ACKed a DHCP lease.
-        if (state != DeviceNetworkTransport::State::Connected)
-        {
-            ipValue.setText ("- (not linked yet)", juce::dontSendNotification);
-            peerIpValue.setText ("- (not linked yet)", juce::dontSendNotification);
-        }
+        // These fields now contain one line per connected Apple USB network.
+        // Do not collapse them to the first adapter: multiple iPhones/iPads
+        // can have independent isolated NCM links at the same time.
 
         const auto dot = connected && state == DeviceNetworkTransport::State::Connected ? juce::Colours::green
                        : connected ? juce::Colours::orange
@@ -383,81 +377,167 @@ private:
     }
 
 #if JUCE_WINDOWS
-    void updateNetworkMetrics (const juce::String& preferredAdapter)
+    struct MetricSample
+    {
+        juce::String adapter;
+        ULONG64 rx = 0;
+        ULONG64 tx = 0;
+        juce::uint32 time = 0;
+    };
+
+    static juce::String findIPv4ForAdapter (IP_ADAPTER_ADDRESSES* a)
+    {
+        juce::String fallbackIpv6;
+        for (auto* u = a->FirstUnicastAddress; u != nullptr; u = u->Next)
+        {
+            char host[NI_MAXHOST] = {};
+            if (u->Address.lpSockaddr != nullptr
+                && getnameinfo (u->Address.lpSockaddr,
+                                static_cast<socklen_t> (u->Address.iSockaddrLength),
+                                host, sizeof (host), nullptr, 0, NI_NUMERICHOST) == 0)
+            {
+                const juce::String candidate (host);
+                if (! candidate.contains (":"))
+                    return candidate;
+                if (fallbackIpv6.isEmpty() && candidate.startsWithIgnoreCase ("fe80"))
+                    fallbackIpv6 = candidate;
+            }
+        }
+        return fallbackIpv6;
+    }
+
+    static int usbSlotForHost (const juce::String& address)
+    {
+        const auto parts = juce::StringArray::fromTokens (address, ".", "");
+        if (parts.size() != 4 || parts[3] != "1")
+            return -1;
+
+        const int subnet = parts[2].getIntValue();
+        return (subnet >= 99 && subnet <= 102) ? subnet - 99 : -1;
+    }
+
+    void updateNetworkMetrics (const std::vector<DeviceNetworkTransport::Device>& devices)
     {
         ULONG size = 0;
         if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, nullptr, &size) != ERROR_BUFFER_OVERFLOW)
         {
-            ipValue.setText ("-", juce::dontSendNotification); peerIpValue.setText ("-", juce::dontSendNotification); rxValue.setText ("0 KB/s", juce::dontSendNotification); txValue.setText ("0 KB/s", juce::dontSendNotification); return;
-        }
-        std::vector<unsigned char> buffer (size);
-        auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*> (buffer.data());
-        if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR) return;
-        for (auto* a = adapters; a != nullptr; a = a->Next)
-        {
-            const juce::String name = juce::String (a->FriendlyName != nullptr ? a->FriendlyName : L"");
-            if (preferredAdapter.isNotEmpty() && name != preferredAdapter && ! name.containsIgnoreCase (preferredAdapter)) continue;
-            if (preferredAdapter.isEmpty() && ! name.containsIgnoreCase ("UsbNcm") && ! name.containsIgnoreCase ("USB Ethernet")) continue;
-            juce::String address;
-            juce::String fallbackIpv6;
-            for (auto* u = a->FirstUnicastAddress; u != nullptr; u = u->Next)
-            {
-                char host[NI_MAXHOST] = {};
-                if (u->Address.lpSockaddr != nullptr && getnameinfo (u->Address.lpSockaddr, static_cast<socklen_t> (u->Address.iSockaddrLength), host, sizeof (host), nullptr, 0, NI_NUMERICHOST) == 0)
-                {
-                    const juce::String candidate (host);
-                    if (! candidate.contains (":"))
-                    {
-                        address = candidate;
-                        break;
-                    }
-                    if (fallbackIpv6.isEmpty() && candidate.startsWithIgnoreCase ("fe80"))
-                        fallbackIpv6 = candidate;
-                }
-            }
-            if (address.isEmpty())
-                address = fallbackIpv6;
-            ipValue.setText (address.isNotEmpty() ? address : "-", juce::dontSendNotification);
-            // The isolated Apple USB networks use .1 for Windows and .2 for the Apple peer.
-            // The desktop panel now reports every detected USB network rather than
-            // hard-coding the first peer address.
-            juce::String hostList, peerList;
-            const char* peers[] = { "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2" };
-            if (address.startsWith ("192.168.99.") || address.startsWith ("192.168.100.")
-                || address.startsWith ("192.168.101.") || address.startsWith ("192.168.102."))
-            {
-                const auto parts = juce::StringArray::fromTokens (address, ".", "");
-                if (parts.size() == 4 && parts[3] == "1")
-                {
-                    const int subnet = parts[2].getIntValue();
-                    const int slot = juce::jlimit (0, 3, subnet - 99);
-                    hostList = address;
-                    peerList = peers[slot];
-                }
-            }
-            peerIpValue.setText (peerList.isNotEmpty() ? peerList : "-", juce::dontSendNotification);
-            MIB_IF_ROW2 row {};
-            row.InterfaceIndex = a->IfIndex;
-            if (GetIfEntry2 (&row) == NO_ERROR)
-            {
-                const auto now = juce::Time::getMillisecondCounter();
-                const auto rx = row.InOctets;
-                const auto tx = row.OutOctets;
-                if (lastMetricTime != 0 && now > lastMetricTime)
-                {
-                    const double seconds = (now - lastMetricTime) / 1000.0;
-                    rxValue.setText (juce::String (static_cast<int> ((rx - lastRx) / seconds / 1024.0)) + " KB/s", juce::dontSendNotification);
-                    txValue.setText (juce::String (static_cast<int> ((tx - lastTx) / seconds / 1024.0)) + " KB/s", juce::dontSendNotification);
-                }
-                lastRx = rx; lastTx = tx; lastMetricTime = now;
-            }
+            ipValue.setText ("-", juce::dontSendNotification);
+            peerIpValue.setText ("-", juce::dontSendNotification);
+            rxValue.setText ("0 KB/s", juce::dontSendNotification);
+            txValue.setText ("0 KB/s", juce::dontSendNotification);
             return;
         }
-        ipValue.setText ("-", juce::dontSendNotification);
-        peerIpValue.setText ("-", juce::dontSendNotification);
-        rxValue.setText ("0 KB/s", juce::dontSendNotification);
-        txValue.setText ("0 KB/s", juce::dontSendNotification);
+
+        std::vector<unsigned char> buffer (size);
+        auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*> (buffer.data());
+        if (GetAdaptersAddresses (AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nullptr, adapters, &size) != NO_ERROR)
+            return;
+
+        const auto now = juce::Time::getMillisecondCounter();
+        juce::StringArray hosts, peers, downloads, uploads;
+        std::vector<MetricSample> nextSamples;
+
+        int slot = 0;
+        for (const auto& device : devices)
+        {
+            if (device.kind != DeviceNetworkTransport::Kind::AppleUsb || ! device.connected)
+                continue;
+
+            ++slot;
+            const juce::String wanted = device.interfaceName;
+            IP_ADAPTER_ADDRESSES* matched = nullptr;
+
+            for (auto* a = adapters; a != nullptr; a = a->Next)
+            {
+                const juce::String name = juce::String (a->FriendlyName != nullptr ? a->FriendlyName : L"");
+                if (wanted.isNotEmpty() && (name == wanted || name.containsIgnoreCase (wanted)))
+                {
+                    matched = a;
+                    break;
+                }
+            }
+
+            // If the Windows friendly name differs slightly from the helper's
+            // interface label, fall back to the slot-assigned isolated subnet.
+            if (matched == nullptr)
+            {
+                for (auto* a = adapters; a != nullptr; a = a->Next)
+                {
+                    const auto address = findIPv4ForAdapter (a);
+                    if (usbSlotForHost (address) == slot - 1)
+                    {
+                        matched = a;
+                        break;
+                    }
+                }
+            }
+
+            if (matched == nullptr)
+            {
+                hosts.add ("-");
+                peers.add ("-");
+                downloads.add ("0 KB/s");
+                uploads.add ("0 KB/s");
+                continue;
+            }
+
+            const auto address = findIPv4ForAdapter (matched);
+            const int addressSlot = usbSlotForHost (address);
+            const int peerSlot = addressSlot >= 0 ? addressSlot : juce::jlimit (0, 3, slot - 1);
+            static const char* const peerAddresses[] =
+            {
+                "192.168.99.2", "192.168.100.2", "192.168.101.2", "192.168.102.2"
+            };
+
+            hosts.add (address.isNotEmpty() ? address : "-");
+            peers.add (peerAddresses[peerSlot]);
+
+            MIB_IF_ROW2 row {};
+            row.InterfaceIndex = matched->IfIndex;
+            ULONG64 rx = 0, tx = 0;
+            if (GetIfEntry2 (&row) == NO_ERROR)
+            {
+                rx = row.InOctets;
+                tx = row.OutOctets;
+            }
+
+            juce::String down = "0 KB/s";
+            juce::String up = "0 KB/s";
+            for (const auto& previous : metricSamples)
+            {
+                if (previous.adapter == wanted && previous.time != 0 && now > previous.time)
+                {
+                    const double seconds = (now - previous.time) / 1000.0;
+                    down = juce::String (static_cast<int> ((rx - previous.rx) / seconds / 1024.0)) + " KB/s";
+                    up   = juce::String (static_cast<int> ((tx - previous.tx) / seconds / 1024.0)) + " KB/s";
+                    break;
+                }
+            }
+
+            downloads.add (down);
+            uploads.add (up);
+            nextSamples.push_back ({ wanted, rx, tx, now });
+        }
+
+        metricSamples = std::move (nextSamples);
+
+        auto joinLines = [] (const juce::StringArray& values)
+        {
+            juce::String result;
+            for (int i = 0; i < values.size(); ++i)
+            {
+                if (i > 0) result << "\n";
+                result << values[i];
+            }
+            return result.isNotEmpty() ? result : "-";
+        };
+
+        ipValue.setText (joinLines (hosts), juce::dontSendNotification);
+        peerIpValue.setText (joinLines (peers), juce::dontSendNotification);
+        rxValue.setText (joinLines (downloads), juce::dontSendNotification);
+        txValue.setText (joinLines (uploads), juce::dontSendNotification);
     }
+
 #endif
 
     AppleUsbNetworkTransport& usbTransport;
@@ -471,6 +551,6 @@ private:
     juce::TextButton startButton, stopButton, diagnosticsButton;
 #if JUCE_WINDOWS
     ULONG64 lastRx = 0, lastTx = 0;
-    juce::uint32 lastMetricTime = 0;
+    std::vector<MetricSample> metricSamples;
 #endif
 };
