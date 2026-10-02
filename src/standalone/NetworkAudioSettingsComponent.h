@@ -70,9 +70,13 @@ public:
         directUsbButton.setClickingTogglesState (true);
         directUsbButton.setTooltip ("Starts/stops the AOO audio stream over the USB link. "
                                     "The link itself is set up on the Apple USB Share tab.");
-        // Direct USB is an optional transport mode. Normal AOO/SonoBus networking
-        // remains the default when Network Audio is enabled.
-        directUsbButton.setToggleState (false, juce::dontSendNotification);
+        // Reopen-safe: the settings view is only a UI surface. If the AOO
+        // backend is already running, reflect its live transport mode instead
+        // of resetting the button to OFF and making an active stream look idle.
+        const bool directUsbActive = networkAudio != nullptr
+                                   && networkAudio->isRunning()
+                                   && networkAudio->isDirectMode();
+        directUsbButton.setToggleState (directUsbActive, juce::dontSendNotification);
         updateDirectUsbButtonText();
         directUsbButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         directUsbButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
@@ -83,8 +87,12 @@ public:
         // OFF disconnects and stops it. The button text also makes the state
         // unambiguous without relying on a checkbox glyph.
         enableButton.setClickingTogglesState (true);
-        enableButton.setToggleState (getNetworkAudioChannelState().enabled.load (std::memory_order_relaxed),
-                                     juce::dontSendNotification);
+        // Reopen-safe: show the actual backend state. Opening this panel must
+        // never turn an active network engine into a displayed OFF state.
+        const bool networkAudioActive = networkAudio != nullptr
+                                      && networkAudio->isRunning()
+                                      && getNetworkAudioChannelState().enabled.load (std::memory_order_relaxed);
+        enableButton.setToggleState (networkAudioActive, juce::dontSendNotification);
         updateEnableButtonText();
         enableButton.onClick = [this]
         {
