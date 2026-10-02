@@ -55,10 +55,9 @@ public:
                 if (! button->getButtonText().startsWithIgnoreCase ("Network audio:"))
                     continue;
 
-                button->setToggleState (false, juce::dontSendNotification);
-                button->setButtonText ("Network audio: OFF");
-                getNetworkAudioChannelState().enabled.store (false, std::memory_order_relaxed);
-
+                // Do not reset the master switch when this settings view is
+                // reopened. The base component now reflects the live AOO backend
+                // state, so an already-running stream remains visibly ON.
                 auto baseClick = button->onClick;
                 button->onClick = [button, baseClick]
                 {
