@@ -485,6 +485,7 @@ public:
             const int desired = juce::jlimit (cfg.minBufferMs, cfg.maxBufferMs,
                                               (int) std::lround (base + 4.0f * jitter));
             const int previous = runtime->adaptiveBufferMs.load (std::memory_order_relaxed);
+            bool changed = false;
 
             if (previous == 0)
             {
@@ -492,48 +493,53 @@ public:
                 runtime->adaptiveBufferMs.store (base, std::memory_order_relaxed);
                 runtime->adaptiveIncreaseSeconds = 0;
                 runtime->adaptiveStableSeconds = 0;
-                continue;
-            }
-
-            const int delta = desired - previous;
-
-            if (delta >= 2)
-            {
-                // Increase after two consecutive one-second observations.
-                // This prevents a single packet-timing spike from adding
-                // unnecessary latency, while still reacting quickly enough
-                // to protect the audio queue during sustained jitter.
-                ++runtime->adaptiveIncreaseSeconds;
-                runtime->adaptiveStableSeconds = 0;
-
-                if (runtime->adaptiveIncreaseSeconds < 2)
-                    continue;
-
-                runtime->sink->set_buffersize (desired);
-                runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
-                runtime->adaptiveIncreaseSeconds = 0;
-            }
-            else if (delta <= -2)
-            {
-                // Recovery is intentionally slower than protection. Require
-                // five consecutive stable observations before reducing the
-                // buffer, avoiding oscillation when jitter briefly improves.
-                runtime->adaptiveStableSeconds++;
-                runtime->adaptiveIncreaseSeconds = 0;
-
-                if (runtime->adaptiveStableSeconds < 5)
-                    continue;
-
-                runtime->sink->set_buffersize (desired);
-                runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
-                runtime->adaptiveStableSeconds = 0;
+                changed = true;
             }
             else
             {
-                runtime->adaptiveIncreaseSeconds = 0;
-                runtime->adaptiveStableSeconds = 0;
+                const int delta = desired - previous;
+
+                if (delta >= 2)
+                {
+                    // Increase after two consecutive one-second observations.
+                    // This prevents a single timing spike from adding latency,
+                    // while reacting quickly enough to sustained instability.
+                    ++runtime->adaptiveIncreaseSeconds;
+                    runtime->adaptiveStableSeconds = 0;
+
+                    if (runtime->adaptiveIncreaseSeconds >= 2)
+                    {
+                        runtime->sink->set_buffersize (desired);
+                        runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
+                        runtime->adaptiveIncreaseSeconds = 0;
+                        changed = true;
+                    }
+                }
+                else if (delta <= -2)
+                {
+                    // Recovery is deliberately slower: require five consecutive
+                    // stable observations before reducing the buffer.
+                    ++runtime->adaptiveStableSeconds;
+                    runtime->adaptiveIncreaseSeconds = 0;
+
+                    if (runtime->adaptiveStableSeconds >= 5)
+                    {
+                        runtime->sink->set_buffersize (desired);
+                        runtime->adaptiveBufferMs.store (desired, std::memory_order_relaxed);
+                        runtime->adaptiveStableSeconds = 0;
+                        changed = true;
+                    }
+                }
+                else
+                {
+                    runtime->adaptiveIncreaseSeconds = 0;
+                    runtime->adaptiveStableSeconds = 0;
+                }
             }
 
+            // Keep this once-per-second and off the audio thread. It gives us
+            // enough evidence to validate adaptation without adding work to the
+            // real-time callback.
             aooDiag ("ADAPTIVE_BUFFER endpoint=" + endpointString (runtime->endpoint.get())
                      + " jitterMs=" + juce::String (jitter, 2)
                      + " desiredMs=" + juce::String (desired)
@@ -542,7 +548,8 @@ public:
                      + " minMs=" + juce::String (cfg.minBufferMs)
                      + " maxMs=" + juce::String (cfg.maxBufferMs)
                      + " increaseSec=" + juce::String (runtime->adaptiveIncreaseSeconds)
-                     + " stableSec=" + juce::String (runtime->adaptiveStableSeconds));
+                     + " stableSec=" + juce::String (runtime->adaptiveStableSeconds)
+                     + " changed=" + juce::String (changed ? 1 : 0));
         }
     }
 
