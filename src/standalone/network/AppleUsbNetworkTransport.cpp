@@ -200,16 +200,17 @@ void AppleUsbNetworkTransport::poll()
         return;
     }
 
-    // Connected used to mean "some usbncm adapter reports up". That stays true
-    // after a session ends (Windows keeps the adapter), so a later run showed
-    // "ready" while the helper had not even started and the phone never linked.
-    // Now it requires the helper to have ACKed a DHCP lease to the phone in
-    // THIS session (parsed from its ActivityLog.txt).
-    const bool linkUp = launcher != nullptr && launcher->hasDhcpLease();
+    // Connected is based on the isolated USB network being ready in THIS
+    // helper session, not on DHCP. DHCP is one way to configure a peer, but
+    // it is not the transport's definition of link availability: a device
+    // may already have a usable/static address while no DHCP request is seen.
+    // networkReady is reset when the helper session starts/stops, so this does
+    // not resurrect a stale Windows adapter from a previous session.
+    const bool linkUp = launcher != nullptr && launcher->isUsbNetworkReady();
 
     currentState.store (linkUp ? State::Connected : State::Starting, std::memory_order_release);
     if (linkUp)
-        currentStatus = "Direct USB link is up (isolated USB network, no Internet sharing)";
+        currentStatus = "Direct USB network is up (isolated USB links active)";
 }
 
 juce::String AppleUsbNetworkTransport::linkStatus() const
@@ -220,12 +221,14 @@ juce::String AppleUsbNetworkTransport::linkStatus() const
 
     if (launcher != nullptr)
     {
-        if (launcher->hasDhcpLease())
-            return "Direct USB link is up (isolated USB network, no Internet sharing)";
-        if (launcher->hasSeenDhcpRequest())
-            return "DHCP request received - completing handshake...";
         if (launcher->isUsbNetworkReady())
-            return "Waiting for Ios Device (no DHCP request yet)";
+        {
+            if (launcher->hasDhcpLease())
+                return "Direct USB network is up - DHCP lease active";
+            if (launcher->hasSeenDhcpRequest())
+                return "Direct USB network is up - DHCP request received";
+            return "Direct USB network is up - no DHCP request required";
+        }
     }
 
     return "Starting Direct USB link...";
