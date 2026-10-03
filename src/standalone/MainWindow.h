@@ -38,6 +38,7 @@ public:
         const int deviceBlockSize = device != nullptr ? juce::jmax (1, device->getCurrentBufferSizeSamples()) : 512;
         processor->prepareToPlay (deviceSampleRate > 0.0 ? deviceSampleRate : 44100.0, deviceBlockSize);
         editor = std::make_unique<DysektEditor> (*processor);
+        editor->setWindowMenuBar (this, kMenuH);
 
         player.setProcessor (processor.get());
         deviceManager.addAudioCallback (&player);
@@ -79,6 +80,8 @@ public:
 
     ~MainWindow() override
     {
+        if (editor != nullptr)
+            editor->setWindowMenuBar (nullptr, 0);
         setMenuBar (nullptr);
         deviceManager.removeAudioCallback (&player);
 
