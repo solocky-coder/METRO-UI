@@ -5,6 +5,7 @@
 #include "GlobalEqPanel.h"
 #include "ArrangeView.h"
 #include "ThemePickOverlay.h"
+#include "WindowMenuBar.h"
 
 //==============================================================================
 //  SlotWindowContent  –  content component (no window chrome of its own)
@@ -245,6 +246,9 @@ private:
 class SlotWindow : public juce::DocumentWindow
 {
 public:
+    static juce::String kArrangeTitle() { return juce::String::fromUTF8 ("ARRANGE  \xe2\x80\xa2  TRACKS"); }
+    static juce::String kEqTitle()      { return juce::String::fromUTF8 ("EQ  \xe2\x80\xa2  GLOBAL"); }
+
     SlotWindow (MixerPanel& mixer, GlobalEqPanel& eq, ArrangeView& arrange,
                 juce::LookAndFeel& lnf)
         : juce::DocumentWindow ("MIXER",
@@ -263,7 +267,7 @@ public:
             if (selected == SlotWindowContent::Content::Mixer)
                 setName ("MIXER");
             else if (selected == SlotWindowContent::Content::Arrange)
-                setName ("ARRANGE  •  TRACKS");
+                setName (kArrangeTitle());
 
             if (onViewSelected)
                 onViewSelected (selected);
@@ -288,7 +292,7 @@ public:
 
     void showEq()
     {
-        setName ("EQ  •  GLOBAL");
+        setName (kEqTitle());
         content.show (SlotWindowContent::Content::Eq);
         showWindow();
     }
@@ -298,6 +302,12 @@ public:
         setName ("ARRANGE  •  TRACKS");
         content.show (SlotWindowContent::Content::Arrange);
         showWindow();
+    }
+
+    /** Attach the standalone app's File / Audio-MIDI / Help menu bar to this window. */
+    void setSharedMenuBar (juce::MenuBarModel* model, int height)
+    {
+        WindowMenuBar::attach (*this, model, height);
     }
 
     /** Hide the window without destroying it. */
@@ -336,6 +346,7 @@ public:
 private:
     void showWindow()
     {
+        WindowMenuBar::style (*this);
         setVisible (true);
         toFront (true);
     }

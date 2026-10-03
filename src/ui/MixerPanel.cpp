@@ -1735,7 +1735,7 @@ void MixerPanel::drawNetworkRow (juce::Graphics& g, int ry, int trackIndex, int 
     g.setFont (DysektLookAndFeel::makeFont (10.0f));
     g.setColour (theme.foreground.withAlpha (0.12f));
     for (int i = ColPres; i < kNumCols; ++i)
-        g.drawText ("—", colX ((Col) i), ry, kKnobColW, kNetRowH,
+        g.drawText (juce::String::fromUTF8 ("\xe2\x80\x94"), colX ((Col) i), ry, kKnobColW, kNetRowH,
                     juce::Justification::centred);
 
     // Live meter: post-fader/pan peaks pushed by NetworkAudioProcessor::processBlock()

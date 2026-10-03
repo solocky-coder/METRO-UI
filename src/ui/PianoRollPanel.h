@@ -3,6 +3,7 @@
 #include "TransportBar.h"
 #include "PianoRollComponent.h"
 #include "../sequencer/SequencerEngine.h"
+#include "WindowMenuBar.h"
 
 //==============================================================================
 //  PianoRollPanel  –  content component (no window chrome of its own)
@@ -118,7 +119,7 @@ class PianoRollWindow : public juce::DocumentWindow
 {
 public:
     PianoRollWindow (SequencerEngine& seq, juce::LookAndFeel& lnf, AbletonLink* link = nullptr)
-        : juce::DocumentWindow ("PIANO ROLL  •  MIDI EDITOR",
+        : juce::DocumentWindow (juce::String::fromUTF8 ("PIANO ROLL  \xe2\x80\xa2  MIDI EDITOR"),
                                 juce::Colour (0xFF0D0D14),
                                 juce::DocumentWindow::closeButton |
                                 juce::DocumentWindow::minimiseButton |
@@ -140,11 +141,18 @@ public:
     }
 
     //==========================================================================
+    /** Attach the standalone app's File / Audio-MIDI / Help menu bar to this window. */
+    void setSharedMenuBar (juce::MenuBarModel* model, int height)
+    {
+        WindowMenuBar::attach (*this, model, height);
+    }
+
     /** Show the window and focus the given track/clip. */
     void openFor (int trackIndex, int clipIndex = 0)
     {
         panel.setActiveTrackPublic (trackIndex, clipIndex);
         panel.syncSnap();
+        WindowMenuBar::style (*this);
         setVisible (true);
         toFront (true);
     }

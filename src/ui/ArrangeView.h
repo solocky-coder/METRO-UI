@@ -80,6 +80,7 @@ public:
     static constexpr int kStripW       = 196;
     static constexpr int kLeftW        = kInspectorW + kStripW;
     static constexpr int kToolbarH     = 42;
+    static constexpr int kEditLabelW   = 40;
     static constexpr int kRulerH       = 36;
     static constexpr int kScrollH      = 10;
     static constexpr int kScrollW      = 10;
@@ -414,7 +415,9 @@ public:
 
             // Command toolbar occupies the timeline side of the same header
             // row, leaving QUANTIZE + its six resolution buttons untouched.
-            auto tools = arrangeHeaderBounds().withTrimmedLeft (350).reduced (4, 3);
+            // Reserve a dedicated column for the "EDIT" caption, matching the
+            // "QUANTIZE" label, so the first tool button cannot cover it.
+            auto tools = arrangeHeaderBounds().withTrimmedLeft (350 + kEditLabelW).reduced (4, 3);
             const int toolGap = 4;
             const int widths[kNumArrangeTools] = { 66, 62, 52, 58, 56, 52, 52, 82 };
             int x = tools.getX();
@@ -434,7 +437,9 @@ public:
         auto vScrollR = r.removeFromRight  (kScrollW);
 
         hScroll.setBounds (hScrollR.withTrimmedLeft (leftPanelW()));
-        vScroll.setBounds (vScrollR);
+        // Match the inspector/track strip: the vertical scrollbar starts below
+        // the toolbar and timeline ruler instead of covering those rows.
+        vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + kRulerH));
 
         if (inspectorVisible)
         {
@@ -2252,8 +2257,8 @@ private:
 
         g.setColour (theme.foreground.withAlpha (0.55f));
         g.setFont (juce::Font (11.5f, juce::Font::bold));
-        g.drawText ("EDIT", header.getX() + 345, header.getY() - 1,
-                    36, 12, juce::Justification::centredLeft, false);
+        g.drawText ("EDIT", header.getX() + 358, header.getY(),
+                    kEditLabelW - 8, header.getHeight(), juce::Justification::centredLeft, false);
         // Quantize buttons (real child components, positioned in resized())
         // fill the rest of this header — nothing else to paint there.
         // The bottom border itself is NOT drawn here — see paintOverChildren()

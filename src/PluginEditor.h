@@ -64,6 +64,16 @@ public:
     juce::StringArray getAvailableThemes();
     void applyTheme (const juce::String& themeName);
 
+#if DYSEKT_STANDALONE
+    /// Share the standalone app's File / Audio-MIDI / Help menu bar with
+    /// every separate editor window, while the MainWindow owns the model.
+    void setWindowMenuBar (juce::MenuBarModel* model, int height)
+    {
+        slotWindow.setSharedMenuBar (model, height);
+        pianoRollPanel.setSharedMenuBar (model, height);
+    }
+#endif
+
     void toggleBrowserPanel();
     void toggleSoftWave();
     void toggleMidiFollow();
