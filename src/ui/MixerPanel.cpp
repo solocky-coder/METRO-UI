@@ -2,6 +2,8 @@
 #include "../PluginProcessor.h"
 static constexpr int kMaxMeterSlices = DysektProcessor::kMaxMeterSlices;
 #include "DysektLookAndFeel.h"
+#include "../sequencer/SequencerEngine.h"
+#include "../network/NetworkTrackMeters.h"
 #include "IconManager.h"
 #include "../audio/Slice.h"
 #include "../params/ParamIds.h"
@@ -185,6 +187,34 @@ int MixerPanel::sfz2ChRowY (int chRowIdx) const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Network Audio tracks (SequencerEngine TrackType::Audio with a network route)
+// ─────────────────────────────────────────────────────────────────────────────
+// Rows are derived from the SequencerEngine on every layout/paint, so creating a
+// network track in the Arranger adds its row immediately and removing the track
+// removes the row — there is no separate list to keep in sync.
+std::vector<int> MixerPanel::collectNetworkTracks() const
+{
+    std::vector<int> result;
+    const int n = juce::jmin (processor.sequencer.getNumTracks(), NetworkTrackMeters::kMaxTracks);
+    for (int i = 0; i < n; ++i)
+        if (processor.sequencer.isNetworkAudioTrack (i))
+            result.push_back (i);
+    return result;
+}
+
+int MixerPanel::netTotalH() const
+{
+    return (int) collectNetworkTracks().size() * kNetRowH;
+}
+
+int MixerPanel::netRowY (int netRowIdx) const
+{
+    // Sits directly below the SFZ-Player section (or SF-PLAYER section when no .sfz
+    // is loaded), above Master. sf2RowY() already applies -scrollPixels once.
+    return sf2RowY() + sf2TotalH() + sfz2TotalH() + netRowIdx * kNetRowH;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  updateFromSnapshot
 // ─────────────────────────────────────────────────────────────────────────────
 void MixerPanel::updateFromSnapshot()
@@ -206,7 +236,7 @@ void MixerPanel::updateFromSnapshot()
             if (visRow >= 0)
             {
                 const int visTop    = kHeaderH;
-                const int visBottom = getHeight() - sf2TotalH() - sfz2TotalH() - kMasterH;
+                const int visBottom = getHeight() - sf2TotalH() - sfz2TotalH() - netTotalH() - kMasterH;
                 const int visH      = visBottom - visTop;
 
                 const int rowTop    = kHeaderH + visRow * kRowH - scrollPixels;
@@ -218,7 +248,7 @@ void MixerPanel::updateFromSnapshot()
                     scrollPixels = kHeaderH + visRow * kRowH - (visH - kRowH);
 
                 // Clamp to valid scroll range
-                const int totalH  = (int) visible.size() * kRowH + kMasterH + sf2TotalH() + sfz2TotalH();
+                const int totalH  = (int) visible.size() * kRowH + kMasterH + sf2TotalH() + sfz2TotalH() + netTotalH();
                 const int maxScroll = juce::jmax (0, totalH - (getHeight() - kHeaderH));
                 scrollPixels = juce::jlimit (0, maxScroll, scrollPixels);
             }
@@ -256,7 +286,7 @@ int MixerPanel::masterRowY() const
     // and below the SFZ-Player row (if a .sfz file is loaded).
     const auto& snap = processor.getUiSliceSnapshot();
     const int visibleCount = (int) collectVisibleSlices (snap).size();
-    return kHeaderH + visibleCount * kRowH + sf2TotalH() + sfz2TotalH() - scrollPixels;
+    return kHeaderH + visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + netTotalH() - scrollPixels;
 }
 
 MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
@@ -323,7 +353,21 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
         }
     }
     else if (relY >= visibleCount * kRowH + sf2TotalH() + sfz2TotalH() &&
-             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH)
+             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + netTotalH())
+    {
+        // Network Audio track rows (below SFZ-Player, above Master)
+        const auto netTracks = collectNetworkTracks();
+        const int netIdx = (relY - visibleCount * kRowH - sf2TotalH() - sfz2TotalH()) / kNetRowH;
+        if (netIdx >= 0 && netIdx < (int) netTracks.size())
+        {
+            c.isNet    = true;
+            c.netTrack = netTracks[(size_t) netIdx];
+            c.row      = -200 - netIdx;  // sentinel: negative, distinct from sf2Ch (-4-i) and sfz2Ch (-100-i)
+        }
+        else return c;
+    }
+    else if (relY >= visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + netTotalH() &&
+             relY <  visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + netTotalH() + kMasterH)
     {
         c.row = -1;
         c.isMaster = true;
@@ -337,13 +381,14 @@ MixerPanel::Cell MixerPanel::hitTest (juce::Point<int> pos) const
     if (colIdx < 0 || colIdx >= kNumCols) return c;
     c.col = (Col) colIdx;
 
-    const int rowTop  = c.isSf2Ch    ? sf2ChRowY (c.row <= -4 ? (-4 - c.row) : 0)
+    const int rowTop  = c.isNet      ? netRowY (c.row <= -200 ? (-200 - c.row) : 0)
+                        : c.isSf2Ch    ? sf2ChRowY (c.row <= -4 ? (-4 - c.row) : 0)
                         : c.isSfz2Ch ? sfz2ChRowY (c.row <= -100 ? (-100 - c.row) : 0)
                         : c.isSf2    ? sf2RowY()
                         : c.isSfz2   ? sfz2RowY()
                         : c.isMaster ? masterRowY()
                                      : rowY (logicalRow);
-    const int rowHt   = c.isSf2Ch ? kSf2ChRowH : c.isSfz2Ch ? kSf2ChRowH : c.isSf2 ? kSf2RowH : c.isSfz2 ? kSf2RowH : c.isMaster ? kMasterH : kRowH;
+    const int rowHt   = c.isNet ? kNetRowH : c.isSf2Ch ? kSf2ChRowH : c.isSfz2Ch ? kSf2ChRowH : c.isSf2 ? kSf2RowH : c.isSfz2 ? kSf2RowH : c.isMaster ? kMasterH : kRowH;
     c.bounds = { kNameColW + colIdx * kKnobColW, rowTop, kKnobColW, rowHt };
     return c;
 }
@@ -642,7 +687,7 @@ void MixerPanel::drawMeter (juce::Graphics& g,
     const int holdW  = 2;               // hold marker width in px
 
     // Update hold registers
-    const int si2 = juce::jlimit (0, kMaxHoldSlices - 1, si);
+    const int si2 = juce::jlimit (0, kTotalHoldSlots - 1, si);
     if (peakL > holdL[si2]) holdL[si2] = peakL;
     if (peakR > holdR[si2]) holdR[si2] = peakR;
 
@@ -1560,6 +1605,154 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  timerCallback — hold decay + Network Audio meter polling
+// ─────────────────────────────────────────────────────────────────────────────
+void MixerPanel::timerCallback()
+{
+    static constexpr float kHoldDecay = 0.94f;   // ~40 dB/s visual falloff
+    bool anyHeld = false;
+    for (int i = 0; i < kTotalHoldSlots; ++i)
+    {
+        holdL[i] *= kHoldDecay;
+        holdR[i] *= kHoldDecay;
+        if (holdL[i] > 0.001f || holdR[i] > 0.001f) anyHeld = true;
+    }
+
+    // Network Audio levels come from the existing NetworkTrackMeters infrastructure
+    // (pushed from NetworkAudioProcessor::processBlock). The Mixer uses its own read
+    // cursor so it never steals peaks from the Arranger's header meters.
+    const int numTracks = juce::jmin (processor.sequencer.getNumTracks(), NetworkTrackMeters::kMaxTracks);
+    for (int i = 0; i < NetworkTrackMeters::kMaxTracks; ++i)
+    {
+        float pkL = 0.f, pkR = 0.f;
+        if (i < numTracks && processor.sequencer.isNetworkAudioTrack (i))
+        {
+            const auto r = NetworkTrackMeters::consume (i, NetworkTrackMeters::kReaderMixer);
+            pkL = r.left;
+            pkR = r.stereo ? r.right : r.left;
+        }
+        netPeakL[(size_t) i] = pkL;
+        netPeakR[(size_t) i] = pkR;
+        if (pkL > 0.001f || pkR > 0.001f) anyHeld = true;
+    }
+
+    if (anyHeld) repaint();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Network Audio track row
+// ─────────────────────────────────────────────────────────────────────────────
+void MixerPanel::drawNetworkRow (juce::Graphics& g, int ry, int trackIndex, int netRowIdx) const
+{
+    const auto& theme = getTheme();
+    const auto info = processor.sequencer.getTrackInfo (trackIndex);   // the single source of truth
+    const bool muted = ! info.enabled;
+
+    // Background — tinted like the other player rows, with the track colour as a left stripe
+    const int rgIns = ry + 1;
+    const int rgH   = kNetRowH - 2;
+    g.setColour (theme.accent.withAlpha (0.06f));
+    g.fillRect (0, rgIns, getWidth(), rgH);
+    g.setColour (info.colour.withAlpha (0.85f));
+    g.fillRect (0, rgIns, 3, rgH);
+    g.setColour (theme.accent.withAlpha (0.4f));
+    g.drawHorizontalLine (ry, 0.f, (float) getWidth());
+    g.drawHorizontalLine (ry + kNetRowH - 1, 0.f, (float) getWidth());
+
+    // Name column: "NETWORK" caption over the network source / track name
+    g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+    g.setColour (theme.accent.withAlpha (0.75f));
+    g.drawText ("NETWORK", 10, ry + 8, kNameColW - 12, 12, juce::Justification::centredLeft);
+    g.setFont (DysektLookAndFeel::makeFont (11.0f));
+    g.setColour (theme.foreground.withAlpha (muted ? 0.35f : 0.75f));
+    g.drawText (info.name.isNotEmpty() ? info.name : juce::String ("Audio ") + juce::String (trackIndex + 1),
+                10, ry + 22, kNameColW - 12, 16, juce::Justification::centredLeft, true);
+
+    const int kcy = ry + kNetRowH / 2;
+    const float volDb = info.volumeDb;
+    const float pan   = info.pan;
+
+    // GAIN knob
+    {
+        const int x  = colX (ColGain);
+        const int cx = x + kKnobR + 8;
+        drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
+        const int knobEdge = cx + kKnobR;
+        const int divider  = x + kKnobColW;
+        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setColour (theme.foreground.withAlpha (0.40f));
+        g.drawText (fmtGain (volDb), knobEdge, ry + 1, divider - knobEdge, kNetRowH - 2,
+                    juce::Justification::centred);
+    }
+
+    // PAN slider (a balance control for stereo routes — same state the renderer reads)
+    {
+        const int   x       = colX (ColPan);
+        const int   sliderX = x + 6;
+        const int   sliderW = kKnobColW - 12;
+        const int   sliderY = kcy + 5;
+        const int   sliderH = 6;
+        const float norm    = toNormPan (pan);
+        const int   thumbX  = sliderX + (int) (norm * (float) sliderW);
+        const int   centreX = sliderX + sliderW / 2;
+        const auto  fillCol = theme.accent;
+
+        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setColour (theme.foreground.withAlpha (0.40f));
+        g.drawText (fmtPan (pan), x, kcy - 20, kKnobColW, 16, juce::Justification::centred);
+
+        g.setColour (theme.darkBar.darker (0.3f));
+        g.fillRect ((float) sliderX, (float) sliderY, (float) sliderW, (float) sliderH);
+        g.setColour (theme.foreground.withAlpha (0.18f));
+        g.drawVerticalLine (centreX, (float) sliderY, (float) (sliderY + sliderH));
+        if (std::abs (pan) > 0.005f)
+        {
+            const int fillX = (pan < 0.f) ? thumbX : centreX;
+            const int fillW = std::abs (thumbX - centreX);
+            if (fillW > 0) { g.setColour (fillCol.withAlpha (0.35f)); g.fillRect ((float) fillX, (float) (sliderY + 1), (float) fillW, (float) (sliderH - 2)); }
+        }
+        g.setColour (fillCol.withAlpha (0.22f));
+        g.fillRect ((float) (thumbX - 5), (float) (sliderY - 4), 10.f, (float) (sliderH + 8));
+        g.setColour (fillCol.withAlpha (0.85f));
+        g.fillRect ((float) (thumbX - 2), (float) (sliderY - 1), 4.f, (float) (sliderH + 2));
+    }
+
+    // MUTE badge — FCUT column, same place as the SF2 channel rows
+    {
+        const int x  = colX (ColFcut);
+        const int cx = x + kKnobColW / 2;
+        const juce::Rectangle<float> r ((float) (cx - 12), (float) (kcy - 8), 24.f, 16.f);
+        g.setColour (muted ? theme.accent.withAlpha (0.25f) : theme.separator.withAlpha (0.2f));
+        g.fillRect (r);
+        g.setColour (muted ? theme.accent : theme.foreground.withAlpha (0.30f));
+        g.drawRect (r, 0.8f);
+        g.setFont (DysektLookAndFeel::makeFont (10.0f));
+        g.drawText ("M", r.toNearestInt(), juce::Justification::centred);
+    }
+
+    // Remaining columns do not apply to a network audio track
+    g.setFont (DysektLookAndFeel::makeFont (10.0f));
+    g.setColour (theme.foreground.withAlpha (0.12f));
+    for (int i = ColPres; i < kNumCols; ++i)
+        g.drawText ("—", colX ((Col) i), ry, kKnobColW, kNetRowH,
+                    juce::Justification::centred);
+
+    // Live meter: post-fader/pan peaks pushed by NetworkAudioProcessor::processBlock()
+    const int mx = colX (ColOut) + kKnobColW + 4;
+    const int mw = getWidth() - mx - 6;
+    if (mw > 20 && trackIndex >= 0 && trackIndex < NetworkTrackMeters::kMaxTracks)
+    {
+        const float pkL = netPeakL[(size_t) trackIndex];
+        const float pkR = netPeakR[(size_t) trackIndex];
+        const int holdSlot = kNetHoldBase + trackIndex;
+        holdL[holdSlot] = std::max (holdL[holdSlot], pkL);
+        holdR[holdSlot] = std::max (holdR[holdSlot], pkR);
+        drawMeter (g, mx, ry + 4, mw, kNetRowH - 8, pkL, pkR, info.colour, holdSlot);
+    }
+    juce::ignoreUnused (netRowIdx);
+}
+
 void MixerPanel::paint (juce::Graphics& g)
 {
     const auto& theme = getTheme();
@@ -1606,6 +1799,11 @@ void MixerPanel::paint (juce::Graphics& g)
         for (int i = 0; i < (int) visibleZones.size(); ++i)
             drawSfz2ChannelRow (g, sfz2ChRowY (i), visibleZones[(size_t) i]);
     }
+    {
+        const auto netTracks = collectNetworkTracks();
+        for (int i = 0; i < (int) netTracks.size(); ++i)
+            drawNetworkRow (g, netRowY (i), netTracks[(size_t) i], i);
+    }
     drawMasterRow (g, masterRowY());
 
     // Column dividers
@@ -1649,6 +1847,37 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
         if (c.row >= 0 && c.row < snap.numSlices) onTrackSelected (0);
         else if (c.isSfz2 || c.isSfz2Ch)           onTrackSelected (1);
         else if (c.isSf2 || c.isSf2Ch)             onTrackSelected (2);
+    }
+
+    // Network Audio track row: operates directly on the SequencerEngine track (the same
+    // state the Arranger header and NetworkAudioProcessor use). Always returns, so the
+    // slice/SF2/SFZ handling below can never see a network row.
+    if (c.isNet)
+    {
+        if (c.bounds.isEmpty())                      // name column — nothing to do
+            return;
+
+        auto& seq = processor.sequencer;
+        if (c.col == ColFcut)                        // MUTE badge (same column as SF2 channel rows)
+        {
+            const auto info = seq.getTrackInfo (c.netTrack);
+            seq.setTrackEnabled (c.netTrack, ! info.enabled);   // enabled == not muted
+            repaint();
+            return;
+        }
+
+        if (c.col != ColGain && c.col != ColPan)
+            return;
+
+        const auto info = seq.getTrackInfo (c.netTrack);
+        drag.active      = true;
+        drag.isNet       = true;
+        drag.netTrack    = c.netTrack;
+        drag.isMaster    = drag.isSf2 = drag.isSf2Ch = drag.isSfz2 = drag.isSfz2Ch = false;
+        drag.col         = c.col;
+        drag.startY      = (c.col == ColPan) ? e.getScreenPosition().x : e.getScreenPosition().y;
+        drag.startVal    = (c.col == ColGain) ? info.volumeDb : info.pan;
+        return;
     }
 
     // Selecting an SF2 channel strip also focuses that channel's arranger
@@ -1870,6 +2099,21 @@ void MixerPanel::mouseDrag (const juce::MouseEvent& e)
 
     float newVal = drag.startVal;
 
+    if (drag.isNet)
+    {
+        auto& seq = processor.sequencer;
+        if (drag.col == ColGain)
+        {
+            // Same -60..+6 dB range as the Arranger's TrackInspector slider.
+            seq.setTrackVolumeDb (drag.netTrack, juce::jlimit (-60.f, 6.f, drag.startVal + dy * 0.5f * fineMult));
+        }
+        else if (drag.col == ColPan)
+        {
+            seq.setTrackPan (drag.netTrack, juce::jlimit (-1.f, 1.f, drag.startVal + dx * 0.01f * fineMult));
+        }
+        repaint(); return;
+    }
+
     if (drag.isSf2Ch)
     {
         if (drag.col == ColGain)
@@ -1993,6 +2237,7 @@ void MixerPanel::mouseDrag (const juce::MouseEvent& e)
 void MixerPanel::mouseUp (const juce::MouseEvent&)
 {
     drag.active = false;
+    drag.isNet  = false;
 }
 
 void MixerPanel::mouseDoubleClick (const juce::MouseEvent& e)
@@ -2244,7 +2489,7 @@ void MixerPanel::mouseWheelMove (const juce::MouseEvent&,
 {
     const auto& snap = processor.getUiSliceSnapshot();
     const int visibleCount = (int) collectVisibleSlices (snap).size();
-    const int contentH = visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + kMasterH;
+    const int contentH = visibleCount * kRowH + sf2TotalH() + sfz2TotalH() + netTotalH() + kMasterH;
     const int visibleH = getHeight() - kHeaderH;
     const int maxScroll = juce::jmax (0, contentH - visibleH);
 

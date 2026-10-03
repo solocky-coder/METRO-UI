@@ -9,6 +9,7 @@
 #include "NetworkAudioAutoTrack.h"
 #include "NetworkAudioLabels.h"
 #include "NetworkAudioSettingsShim.h"
+#include "AudioDeviceSettingsStore.h"
 
 class MainWindow : public juce::DocumentWindow,
                    public juce::MenuBarModel,
@@ -23,7 +24,9 @@ public:
         setUsingNativeTitleBar (true);
         setResizable (true, false);
 
-        deviceManager.initialise (0, 2, nullptr, true, {}, nullptr);
+        // Restores the configuration saved from Audio Settings (if any); falls back to the
+        // default device when nothing is saved or the saved state is missing/corrupt.
+        AudioDeviceSettingsStore::initialiseDeviceManager (deviceManager, 0, 2);
         deviceManager.addChangeListener (this);
 
         juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Standalone);
@@ -263,13 +266,31 @@ private:
     {
     public:
         explicit AudioOnlySettingsComponent (juce::AudioDeviceManager& dm)
-            : audioSelector (dm, 0, 0, 1, 2, false, false, false, false)
+            : deviceManager (dm),
+              audioSelector (dm, 0, 0, 1, 2, false, false, false, false)
         {
             // Same reasoning as NetworkAudioSettingsComponent: this is launched as its own
             // top-level DialogWindow, so it never inherits METRO's app-wide LookAndFeel.
             setLookAndFeel (&settingsLookAndFeel);
-            setSize (700, 320);
             addAndMakeVisible (audioSelector);
+
+            // Device changes apply live as soon as they are made, but are only written to
+            // disk when Save is pressed, so unsaved changes never replace the last saved
+            // configuration (they simply don't survive a restart).
+            saveButton.setButtonText ("SAVE");
+            saveButton.setTooltip ("Save these audio settings and restore them the next time the app starts");
+            saveButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+            saveButton.onClick = [this] { saveSettings(); };
+            addAndMakeVisible (saveButton);
+
+            statusLabel.setJustificationType (juce::Justification::centredLeft);
+            statusLabel.setFont (juce::Font (13.0f));
+            statusLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFB0B0BC));
+            statusLabel.setText ("Changes apply immediately. Press Save to keep them for the next launch.",
+                                 juce::dontSendNotification);
+            addAndMakeVisible (statusLabel);
+
+            setSize (700, 320 + kFooterH);
         }
 
         ~AudioOnlySettingsComponent() override { setLookAndFeel (nullptr); }
@@ -278,12 +299,37 @@ private:
 
         void resized() override
         {
-            audioSelector.setBounds (getLocalBounds().reduced (16));
+            auto area = getLocalBounds().reduced (16);
+            auto footer = area.removeFromBottom (kFooterH - 16);
+            area.removeFromBottom (8);
+
+            audioSelector.setBounds (area);
+
+            saveButton.setBounds (footer.removeFromRight (110).withSizeKeepingCentre (110, 32));
+            footer.removeFromRight (12);
+            statusLabel.setBounds (footer);
         }
 
     private:
+        static constexpr int kFooterH = 56;
+
+        void saveSettings()
+        {
+            const auto result = AudioDeviceSettingsStore::save (deviceManager);
+            const bool ok = result.wasOk();
+
+            statusLabel.setColour (juce::Label::textColourId,
+                                   ok ? juce::Colour (0xFF7FE0A0) : juce::Colour (0xFFE0A07F));
+            statusLabel.setText (ok ? "Saved. These settings will be restored on the next launch."
+                                    : result.getErrorMessage(),
+                                 juce::dontSendNotification);
+        }
+
+        juce::AudioDeviceManager& deviceManager;
         MetroLookAndFeel settingsLookAndFeel;
         juce::AudioDeviceSelectorComponent audioSelector;
+        juce::TextButton saveButton;
+        juce::Label statusLabel;
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioOnlySettingsComponent)
     };
 

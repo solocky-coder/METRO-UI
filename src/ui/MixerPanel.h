@@ -1,8 +1,10 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <array>
 #include <unordered_map>
 #include <vector>
 #include "../audio/SfzPlayer.h"   // Sf2PresetInfo
+#include "../network/NetworkTrackMeters.h"
 
 class DysektProcessor;
 
@@ -46,6 +48,7 @@ public:
     static constexpr int kSectionLabelH = 16;
     /** Height of each per-channel sub-row under the SF-PLAYER row. */
     static constexpr int kSf2ChRowH   = 42;
+    static constexpr int kNetRowH     = 52;   // Network Audio track row
     /** Width of the slice name column. */
     static constexpr int kNameColW    = 88;
     /** Width of each knob column.
@@ -118,19 +121,8 @@ public:
     void setActiveChannels (const std::vector<Sf2PresetInfo>& presets,
                             const std::unordered_map<int,int>& presetChannels);
 
-    // Timer (drives hold decay and repaints while voices are active)
-    void timerCallback() override
-    {
-        static constexpr float kHoldDecay = 0.94f;   // ~40 dB/s visual falloff
-        bool anyHeld = false;
-        for (int i = 0; i < kMaxHoldSlices; ++i)
-        {
-            holdL[i] *= kHoldDecay;
-            holdR[i] *= kHoldDecay;
-            if (holdL[i] > 0.001f || holdR[i] > 0.001f) anyHeld = true;
-        }
-        if (anyHeld) repaint();
-    }
+    // Timer (drives hold decay, polls Network Audio meters, repaints while active)
+    void timerCallback() override;
 
 private:
     // ── Column layout ─────────────────────────────────────────────────────
@@ -155,6 +147,8 @@ private:
         bool isSf2Ch   { false }; // true = SF2 per-channel sub-row
         bool isSfz2    { false }; // true = SFZ-Player (sfzPlayer2 / real .sfz engine) row
         bool isSfz2Ch  { false }; // true = per-zone sub-row under the SFZ-Player row
+        bool isNet     { false }; // true = Network Audio track row (a SequencerEngine Audio track)
+        int  netTrack  { -1 };    // SequencerEngine track index when isNet
         int  sf2Channel{ -1 };    // FluidSynth channel index (0-based) when isSf2Ch
         int  sfz2ZoneIdx{ -1 };   // sliceManager2 slice index (real, not display-row) when isSfz2Ch
     };
@@ -176,6 +170,9 @@ private:
         (GAIN/PAN only) but reads/writes the zone's own slice fields instead
         of a FluidSynth channel strip. */
     void drawSfz2ChannelRow (juce::Graphics&, int ry, int zoneIdx) const;
+    /** One Network Audio track (SequencerEngine TrackType::Audio with a network route).
+     *  Reads/writes the SequencerEngine track state directly — no parallel gain/pan/mute. */
+    void drawNetworkRow   (juce::Graphics&, int ry, int trackIndex, int netRowIdx) const;
     void drawKnobInRow (juce::Graphics&, int cx, int cy, float norm,
                         bool locked, bool isMaster = false,
                         bool isGain = false) const;
@@ -215,6 +212,10 @@ private:
     int   sfz2RowY    () const;               // top Y of the sfzPlayer2 row, sits below the sf2 section
     int   sfz2ChRowY  (int chRowIdx) const;   // top Y of a per-zone sub-row (0-based index into visible zones)
     int   sfz2TotalH  () const;               // kSf2RowH (+ N * kSf2ChRowH for visible zones) when sfzPlayer2 has a file loaded, else 0
+    /** SequencerEngine track indices of the active Network Audio tracks, in track order. */
+    std::vector<int> collectNetworkTracks() const;
+    int   netTotalH   () const;               // kNetRowH * number of network audio tracks (0 when none)
+    int   netRowY     (int netRowIdx) const;  // top Y of a network row (0-based index into collectNetworkTracks())
     Cell  hitTest     (juce::Point<int> pos) const;
 
     // ── Drag state ────────────────────────────────────────────────────────
@@ -225,6 +226,8 @@ private:
         bool   isSf2Ch   { false };
         bool   isSfz2    { false };
         bool   isSfz2Ch  { false };
+        bool   isNet     { false };
+        int    netTrack  { -1 };
         int    sf2Channel{ -1 };
         int    sliceIdx  { -1 };
         int    sfz2ZoneIdx{ -1 };
@@ -235,8 +238,17 @@ private:
 
     // ── Peak-hold for phosphor meter (UI-side, decays in timerCallback) ──
     static constexpr int kMaxHoldSlices = 128;  // matches DysektProcessor::kMaxMeterSlices
-    mutable std::array<float, kMaxHoldSlices> holdL {};
-    mutable std::array<float, kMaxHoldSlices> holdR {};
+    // Network Audio rows get their own hold slots above the slice/SF2/SFZ slots so
+    // they can never collide with them (slot = kNetHoldBase + track index).
+    static constexpr int kNetHoldBase   = kMaxHoldSlices;
+    static constexpr int kTotalHoldSlots = kMaxHoldSlices + NetworkTrackMeters::kMaxTracks;
+    mutable std::array<float, kTotalHoldSlots> holdL {};
+    mutable std::array<float, kTotalHoldSlots> holdR {};
+
+    // Latest Network Audio peaks (linear), refreshed by timerCallback() from
+    // NetworkTrackMeters reader 1 (the Mixer's own read cursor).
+    std::array<float, NetworkTrackMeters::kMaxTracks> netPeakL {};
+    std::array<float, NetworkTrackMeters::kMaxTracks> netPeakR {};
 
     // ── Scroll ────────────────────────────────────────────────────────────
     int   scrollPixels { 0 };   // vertical scroll offset in pixels

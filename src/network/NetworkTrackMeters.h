@@ -21,12 +21,21 @@
 //    compares it with the previous value to tell "source is delivering audio"
 //    (even silence) from "source offline / track muted".
 //
-// Single writer (audio thread) and single reader (message thread) per slot.
+// Single writer (audio thread) and, per reader, a single reader (message thread).
+//
+// Two independent read cursors exist so two UI components can meter the same
+// track without stealing each other's peaks (consume() resets what it reads):
+//      reader 0 (default) -> TrackHeaderStrip (Arranger)
+//      reader 1           -> MixerPanel
+// push() feeds both from the one audio-thread call; there is no second metering path.
 class NetworkTrackMeters
 {
 public:
     // Matches SequencerEngine::kActivityFlagCount / TrackHeaderStrip::kMaxTracks.
     static constexpr int kMaxTracks = 64;
+    static constexpr int kNumReaders = 2;
+    static constexpr int kReaderArranger = 0;
+    static constexpr int kReaderMixer    = 1;
 
     struct Reading
     {
@@ -43,22 +52,25 @@ public:
             return;
 
         auto& s = slots()[trackIndex];
-        atomicMax (s.left,  peakL);
-        atomicMax (s.right, peakR);
+        for (int r = 0; r < kNumReaders; ++r)
+        {
+            atomicMax (s.left[r],  peakL);
+            atomicMax (s.right[r], peakR);
+        }
         s.stereo.store (stereo, std::memory_order_relaxed);
         s.blocks.fetch_add (1u, std::memory_order_relaxed);
     }
 
     // Message thread.
-    static Reading consume (int trackIndex) noexcept
+    static Reading consume (int trackIndex, int reader = kReaderArranger) noexcept
     {
         Reading r;
-        if (trackIndex < 0 || trackIndex >= kMaxTracks)
+        if (trackIndex < 0 || trackIndex >= kMaxTracks || reader < 0 || reader >= kNumReaders)
             return r;
 
         auto& s = slots()[trackIndex];
-        r.left   = s.left .exchange (0.0f, std::memory_order_relaxed);
-        r.right  = s.right.exchange (0.0f, std::memory_order_relaxed);
+        r.left   = s.left [reader].exchange (0.0f, std::memory_order_relaxed);
+        r.right  = s.right[reader].exchange (0.0f, std::memory_order_relaxed);
         r.stereo = s.stereo.load (std::memory_order_relaxed);
         r.blocks = s.blocks.load (std::memory_order_relaxed);
         return r;
@@ -67,8 +79,8 @@ public:
 private:
     struct alignas (64) Slot   // one cache line each: no false sharing between tracks
     {
-        std::atomic<float>    left   { 0.0f };
-        std::atomic<float>    right  { 0.0f };
+        std::atomic<float>    left[kNumReaders]  {};
+        std::atomic<float>    right[kNumReaders] {};
         std::atomic<bool>     stereo { false };
         std::atomic<uint32_t> blocks { 0u };
     };
