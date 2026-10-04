@@ -2,14 +2,15 @@
 
 #include <juce_core/juce_core.h>
 #include "../network/RtpMidiSession.h"
+#include "../network/NetworkMidiManager.h"
 
 // Persists the "USB MIDI" (RTP-MIDI over the direct USB link) settings next to the
 // other standalone settings (see NetworkAudioLabels.h): device address, port,
 // forwarded channels, clock forwarding and whether the feature was switched on.
 //
-// The session itself is a process-wide object (RtpMidiSession::shared()), so the
-// Network Audio panel can be opened and closed freely without touching a running
-// session - the panel just reflects it.
+// Network MIDI sessions are owned by NetworkMidiManager, so the Network Audio panel
+// can be opened and closed freely without touching a running session - the panel
+// only reflects and controls the manager-owned device session.
 namespace NetworkMidiSettings
 {
     struct Values
@@ -69,21 +70,20 @@ namespace NetworkMidiSettings
     }
 
     /** Pushes the filter settings into the shared session (does not start it). */
-    inline void applyFilters (const Values& v)
+    inline void applyFilters (NetworkMidiManager& manager, int deviceId, const Values& v)
     {
-        auto& session = RtpMidiSession::shared();
-        session.setChannelMask (v.channelMask);
-        session.setForwardRealtime (v.forwardRealtime);
+        manager.configureDevice (deviceId, v.peer, "Network MIDI " + juce::String (deviceId));
+        manager.setChannelMask (deviceId, v.channelMask);
+        manager.setForwardRealtime (deviceId, v.forwardRealtime);
     }
 
     /** Called once at app start: restores filters and, if it was left on, restarts the
         session. A started session just waits quietly until the USB link exists. */
-    inline void startFromSavedSettings()
+    inline void startFromSavedSettings (NetworkMidiManager& manager, int deviceId = 1)
     {
         const auto v = load();
-        applyFilters (v);
-
+        applyFilters (manager, deviceId, v);
         if (v.enabled && RtpMidiSession::isValidIPv4 (v.peer))
-            RtpMidiSession::shared().start (v.peer, v.port);
+            manager.startDevice (deviceId, v.port);
     }
 }

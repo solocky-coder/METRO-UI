@@ -1,16 +1,11 @@
 #pragma once
 
 #include <juce_audio_devices/juce_audio_devices.h>
-#include "../network/RtpMidiSession.h"
+#include "../network/NetworkMidiManager.h"
+#include "../sequencer/SequencerEngine.h"
 
-// MidiInputCallback registered on every enabled MIDI input (next to the audio
-// processor player and the MidiRouter). It copies each live incoming message into
-// the shared RTP-MIDI session, which filters it (channel mask, realtime flag) and
-// sends it to the connected iPad over the USB link.
-//
-// RtpMidiSession::sendMessage() is allocation-free and never touches the network
-// on the calling thread, and it ignores everything unless a session is Connected,
-// so registering this callback costs nothing while USB MIDI is off.
+// MidiInputCallback registered on every enabled MIDI input. It forwards live MIDI
+// only to the Network MIDI arranger device currently selected by SequencerEngine.
 class RtpMidiInputForwarder final : public juce::MidiInputCallback
 {
 public:
@@ -20,11 +15,30 @@ public:
         return forwarder;
     }
 
+    void setManager (NetworkMidiManager* value) noexcept
+    {
+        manager.store (value, std::memory_order_release);
+    }
+
+    void setEngine (SequencerEngine* value) noexcept
+    {
+        engine.store (value, std::memory_order_release);
+    }
+
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message) override
     {
-        RtpMidiSession::shared().sendMessage (message);
+        auto* m = manager.load (std::memory_order_acquire);
+        auto* e = engine.load (std::memory_order_acquire);
+        if (m != nullptr && e != nullptr)
+        {
+            const int device = e->getSelectedNetworkMidiDevice();
+            if (device != 0)
+                m->send (device, message);
+        }
     }
 
 private:
     RtpMidiInputForwarder() = default;
+    std::atomic<NetworkMidiManager*> manager { nullptr };
+    std::atomic<SequencerEngine*> engine { nullptr };
 };

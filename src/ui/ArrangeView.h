@@ -182,6 +182,17 @@ public:
         addAndMakeVisible (transport);
         addAndMakeVisible (inspector);
         inspector.setVisible (false);
+        inspector.onNetworkTrackStructureChanged = [this] (int idx)
+        {
+            if (idx >= 0 && idx < engine.getNumTracks())
+                selectTrack (idx);
+            else
+                selectTrack (-1);
+            trackStrip.setSelectedTrack (idx);
+            updateScrollRanges();
+            repaint();
+            trackStrip.repaint();
+        };
         addAndMakeVisible (trackStrip);
 
         transport.onFloatRequested = [this] { showFloatingTransport(); };
@@ -1949,6 +1960,19 @@ private:
             {
                 m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
             }
+
+            if (info.type == TrackType::NetworkMidi)
+            {
+                m.addSeparator();
+                if (! info.networkMidiIsChild)
+                    m.addItem (40, "Add Network MIDI child");
+                m.addItem (41, "Delete Network MIDI track");
+            }
+        }
+        else
+        {
+            m.addSeparator();
+            m.addItem (42, "Add Network MIDI device");
         }
 
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (juce::Rectangle<int> (e.getScreenX(), e.getScreenY(), 1, 1)),
@@ -1984,6 +2008,34 @@ private:
                         if (selectedTrack == trackIdx && selectedClip == clipIdx)
                             selectedClip = 0;
                         break;
+                    case 40:
+                    {
+                        const int child = engine.addNetworkMidiChild (trackIdx);
+                        if (child >= 0)
+                        {
+                            selectTrack (child);
+                            trackStrip.setSelectedTrack (child);
+                        }
+                        break;
+                    }
+                    case 41:
+                        if (engine.removeNetworkMidiTrack (trackIdx))
+                        {
+                            selectedTrack = -1;
+                            selectedClip = 0;
+                            trackStrip.setSelectedTrack (-1);
+                        }
+                        break;
+                    case 42:
+                    {
+                        const int idx = engine.addNetworkMidiTrack ("192.168.99.2", "Network MIDI");
+                        if (idx >= 0)
+                        {
+                            selectTrack (idx);
+                            trackStrip.setSelectedTrack (idx);
+                        }
+                        break;
+                    }
                     case 8:  // Repeat clip
                     {
                         MidiClip* src = engine.getClip (trackIdx, clipIdx);
@@ -2702,6 +2754,7 @@ private:
                 case TrackType::ChromaticSlice: badge = "CH"; break;
                 case TrackType::SfPlayer:       badge = "SF"; break;
                 case TrackType::Audio:          badge = "AU"; break;
+                case TrackType::NetworkMidi:    badge = "NET"; break;
             }
             g.setFont (juce::Font (10.f));
             g.setColour (juce::Colours::white.withAlpha (0.55f));

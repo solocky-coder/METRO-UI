@@ -83,6 +83,8 @@ public:
     int addNetworkMidiChild(int,int=-1);
     bool removeNetworkMidiTrack(int);
     bool setNetworkMidiChannel(int,int);
+    bool setNetworkMidiPeer(int,const juce::String&);
+    juce::String getNetworkMidiPeer(int) const;
     bool isNetworkMidiTrack(int) const noexcept;
     int getNetworkMidiChildCount(int) const;
     int findNetworkMidiDevice(const juce::String&) const;

@@ -219,7 +219,8 @@ public:
                     case TrackType::MainSlice:      badge = "SL"; break;
                     case TrackType::ChromaticSlice: badge = "CH"; break;
                     case TrackType::SfPlayer:       badge = "SF"; break;
-                    case TrackType::Audio:          badge = "NET"; break;
+                    case TrackType::Audio:          badge = "AU"; break;
+                    case TrackType::NetworkMidi:    badge = "NET"; break;
                 }
                 g.setFont (juce::Font (juce::jlimit (9.0f, 11.0f, (float)trackH * 0.17f)));
                 g.setColour (theme.foreground.withAlpha (0.55f));

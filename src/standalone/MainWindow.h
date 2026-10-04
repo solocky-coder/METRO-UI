@@ -11,11 +11,13 @@
 #include "NetworkAudioSettingsShim.h"
 #include "AudioDeviceSettingsStore.h"
 #include "RtpMidiInputForwarder.h"
+#include "../network/NetworkMidiManager.h"
 #include "NetworkMidiSettings.h"
 
 class MainWindow : public juce::DocumentWindow,
                    public juce::MenuBarModel,
-                   private juce::ChangeListener
+                   private juce::ChangeListener,
+                   private juce::Timer
 {
 public:
     static constexpr int kMenuH = 24;
@@ -45,6 +47,10 @@ public:
         player.setProcessor (processor.get());
         deviceManager.addAudioCallback (&player);
         midiRouter = std::make_unique<MidiRouter> (deviceManager);
+        networkMidiManager = std::make_unique<NetworkMidiManager>();
+        processor->sequencer.setNetworkMidiSink (&NetworkMidiManager::engineSink, networkMidiManager.get());
+        RtpMidiInputForwarder::instance().setManager (networkMidiManager.get());
+        RtpMidiInputForwarder::instance().setEngine (&processor->sequencer);
 
         for (const auto& input : juce::MidiInput::getAvailableDevices())
         {
@@ -57,7 +63,7 @@ public:
 
         // USB MIDI (live MIDI -> iPad over the direct USB link): restore filters and, if it
         // was left on, start the session. It waits quietly until the USB link exists.
-        NetworkMidiSettings::startFromSavedSettings();
+        NetworkMidiSettings::startFromSavedSettings (*networkMidiManager);
 
         networkAudio = std::make_unique<MetroNetworkAudio>();
         networkAudio->setSourceLabels (NetworkAudioLabels::load());
@@ -72,6 +78,7 @@ public:
         setVisible (true);
         centreWithSize (getWidth(), getHeight());
         setFullScreen (true);
+        startTimerHz (5);
     }
 
     void resized() override
@@ -87,6 +94,7 @@ public:
 
     ~MainWindow() override
     {
+        stopTimer();
         if (editor != nullptr)
             editor->setWindowMenuBar (nullptr, 0);
         setMenuBar (nullptr);
@@ -100,7 +108,10 @@ public:
                 deviceManager.removeMidiInputDeviceCallback (id, midiRouter.get());
         }
 
-        RtpMidiSession::shared().stop();
+        processor->sequencer.setNetworkMidiSink (nullptr, nullptr);
+        RtpMidiInputForwarder::instance().setEngine (nullptr);
+        RtpMidiInputForwarder::instance().setManager (nullptr);
+        networkMidiManager.reset();
 
         autoTrack.reset();
 
@@ -395,7 +406,7 @@ private:
 
     void showNetworkAudioSettings()
     {
-        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false);
+        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false, networkMidiManager.get());
         launchScrollableSettingsDialog (comp, "Network Audio", false);
     }
 
@@ -519,6 +530,32 @@ private:
             "DYSEKT-SF Sampler + Sequencer\nVersion 1.0\n\nPowered by JUCE.");
     }
 
+    void timerCallback() override
+    {
+        if (processor == nullptr || networkMidiManager == nullptr)
+            return;
+
+        const auto& seq = processor->sequencer;
+        networkMidiManager->setSelectedDevice (seq.getSelectedNetworkMidiDevice());
+
+        for (int i = 0; i < seq.getNumTracks(); ++i)
+        {
+            const auto info = seq.getTrackInfo (i);
+            if (info.type != TrackType::NetworkMidi || info.networkMidiIsChild)
+                continue;
+
+            networkMidiManager->configureDevice (info.networkMidiDeviceId, info.networkMidiPeer, info.name);
+            if (networkMidiManager->getDeviceInfo (info.networkMidiDeviceId).state == RtpMidiSession::State::Off)
+                networkMidiManager->startDevice (info.networkMidiDeviceId, 5004);
+        }
+
+        for (int id = 1; id <= NetworkMidiManager::kMaxDevices; ++id)
+        {
+            const auto state = networkMidiManager->getDeviceInfo (id).state;
+            seq.setNetworkMidiLinkState (id, (int) state);
+        }
+    }
+
     void changeListenerCallback (juce::ChangeBroadcaster*) override
     {
         if (midiRouter != nullptr) midiRouter->refresh();
@@ -529,6 +566,7 @@ private:
     juce::StringArray registeredMidiInputIds;
     std::unique_ptr<MidiRouter> midiRouter;
     std::unique_ptr<MetroNetworkAudio> networkAudio;
+    std::unique_ptr<NetworkMidiManager> networkMidiManager;
     std::unique_ptr<NetworkAudioAutoTrack> autoTrack;
     std::unique_ptr<NetworkAudioProcessor> processor;
     std::unique_ptr<DysektEditor> editor;
