@@ -325,7 +325,7 @@ private:
     void onFilterEdited()
     {
         const auto v = currentValues();
-        NetworkMidiSettings::applyFilters (v);
+        applyFiltersToManager (v);
         persist();
     }
 

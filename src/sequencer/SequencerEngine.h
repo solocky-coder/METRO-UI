@@ -88,7 +88,7 @@ public:
     bool isNetworkMidiTrack(int) const noexcept;
     int getNetworkMidiChildCount(int) const;
     int findNetworkMidiDevice(const juce::String&) const;
-    void setNetworkMidiLinkState(int,int) noexcept;
+    void setNetworkMidiLinkState(int,int) const noexcept;
     int getNetworkMidiLinkState(int) const noexcept;
     int getSelectedNetworkMidiDevice() const noexcept;
 
