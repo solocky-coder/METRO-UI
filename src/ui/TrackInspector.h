@@ -264,6 +264,17 @@ public:
         if (! valid) { repaint(); return; }
 
         const auto info = engine.getTrackInfo (selectedTrack);
+        const bool isNetwork = info.type == TrackType::NetworkMidi;
+        peerLabel.setVisible (isNetwork); peerEditor.setVisible (isNetwork); channelCombo.setVisible (isNetwork);
+        addChildButton.setVisible (isNetwork && ! info.networkMidiIsChild && engine.getNetworkMidiChildCount (selectedTrack) < SequencerEngine::kMaxNetworkMidiChildren);
+        deleteNetworkButton.setVisible (isNetwork); networkStatusLabel.setVisible (isNetwork);
+        if (isNetwork)
+        {
+            peerEditor.setText (info.networkMidiPeer, false);
+            channelCombo.setSelectedItemIndex (juce::jlimit (0, 15, info.midiChannel), juce::dontSendNotification);
+            networkStatusLabel.setText (info.networkMidiIsChild ? "CHILD • device " + juce::String (info.networkMidiDeviceId)
+                                                                 : "DEVICE • " + juce::String (engine.getNetworkMidiChildCount (selectedTrack)) + " child(s)", juce::dontSendNotification);
+        }
         muteButton.setToggleState    (! info.enabled, juce::dontSendNotification);
         soloButton.setToggleState    (info.solo, juce::dontSendNotification);
         recordButton.setToggleState  (info.type == TrackType::Audio ? info.audioRecordArm
