@@ -83,6 +83,12 @@ public:
         return selectedDevice.load (std::memory_order_acquire);
     }
 
+    static void engineSink (void* context, int deviceId, const juce::MidiMessage& message) noexcept
+    {
+        if (auto* self = static_cast<NetworkMidiManager*> (context))
+            self->send (deviceId, message);
+    }
+
     void send (int deviceId, const juce::MidiMessage& message) noexcept
     {
         if (auto* s = getSlot (deviceId))
