@@ -6,23 +6,26 @@
 #include <initializer_list>
 #include "NetworkMidiSettings.h"
 #include "../network/RtpMidiSession.h"
+#include "../network/NetworkMidiManager.h"
 
 // "USB MIDI" page of the Network Audio panel: sends DYSEKT's live incoming MIDI to
 // an iPhone / iPad over the direct Apple USB link (wired RTP-MIDI, no Wi-Fi).
 //
-// The panel owns no session - it controls and reflects RtpMidiSession::shared(), so
+// The panel owns no session - it controls and reflects manager.getSession (deviceId), so
 // closing and reopening the Network Audio dialog never interrupts a running session.
 class NetworkMidiPanel final : public juce::Component,
                                private juce::Timer
 {
 public:
-    NetworkMidiPanel()
+    explicit NetworkMidiPanel (NetworkMidiManager& managerToUse, int deviceIdToUse = 1)
+        : manager (managerToUse), deviceId (deviceIdToUse)
     {
         auto values = NetworkMidiSettings::load();
+        manager.configureDevice (deviceId, values.peer, "Network MIDI " + juce::String (deviceId));
 
         // A session that is already running (started at app launch or from an earlier
         // visit to this page) is the source of truth for what the page shows.
-        auto& session = RtpMidiSession::shared();
+        auto& session = getSession();
         if (session.isRunning())
         {
             values.peer = session.getPeerAddress();
@@ -118,9 +121,9 @@ public:
             addAndMakeVisible (c);
 
         // Apply the filters to the live session (does not start it).
-        NetworkMidiSettings::applyFilters (currentValues());
+        applyFiltersToManager (currentValues());
 
-        lastSent = RtpMidiSession::shared().getMessagesSent();
+        lastSent = getSession().getMessagesSent();
         refresh();
         startTimerHz (10);
     }
@@ -234,6 +237,8 @@ public:
     }
 
 private:
+    RtpMidiSession& getSession() noexcept { return *manager.getSession (deviceId); }
+
     //==========================================================================
     NetworkMidiSettings::Values currentValues() const
     {
@@ -249,6 +254,13 @@ private:
                 mask |= (1u << ch);
         v.channelMask = mask;
         return v;
+    }
+
+    void applyFiltersToManager (const NetworkMidiSettings::Values& v)
+    {
+        manager.configureDevice (deviceId, v.peer, "Network MIDI " + juce::String (deviceId));
+        manager.setChannelMask (deviceId, v.channelMask);
+        manager.setForwardRealtime (deviceId, v.forwardRealtime);
     }
 
     void persist() const
@@ -268,7 +280,7 @@ private:
 
         if (! RtpMidiSession::isValidIPv4 (v.peer))
         {
-            RtpMidiSession::shared().stop();
+            getSession().stop();
             enableButton.setToggleState (false, juce::dontSendNotification);
             updateEnableButtonText();
             persist();
@@ -278,8 +290,8 @@ private:
         }
 
         invalidAddressNote = false;
-        NetworkMidiSettings::applyFilters (v);
-        RtpMidiSession::shared().start (v.peer, v.port);
+        applyFiltersToManager (v);
+        getSession().start (v.peer, v.port);
     }
 
     void onEnableClicked()
@@ -289,7 +301,7 @@ private:
         if (enableButton.getToggleState())
             startSessionFromFields();
         else
-            RtpMidiSession::shared().stop();
+            getSession().stop();
 
         persist();
         refresh();
@@ -304,7 +316,7 @@ private:
             return;
 
         const auto v = currentValues();
-        auto& session = RtpMidiSession::shared();
+        auto& session = getSession();
 
         if (! session.isRunning() || session.getPeerAddress() != v.peer || session.getPeerPort() != v.port)
             startSessionFromFields();
@@ -333,7 +345,7 @@ private:
 
     void refresh()
     {
-        auto& session = RtpMidiSession::shared();
+        auto& session = getSession();
         const auto state = session.getState();
 
         // Mirror the real session state in the switch (e.g. started at app launch).
@@ -403,6 +415,8 @@ private:
     float ledBrightness = 0.0f;
     uint32_t lastSent = 0;
     bool invalidAddressNote = false;
+    NetworkMidiManager& manager;
+    int deviceId = 1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NetworkMidiPanel)
 };
