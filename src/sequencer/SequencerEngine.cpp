@@ -20,6 +20,7 @@
 
 #include "SequencerEngine.h"
 #include "../audio/SfzPlayer.h"
+#include "../network/RtpMidiSession.h"
 
 #include <atomic>
 #include <algorithm>
