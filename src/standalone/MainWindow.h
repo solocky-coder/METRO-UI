@@ -10,6 +10,8 @@
 #include "NetworkAudioLabels.h"
 #include "NetworkAudioSettingsShim.h"
 #include "AudioDeviceSettingsStore.h"
+#include "RtpMidiInputForwarder.h"
+#include "NetworkMidiSettings.h"
 
 class MainWindow : public juce::DocumentWindow,
                    public juce::MenuBarModel,
@@ -49,8 +51,13 @@ public:
             deviceManager.setMidiInputDeviceEnabled (input.identifier, true);
             deviceManager.addMidiInputDeviceCallback (input.identifier, &player);
             deviceManager.addMidiInputDeviceCallback (input.identifier, midiRouter.get());
+            deviceManager.addMidiInputDeviceCallback (input.identifier, &RtpMidiInputForwarder::instance());
             registeredMidiInputIds.add (input.identifier);
         }
+
+        // USB MIDI (live MIDI -> iPad over the direct USB link): restore filters and, if it
+        // was left on, start the session. It waits quietly until the USB link exists.
+        NetworkMidiSettings::startFromSavedSettings();
 
         networkAudio = std::make_unique<MetroNetworkAudio>();
         networkAudio->setSourceLabels (NetworkAudioLabels::load());
@@ -88,9 +95,12 @@ public:
         for (const auto& id : registeredMidiInputIds)
         {
             deviceManager.removeMidiInputDeviceCallback (id, &player);
+            deviceManager.removeMidiInputDeviceCallback (id, &RtpMidiInputForwarder::instance());
             if (midiRouter != nullptr)
                 deviceManager.removeMidiInputDeviceCallback (id, midiRouter.get());
         }
+
+        RtpMidiSession::shared().stop();
 
         autoTrack.reset();
 
@@ -445,12 +455,14 @@ private:
                             if (! registeredMidiInputIds.contains (id))
                             {
                                 deviceManager.addMidiInputDeviceCallback (id, &player);
+                                deviceManager.addMidiInputDeviceCallback (id, &RtpMidiInputForwarder::instance());
                                 registeredMidiInputIds.add (id);
                             }
                         }
                         else
                         {
                             deviceManager.removeMidiInputDeviceCallback (id, &player);
+                            deviceManager.removeMidiInputDeviceCallback (id, &RtpMidiInputForwarder::instance());
                             registeredMidiInputIds.removeString (id);
                             deviceManager.setMidiInputDeviceEnabled (id, false);
                         }

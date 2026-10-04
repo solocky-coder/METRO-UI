@@ -329,6 +329,7 @@ target_sources(DysektStandalone PRIVATE
     src/standalone/network/DeviceNetworkTransport.cpp
     src/standalone/network/AppleUsbNetworkTransport.cpp
     src/standalone/network/AppleUsbShareLauncher.cpp
+    src/network/RtpMidiSession.cpp
     $<$<BOOL:${DYSEKT_HAS_AOO}>:src/network/MetroNetworkAudio.cpp>
 )
 
