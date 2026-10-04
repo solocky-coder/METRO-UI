@@ -598,6 +598,7 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.enabled     = t.enabled.load (std::memory_order_relaxed);
     info.solo        = t.solo.load (std::memory_order_relaxed);
     info.audioRecordArm = t.audioRecordArm.load (std::memory_order_relaxed);
+    info.monitor     = t.monitor.load (std::memory_order_relaxed);
     info.volumeDb    = t.volumeDb.load (std::memory_order_relaxed);
     info.pan         = t.pan.load (std::memory_order_relaxed);
     info.name        = t.name;
@@ -1687,6 +1688,98 @@ int SequencerEngine::renameNetworkAudioTracks (int64_t sourceKey, const juce::St
         }
     }
     return renamed;
+}
+
+static bool isRoutedFrom (const SequencerTrack& t, int64_t sourceKey) noexcept
+{
+    return t.type == TrackType::Audio && t.networkRouteId == sourceKey;
+}
+
+SequencerEngine::NetworkSourceState SequencerEngine::getNetworkSourceState (int64_t sourceKey) const
+{
+    NetworkSourceState state;
+    if (sourceKey == 0)
+        return state;
+
+    bool allMuted = true, allArmed = true, allMonitor = true;
+    auto snap = impl->getTracks();
+    for (const auto& trackPtr : *snap)
+    {
+        const auto& t = *trackPtr;
+        if (! isRoutedFrom (t, sourceKey))
+            continue;
+        if (state.numTracks == 0)
+            state.gainDb = t.volumeDb.load (std::memory_order_relaxed);
+        ++state.numTracks;
+        allMuted   = allMuted   && ! t.enabled.load (std::memory_order_relaxed);
+        allArmed   = allArmed   && t.audioRecordArm.load (std::memory_order_relaxed);
+        allMonitor = allMonitor && t.monitor.load (std::memory_order_relaxed);
+        state.solo = state.solo || t.solo.load (std::memory_order_relaxed);
+    }
+
+    if (state.numTracks > 0)
+    {
+        state.muted = allMuted;
+        state.recordArmed = allArmed;
+        state.monitor = allMonitor;
+    }
+    return state;
+}
+
+void SequencerEngine::setNetworkSourceGainDb (int64_t sourceKey, float gainDb)
+{
+    if (sourceKey == 0) return;
+    // Same -60..+6 dB range as the Arranger and Mixer track gain controls.
+    const float clamped = juce::jlimit (-60.0f, 6.0f, gainDb);
+    auto snap = impl->getTracks();
+    for (const auto& trackPtr : *snap)
+        if (isRoutedFrom (*trackPtr, sourceKey))
+            trackPtr->volumeDb.store (clamped, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setNetworkSourceMuted (int64_t sourceKey, bool muted)
+{
+    if (sourceKey == 0) return;
+    auto snap = impl->getTracks();
+    for (const auto& trackPtr : *snap)
+        if (isRoutedFrom (*trackPtr, sourceKey))
+            trackPtr->enabled.store (! muted, std::memory_order_relaxed);   // enabled == not muted
+}
+
+void SequencerEngine::setNetworkSourceSolo (int64_t sourceKey, bool solo)
+{
+    if (sourceKey == 0) return;
+    auto snap = impl->getTracks();
+    for (const auto& trackPtr : *snap)
+        if (isRoutedFrom (*trackPtr, sourceKey))
+            trackPtr->solo.store (solo, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setNetworkSourceRecordArm (int64_t sourceKey, bool armed)
+{
+    if (sourceKey == 0) return;
+    auto snap = impl->getTracks();
+    for (const auto& trackPtr : *snap)
+        if (isRoutedFrom (*trackPtr, sourceKey))
+            trackPtr->audioRecordArm.store (armed, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setNetworkSourceMonitor (int64_t sourceKey, bool monitor)
+{
+    if (sourceKey == 0) return;
+    auto snap = impl->getTracks();
+    for (const auto& trackPtr : *snap)
+        if (isRoutedFrom (*trackPtr, sourceKey))
+            trackPtr->monitor.store (monitor, std::memory_order_relaxed);
+}
+
+bool SequencerEngine::isAnyTrackSoloed() const noexcept
+{
+    auto snap = impl->getTracks();
+    for (const auto& trackPtr : *snap)
+        if (trackPtr->solo.load (std::memory_order_relaxed))
+            return true;
+    return false;
 }
 
 bool SequencerEngine::isNetworkAudioTrack (int trackIndex) const noexcept

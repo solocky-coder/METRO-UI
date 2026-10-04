@@ -12,7 +12,7 @@ struct SelectedLiveTarget { LiveTargetPlayer player = LiveTargetPlayer::none; in
 struct SequencerTrackInfo
 {
     TrackType type = TrackType::MainSlice;
-    bool enabled = true; bool solo = false; bool audioRecordArm = true; float volumeDb = 0.0f; float pan = 0.0f;
+    bool enabled = true; bool solo = false; bool audioRecordArm = true; bool monitor = true; float volumeDb = 0.0f; float pan = 0.0f;
     juce::String name; juce::Colour colour = juce::Colour (0xFF3A6080);
     int sliceIdx = -1; int midiChannel = 0; Sf2PresetInfo preset; int numClips = 0;
     bool isSfzInstrument = false;
@@ -55,6 +55,27 @@ public:
     // "<oldLabel> | " (the auto-generated name) so it starts with newLabel instead.
     // Returns the number of tracks renamed. Message thread.
     int renameNetworkAudioTracks(int64_t sourceKey, const juce::String& oldLabel, const juce::String& newLabel);
+
+    // Per-device (per network source) controls. A device is identified by its sourceKey
+    // and acts on every Audio track routed from it. Message thread.
+    struct NetworkSourceState
+    {
+        int numTracks = 0;          // tracks routed from this source (0 = nothing to control yet)
+        float gainDb = 0.0f;        // gain of the first track (they are normally kept equal)
+        bool muted = false;         // every track muted
+        bool solo = false;          // any track soloed
+        bool recordArmed = false;   // every track armed
+        bool monitor = true;        // every track audible on the output
+    };
+    NetworkSourceState getNetworkSourceState(int64_t sourceKey) const;
+    void setNetworkSourceGainDb(int64_t sourceKey, float gainDb);
+    void setNetworkSourceMuted(int64_t sourceKey, bool muted);
+    void setNetworkSourceSolo(int64_t sourceKey, bool solo);
+    void setNetworkSourceRecordArm(int64_t sourceKey, bool armed);
+    void setNetworkSourceMonitor(int64_t sourceKey, bool monitor);
+
+    // True while at least one track (of any type) is soloed.
+    bool isAnyTrackSoloed() const noexcept;
 
     //==========================================================================
     // Audio clips

@@ -105,77 +105,80 @@ public:
         channelTitle.setColour (juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible (channelTitle);
 
+        deviceLabel.setText ("Device", juce::dontSendNotification);
         gainLabel.setText ("Gain", juce::dontSendNotification);
-        panLabel.setText ("Pan", juce::dontSendNotification);
-        for (auto* label : { &gainLabel, &panLabel })
+        for (auto* label : { &deviceLabel, &gainLabel })
         {
             label->setColour (juce::Label::textColourId, juce::Colours::lightgrey);
             addAndMakeVisible (*label);
         }
 
-        gainSlider.setRange (-100.0, 24.0, 0.1);
-        gainSlider.setValue (getNetworkAudioChannelState().gainDb.load(), juce::dontSendNotification);
+        // Everything below the Device row acts on the selected device only: its tracks in
+        // the Arranger and Mixer. Pan stays on the tracks themselves (Arranger / Mixer).
+        deviceBox.setTooltip ("The controls below apply to this device's tracks only.");
+        deviceBox.onChange = [this]
+        {
+            const int index = deviceBox.getSelectedId() - 1;
+            selectedDeviceKey = juce::isPositiveAndBelow (index, (int) deviceKeys.size()) ? deviceKeys[(size_t) index] : 0;
+            syncDeviceControls();
+        };
+        addAndMakeVisible (deviceBox);
+
+        gainSlider.setRange (-60.0, 6.0, 0.1);
+        gainSlider.setValue (0.0, juce::dontSendNotification);
         gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+        gainSlider.setTooltip ("Sets the gain of every track from the selected device.");
         addAndMakeVisible (gainSlider);
 
-        panSlider.setRange (-1.0, 1.0, 0.01);
-        panSlider.setValue (getNetworkAudioChannelState().pan.load(), juce::dontSendNotification);
-        panSlider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
-        addAndMakeVisible (panSlider);
-
-        for (auto* label : { &gainValueLabel, &panValueLabel })
-        {
-            label->setColour (juce::Label::textColourId, juce::Colours::white);
-            label->setJustificationType (juce::Justification::centredRight);
-            addAndMakeVisible (*label);
-        }
+        gainValueLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        gainValueLabel.setJustificationType (juce::Justification::centredRight);
+        addAndMakeVisible (gainValueLabel);
 
         gainSlider.onValueChange = [this]
         {
-            getNetworkAudioChannelState().setGainDb ((float) gainSlider.getValue());
             gainValueLabel.setText (juce::String (gainSlider.getValue(), 1) + " dB", juce::dontSendNotification);
+            if (! syncingDeviceControls)
+                NetworkAudioProcessor::setNetworkSourceGainDb (selectedDeviceKey, (float) gainSlider.getValue());
         };
-        panSlider.onValueChange = [this]
-        {
-            getNetworkAudioChannelState().setPan ((float) panSlider.getValue());
-            panValueLabel.setText (juce::String (panSlider.getValue(), 2) + "  L/R", juce::dontSendNotification);
-        };
-        gainValueLabel.setText (juce::String (gainSlider.getValue(), 1) + " dB", juce::dontSendNotification);
-        panValueLabel.setText (juce::String (panSlider.getValue(), 2) + "  L/R", juce::dontSendNotification);
+        gainValueLabel.setText ("-", juce::dontSendNotification);
 
         muteButton.setButtonText ("Mute");
-        muteButton.setToggleState (getNetworkAudioChannelState().muted.load(), juce::dontSendNotification);
         muteButton.onClick = [this]
         {
-            getNetworkAudioChannelState().muted.store (muteButton.getToggleState(), std::memory_order_relaxed);
+            if (! syncingDeviceControls)
+                NetworkAudioProcessor::setNetworkSourceMuted (selectedDeviceKey, muteButton.getToggleState());
         };
         addAndMakeVisible (muteButton);
 
         soloButton.setButtonText ("Solo");
-        soloButton.setToggleState (getNetworkAudioChannelState().solo.load(), juce::dontSendNotification);
         soloButton.onClick = [this]
         {
-            getNetworkAudioChannelState().solo.store (soloButton.getToggleState(), std::memory_order_relaxed);
+            if (! syncingDeviceControls)
+                NetworkAudioProcessor::setNetworkSourceSolo (selectedDeviceKey, soloButton.getToggleState());
         };
         addAndMakeVisible (soloButton);
 
         recordArmButton.setButtonText ("Record Arm");
-        recordArmButton.setTooltip ("Arms or disarms every network audio track for recording at once. "
+        recordArmButton.setTooltip ("Arms or disarms recording for this device's tracks. "
                                     "Each track's own R button arms just that track.");
-        recordArmButton.setToggleState (NetworkAudioProcessor::areAllNetworkTracksRecordArmed(), juce::dontSendNotification);
         recordArmButton.onClick = [this]
         {
-            NetworkAudioProcessor::setAllNetworkTracksRecordArm (recordArmButton.getToggleState());
+            if (! syncingDeviceControls)
+                NetworkAudioProcessor::setNetworkSourceRecordArm (selectedDeviceKey, recordArmButton.getToggleState());
         };
         addAndMakeVisible (recordArmButton);
 
         monitorButton.setButtonText ("Monitor");
-        monitorButton.setToggleState (getNetworkAudioChannelState().monitor.load(), juce::dontSendNotification);
+        monitorButton.setTooltip ("Off: this device is still recorded when armed, but not heard.");
         monitorButton.onClick = [this]
         {
-            getNetworkAudioChannelState().monitor.store (monitorButton.getToggleState(), std::memory_order_relaxed);
+            if (! syncingDeviceControls)
+                NetworkAudioProcessor::setNetworkSourceMonitor (selectedDeviceKey, monitorButton.getToggleState());
         };
         addAndMakeVisible (monitorButton);
+
+        refreshDeviceBox();
+        syncDeviceControls();
 
         serverLabel.setText ("Server", juce::dontSendNotification);
         portLabel.setText ("Port", juce::dontSendNotification);
@@ -433,18 +436,16 @@ public:
         latencyProfileBox.setBounds (latencyRow);
         channelInner.removeFromTop (kRowGap);
 
+        auto deviceRow = channelInner.removeFromTop (kRowH);
+        deviceLabel.setBounds (deviceRow.removeFromLeft (kLabelColW));
+        deviceBox.setBounds (deviceRow);
+        channelInner.removeFromTop (kRowGap);
+
         auto gainRow = channelInner.removeFromTop (kRowH);
         gainLabel.setBounds (gainRow.removeFromLeft (kLabelColW));
         gainValueLabel.setBounds (gainRow.removeFromRight (kValueColW));
         gainRow.removeFromRight (10);
         gainSlider.setBounds (gainRow);
-        channelInner.removeFromTop (kRowGap);
-
-        auto panRow = channelInner.removeFromTop (kRowH);
-        panLabel.setBounds (panRow.removeFromLeft (kLabelColW));
-        panValueLabel.setBounds (panRow.removeFromRight (kValueColW));
-        panRow.removeFromRight (10);
-        panSlider.setBounds (panRow);
         channelInner.removeFromTop (kRowGap);
 
         constexpr int kToggleGap = 8; // clearance so each toggle's frame stays visually separate
@@ -621,12 +622,88 @@ private:
         groupEditor.setEnabled (enabled);
         passwordEditor.setEnabled (enabled);
         publicGroupButton.setEnabled (enabled);
-        monitorButton.setEnabled (enabled);
-        gainSlider.setEnabled (enabled);
-        panSlider.setEnabled (enabled);
-        muteButton.setEnabled (enabled);
-        soloButton.setEnabled (enabled);
-        recordArmButton.setEnabled (enabled);
+        deviceBox.setEnabled (enabled);
+        syncDeviceControls();
+    }
+
+    // Rebuilds the Device list from the online sources, only when it actually changed
+    // (so an open drop-down is not disturbed). Keeps the selection when the device is
+    // still there, otherwise selects the first device.
+    void refreshDeviceBox()
+    {
+        std::vector<int64_t> keys;
+        juce::StringArray names;
+#if DYSEKT_HAS_AOO
+        if (networkAudio != nullptr)
+            for (const auto& source : networkAudio->getSources())
+            {
+                if (! source.online)
+                    continue;
+                keys.push_back (source.sourceKey);
+                names.add (source.user.isNotEmpty() ? source.user : juce::String ("Unknown source"));
+            }
+#endif
+        if (keys == deviceKeys && names == deviceNames)
+            return;
+
+        deviceKeys = keys;
+        deviceNames = names;
+
+        deviceBox.clear (juce::dontSendNotification);
+        for (int i = 0; i < names.size(); ++i)
+            deviceBox.addItem (names[i], i + 1);
+
+        int select = 0;
+        for (int i = 0; i < (int) keys.size(); ++i)
+            if (keys[(size_t) i] == selectedDeviceKey) { select = i; break; }
+
+        if (! keys.empty())
+        {
+            deviceBox.setSelectedId (select + 1, juce::dontSendNotification);
+            selectedDeviceKey = keys[(size_t) select];
+        }
+        else
+        {
+            deviceBox.setText ("No device connected", juce::dontSendNotification);
+            selectedDeviceKey = 0;
+        }
+    }
+
+    // Shows the selected device's real state (its tracks) in the controls. The controls are
+    // only usable while that device has at least one track to act on.
+    void syncDeviceControls()
+    {
+        const bool networkOn = getNetworkAudioChannelState().enabled.load (std::memory_order_relaxed);
+        const auto state = NetworkAudioProcessor::getNetworkSourceState (selectedDeviceKey);
+        const bool usable = networkOn && state.numTracks > 0;
+
+        for (auto* c : std::initializer_list<juce::Component*> { &gainSlider, &muteButton, &soloButton,
+                                                                  &recordArmButton, &monitorButton })
+            c->setEnabled (usable);
+
+        const juce::ScopedValueSetter<bool> guard (syncingDeviceControls, true);
+        if (state.numTracks > 0)
+        {
+            if (muteButton.getToggleState() != state.muted)
+                muteButton.setToggleState (state.muted, juce::dontSendNotification);
+            if (soloButton.getToggleState() != state.solo)
+                soloButton.setToggleState (state.solo, juce::dontSendNotification);
+            if (recordArmButton.getToggleState() != state.recordArmed)
+                recordArmButton.setToggleState (state.recordArmed, juce::dontSendNotification);
+            if (monitorButton.getToggleState() != state.monitor)
+                monitorButton.setToggleState (state.monitor, juce::dontSendNotification);
+            if (! gainSlider.isMouseButtonDown() && std::abs (gainSlider.getValue() - state.gainDb) > 0.05)
+                gainSlider.setValue (state.gainDb, juce::dontSendNotification);
+            gainValueLabel.setText (juce::String (state.gainDb, 1) + " dB", juce::dontSendNotification);
+        }
+        else
+        {
+            for (auto* b : { &muteButton, &soloButton, &recordArmButton })
+                b->setToggleState (false, juce::dontSendNotification);
+            monitorButton.setToggleState (true, juce::dontSendNotification);
+            gainValueLabel.setText (selectedDeviceKey != 0 ? "no track" : "-", juce::dontSendNotification);
+        }
+        repaint();   // the toggle frames are painted over the children
     }
 
     void setNetworkAudioEnabled (bool enabled)
@@ -691,10 +768,10 @@ private:
         refreshSources();
         updateDirectUsbProgress();
 
-        // Stay in step with the tracks' own R buttons.
-        const bool allArmed = NetworkAudioProcessor::areAllNetworkTracksRecordArmed();
-        if (recordArmButton.getToggleState() != allArmed)
-            recordArmButton.setToggleState (allArmed, juce::dontSendNotification);
+        // Stay in step with the device list and with the tracks' own controls in the
+        // Arranger and Mixer.
+        refreshDeviceBox();
+        syncDeviceControls();
     }
 
     void updateDirectUsbProgress()
@@ -1151,12 +1228,15 @@ private:
     juce::ComboBox latencyProfileBox;
     juce::TextButton enableButton { "Network audio: OFF" };
     juce::Label channelTitle;
+    juce::Label deviceLabel;
+    juce::ComboBox deviceBox;
+    std::vector<int64_t> deviceKeys;      // sourceKey per Device entry (entry id = index + 1)
+    juce::StringArray deviceNames;
+    int64_t selectedDeviceKey = 0;        // the device the controls below act on (0 = none)
+    bool syncingDeviceControls = false;   // true while the controls are being updated from state
     juce::Label gainLabel;
     juce::Slider gainSlider;
     juce::Label gainValueLabel;
-    juce::Label panLabel;
-    juce::Slider panSlider;
-    juce::Label panValueLabel;
     juce::ToggleButton muteButton;
     juce::ToggleButton soloButton;
     juce::ToggleButton recordArmButton;

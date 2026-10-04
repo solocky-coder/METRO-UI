@@ -41,6 +41,19 @@ public:
         if (processor == nullptr) return 0;
         return processor->sequencer.renameNetworkAudioTracks (sourceKey, oldLabel, newLabel);
     }
+    // Per-device controls used by the Network Audio panel. Each acts on every track routed
+    // from that source. Message thread.
+    static SequencerEngine::NetworkSourceState getNetworkSourceState (int64_t sourceKey) noexcept
+    {
+        auto* processor = activeProcessor.load (std::memory_order_acquire);
+        return processor != nullptr ? processor->sequencer.getNetworkSourceState (sourceKey)
+                                    : SequencerEngine::NetworkSourceState {};
+    }
+    static void setNetworkSourceGainDb (int64_t sourceKey, float db) noexcept   { if (auto* p = activeProcessor.load (std::memory_order_acquire)) p->sequencer.setNetworkSourceGainDb (sourceKey, db); }
+    static void setNetworkSourceMuted (int64_t sourceKey, bool muted) noexcept  { if (auto* p = activeProcessor.load (std::memory_order_acquire)) p->sequencer.setNetworkSourceMuted (sourceKey, muted); }
+    static void setNetworkSourceSolo (int64_t sourceKey, bool solo) noexcept    { if (auto* p = activeProcessor.load (std::memory_order_acquire)) p->sequencer.setNetworkSourceSolo (sourceKey, solo); }
+    static void setNetworkSourceRecordArm (int64_t sourceKey, bool armed) noexcept { if (auto* p = activeProcessor.load (std::memory_order_acquire)) p->sequencer.setNetworkSourceRecordArm (sourceKey, armed); }
+    static void setNetworkSourceMonitor (int64_t sourceKey, bool on) noexcept   { if (auto* p = activeProcessor.load (std::memory_order_acquire)) p->sequencer.setNetworkSourceMonitor (sourceKey, on); }
     // True if any Audio track already routes this source (any channel selection).
     // Message-thread use; reads the sequencer's published track snapshot.
     static bool hasActiveNetworkAudioTrack (int64_t sourceKey) noexcept
@@ -218,6 +231,10 @@ public:
 
         DysektProcessor::processBlock (buffer, midi);
 
+        // Solo convention shared with the sequencer: while any track is soloed, only
+        // soloed tracks are audible. Recording is not affected by solo.
+        const bool anyTrackSoloed = sequencer.isAnyTrackSoloed();
+
         // Recorded AudioClip playback. Deliberately runs independent of the
         // live network-audio system below — a project with committed clips
         // should still hear them during playback even with no network
@@ -235,7 +252,8 @@ public:
                 for (int trackIndex = 0; trackIndex < numTracksForClips; ++trackIndex)
                 {
                     const auto clipTrackInfo = sequencer.getTrackInfo (trackIndex);
-                    if (clipTrackInfo.type != TrackType::Audio || ! clipTrackInfo.enabled) continue;
+                    if (clipTrackInfo.type != TrackType::Audio) continue;
+                    if (! (anyTrackSoloed ? clipTrackInfo.solo : clipTrackInfo.enabled)) continue;
 
                     const float gain = juce::Decibels::decibelsToGain (clipTrackInfo.volumeDb);
                     const float pan = juce::jlimit (-1.0f, 1.0f, clipTrackInfo.pan);
@@ -267,7 +285,12 @@ public:
         for (int trackIndex = 0; trackIndex < numTracks; ++trackIndex)
         {
             const auto info = sequencer.getTrackInfo (trackIndex);
-            if (info.type != TrackType::Audio || ! info.enabled) continue;
+            if (info.type != TrackType::Audio) continue;
+            // A muted track is skipped entirely (it does not record either), unless it is
+            // soloed. A track silenced only by someone else's solo, or by monitor off,
+            // is still captured when armed; it just contributes nothing to the output.
+            if (! info.enabled && ! (anyTrackSoloed && info.solo)) continue;
+            const bool playThrough = (anyTrackSoloed ? info.solo : info.enabled) && info.monitor;
 
             int64_t sourceKey = 0;
             int32_t sourceId = 0;
@@ -314,6 +337,7 @@ public:
                 leftGain = gain * std::cos (angle);
                 rightGain = gain * std::sin (angle);
             }
+            if (! playThrough) { leftGain = 0.0f; rightGain = 0.0f; }
             if (buffer.getNumChannels() > 0) buffer.addFrom (0, 0, networkBuffer, 0, 0, numSamples, leftGain);
             if (buffer.getNumChannels() > 1) buffer.addFrom (1, 0, networkBuffer, 1, 0, numSamples, rightGain);
             // Post-fader/pan sample peaks for this track's horizontal header meter

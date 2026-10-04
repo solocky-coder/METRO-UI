@@ -40,6 +40,9 @@ struct SequencerTrack
     // Defaults to armed so a new network track records without extra setup;
     // not saved with the project.
     std::atomic<bool> audioRecordArm { true };
+    // Audio tracks only: whether this track is heard on the output. A track with
+    // monitor off still records if it is armed. Runtime only, not saved.
+    std::atomic<bool> monitor { true };
     std::atomic<float> volumeDb { 0.0f };
     std::atomic<float> pan { 0.0f };
     juce::String name;
