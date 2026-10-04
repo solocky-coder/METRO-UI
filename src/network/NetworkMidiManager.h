@@ -35,9 +35,15 @@ public:
         if (slot == nullptr)
             slot = std::make_unique<Slot>();
 
-        slot->peer = peer.trim();
+        const auto newPeer = peer.trim();
+        const bool peerChanged = slot->peer != newPeer;
+        slot->peer = newPeer;
         slot->name = name.trim().isNotEmpty() ? name.trim() : ("Network MIDI " + juce::String (id));
         slot->configured = RtpMidiSession::isValidIPv4 (slot->peer);
+        if (peerChanged && slot->session.isRunning())
+            slot->session.stop();
+        if (! slot->configured)
+            slot->session.stop();
         return id;
     }
 
