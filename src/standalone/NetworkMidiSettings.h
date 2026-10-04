@@ -8,9 +8,9 @@
 // other standalone settings (see NetworkAudioLabels.h): device address, port,
 // forwarded channels, clock forwarding and whether the feature was switched on.
 //
-// The session itself is a process-wide object (RtpMidiSession::shared()), so the
-// Network Audio panel can be opened and closed freely without touching a running
-// session - the panel just reflects it.
+// Network MIDI sessions are owned by NetworkMidiManager, so the Network Audio panel
+// can be opened and closed freely without touching a running session - the panel
+// only reflects and controls the manager-owned device session.
 namespace NetworkMidiSettings
 {
     struct Values
