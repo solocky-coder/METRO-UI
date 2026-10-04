@@ -11,6 +11,7 @@
 #include "NetworkAudioSettingsShim.h"
 #include "AudioDeviceSettingsStore.h"
 #include "RtpMidiInputForwarder.h"
+#include "../network/NetworkMidiManager.h"
 #include "NetworkMidiSettings.h"
 
 class MainWindow : public juce::DocumentWindow,
@@ -45,6 +46,10 @@ public:
         player.setProcessor (processor.get());
         deviceManager.addAudioCallback (&player);
         midiRouter = std::make_unique<MidiRouter> (deviceManager);
+        networkMidiManager = std::make_unique<NetworkMidiManager>();
+        processor->sequencer.setNetworkMidiSink (&NetworkMidiManager::engineSink, networkMidiManager.get());
+        RtpMidiInputForwarder::instance().setManager (networkMidiManager.get());
+        RtpMidiInputForwarder::instance().setEngine (&processor->sequencer);
 
         for (const auto& input : juce::MidiInput::getAvailableDevices())
         {
@@ -100,7 +105,10 @@ public:
                 deviceManager.removeMidiInputDeviceCallback (id, midiRouter.get());
         }
 
-        RtpMidiSession::shared().stop();
+        processor->sequencer.setNetworkMidiSink (nullptr, nullptr);
+        RtpMidiInputForwarder::instance().setEngine (nullptr);
+        RtpMidiInputForwarder::instance().setManager (nullptr);
+        networkMidiManager.reset();
 
         autoTrack.reset();
 
@@ -395,7 +403,7 @@ private:
 
     void showNetworkAudioSettings()
     {
-        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false);
+        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false, networkMidiManager.get());
         launchScrollableSettingsDialog (comp, "Network Audio", false);
     }
 
@@ -529,6 +537,7 @@ private:
     juce::StringArray registeredMidiInputIds;
     std::unique_ptr<MidiRouter> midiRouter;
     std::unique_ptr<MetroNetworkAudio> networkAudio;
+    std::unique_ptr<NetworkMidiManager> networkMidiManager;
     std::unique_ptr<NetworkAudioAutoTrack> autoTrack;
     std::unique_ptr<NetworkAudioProcessor> processor;
     std::unique_ptr<DysektEditor> editor;
