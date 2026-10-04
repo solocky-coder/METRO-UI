@@ -51,6 +51,9 @@ public:
             selectedDevice.store (0);
     }
 
+    RtpMidiSession* getSession (int id) noexcept { return getSlot (id) != nullptr ? &getSlot (id)->session : nullptr; }
+    const RtpMidiSession* getSession (int id) const noexcept { return getSlotConst (id) != nullptr ? &getSlotConst (id)->session : nullptr; }
+
     void setChannelMask (int id, uint32_t mask) noexcept { if (auto* x = getSlot (id)) x->session.setChannelMask (mask); }
     uint32_t getChannelMask (int id) const noexcept { if (const auto* x = getSlotConst (id)) return x->session.getChannelMask(); return 0xFFFFu; }
     void setForwardRealtime (int id, bool on) noexcept { if (auto* x = getSlot (id)) x->session.setForwardRealtime (on); }
