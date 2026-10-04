@@ -308,7 +308,12 @@ struct SequencerEngine::Impl
     void flushAllActiveNotes (juce::MidiBuffer& outMidi, int samplePos)
     {
         for (const auto& an : activeNotes)
-            outMidi.addEvent (juce::MidiMessage::noteOff (an.channel, an.note), samplePos);
+        {
+            if (an.networkDevice != 0)
+                sendNet (an.networkDevice, juce::MidiMessage::noteOff (an.channel, an.note));
+            else
+                outMidi.addEvent (juce::MidiMessage::noteOff (an.channel, an.note), samplePos);
+        }
         activeNotes.clear();
     }
 };
