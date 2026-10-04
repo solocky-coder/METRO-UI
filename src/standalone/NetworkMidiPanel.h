@@ -6,17 +6,19 @@
 #include <initializer_list>
 #include "NetworkMidiSettings.h"
 #include "../network/RtpMidiSession.h"
+#include "../network/NetworkMidiManager.h"
 
 // "USB MIDI" page of the Network Audio panel: sends DYSEKT's live incoming MIDI to
 // an iPhone / iPad over the direct Apple USB link (wired RTP-MIDI, no Wi-Fi).
 //
-// The panel owns no session - it controls and reflects RtpMidiSession::shared(), so
+// The panel owns no session - it controls and reflects manager.getSession (deviceId), so
 // closing and reopening the Network Audio dialog never interrupts a running session.
 class NetworkMidiPanel final : public juce::Component,
                                private juce::Timer
 {
 public:
-    NetworkMidiPanel()
+    explicit NetworkMidiPanel (NetworkMidiManager& managerToUse, int deviceIdToUse = 1)
+        : manager (managerToUse), deviceId (deviceIdToUse)
     {
         auto values = NetworkMidiSettings::load();
 
@@ -118,7 +120,7 @@ public:
             addAndMakeVisible (c);
 
         // Apply the filters to the live session (does not start it).
-        NetworkMidiSettings::applyFilters (currentValues());
+        applyFiltersToManager (currentValues());
 
         lastSent = RtpMidiSession::shared().getMessagesSent();
         refresh();
@@ -251,6 +253,13 @@ private:
         return v;
     }
 
+    void applyFiltersToManager (const NetworkMidiSettings::Values& v)
+    {
+        manager.configureDevice (deviceId, v.peer, "Network MIDI " + juce::String (deviceId));
+        manager.setChannelMask (deviceId, v.channelMask);
+        manager.setForwardRealtime (deviceId, v.forwardRealtime);
+    }
+
     void persist() const
     {
         NetworkMidiSettings::save (currentValues());
@@ -278,7 +287,7 @@ private:
         }
 
         invalidAddressNote = false;
-        NetworkMidiSettings::applyFilters (v);
+        applyFiltersToManager (v);
         RtpMidiSession::shared().start (v.peer, v.port);
     }
 
@@ -403,6 +412,8 @@ private:
     float ledBrightness = 0.0f;
     uint32_t lastSent = 0;
     bool invalidAddressNote = false;
+    NetworkMidiManager& manager;
+    int deviceId = 1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NetworkMidiPanel)
 };
