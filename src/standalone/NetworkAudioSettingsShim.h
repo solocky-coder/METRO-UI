@@ -351,6 +351,7 @@ private:
     bool showingUsbTab = false;
     bool showingMidiTab = false;
     ::MetroNetworkAudio* networkAudio = nullptr;
+    NetworkMidiManager* networkMidiManager = nullptr;
     std::unique_ptr<::AppleUsbShareStatusComponent> usbStatusComponent;
     std::unique_ptr<::NetworkMidiPanel> midiPanel;
 };
