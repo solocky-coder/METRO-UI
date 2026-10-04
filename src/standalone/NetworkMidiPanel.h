@@ -123,7 +123,7 @@ public:
         // Apply the filters to the live session (does not start it).
         applyFiltersToManager (currentValues());
 
-        lastSent = RtpMidiSession::shared().getMessagesSent();
+        lastSent = getSession().getMessagesSent();
         refresh();
         startTimerHz (10);
     }
@@ -280,7 +280,7 @@ private:
 
         if (! RtpMidiSession::isValidIPv4 (v.peer))
         {
-            RtpMidiSession::shared().stop();
+            getSession().stop();
             enableButton.setToggleState (false, juce::dontSendNotification);
             updateEnableButtonText();
             persist();
@@ -291,7 +291,7 @@ private:
 
         invalidAddressNote = false;
         applyFiltersToManager (v);
-        RtpMidiSession::shared().start (v.peer, v.port);
+        getSession().start (v.peer, v.port);
     }
 
     void onEnableClicked()
@@ -301,7 +301,7 @@ private:
         if (enableButton.getToggleState())
             startSessionFromFields();
         else
-            RtpMidiSession::shared().stop();
+            getSession().stop();
 
         persist();
         refresh();
@@ -316,7 +316,7 @@ private:
             return;
 
         const auto v = currentValues();
-        auto& session = RtpMidiSession::shared();
+        auto& session = getSession();
 
         if (! session.isRunning() || session.getPeerAddress() != v.peer || session.getPeerPort() != v.port)
             startSessionFromFields();
@@ -345,7 +345,7 @@ private:
 
     void refresh()
     {
-        auto& session = RtpMidiSession::shared();
+        auto& session = getSession();
         const auto state = session.getState();
 
         // Mirror the real session state in the switch (e.g. started at app launch).
