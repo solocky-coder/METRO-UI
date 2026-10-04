@@ -62,7 +62,7 @@ public:
 
         // USB MIDI (live MIDI -> iPad over the direct USB link): restore filters and, if it
         // was left on, start the session. It waits quietly until the USB link exists.
-        NetworkMidiSettings::startFromSavedSettings();
+        NetworkMidiSettings::startFromSavedSettings (*networkMidiManager);
 
         networkAudio = std::make_unique<MetroNetworkAudio>();
         networkAudio->setSourceLabels (NetworkAudioLabels::load());
