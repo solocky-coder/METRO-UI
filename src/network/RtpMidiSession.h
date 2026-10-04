@@ -44,6 +44,14 @@ public:
     RtpMidiSession();
     ~RtpMidiSession() override;
 
+    /** Process-wide session used by the standalone UI and the MIDI input forwarder.
+        Created on first use; the destructor stops the session thread at exit. */
+    static RtpMidiSession& shared()
+    {
+        static RtpMidiSession instance;
+        return instance;
+    }
+
     //==========================================================================
     //  Control (message thread)
     //==========================================================================
