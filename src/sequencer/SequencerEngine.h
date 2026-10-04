@@ -51,6 +51,10 @@ public:
     bool setNetworkAudioTrackRoute(int trackIndex, int64_t routeId, int32_t sourceId, int sourceChannel);
     bool isNetworkAudioTrack(int trackIndex) const noexcept;
     bool getNetworkAudioRoute(int trackIndex, int64_t& routeId, int32_t& sourceId, int& sourceChannel) const noexcept;
+    // Renames every Audio track routed to sourceKey whose name still starts with
+    // "<oldLabel> | " (the auto-generated name) so it starts with newLabel instead.
+    // Returns the number of tracks renamed. Message thread.
+    int renameNetworkAudioTracks(int64_t sourceKey, const juce::String& oldLabel, const juce::String& newLabel);
 
     //==========================================================================
     // Audio clips

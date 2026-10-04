@@ -1053,7 +1053,7 @@ private:
         {
             auto* window = new juce::AlertWindow ("Rename device",
                                                   "Name shown for the device at " + address
-                                                      + ". New tracks created from it use this name.",
+                                                      + ". Its existing and new tracks use this name.",
                                                   juce::MessageBoxIconType::NoIcon);
             window->addTextEditor ("label", currentLabel, "Name:");
             window->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
@@ -1074,8 +1074,34 @@ private:
             if (owner == nullptr)
                 return;
 
+#if DYSEKT_HAS_AOO
+            // Remember who carried the old name so tracks already created from this
+            // device can be renamed too (not just tracks created afterwards).
+            struct Previous { int64_t sourceKey; juce::String label; };
+            std::vector<Previous> previous;
+            for (const auto& source : owner->getSources())
+                if (source.peerAddress == address)
+                    previous.push_back ({ source.sourceKey, source.user });
+#endif
+
             owner->setSourceLabel (address, label);
             NetworkAudioLabels::save (owner->getSourceLabels());
+
+#if DYSEKT_HAS_AOO
+            const auto newLabel = label.trim().isNotEmpty() ? label.trim()
+                                                            : MetroNetworkAudio::defaultSourceLabel (address);
+            int renamedTracks = 0;
+            for (const auto& p : previous)
+                renamedTracks += NetworkAudioProcessor::renameActiveNetworkAudioTracks (p.sourceKey, p.label, newLabel);
+
+            // Arranger track headers and Mixer rows read the track name when they paint,
+            // so repaint every window once to show the new name straight away.
+            if (renamedTracks > 0)
+                for (int i = 0; i < juce::TopLevelWindow::getNumTopLevelWindows(); ++i)
+                    if (auto* window = juce::TopLevelWindow::getTopLevelWindow (i))
+                        window->repaint();
+#endif
+
             if (onLabelChanged)
                 onLabelChanged();
         }

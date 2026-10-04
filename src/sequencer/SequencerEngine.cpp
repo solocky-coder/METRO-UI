@@ -1665,6 +1665,30 @@ bool SequencerEngine::setNetworkAudioTrackRoute (int trackIndex, int64_t routeId
     return true;
 }
 
+int SequencerEngine::renameNetworkAudioTracks (int64_t sourceKey, const juce::String& oldLabel, const juce::String& newLabel)
+{
+    if (sourceKey == 0 || oldLabel.isEmpty() || newLabel.isEmpty() || oldLabel == newLabel)
+        return 0;
+
+    // Auto-generated network track names are "<label> | <source> <channel>".
+    // Only those are rewritten; a name the user chose by hand is left alone.
+    const auto oldPrefix = oldLabel + " | ";
+    int renamed = 0;
+    auto snap = impl->getTracks();
+    for (const auto& trackPtr : *snap)
+    {
+        auto& track = *trackPtr;
+        if (track.type == TrackType::Audio
+            && track.networkRouteId == sourceKey
+            && track.name.startsWith (oldPrefix))
+        {
+            track.name = newLabel + track.name.substring (oldLabel.length());
+            ++renamed;
+        }
+    }
+    return renamed;
+}
+
 bool SequencerEngine::isNetworkAudioTrack (int trackIndex) const noexcept
 {
     auto snap = impl->getTracks();

@@ -33,6 +33,14 @@ public:
         if (processor == nullptr) return -1;
         return processor->sequencer.addNetworkAudioTrack (sourceKey, sourceId, juce::jmax (0, sourceChannel), sourceName, userName);
     }
+    // Applies a renamed Direct USB device label to the network audio tracks that were
+    // created from it, so the Arranger and Mixer show the new name. Message thread.
+    static int renameActiveNetworkAudioTracks (int64_t sourceKey, const juce::String& oldLabel, const juce::String& newLabel) noexcept
+    {
+        auto* processor = activeProcessor.load (std::memory_order_acquire);
+        if (processor == nullptr) return 0;
+        return processor->sequencer.renameNetworkAudioTracks (sourceKey, oldLabel, newLabel);
+    }
     // True if any Audio track already routes this source (any channel selection).
     // Message-thread use; reads the sequencer's published track snapshot.
     static bool hasActiveNetworkAudioTrack (int64_t sourceKey) noexcept
