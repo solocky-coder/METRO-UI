@@ -49,8 +49,13 @@ public:
         midiRouter = std::make_unique<MidiRouter> (deviceManager);
         networkMidiManager = std::make_unique<NetworkMidiManager>();
         processor->sequencer.setNetworkMidiSink (&NetworkMidiManager::engineSink, networkMidiManager.get());
-        RtpMidiInputForwarder::instance().setManager (networkMidiManager.get());
-        RtpMidiInputForwarder::instance().setEngine (&processor->sequencer);
+        // Network MIDI live input is routed by PluginProcessor::processBlock()
+        // after the selected arranger track is resolved. Do not also install
+        // the legacy standalone MidiInput callback forwarder here: JUCE feeds
+        // the same input into processBlock(), so doing both sends every live
+        // message twice to the selected RTP-MIDI device.
+        RtpMidiInputForwarder::instance().setManager (nullptr);
+        RtpMidiInputForwarder::instance().setEngine (nullptr);
 
         for (const auto& input : juce::MidiInput::getAvailableDevices())
         {
