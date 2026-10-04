@@ -51,6 +51,11 @@ public:
             selectedDevice.store (0);
     }
 
+    void setChannelMask (int id, uint32_t mask) noexcept { if (auto* x = getSlot (id)) x->session.setChannelMask (mask); }
+    uint32_t getChannelMask (int id) const noexcept { if (const auto* x = getSlotConst (id)) return x->session.getChannelMask(); return 0xFFFFu; }
+    void setForwardRealtime (int id, bool on) noexcept { if (auto* x = getSlot (id)) x->session.setForwardRealtime (on); }
+    bool getForwardRealtime (int id) const noexcept { if (const auto* x = getSlotConst (id)) return x->session.getForwardRealtime(); return false; }
+
     void startDevice (int id, int port = 5004)
     {
         auto* s = getSlot (id);
@@ -150,6 +155,12 @@ private:
         int port = 5004;
         bool configured = false;
     };
+
+    const Slot* getSlotConst (int id) const noexcept
+    {
+        if (! juce::isPositiveAndBelow (id, kMaxDevices + 1)) return nullptr;
+        return devices[(size_t) (id - 1)].get();
+    }
 
     Slot* getSlot (int id) noexcept
     {
