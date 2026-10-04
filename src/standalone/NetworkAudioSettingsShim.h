@@ -3,6 +3,7 @@
 #include "NetworkAudioSettingsComponent.h"
 #include "AppleUsbShareStatusComponent.h"
 #include "NetworkMidiPanel.h"
+#include "../network/NetworkMidiManager.h"
 #include "network/AppleUsbNetworkTransport.h"
 #include "NetworkAudioAutoTrack.h"
 #include <memory>
@@ -16,9 +17,11 @@ class MetroNetworkAudioSettingsSelector : public ::NetworkAudioSettingsComponent
 public:
     explicit MetroNetworkAudioSettingsSelector (juce::AudioDeviceManager& deviceManager,
                                                  ::MetroNetworkAudio* networkAudioToUse,
-                                                 bool showDeviceSelector = false)
+                                                 bool showDeviceSelector = false,
+                                                 NetworkMidiManager* networkMidiManagerToUse = nullptr)
         : ::NetworkAudioSettingsComponent (deviceManager, networkAudioToUse, showDeviceSelector),
-          networkAudio (networkAudioToUse)
+          networkAudio (networkAudioToUse),
+          networkMidiManager (networkMidiManagerToUse)
     {
         // Snapshot every child the base class constructor already created
         // (server/user/group fields, gain/pan, sources list, etc.) so the
@@ -123,7 +126,8 @@ public:
         usbStatusComponent = std::make_unique<::AppleUsbShareStatusComponent> (appleUsbService());
         addAndMakeVisible (usbStatusComponent.get());
 
-        midiPanel = std::make_unique<::NetworkMidiPanel>();
+        if (networkMidiManager != nullptr)
+            midiPanel = std::make_unique<::NetworkMidiPanel> (*networkMidiManager, 1);
         addAndMakeVisible (midiPanel.get());
 
         setActivePage (0);
