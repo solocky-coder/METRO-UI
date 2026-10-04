@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-enum class LiveTargetPlayer { none, slicer, sf2, sfz };
+enum class LiveTargetPlayer { none, slicer, sf2, sfz, network };
 struct SelectedLiveTarget { LiveTargetPlayer player = LiveTargetPlayer::none; int midiChannel = 0; };
 
 struct SequencerTrackInfo
@@ -17,6 +17,7 @@ struct SequencerTrackInfo
     int sliceIdx = -1; int midiChannel = 0; Sf2PresetInfo preset; int numClips = 0;
     bool isSfzInstrument = false;
     int64_t networkRouteId = 0; int32_t networkSourceId = 0; int networkSourceChannel = 0;
+    int networkMidiDeviceId=0; bool networkMidiIsChild=false; juce::String networkMidiPeer;
 };
 
 struct SequencerClipInfo
@@ -73,6 +74,21 @@ public:
     void setNetworkSourceSolo(int64_t sourceKey, bool solo);
     void setNetworkSourceRecordArm(int64_t sourceKey, bool armed);
     void setNetworkSourceMonitor(int64_t sourceKey, bool monitor);
+
+    static constexpr int kMaxNetworkMidiChildren=16;
+    using NetworkMidiSink=void(*)(void*,int,const juce::MidiMessage&);
+    void setNetworkMidiSink(NetworkMidiSink,void*) noexcept;
+    void sendNetworkMidi(int,const juce::MidiMessage&) const noexcept;
+    int addNetworkMidiTrack(const juce::String&,const juce::String&);
+    int addNetworkMidiChild(int,int=-1);
+    bool removeNetworkMidiTrack(int);
+    bool setNetworkMidiChannel(int,int);
+    bool isNetworkMidiTrack(int) const noexcept;
+    int getNetworkMidiChildCount(int) const;
+    int findNetworkMidiDevice(const juce::String&) const;
+    void setNetworkMidiLinkState(int,int) noexcept;
+    int getNetworkMidiLinkState(int) const noexcept;
+    int getSelectedNetworkMidiDevice() const noexcept;
 
     // True while at least one track (of any type) is soloed.
     bool isAnyTrackSoloed() const noexcept;
