@@ -10,7 +10,7 @@
 #include <vector>
 #include <algorithm>
 
-enum class TrackType { MainSlice, ChromaticSlice, SfPlayer, Audio };
+enum class TrackType { MainSlice, ChromaticSlice, SfPlayer, Audio, NetworkMidi };
 
 struct ClipSlot
 {
@@ -56,6 +56,9 @@ struct SequencerTrack
     int64_t networkRouteId = 0;
     int32_t networkSourceId = 0;
     int networkSourceChannel = 0;
+    int networkMidiDeviceId = 0;
+    bool networkMidiIsChild = false;
+    juce::String networkMidiPeer;
 
     // Runtime audio-take metadata. Persisted from project stream version 4
     // onward (see SequencerEngine.cpp's kStreamVersion4); older project
@@ -119,6 +122,8 @@ struct SequencerTrack
     static std::shared_ptr<SequencerTrack> makeChromatic (int sliceIdxIn, int chromaticChannel, const juce::String& sliceName, juce::Colour sliceColour) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::ChromaticSlice; t->sliceIdx = sliceIdxIn; t->midiChannel.store (chromaticChannel - 1); t->name = sliceName.isEmpty() ? ("CHROM " + juce::String (sliceIdxIn + 1)) : sliceName; t->colour = sliceColour; return t; }
     static std::shared_ptr<SequencerTrack> makeSfPlayer (const Sf2PresetInfo& p, juce::Colour c) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->midiChannel.store (15); t->name = p.name; t->colour = c; return t; }
     static std::shared_ptr<SequencerTrack> makeSfzInstrument (const juce::String& n, juce::Colour c) { Sf2PresetInfo p; p.name = n; p.bank = 0; p.preset = 0; auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->isSfzInstrument = true; t->midiChannel.store (15); t->name = n; t->colour = c; return t; }
+    static std::shared_ptr<SequencerTrack> makeNetworkMidi (int id,const juce::String& peer,const juce::String& n,int ch,juce::Colour c) { auto t=std::make_shared<SequencerTrack>(); t->type=TrackType::NetworkMidi; t->networkMidiDeviceId=id; t->networkMidiPeer=peer; t->midiChannel.store(juce::jlimit(0,15,ch)); t->name=n; t->colour=c; return t; }
+    static std::shared_ptr<SequencerTrack> makeNetworkMidiChild (int id,const juce::String& n,int ch,juce::Colour c) { auto t=std::make_shared<SequencerTrack>(); t->type=TrackType::NetworkMidi; t->networkMidiDeviceId=id; t->networkMidiIsChild=true; t->midiChannel.store(juce::jlimit(0,15,ch)); t->name=n; t->colour=c; return t; }
     static std::shared_ptr<SequencerTrack> makeAudio (const NetworkAudioInput& input, juce::Colour c = juce::Colour (0xFF406080)) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::Audio; t->networkRouteId = input.routeId; t->networkSourceId = input.sourceId; t->networkSourceChannel = input.sourceChannel; t->name = input.sourceName.isNotEmpty() ? input.sourceName : ("NETWORK " + juce::String (input.sourceId) + " " + networkChannelLabel (input.sourceChannel)); t->colour = c; t->volumeDb.store (input.gainDb.load()); t->pan.store (input.pan.load()); return t; }
 
     void writeToStream (juce::MemoryOutputStream& s) const
@@ -128,11 +133,12 @@ struct SequencerTrack
         auto snap = getClips(); s.writeInt ((int) snap->size()); for (auto& slot : *snap) slot->writeToStream (s);
         s.writeBool (solo.load()); s.writeFloat (volumeDb.load()); s.writeFloat (pan.load());
         if (type == TrackType::Audio) { s.writeInt64 (networkRouteId); s.writeInt (networkSourceId); s.writeInt (networkSourceChannel); }
+        if (type == TrackType::NetworkMidi) { s.writeInt(networkMidiDeviceId); s.writeBool(networkMidiIsChild); s.writeString(networkMidiPeer); }
         auto audioSnap = getAudioClips();
         s.writeInt ((int) audioSnap->size());
         for (auto& c : *audioSnap) c.writeToStream (s);
     }
-    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool hasAudioClips = false)
+    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool hasAudioClips = false, bool hasNetworkMidi = false)
     {
         type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt());
         preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString();
@@ -141,6 +147,7 @@ struct SequencerTrack
         sortAndPublish (std::move (next));
         if (hasExtendedFields) { solo.store (s.readBool()); volumeDb.store (s.readFloat()); pan.store (s.readFloat()); }
         if (type == TrackType::Audio) { networkRouteId = s.readInt64(); networkSourceId = s.readInt(); networkSourceChannel = s.readInt(); }
+        if (hasNetworkMidi && type == TrackType::NetworkMidi) { networkMidiDeviceId=s.readInt(); networkMidiIsChild=s.readBool(); networkMidiPeer=s.readString(); }
         if (hasAudioClips)
         {
             const int an = s.readInt(); if (an < 0 || an > 4096) return false;

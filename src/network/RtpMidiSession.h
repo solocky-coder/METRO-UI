@@ -44,9 +44,6 @@ public:
     RtpMidiSession();
     ~RtpMidiSession() override;
 
-    /** Process-wide instance, shared by the Network Audio panel and the MIDI input forwarder. */
-    static RtpMidiSession& shared();
-
     //==========================================================================
     //  Control (message thread)
     //==========================================================================

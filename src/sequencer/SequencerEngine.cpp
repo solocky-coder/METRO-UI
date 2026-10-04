@@ -33,6 +33,7 @@ static constexpr int kStreamVersion1 = 1;  // legacy single-clip
 static constexpr int kStreamVersion2 = 2;  // multi-clip
 static constexpr int kStreamVersion3 = 3;  // + per-track solo/volumeDb/pan
 static constexpr int kStreamVersion4 = 4;  // + per-track recorded AudioClip list
+static constexpr int kStreamVersion5 = 5;
 
 //==============================================================================
 struct SequencerEngine::Impl
@@ -61,7 +62,7 @@ struct SequencerEngine::Impl
     // 0 means use the current project end, preserving the legacy full-song loop.
     std::atomic<int64_t> loopEndTick   { 0 };
 
-    struct ActiveNote { int trackIdx; int clipIdx; int note; int channel; };
+    struct ActiveNote { int trackIdx; int clipIdx; int note; int channel; int networkDevice; };
     juce::Array<ActiveNote> activeNotes;
 
     std::atomic<bool>    playing      { false };
@@ -111,6 +112,8 @@ struct SequencerEngine::Impl
     std::atomic<int>  selectedLiveChannel  { 0 };  // 1-based; 0 = disabled
     std::atomic<SelectedLiveTarget> selectedLiveTarget {}; // player + channel for the selected track
     std::atomic<int>  recordingTrackIndex  { -1 }; // which track receives recorded MIDI (-1 = none)
+    std::atomic<SequencerEngine::NetworkMidiSink> netSink{nullptr}; std::atomic<void*> netSinkCtx{nullptr}; std::atomic<int> selectedNetworkMidiDevice{0}; std::atomic<int> netLinkState[64]{}; juce::MidiBuffer netScratch;
+    void sendNet(int id,const juce::MidiMessage&m) const noexcept { if(auto f=netSink.load(std::memory_order_acquire)) f(netSinkCtx.load(std::memory_order_relaxed),id,m); }
     std::atomic<SequencerEngine::RecordMode> recordMode { SequencerEngine::RecordMode::Overdub };
 
     //==========================================================================
@@ -175,7 +178,7 @@ struct SequencerEngine::Impl
     //==========================================================================
     Impl()
     {
-        openRecNotes.ensureStorageAllocated (64);
+        openRecNotes.ensureStorageAllocated (64); netScratch.ensureSize(8192);
     }
     ~Impl() = default;
 
@@ -187,6 +190,7 @@ struct SequencerEngine::Impl
             case TrackType::MainSlice:      return 1;
             case TrackType::ChromaticSlice: return t.midiChannel.load (std::memory_order_relaxed) + 1;
             case TrackType::SfPlayer:       return t.midiChannel.load (std::memory_order_relaxed) + 1;
+            case TrackType::NetworkMidi: return (t.midiChannel.load()&15)+1;
         }
         return 1;
     }
@@ -284,7 +288,7 @@ struct SequencerEngine::Impl
                     (int)((nStart - clipLocalStart + (winStart - localStart)) / ticksPerSample));
                 outMidi.addEvent (
                     juce::MidiMessage::noteOn (ch, n.note, (juce::uint8) n.velocity), sp);
-                activeNotes.add ({ trackIdx, clipIdx, n.note, ch });
+                activeNotes.add ({ trackIdx, clipIdx, n.note, ch, track.type==TrackType::NetworkMidi ? track.networkMidiDeviceId : 0 });
             }
 
             if (nEnd > clipLocalStart && nEnd <= clipLocalEnd)
@@ -304,7 +308,12 @@ struct SequencerEngine::Impl
     void flushAllActiveNotes (juce::MidiBuffer& outMidi, int samplePos)
     {
         for (const auto& an : activeNotes)
-            outMidi.addEvent (juce::MidiMessage::noteOff (an.channel, an.note), samplePos);
+        {
+            if (an.networkDevice != 0)
+                sendNet (an.networkDevice, juce::MidiMessage::noteOff (an.channel, an.note));
+            else
+                outMidi.addEvent (juce::MidiMessage::noteOff (an.channel, an.note), samplePos);
+        }
         activeNotes.clear();
     }
 };
@@ -608,6 +617,7 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.preset      = t.preset;
     info.numClips    = t.getNumClips();
     info.isSfzInstrument = t.isSfzInstrument;
+    info.networkMidiDeviceId=t.networkMidiDeviceId; info.networkMidiIsChild=t.networkMidiIsChild; info.networkMidiPeer=t.networkMidiPeer;
     return info;
 }
 
@@ -1059,7 +1069,8 @@ int SequencerEngine::getSelectedLiveChannel() const noexcept
 
 void SequencerEngine::setSelectedTrack (int trackIndex) noexcept
 {
-    SelectedLiveTarget target;   // defaults to { LiveTargetPlayer::none, 0 }
+    SelectedLiveTarget target;
+    int netDevice=0;
     auto snap = impl->getTracks();
     if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()))
     {
@@ -1080,7 +1091,7 @@ void SequencerEngine::setSelectedTrack (int trackIndex) noexcept
         }
     }
 
-    impl->selectedLiveTarget.store (target, std::memory_order_relaxed);
+    impl->selectedNetworkMidiDevice.store(netDevice); impl->selectedLiveTarget.store (target, std::memory_order_relaxed);
     // Keep the legacy channel-only accessor in sync for any remaining callers.
     impl->selectedLiveChannel.store (target.midiChannel, std::memory_order_relaxed);
 }
@@ -1469,17 +1480,21 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
                                        : track.enabled.load (std::memory_order_relaxed);
         if (! audible) continue;
 
-        const int priorSize = outMidi.getNumEvents();
+        const bool isNetTrack=track.type==TrackType::NetworkMidi;
+        juce::MidiBuffer& dest=isNetTrack?impl->netScratch:outMidi; if(isNetTrack) impl->netScratch.clear();
+        const int priorSize = dest.getNumEvents();
         auto clipsSnap = track.getClips();
 
         for (int ci = 0; ci < (int) clipsSnap->size(); ++ci)
         {
-            impl->processClipSlot (outMidi, track, ti, ci, *(*clipsSnap)[(size_t) ci],
+            impl->processClipSlot (dest, track, ti, ci, *(*clipsSnap)[(size_t) ci],
                                    impl->currentTick, blockEndTick,
                                    numSamples, ticksPerSample, doLoop, loopStart, loopEnd);
         }
 
-        if (outMidi.getNumEvents() > priorSize
+        if (isNetTrack) for(const auto meta:impl->netScratch) impl->sendNet(track.networkMidiDeviceId,meta.getMessage());
+
+        if (dest.getNumEvents() > priorSize
             && juce::isPositiveAndBelow (ti, kActivityFlagCount))
             impl->midiActivityFlags[ti].store (true, std::memory_order_relaxed);
     }
@@ -1546,7 +1561,7 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
 //==============================================================================
 void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 {
-    s.writeInt   (kStreamVersion4);
+    s.writeInt   (kStreamVersion5);
     s.writeFloat (impl->internalBpm.load (std::memory_order_relaxed));
     s.writeBool  (impl->looping    .load (std::memory_order_relaxed));
     s.writeBool  (impl->syncToHost .load (std::memory_order_relaxed));
@@ -1570,8 +1585,9 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     const bool isV2 = (firstInt == kStreamVersion2);
     const bool isV3 = (firstInt == kStreamVersion3);
     const bool isV4 = (firstInt == kStreamVersion4);
+    const bool isV5 = (firstInt == kStreamVersion5);
 
-    if (isV2 || isV3 || isV4)
+    if (isV2 || isV3 || isV4 || isV5)
     {
         bpm  = s.readFloat();
         loop = s.readBool();
@@ -1596,7 +1612,7 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     for (int i = 0; i < n; ++i)
     {
         auto t  = std::make_shared<SequencerTrack>();
-        bool ok = (isV2 || isV3 || isV4) ? t->readFromStream (s, isV3 || isV4, isV4) : t->readFromStreamV1 (s);
+        bool ok = (isV2 || isV3 || isV4 || isV5) ? t->readFromStream (s, isV3 || isV4 || isV5, isV4 || isV5, isV5) : t->readFromStreamV1 (s);
         if (! ok) return false;
         loaded->push_back (t);
     }
@@ -1609,6 +1625,22 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
 
     return true;
 }
+
+//==============================================================================
+// Network MIDI
+//==============================================================================
+void SequencerEngine::setNetworkMidiSink(NetworkMidiSink f,void*ctx) noexcept { if(!f) impl->netSink.store(nullptr); impl->netSinkCtx.store(ctx); if(f) impl->netSink.store(f); }
+void SequencerEngine::sendNetworkMidi(int id,const juce::MidiMessage&m) const noexcept { impl->sendNet(id,m); }
+int SequencerEngine::getSelectedNetworkMidiDevice() const noexcept { return impl->selectedNetworkMidiDevice.load(); }
+void SequencerEngine::setNetworkMidiLinkState(int id,int st) noexcept { if(id>0) impl->netLinkState[id&63].store(st); }
+int SequencerEngine::getNetworkMidiLinkState(int id) const noexcept { return id>0?impl->netLinkState[id&63].load():0; }
+int SequencerEngine::addNetworkMidiTrack(const juce::String& peer,const juce::String& name){if(peer.trim().isEmpty())return-1;auto cur=impl->getTracks();int id=1;for(auto&t:*cur)id=juce::jmax(id,t->networkMidiDeviceId+1);auto t=SequencerTrack::makeNetworkMidi(id,peer.trim(),name.isNotEmpty()?name:("MIDI "+peer.trim()),0,juce::Colour(0xff2c8fa3));auto n=std::make_shared<Impl::TrackList>(*cur);n->push_back(t);impl->publishTracks(std::move(n));return(int)cur->size();}
+int SequencerEngine::addNetworkMidiChild(int idx,int ch){auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi)return-1;int id=(*cur)[idx]->networkMidiDeviceId,n=0,last=idx;uint32_t used=0;std::shared_ptr<SequencerTrack> p;for(size_t i=0;i<cur->size();++i){auto&t=(*cur)[i];if(t->type==TrackType::NetworkMidi&&t->networkMidiDeviceId==id){last=(int)i;used|=1u<<(t->midiChannel.load()&15);if(t->networkMidiIsChild)++n;else p=t;}}if(!p||n>=kMaxNetworkMidiChildren)return-1;if(ch<0||ch>15){ch=0;while(ch<16&&(used&(1u<<ch)))++ch;if(ch>=16)return-1;}auto x=SequencerTrack::makeNetworkMidiChild(id,p->name+" / Part "+juce::String(n+1),ch,p->colour.darker(.25f));auto v=std::make_shared<Impl::TrackList>(*cur);v->insert(v->begin()+last+1,x);impl->publishTracks(std::move(v));return last+1;}
+bool SequencerEngine::removeNetworkMidiTrack(int idx){auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi)return false;int id=(*cur)[idx]->networkMidiDeviceId;bool all=!(*cur)[idx]->networkMidiIsChild;auto v=std::make_shared<Impl::TrackList>();for(auto&t:*cur)if(!(t->type==TrackType::NetworkMidi&&t->networkMidiDeviceId==id&&(all||t==(*cur)[idx])))v->push_back(t);impl->publishTracks(std::move(v));return true;}
+bool SequencerEngine::setNetworkMidiChannel(int idx,int ch){auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi||ch<0||ch>15)return false;(*cur)[idx]->midiChannel.store(ch);return true;}
+bool SequencerEngine::isNetworkMidiTrack(int idx)const noexcept{auto s=impl->getTracks();return juce::isPositiveAndBelow(idx,(int)s->size())&&(*s)[idx]->type==TrackType::NetworkMidi;}
+int SequencerEngine::getNetworkMidiChildCount(int idx)const{auto s=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)s->size())||(*s)[idx]->type!=TrackType::NetworkMidi)return 0;int id=(*s)[idx]->networkMidiDeviceId,n=0;for(auto&t:*s)if(t->type==TrackType::NetworkMidi&&t->networkMidiDeviceId==id&&t->networkMidiIsChild)++n;return n;}
+int SequencerEngine::findNetworkMidiDevice(const juce::String& peer)const{auto s=impl->getTracks();for(auto&t:*s)if(t->type==TrackType::NetworkMidi&&!t->networkMidiIsChild&&t->networkMidiPeer==peer)return t->networkMidiDeviceId;return 0;}
 
 //==============================================================================
 //  Network audio track routing

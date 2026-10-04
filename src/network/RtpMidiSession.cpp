@@ -69,12 +69,6 @@ RtpMidiSession::~RtpMidiSession()
     stop();
 }
 
-RtpMidiSession& RtpMidiSession::shared()
-{
-    static RtpMidiSession instance;
-    return instance;
-}
-
 //==============================================================================
 //  Helpers
 //==============================================================================
