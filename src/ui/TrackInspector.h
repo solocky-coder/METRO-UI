@@ -63,6 +63,8 @@ class TrackInspector : public juce::Component,
                        private juce::Timer
 {
 public:
+    std::function<void(int)> onNetworkTrackStructureChanged;
+
     explicit TrackInspector (SequencerEngine& sequencer) : engine (sequencer)
     {
         // DYSEKT-METRO pass: M/S/R go back to filled swatches, but flat —
@@ -176,7 +178,11 @@ public:
                 && ! engine.getTrackInfo (selectedTrack).networkMidiIsChild)
             {
                 const int child = engine.addNetworkMidiChild (selectedTrack);
-                if (child >= 0) selectedTrack = child;
+                if (child >= 0)
+                {
+                    selectedTrack = child;
+                    if (onNetworkTrackStructureChanged) onNetworkTrackStructureChanged (child);
+                }
             }
             refresh();
         };
@@ -185,8 +191,11 @@ public:
         {
             if (hasTrack() && engine.isNetworkMidiTrack (selectedTrack))
             {
+                const int old = selectedTrack;
                 engine.removeNetworkMidiTrack (selectedTrack);
                 selectedTrack = -1;
+                if (onNetworkTrackStructureChanged) onNetworkTrackStructureChanged (-1);
+                juce::ignoreUnused (old);
             }
             refresh();
         };
