@@ -150,6 +150,7 @@ public:
         {
             menu.addItem (10, "Audio Settings...");
             menu.addItem (13, "Network Audio...");
+            menu.addItem (14, "Network MIDI...");
             menu.addItem (11, "MIDI Settings...");
             menu.addSeparator();
             menu.addItem (12, "MIDI Routing...");
@@ -173,6 +174,7 @@ public:
             case 6:  juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case 10: showAudioSettings(); break;
             case 13: showNetworkAudioSettings(); break;
+            case 14: showNetworkMidiSettings(); break;
             case 11: showMidiSettings(); break;
             case 12: showMidiRouting(); break;
             case 20: showAbout(); break;
@@ -413,6 +415,16 @@ private:
     {
         auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false, networkMidiManager.get());
         launchScrollableSettingsDialog (comp, "Network Audio", false);
+    }
+
+    void showNetworkMidiSettings()
+    {
+        if (networkMidiManager == nullptr)
+            return;
+
+        auto* panel = new NetworkMidiPanel (*networkMidiManager, 1);
+        panel->setSize (860, 700);
+        launchScrollableSettingsDialog (panel, "Network MIDI", true);
     }
 
     class MidiOnlySettingsComponent : public juce::Component

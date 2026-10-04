@@ -236,7 +236,7 @@ public:
         // These buttons call the already-existing engine/tool operations.
         {
             static const char* const labels[kNumArrangeTools] =
-                { "+ CLIP", "SELECT", "DRAW", "ERASE", "SPLIT", "GLUE", "LOCK", "INSPECTOR" };
+                { "+ CLIP", "SELECT", "DRAW", "ERASE", "SPLIT", "GLUE", "LOCK", "INSPECTOR", "+ NET MIDI" };
 
             for (int i = 0; i < kNumArrangeTools; ++i)
             {
@@ -285,6 +285,21 @@ public:
                 arrangerButtons[7].setToggleState (inspectorVisible, juce::dontSendNotification);
                 resized();
                 repaint();
+            };
+            
+            arrangerButtons[8].onClick = [this]
+            {
+                const int idx = engine.addNetworkMidiTrack ("192.168.99.2", "Network MIDI");
+                if (idx >= 0)
+                {
+                    inspectorVisible = true;
+                    inspector.setVisible (true);
+                    selectTrack (idx);
+                    trackStrip.setSelectedTrack (idx);
+                    arrangerButtons[7].setToggleState (true, juce::dontSendNotification);
+                    resized();
+                    repaint();
+                }
             };
 
             arrangerButtons[1].setToggleState (true, juce::dontSendNotification);
@@ -430,7 +445,7 @@ public:
             // "QUANTIZE" label, so the first tool button cannot cover it.
             auto tools = arrangeHeaderBounds().withTrimmedLeft (350 + kEditLabelW).reduced (4, 3);
             const int toolGap = 4;
-            const int widths[kNumArrangeTools] = { 66, 62, 52, 58, 56, 52, 52, 82 };
+            const int widths[kNumArrangeTools] = { 66, 62, 52, 58, 56, 52, 52, 82, 82 };
             int x = tools.getX();
             for (int i = 0; i < kNumArrangeTools; ++i)
             {
@@ -1134,7 +1149,7 @@ private:
     // Quick-access arranger commands. These are deliberately wired to the
     // same engine/tool handlers used by the existing right-click Tool menu,
     // so the toolbar is a second control surface, not a second editor.
-    static constexpr int kNumArrangeTools = 8;
+    static constexpr int kNumArrangeTools = 9;
     juce::TextButton arrangerButtons[kNumArrangeTools];
     bool editingLocked = false;
     bool inspectorVisible = false;
