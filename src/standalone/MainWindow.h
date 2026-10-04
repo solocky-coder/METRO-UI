@@ -16,7 +16,8 @@
 
 class MainWindow : public juce::DocumentWindow,
                    public juce::MenuBarModel,
-                   private juce::ChangeListener
+                   private juce::ChangeListener,
+                   private juce::Timer
 {
 public:
     static constexpr int kMenuH = 24;
@@ -77,6 +78,7 @@ public:
         setVisible (true);
         centreWithSize (getWidth(), getHeight());
         setFullScreen (true);
+        startTimerHz (5);
     }
 
     void resized() override
@@ -92,6 +94,7 @@ public:
 
     ~MainWindow() override
     {
+        stopTimer();
         if (editor != nullptr)
             editor->setWindowMenuBar (nullptr, 0);
         setMenuBar (nullptr);
@@ -525,6 +528,32 @@ private:
         juce::AlertWindow::showMessageBoxAsync (
             juce::AlertWindow::InfoIcon, "DYSEKT-SF Standalone",
             "DYSEKT-SF Sampler + Sequencer\nVersion 1.0\n\nPowered by JUCE.");
+    }
+
+    void timerCallback() override
+    {
+        if (processor == nullptr || networkMidiManager == nullptr)
+            return;
+
+        const auto& seq = processor->sequencer;
+        networkMidiManager->setSelectedDevice (seq.getSelectedNetworkMidiDevice());
+
+        for (int i = 0; i < seq.getNumTracks(); ++i)
+        {
+            const auto info = seq.getTrackInfo (i);
+            if (info.type != TrackType::NetworkMidi || info.networkMidiIsChild)
+                continue;
+
+            networkMidiManager->configureDevice (info.networkMidiDeviceId, info.networkMidiPeer, info.name);
+            if (networkMidiManager->getDeviceInfo (info.networkMidiDeviceId).state == RtpMidiSession::State::Off)
+                networkMidiManager->startDevice (info.networkMidiDeviceId, 5004);
+        }
+
+        for (int id = 1; id <= NetworkMidiManager::kMaxDevices; ++id)
+        {
+            const auto state = networkMidiManager->getDeviceInfo (id).state;
+            seq.setNetworkMidiLinkState (id, (int) state);
+        }
     }
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override
