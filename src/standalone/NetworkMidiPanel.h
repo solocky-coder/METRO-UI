@@ -21,10 +21,11 @@ public:
         : manager (managerToUse), deviceId (deviceIdToUse)
     {
         auto values = NetworkMidiSettings::load();
+        manager.configureDevice (deviceId, values.peer, "Network MIDI " + juce::String (deviceId));
 
         // A session that is already running (started at app launch or from an earlier
         // visit to this page) is the source of truth for what the page shows.
-        auto& session = RtpMidiSession::shared();
+        auto& session = getSession();
         if (session.isRunning())
         {
             values.peer = session.getPeerAddress();
@@ -236,6 +237,8 @@ public:
     }
 
 private:
+    RtpMidiSession& getSession() noexcept { return *manager.getSession (deviceId); }
+
     //==========================================================================
     NetworkMidiSettings::Values currentValues() const
     {
