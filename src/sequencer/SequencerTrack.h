@@ -57,6 +57,9 @@ struct SequencerTrack
     int32_t networkSourceId = 0;
     int networkSourceChannel = 0;
     int networkMidiDeviceId = 0;
+    // Audio tracks only: id of the Network MIDI device (see networkMidiDeviceId)
+    // whose children belong to this audio device. 0 = none yet. Saved from stream v6.
+    int linkedMidiDeviceId = 0;
     bool networkMidiIsChild = false;
     juce::String networkMidiPeer;
 
@@ -132,13 +135,13 @@ struct SequencerTrack
         s.writeInt (preset.bank); s.writeInt (preset.preset); s.writeString (preset.name);
         auto snap = getClips(); s.writeInt ((int) snap->size()); for (auto& slot : *snap) slot->writeToStream (s);
         s.writeBool (solo.load()); s.writeFloat (volumeDb.load()); s.writeFloat (pan.load());
-        if (type == TrackType::Audio) { s.writeInt64 (networkRouteId); s.writeInt (networkSourceId); s.writeInt (networkSourceChannel); }
+        if (type == TrackType::Audio) { s.writeInt64 (networkRouteId); s.writeInt (networkSourceId); s.writeInt (networkSourceChannel); s.writeInt (linkedMidiDeviceId); }
         if (type == TrackType::NetworkMidi) { s.writeInt(networkMidiDeviceId); s.writeBool(networkMidiIsChild); s.writeString(networkMidiPeer); }
         auto audioSnap = getAudioClips();
         s.writeInt ((int) audioSnap->size());
         for (auto& c : *audioSnap) c.writeToStream (s);
     }
-    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool hasAudioClips = false, bool hasNetworkMidi = false)
+    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool hasAudioClips = false, bool hasNetworkMidi = false, bool hasMidiLink = false)
     {
         type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt());
         preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString();
@@ -146,7 +149,7 @@ struct SequencerTrack
         for (int i = 0; i < n; ++i) { auto slot = std::make_shared<ClipSlot>(); if (! slot->readFromStream (s)) return false; next->push_back (std::move (slot)); }
         sortAndPublish (std::move (next));
         if (hasExtendedFields) { solo.store (s.readBool()); volumeDb.store (s.readFloat()); pan.store (s.readFloat()); }
-        if (type == TrackType::Audio) { networkRouteId = s.readInt64(); networkSourceId = s.readInt(); networkSourceChannel = s.readInt(); }
+        if (type == TrackType::Audio) { networkRouteId = s.readInt64(); networkSourceId = s.readInt(); networkSourceChannel = s.readInt(); if (hasMidiLink) linkedMidiDeviceId = s.readInt(); }
         if (hasNetworkMidi && type == TrackType::NetworkMidi) { networkMidiDeviceId=s.readInt(); networkMidiIsChild=s.readBool(); networkMidiPeer=s.readString(); }
         if (hasAudioClips)
         {

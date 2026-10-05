@@ -17,7 +17,7 @@ struct SequencerTrackInfo
     int sliceIdx = -1; int midiChannel = 0; Sf2PresetInfo preset; int numClips = 0;
     bool isSfzInstrument = false;
     int64_t networkRouteId = 0; int32_t networkSourceId = 0; int networkSourceChannel = 0;
-    int networkMidiDeviceId=0; bool networkMidiIsChild=false; juce::String networkMidiPeer;
+    int linkedMidiDeviceId=0; int networkMidiDeviceId=0; bool networkMidiIsChild=false; juce::String networkMidiPeer;
 };
 
 struct SequencerClipInfo
@@ -88,6 +88,12 @@ public:
     bool isNetworkMidiTrack(int) const noexcept;
     int getNetworkMidiChildCount(int) const;
     int findNetworkMidiDevice(const juce::String&) const;
+    /** Network audio track -> its own Network MIDI device. Creates the device track
+        (at defaultPeer) on first use, then adds a child to it. Returns the new child's
+        track index, or -1. */
+    int addNetworkMidiChildForAudio(int audioTrackIndex, const juce::String& defaultPeer);
+    /** Number of MIDI children on the device linked to this audio track (0 if unlinked). */
+    int getLinkedNetworkMidiChildCount(int audioTrackIndex) const;
     void setNetworkMidiLinkState(int,int) const noexcept;
     int getNetworkMidiLinkState(int) const noexcept;
     int getSelectedNetworkMidiDevice() const noexcept;

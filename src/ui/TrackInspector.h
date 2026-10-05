@@ -187,46 +187,19 @@ public:
             }
             refresh();
         };
-        // Network AUDIO tracks: add a Network MIDI child for the same device.
-        // The child hangs off a Network MIDI device track (reused if one already
-        // exists for the default peer, otherwise created first); the peer address
-        // can then be edited from that device track's inspector.
+        // Network AUDIO tracks: add a Network MIDI child for this audio device.
+        // Each audio device owns its own Network MIDI device track (created on first
+        // use, link saved with the project); edit its peer address from that track.
         addMidiChildButton.setButtonText ("+ MIDI CHILD");
         addMidiChildButton.onClick = [this]
         {
             if (hasTrack() && engine.isNetworkAudioTrack (selectedTrack))
             {
-                const juce::String peer ("192.168.99.2");
-                const juce::String audioName = engine.getTrackInfo (selectedTrack).name;
-
-                int parent = -1;
-                const int deviceId = engine.findNetworkMidiDevice (peer);
-                if (deviceId > 0)
+                const int child = engine.addNetworkMidiChildForAudio (selectedTrack, "192.168.99.2");
+                if (child >= 0)
                 {
-                    for (int i = 0; i < engine.getNumTracks(); ++i)
-                    {
-                        const auto ti = engine.getTrackInfo (i);
-                        if (ti.type == TrackType::NetworkMidi && ! ti.networkMidiIsChild
-                            && ti.networkMidiDeviceId == deviceId)
-                        {
-                            parent = i;
-                            break;
-                        }
-                    }
-                }
-                else
-                {
-                    parent = engine.addNetworkMidiTrack (peer, audioName + " MIDI");
-                }
-
-                if (parent >= 0)
-                {
-                    const int child = engine.addNetworkMidiChild (parent);
-                    if (child >= 0)
-                    {
-                        selectedTrack = child;
-                        if (onNetworkTrackStructureChanged) onNetworkTrackStructureChanged (child);
-                    }
+                    selectedTrack = child;
+                    if (onNetworkTrackStructureChanged) onNetworkTrackStructureChanged (child);
                 }
             }
             refresh();
@@ -324,6 +297,13 @@ public:
         addChildButton.setVisible (isNetwork && ! info.networkMidiIsChild && engine.getNetworkMidiChildCount (selectedTrack) < SequencerEngine::kMaxNetworkMidiChildren);
         deleteNetworkButton.setVisible (isNetwork); networkStatusLabel.setVisible (isNetwork);
         addMidiChildButton.setVisible (info.type == TrackType::Audio && engine.isNetworkAudioTrack (selectedTrack));
+        if (info.type == TrackType::Audio)
+        {
+            const int linkedChildren = engine.getLinkedNetworkMidiChildCount (selectedTrack);
+            addMidiChildButton.setButtonText (linkedChildren > 0 ? "+ MIDI CHILD (" + juce::String (linkedChildren) + ")"
+                                                                  : juce::String ("+ MIDI CHILD"));
+            addMidiChildButton.setEnabled (linkedChildren < SequencerEngine::kMaxNetworkMidiChildren);
+        }
         if (isNetwork)
         {
             peerEditor.setText (info.networkMidiPeer, false);
@@ -430,7 +410,7 @@ public:
         if (isNetworkAudio)
         {
             area.removeFromTop (kSectionLabelH + kGapS);
-            addMidiChildButton.setBounds (area.removeFromTop (28).removeFromLeft (110));
+            addMidiChildButton.setBounds (area.removeFromTop (28).removeFromLeft (140));
             area.removeFromTop (kGapL);
         }
 

@@ -49,6 +49,7 @@ static constexpr int kStreamVersion2 = 2;  // multi-clip
 static constexpr int kStreamVersion3 = 3;  // + per-track solo/volumeDb/pan
 static constexpr int kStreamVersion4 = 4;  // + per-track recorded AudioClip list
 static constexpr int kStreamVersion5 = 5;
+static constexpr int kStreamVersion6 = 6;  // + audio track -> Network MIDI device link
 
 //==============================================================================
 struct SequencerEngine::Impl
@@ -632,7 +633,7 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.preset      = t.preset;
     info.numClips    = t.getNumClips();
     info.isSfzInstrument = t.isSfzInstrument;
-    info.networkMidiDeviceId=t.networkMidiDeviceId; info.networkMidiIsChild=t.networkMidiIsChild; info.networkMidiPeer=t.networkMidiPeer;
+    info.linkedMidiDeviceId=t.linkedMidiDeviceId; info.networkMidiDeviceId=t.networkMidiDeviceId; info.networkMidiIsChild=t.networkMidiIsChild; info.networkMidiPeer=t.networkMidiPeer;
     return info;
 }
 
@@ -1576,7 +1577,7 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
 //==============================================================================
 void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 {
-    s.writeInt   (kStreamVersion5);
+    s.writeInt   (kStreamVersion6);
     s.writeFloat (impl->internalBpm.load (std::memory_order_relaxed));
     s.writeBool  (impl->looping    .load (std::memory_order_relaxed));
     s.writeBool  (impl->syncToHost .load (std::memory_order_relaxed));
@@ -1601,8 +1602,9 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     const bool isV3 = (firstInt == kStreamVersion3);
     const bool isV4 = (firstInt == kStreamVersion4);
     const bool isV5 = (firstInt == kStreamVersion5);
+    const bool isV6 = (firstInt == kStreamVersion6);
 
-    if (isV2 || isV3 || isV4 || isV5)
+    if (isV2 || isV3 || isV4 || isV5 || isV6)
     {
         bpm  = s.readFloat();
         loop = s.readBool();
@@ -1627,7 +1629,7 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     for (int i = 0; i < n; ++i)
     {
         auto t  = std::make_shared<SequencerTrack>();
-        bool ok = (isV2 || isV3 || isV4 || isV5) ? t->readFromStream (s, isV3 || isV4 || isV5, isV4 || isV5, isV5) : t->readFromStreamV1 (s);
+        bool ok = (isV2 || isV3 || isV4 || isV5 || isV6) ? t->readFromStream (s, isV3 || isV4 || isV5 || isV6, isV4 || isV5 || isV6, isV5 || isV6, isV6) : t->readFromStreamV1 (s);
         if (! ok) return false;
         loaded->push_back (t);
     }
@@ -1651,13 +1653,53 @@ void SequencerEngine::setNetworkMidiLinkState(int id,int st) const noexcept { if
 int SequencerEngine::getNetworkMidiLinkState(int id) const noexcept { return id>0?impl->netLinkState[id&63].load():0; }
 int SequencerEngine::addNetworkMidiTrack(const juce::String& peer,const juce::String& name){if(!isValidNetworkMidiPeer(peer.trim()))return-1;auto cur=impl->getTracks();int id=1;for(auto&t:*cur)id=juce::jmax(id,t->networkMidiDeviceId+1);auto t=SequencerTrack::makeNetworkMidi(id,peer.trim(),name.isNotEmpty()?name:("MIDI "+peer.trim()),0,juce::Colour(0xff2c8fa3));auto n=std::make_shared<Impl::TrackList>(*cur);n->push_back(t);impl->publishTracks(std::move(n));return(int)cur->size();}
 int SequencerEngine::addNetworkMidiChild(int idx,int ch){auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi)return-1;int id=(*cur)[idx]->networkMidiDeviceId,n=0,last=idx;uint32_t used=0;std::shared_ptr<SequencerTrack> p;for(size_t i=0;i<cur->size();++i){auto&t=(*cur)[i];if(t->type==TrackType::NetworkMidi&&t->networkMidiDeviceId==id){last=(int)i;used|=1u<<(t->midiChannel.load()&15);if(t->networkMidiIsChild)++n;else p=t;}}if(!p||n>=kMaxNetworkMidiChildren)return-1;if(ch<0||ch>15){ch=0;while(ch<16&&(used&(1u<<ch)))++ch;if(ch>=16)return-1;}auto x=SequencerTrack::makeNetworkMidiChild(id,p->name+" / Part "+juce::String(n+1),ch,p->colour.darker(.25f));auto v=std::make_shared<Impl::TrackList>(*cur);v->insert(v->begin()+last+1,x);impl->publishTracks(std::move(v));return last+1;}
-bool SequencerEngine::removeNetworkMidiTrack(int idx){auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi)return false;int id=(*cur)[idx]->networkMidiDeviceId;bool all=!(*cur)[idx]->networkMidiIsChild;auto v=std::make_shared<Impl::TrackList>();for(auto&t:*cur)if(!(t->type==TrackType::NetworkMidi&&t->networkMidiDeviceId==id&&(all||t==(*cur)[idx])))v->push_back(t);impl->publishTracks(std::move(v));return true;}
+bool SequencerEngine::removeNetworkMidiTrack(int idx){auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi)return false;int id=(*cur)[idx]->networkMidiDeviceId;bool all=!(*cur)[idx]->networkMidiIsChild;auto v=std::make_shared<Impl::TrackList>();for(auto&t:*cur)if(!(t->type==TrackType::NetworkMidi&&t->networkMidiDeviceId==id&&(all||t==(*cur)[idx])))v->push_back(t);if(all)for(auto&t:*cur)if(t->type==TrackType::Audio&&t->linkedMidiDeviceId==id)t->linkedMidiDeviceId=0;impl->publishTracks(std::move(v));return true;}
 bool SequencerEngine::setNetworkMidiPeer(int idx,const juce::String& peer){auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi||!isValidNetworkMidiPeer(peer.trim()))return false;(*cur)[idx]->networkMidiPeer=peer.trim();return true;}
 juce::String SequencerEngine::getNetworkMidiPeer(int idx)const{auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi)return {};return (*cur)[idx]->networkMidiPeer;}
 bool SequencerEngine::setNetworkMidiChannel(int idx,int ch){auto cur=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)cur->size())||(*cur)[idx]->type!=TrackType::NetworkMidi||ch<0||ch>15)return false;(*cur)[idx]->midiChannel.store(ch);return true;}
 bool SequencerEngine::isNetworkMidiTrack(int idx)const noexcept{auto s=impl->getTracks();return juce::isPositiveAndBelow(idx,(int)s->size())&&(*s)[idx]->type==TrackType::NetworkMidi;}
 int SequencerEngine::getNetworkMidiChildCount(int idx)const{auto s=impl->getTracks();if(!juce::isPositiveAndBelow(idx,(int)s->size())||(*s)[idx]->type!=TrackType::NetworkMidi)return 0;int id=(*s)[idx]->networkMidiDeviceId,n=0;for(auto&t:*s)if(t->type==TrackType::NetworkMidi&&t->networkMidiDeviceId==id&&t->networkMidiIsChild)++n;return n;}
 int SequencerEngine::findNetworkMidiDevice(const juce::String& peer)const{auto s=impl->getTracks();for(auto&t:*s)if(t->type==TrackType::NetworkMidi&&!t->networkMidiIsChild&&t->networkMidiPeer==peer)return t->networkMidiDeviceId;return 0;}
+int SequencerEngine::addNetworkMidiChildForAudio (int audioIdx, const juce::String& defaultPeer)
+{
+    auto cur = impl->getTracks();
+    if (! juce::isPositiveAndBelow (audioIdx, (int) cur->size())) return -1;
+    auto audio = (*cur)[(size_t) audioIdx];
+    if (audio->type != TrackType::Audio) return -1;
+
+    // Reuse this audio device's own MIDI device track if it still exists.
+    int parent = -1;
+    if (audio->linkedMidiDeviceId > 0)
+        for (size_t i = 0; i < cur->size(); ++i)
+        {
+            const auto& t = (*cur)[i];
+            if (t->type == TrackType::NetworkMidi && ! t->networkMidiIsChild
+                && t->networkMidiDeviceId == audio->linkedMidiDeviceId)
+            { parent = (int) i; break; }
+        }
+
+    if (parent < 0)
+    {
+        parent = addNetworkMidiTrack (defaultPeer, audio->name + " MIDI");
+        if (parent < 0) return -1;
+        auto now = impl->getTracks();
+        audio->linkedMidiDeviceId = (*now)[(size_t) parent]->networkMidiDeviceId;
+    }
+    return addNetworkMidiChild (parent);
+}
+
+int SequencerEngine::getLinkedNetworkMidiChildCount (int audioIdx) const
+{
+    auto cur = impl->getTracks();
+    if (! juce::isPositiveAndBelow (audioIdx, (int) cur->size())) return 0;
+    const auto& audio = (*cur)[(size_t) audioIdx];
+    if (audio->type != TrackType::Audio || audio->linkedMidiDeviceId <= 0) return 0;
+    int n = 0;
+    for (const auto& t : *cur)
+        if (t->type == TrackType::NetworkMidi && t->networkMidiIsChild
+            && t->networkMidiDeviceId == audio->linkedMidiDeviceId) ++n;
+    return n;
+}
 
 //==============================================================================
 //  Network audio track routing
