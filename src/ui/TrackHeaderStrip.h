@@ -225,17 +225,21 @@ public:
             // accent bar, and swatch strip above already carry the "this is
             // the track's colour" identity signal — text doesn't need to
             // duplicate that at the cost of readability.
-            const int reservedRight = rowR.getRight() - meterR.getX() + 6;
-            g.setFont (juce::Font (juce::jlimit (12.0f, 16.0f, (float)trackH * 0.25f), juce::Font::bold));
+            //
+            // Layout: the name sits in its own band at the TOP of the row, centred, in a
+            // larger font; the M/S/R + meter cluster keeps the row's middle line below it.
+            const int nameTop  = rowR.getY() + 3;
+            const int nameBand = juce::jmax (12, (rowR.getCentreY() - btnH / 2) - nameTop - 1);
+            const float nameFontH = (float) juce::jmin (nameBand, juce::jlimit (14, 22, (int) ((float) trackH * 0.32f)));
+            g.setFont (juce::Font (nameFontH, juce::Font::bold));
             g.setColour (theme.foreground);
 
-            // Network Audio rows stack name over a horizontal stereo/mono peak meter,
-            // vertically centred as one block. Rows too short for both (< 34 px) keep
-            // the name centred and get a slim 3 px meter along the bottom edge.
+            // Network Audio rows put a horizontal stereo/mono peak meter on the middle line
+            // (level with M/S/R), under the centred name. Rows too short for it (< 34 px)
+            // get a slim 3 px meter along the bottom edge instead.
             const bool audioRow      = (info.type == TrackType::Audio);
             const bool audioMeterRow = audioRow && trackH >= 34;
-            constexpr int kAudioNameH = 18, kAudioMeterH = 8, kAudioBlockGap = 5;
-            const int audioBlockTop = rowR.getY() + (trackH - (kAudioNameH + kAudioBlockGap + kAudioMeterH)) / 2;
+            constexpr int kAudioMeterH = 8;
 
             // Children drop the repeated audio-track name; a collapsed parent shows how many it hides.
             juce::String shownName = info.name;
@@ -248,11 +252,9 @@ public:
             else if (collapsedRow)
                 shownName << "  [" << nest[(size_t) i].childCount << "]";
 
-            g.drawText (shownName, rowR.getX() + 14 + textShift,
-                        audioMeterRow ? audioBlockTop : rowR.getY(),
-                        rowR.getWidth() - reservedRight - 14 - textShift,
-                        audioMeterRow ? kAudioNameH : trackH,
-                        juce::Justification::centredLeft, true);
+            g.drawText (shownName, rowR.getX() + 14 + textShift, nameTop,
+                        rowR.getWidth() - 2 * (14 + textShift), nameBand,
+                        juce::Justification::centred, true);
 
             if (audioRow && i < kMaxTracks)
             {
@@ -261,7 +263,7 @@ public:
 
                 if (audioMeterRow)
                 {
-                    const int meterY = audioBlockTop + kAudioNameH + kAudioBlockGap;
+                    const int meterY = rowR.getCentreY() - kAudioMeterH / 2;
 
                     // Small "NET" tag left of the meter when there is room for both.
                     if (meterRight - (meterX + 28) >= 48)
