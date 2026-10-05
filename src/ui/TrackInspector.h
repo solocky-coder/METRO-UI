@@ -156,6 +156,7 @@ public:
                                 static_cast<juce::Component*> (&peerEditor),
                                 static_cast<juce::Component*> (&channelCombo),
                                 static_cast<juce::Component*> (&addChildButton),
+                                static_cast<juce::Component*> (&addMidiChildButton),
                                 static_cast<juce::Component*> (&deleteNetworkButton),
                                 static_cast<juce::Component*> (&networkStatusLabel) })
             addAndMakeVisible (*control);
@@ -186,6 +187,50 @@ public:
             }
             refresh();
         };
+        // Network AUDIO tracks: add a Network MIDI child for the same device.
+        // The child hangs off a Network MIDI device track (reused if one already
+        // exists for the default peer, otherwise created first); the peer address
+        // can then be edited from that device track's inspector.
+        addMidiChildButton.setButtonText ("+ MIDI CHILD");
+        addMidiChildButton.onClick = [this]
+        {
+            if (hasTrack() && engine.isNetworkAudioTrack (selectedTrack))
+            {
+                const juce::String peer ("192.168.99.2");
+                const juce::String audioName = engine.getTrackInfo (selectedTrack).name;
+
+                int parent = -1;
+                const int deviceId = engine.findNetworkMidiDevice (peer);
+                if (deviceId > 0)
+                {
+                    for (int i = 0; i < engine.getNumTracks(); ++i)
+                    {
+                        const auto ti = engine.getTrackInfo (i);
+                        if (ti.type == TrackType::NetworkMidi && ! ti.networkMidiIsChild
+                            && ti.networkMidiDeviceId == deviceId)
+                        {
+                            parent = i;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    parent = engine.addNetworkMidiTrack (peer, audioName + " MIDI");
+                }
+
+                if (parent >= 0)
+                {
+                    const int child = engine.addNetworkMidiChild (parent);
+                    if (child >= 0)
+                    {
+                        selectedTrack = child;
+                        if (onNetworkTrackStructureChanged) onNetworkTrackStructureChanged (child);
+                    }
+                }
+            }
+            refresh();
+        };
         deleteNetworkButton.setButtonText ("DELETE");
         deleteNetworkButton.onClick = [this]
         {
@@ -204,6 +249,7 @@ public:
                          static_cast<juce::Component*> (&peerEditor),
                          static_cast<juce::Component*> (&channelCombo),
                          static_cast<juce::Component*> (&addChildButton),
+                         static_cast<juce::Component*> (&addMidiChildButton),
                          static_cast<juce::Component*> (&deleteNetworkButton),
                          static_cast<juce::Component*> (&networkStatusLabel) })
             addChildComponent (*c);
@@ -277,6 +323,7 @@ public:
         peerLabel.setVisible (isNetwork); peerEditor.setVisible (isNetwork); channelCombo.setVisible (isNetwork);
         addChildButton.setVisible (isNetwork && ! info.networkMidiIsChild && engine.getNetworkMidiChildCount (selectedTrack) < SequencerEngine::kMaxNetworkMidiChildren);
         deleteNetworkButton.setVisible (isNetwork); networkStatusLabel.setVisible (isNetwork);
+        addMidiChildButton.setVisible (info.type == TrackType::Audio && engine.isNetworkAudioTrack (selectedTrack));
         if (isNetwork)
         {
             peerEditor.setText (info.networkMidiPeer, false);
@@ -350,6 +397,8 @@ public:
             peerLabel.setVisible (false); peerEditor.setVisible (false); channelCombo.setVisible (false);
             addChildButton.setVisible (false); deleteNetworkButton.setVisible (false); networkStatusLabel.setVisible (false);
         }
+        const bool isNetworkAudio = info.type == TrackType::Audio && engine.isNetworkAudioTrack (selectedTrack);
+        addMidiChildButton.setVisible (isNetworkAudio);
         if (info.type == TrackType::SfPlayer)
         {
             area.removeFromTop (kSectionLabelH + kGapS);
@@ -374,6 +423,14 @@ public:
             deleteNetworkButton.setBounds (netRow.removeFromLeft (62));
             area.removeFromTop (4);
             networkStatusLabel.setBounds (area.removeFromTop (18));
+            area.removeFromTop (kGapL);
+        }
+
+        // ── Network MIDI section (network audio tracks) ────────────────
+        if (isNetworkAudio)
+        {
+            area.removeFromTop (kSectionLabelH + kGapS);
+            addMidiChildButton.setBounds (area.removeFromTop (28).removeFromLeft (110));
             area.removeFromTop (kGapL);
         }
 
@@ -495,6 +552,13 @@ public:
         {
             sectionLabel (g, "NETWORK MIDI", content.removeFromTop (kSectionLabelH));
             content.removeFromTop (kGapS + 28 + 5 + 28 + 4 + 18 + kGapL);
+        }
+
+        // ── Network MIDI section (network audio tracks) ────────────────
+        if (info.type == TrackType::Audio && engine.isNetworkAudioTrack (selectedTrack))
+        {
+            sectionLabel (g, "NETWORK MIDI", content.removeFromTop (kSectionLabelH));
+            content.removeFromTop (kGapS + 28 + kGapL);
         }
 
         // ── Channel section ───────────────────────────────────────────────
@@ -624,7 +688,7 @@ private:
     juce::Label peerLabel, networkStatusLabel;
     juce::TextEditor peerEditor;
     juce::ComboBox channelCombo;
-    juce::TextButton addChildButton, deleteNetworkButton;
+    juce::TextButton addChildButton, addMidiChildButton, deleteNetworkButton;
 
     juce::OwnedArray<juce::TextButton> colourButtons;   // fixed palette — see constructor
 
