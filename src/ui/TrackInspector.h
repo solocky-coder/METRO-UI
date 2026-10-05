@@ -187,9 +187,9 @@ public:
             }
             refresh();
         };
-        // Network AUDIO tracks: add a Network MIDI child for this audio device.
-        // Each audio device owns its own Network MIDI device track (created on first
-        // use, link saved with the project); edit its peer address from that track.
+        // Network AUDIO tracks are the parent: each click adds ONE Network MIDI child
+        // track for this audio device. Pick the child's MIDI channel (1-16) and edit
+        // its peer address in the child's own inspector.
         addMidiChildButton.setButtonText ("+ MIDI CHILD");
         addMidiChildButton.onClick = [this]
         {
@@ -300,8 +300,6 @@ public:
         if (info.type == TrackType::Audio)
         {
             const int linkedChildren = engine.getLinkedNetworkMidiChildCount (selectedTrack);
-            addMidiChildButton.setButtonText (linkedChildren > 0 ? "+ MIDI CHILD (" + juce::String (linkedChildren) + ")"
-                                                                  : juce::String ("+ MIDI CHILD"));
             addMidiChildButton.setEnabled (linkedChildren < SequencerEngine::kMaxNetworkMidiChildren);
         }
         if (isNetwork)

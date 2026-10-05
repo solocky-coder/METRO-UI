@@ -1,4 +1,5 @@
 #pragma once
+#include <set>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "../PluginProcessor.h"
@@ -555,10 +556,15 @@ private:
         const auto& seq = processor->sequencer;
         networkMidiManager->setSelectedDevice (seq.getSelectedNetworkMidiDevice());
 
+        // Children of a network audio track carry their own device id and peer
+        // (there is no separate device track), so configure each device id once
+        // from whichever of its tracks comes first.
+        std::set<int> configuredDevices;
         for (int i = 0; i < seq.getNumTracks(); ++i)
         {
             const auto info = seq.getTrackInfo (i);
-            if (info.type != TrackType::NetworkMidi || info.networkMidiIsChild)
+            if (info.type != TrackType::NetworkMidi || info.networkMidiPeer.isEmpty()
+                || ! configuredDevices.insert (info.networkMidiDeviceId).second)
                 continue;
 
             networkMidiManager->configureDevice (info.networkMidiDeviceId, info.networkMidiPeer, info.name);

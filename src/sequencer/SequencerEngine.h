@@ -88,9 +88,9 @@ public:
     bool isNetworkMidiTrack(int) const noexcept;
     int getNetworkMidiChildCount(int) const;
     int findNetworkMidiDevice(const juce::String&) const;
-    /** Network audio track -> its own Network MIDI device. The first call creates the
-        device track (at defaultPeer) and returns it; later calls add a child to it. Each
-        call adds exactly one track. Returns the new track's index, or -1. */
+    /** Network audio track = parent. Adds ONE Network MIDI child track on that audio
+        device (lowest free MIDI channel; the channel can be changed 1-16 in the child's
+        inspector). Returns the new child's track index, or -1. */
     int addNetworkMidiChildForAudio(int audioTrackIndex, const juce::String& defaultPeer);
     /** Number of MIDI children on the device linked to this audio track (0 if unlinked). */
     int getLinkedNetworkMidiChildCount(int audioTrackIndex) const;
