@@ -18,6 +18,7 @@
 //     Timer), is the only place that still calls MidiClip::addNote()/
 //     setNoteDuration() for recording.
 
+#include <set>
 #include <map>
 #include "SequencerEngine.h"
 #include "../audio/SfzPlayer.h"
@@ -1709,7 +1710,10 @@ int SequencerEngine::addNetworkMidiChildForAudio (int audioIdx, const juce::Stri
     while (ch < 16 && (used & (1u << ch))) ++ch;
     if (ch >= 16) return -1;
 
-    auto child = SequencerTrack::makeNetworkMidiChild (id, audio->name + " MIDI " + juce::String (n + 1), ch,
+    // Name from the device label only (never the source/channel part of the audio name).
+    const auto deviceLabel = audio->name.contains (" | ") ? audio->name.upToFirstOccurrenceOf (" | ", false, false)
+                                                          : audio->name;
+    auto child = SequencerTrack::makeNetworkMidiChild (id, deviceLabel + " MIDI " + juce::String (n + 1), ch,
                                                        audio->colour.darker (0.25f));
     child->networkMidiPeer = peer;
 
@@ -1835,6 +1839,21 @@ int SequencerEngine::renameNetworkAudioTracks (int64_t sourceKey, const juce::St
             track.name = newLabel + track.name.substring (oldLabel.length());
             ++renamed;
         }
+    }
+
+    // MIDI children are named "<device label> MIDI n": keep them in step with the label.
+    std::set<int> linkedDevices;
+    for (const auto& trackPtr : *snap)
+        if (trackPtr->type == TrackType::Audio && trackPtr->networkRouteId == sourceKey
+            && trackPtr->linkedMidiDeviceId > 0)
+            linkedDevices.insert (trackPtr->linkedMidiDeviceId);
+    for (const auto& trackPtr : *snap)
+    {
+        auto& track = *trackPtr;
+        if (track.type == TrackType::NetworkMidi && track.networkMidiIsChild
+            && linkedDevices.count (track.networkMidiDeviceId) > 0
+            && track.name.startsWith (oldLabel + " "))
+            track.name = newLabel + track.name.substring (oldLabel.length());
     }
     return renamed;
 }

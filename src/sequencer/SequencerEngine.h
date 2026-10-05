@@ -20,6 +20,19 @@ struct SequencerTrackInfo
     int linkedMidiDeviceId=0; int networkMidiDeviceId=0; bool networkMidiIsChild=false; juce::String networkMidiPeer;
 };
 
+/** Name shown in the arranger. Network audio tracks are stored as
+    "<device> | <source> <channel>" (kept that way so device re-labelling can find them),
+    but only the device name is shown to the user. */
+inline juce::String arrangerTrackName (const SequencerTrackInfo& info)
+{
+    if (info.type == TrackType::Audio)
+    {
+        const int sep = info.name.indexOf (" | ");
+        if (sep > 0) return info.name.substring (0, sep);
+    }
+    return info.name;
+}
+
 struct SequencerClipInfo
 {
     int64_t startTick = 0; int64_t lengthTicks = MidiClip::kPPQ * 4 * 4;

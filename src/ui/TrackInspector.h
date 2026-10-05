@@ -461,14 +461,14 @@ public:
         g.fillRect (swatch);
         g.setColour (info.colour.contrasting (0.85f));
         g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
-        g.drawText (info.name.substring (0, 1).toUpperCase(), swatch.toNearestInt(),
+        g.drawText (arrangerTrackName (info).substring (0, 1).toUpperCase(), swatch.toNearestInt(),
                     juce::Justification::centred, false);
 
         idRow.removeFromLeft (10);
         auto nameArea = idRow.removeFromTop (17);
         g.setColour (theme.foreground);
         g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
-        g.drawFittedText (info.name, nameArea, juce::Justification::centredLeft, 1);
+        g.drawFittedText (arrangerTrackName (info), nameArea, juce::Justification::centredLeft, 1);
 
         auto metaArea = idRow.removeFromTop (14);
         juce::String typeTag = trackTypeName (info.type);

@@ -242,12 +242,14 @@ public:
             constexpr int kAudioMeterH = 8;
 
             // Children drop the repeated audio-track name; a collapsed parent shows how many it hides.
-            juce::String shownName = info.name;
+            juce::String shownName = arrangerTrackName (info);
             if (isChildRow)
             {
-                const auto parentName = engine.getTrackInfo (nest[(size_t) i].parentIndex).name;
-                if (shownName.startsWith (parentName + " "))
-                    shownName = shownName.substring (parentName.length() + 1);
+                // Nested under its audio track: show just "MIDI n" (drops the device label,
+                // and any source/channel text carried by older child names).
+                const int at = shownName.lastIndexOf (" MIDI ");
+                if (at >= 0)
+                    shownName = shownName.substring (at + 1);
             }
             else if (collapsedRow)
                 shownName << "  [" << nest[(size_t) i].childCount << "]";

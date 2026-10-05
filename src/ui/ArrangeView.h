@@ -2740,7 +2740,7 @@ private:
             g.setFont (juce::Font (juce::jmin (14.f, (float)trackH * 0.24f), juce::Font::bold));
             g.setColour (muted ? juce::Colours::white.withAlpha (0.45f)
                                : juce::Colours::white.withAlpha (0.92f));
-            g.drawText (info.name,
+            g.drawText (arrangerTrackName (info),
                         clipR.getX() + 6, clipR.getY() + 2,
                         juce::jmax (0, clipR.getWidth() - 26),
                         juce::jmax (0, (int)(trackH * 0.38f)),
