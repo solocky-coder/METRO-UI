@@ -18,6 +18,7 @@
 //     Timer), is the only place that still calls MidiClip::addNote()/
 //     setNoteDuration() for recording.
 
+#include <map>
 #include "SequencerEngine.h"
 #include "../audio/SfzPlayer.h"
 
@@ -1707,6 +1708,33 @@ int SequencerEngine::addNetworkMidiChildForAudio (int audioIdx, const juce::Stri
     next->insert (next->begin() + insertAfter + 1, child);
     impl->publishTracks (std::move (next));
     return insertAfter + 1;
+}
+
+std::vector<SequencerEngine::TrackNest> SequencerEngine::getTrackNesting() const
+{
+    auto cur = impl->getTracks();
+    std::vector<TrackNest> out (cur->size());
+    std::map<int, int> audioOfDevice;   // linked device id -> audio track index
+    for (size_t i = 0; i < cur->size(); ++i)
+    {
+        const auto& t = (*cur)[i];
+        if (t->type == TrackType::Audio && t->linkedMidiDeviceId > 0)
+        {
+            audioOfDevice[t->linkedMidiDeviceId] = (int) i;
+            out[i].deviceId = t->linkedMidiDeviceId;
+        }
+    }
+    for (size_t j = 0; j < cur->size(); ++j)
+    {
+        const auto& t = (*cur)[j];
+        if (t->type != TrackType::NetworkMidi || ! t->networkMidiIsChild) continue;
+        const auto it = audioOfDevice.find (t->networkMidiDeviceId);
+        if (it == audioOfDevice.end()) continue;
+        out[j].parentIndex = it->second;
+        out[j].deviceId    = t->networkMidiDeviceId;
+        ++out[(size_t) it->second].childCount;
+    }
+    return out;
 }
 
 int SequencerEngine::getLinkedNetworkMidiChildCount (int audioIdx) const

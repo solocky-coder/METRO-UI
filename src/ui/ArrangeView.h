@@ -366,6 +366,12 @@ public:
         };
 
         // ── Track-strip callbacks ─────────────────────────────────────────────
+        trackStrip.onLayoutChanged = [this]
+        {
+            updateScrollRanges();
+            repaint();
+            trackStrip.repaint();
+        };
         trackStrip.onTrackSelected = [this] (int idx)
         {
             selectTrack (idx);
@@ -998,7 +1004,7 @@ public:
         else if (e.mods.isAltDown())
         {
             // Vertical scroll with Alt
-            const int totalH = engine.getNumTracks() * trackH;
+            const int totalH = trackStrip.getVisibleTrackCount() * trackH;
             const int viewH  = clipGridBounds.getHeight();
             scrollY = juce::jlimit (0, juce::jmax (0, totalH - viewH),
                                     scrollY - (int)(w.deltaY * 40.0));
@@ -1375,14 +1381,26 @@ private:
         return (x > mx ? x - mx : mx - x) <= kLoopMarkerGrabPx;
     }
 
-    int trackFromY (int y) const noexcept
+    // Rows are the *visible* tracks: MIDI children collapsed under their audio track
+    // take no space, so track index and row index are mapped through trackStrip.
+    int trackFromY (int y) const
     {
-        return (y - clipGridBounds.getY() + scrollY) / trackH;
+        const int rel = y - clipGridBounds.getY() + scrollY;
+        if (rel < 0) return -1;
+        return trackStrip.trackAtRow (rel / trackH);
     }
 
-    int trackTopY (int i) const noexcept
+    int trackTopY (int i) const
     {
-        return clipGridBounds.getY() + i * trackH - scrollY;
+        int row;
+        if (i >= engine.getNumTracks())
+            row = trackStrip.getVisibleTrackCount();     // just below the last visible row
+        else
+        {
+            row = trackStrip.rowOfTrack (i);
+            if (row < 0) return -(1 << 28);              // hidden: far off-screen so it never hits or paints
+        }
+        return clipGridBounds.getY() + row * trackH - scrollY;
     }
 
     juce::Rectangle<int> clipRectForClip (int trackIdx, int clipIdx) const
@@ -1717,7 +1735,7 @@ private:
                                  juce::dontSendNotification);
 
         // Vertical
-        const int totalH = engine.getNumTracks() * trackH;
+        const int totalH = trackStrip.getVisibleTrackCount() * trackH;
         const int viewH  = clipGridBounds.getHeight();
         scrollY = juce::jlimit (0, juce::jmax (0, totalH - viewH), scrollY);
         vScroll.setRangeLimits (0.0, (double)juce::jmax (viewH, totalH));
@@ -2470,7 +2488,7 @@ private:
     void paintTrackRows (juce::Graphics& g) const
     {
         const int n = engine.getNumTracks();
-        for (int i = 0; i < n; ++i)
+        for (const int i : trackStrip.getVisibleTracks())
         {
             const int rowTop = trackTopY (i);
             if (rowTop + trackH < clipGridBounds.getY()) continue;  // above view
@@ -3041,7 +3059,7 @@ private:
         // the ruler's bottom edge (clipGridBounds.getY()) and clamp it to the
         // actual visible track rows instead of the unused remainder of the
         // grid viewport.
-        const int totalRowsH   = engine.getNumTracks() * trackH;
+        const int totalRowsH   = trackStrip.getVisibleTrackCount() * trackH;
         const int visibleRowsH = juce::jlimit (0, clipGridBounds.getHeight(),
                                                 totalRowsH - scrollY);
         if (visibleRowsH <= 0) return;

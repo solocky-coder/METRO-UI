@@ -1,4 +1,7 @@
 #pragma once
+#include <algorithm>
+#include <set>
+#include <vector>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
 #include "DysektLookAndFeel.h"
@@ -23,28 +26,65 @@ public:
     void setTrackHeight (int h) { trackH = juce::jmax (18, h); repaint(); }
     int  getTrackHeight()       const noexcept { return trackH; }
     int  getSelectedTrack()     const noexcept { return selectedTrack; }
-    void setSelectedTrack (int i)              { selectedTrack = i; repaint(); }
+    void setSelectedTrack (int i)
+    {
+        selectedTrack = i;
+        // A selected child must never stay hidden inside a collapsed parent.
+        if (i >= 0)
+        {
+            const auto nest = engine.getTrackNesting();
+            if (i < (int) nest.size() && nest[(size_t) i].parentIndex >= 0
+                && collapsed.erase (nest[(size_t) i].deviceId) > 0 && onLayoutChanged)
+                onLayoutChanged();
+        }
+        repaint();
+    }
+
+    /** Called when rows are shown/hidden, so the timeline can re-layout. */
+    std::function<void()> onLayoutChanged;
+
+    // Visible rows. MIDI children of a network audio track can be collapsed under it,
+    // so row N is no longer track N. Everything that maps y <-> track goes through these.
+    std::vector<int> getVisibleTracks() const { return visibleFrom (engine.getTrackNesting()); }
+    int getVisibleTrackCount() const          { return (int) getVisibleTracks().size(); }
+    int rowOfTrack (int i) const
+    {
+        const auto v = getVisibleTracks();
+        const auto it = std::find (v.begin(), v.end(), i);
+        return it == v.end() ? -1 : (int) (it - v.begin());
+    }
+    int trackAtRow (int row) const
+    {
+        const auto v = getVisibleTracks();
+        return juce::isPositiveAndBelow (row, (int) v.size()) ? v[(size_t) row] : -1;
+    }
 
     std::function<void(int)>            onTrackSelected;
     std::function<void(int, bool)>      onTrackMuted;
     std::function<void(int, int)>       onSfTrackChannelChanged;  // trackIdx, ch 1-based
 
-    int getRequiredHeight() const { return engine.getNumTracks() * trackH; }
+    int getRequiredHeight() const { return getVisibleTrackCount() * trackH; }
 
     //==========================================================================
     void paint (juce::Graphics& g) override
     {
         const auto& theme = getTheme();
         g.fillAll (theme.waveformBg);
-        const int n = engine.getNumTracks();
-        for (int i = 0; i < n; ++i)
+        const auto nest    = engine.getTrackNesting();
+        const auto visible = visibleFrom (nest);
+        for (int row = 0; row < (int) visible.size(); ++row)
         {
+            const int i = visible[(size_t) row];
             const auto info  = engine.getTrackInfo (i);
+            const bool isChildRow  = nest[(size_t) i].parentIndex >= 0;
+            const bool isParentRow = nest[(size_t) i].childCount > 0;
+            const bool collapsedRow = isParentRow && collapsed.count (nest[(size_t) i].deviceId) > 0;
+            const int  textShift   = (isChildRow ? kChildIndent : 0) + (isParentRow ? kChevronW : 0);
             // Audio tracks show their own (multi-arm) audio record arm; every other
             // track type shows whether it is the single MIDI recording target.
             const bool recordArmed = (info.type == TrackType::Audio) ? info.audioRecordArm
                                                                      : (i == engine.getRecordingTrackIndex());
-            const auto rowR  = getRowBounds (i);
+            const juce::Rectangle<int> rowR (0, row * trackH, getWidth(), trackH);
             const bool sel   = (i == selectedTrack);
 
             g.setColour (theme.header.withAlpha (0.92f));
@@ -82,6 +122,30 @@ public:
 
             g.setColour (info.colour);
             g.fillRect (rowR.withTrimmedLeft (3).withTrimmedRight (rowR.getWidth() - 7).toFloat());
+
+            // Nesting: MIDI children hang off their audio track with an elbow connector.
+            if (isChildRow)
+            {
+                const bool lastChild = (i + 1 >= (int) nest.size())
+                                    || nest[(size_t) i + 1].parentIndex != nest[(size_t) i].parentIndex;
+                const int cx = rowR.getX() + 17;
+                g.setColour (theme.foreground.withAlpha (0.35f));
+                g.fillRect (cx, rowR.getY(), 1, lastChild ? rowR.getHeight() / 2 : rowR.getHeight());
+                g.fillRect (cx, rowR.getCentreY(), 12, 1);
+            }
+
+            // Collapse arrow on an audio track that has MIDI children.
+            if (isParentRow)
+            {
+                const auto cr = chevronRect (rowR).toFloat().reduced (3.0f);
+                juce::Path tri;
+                if (collapsedRow)
+                    tri.addTriangle (cr.getX(), cr.getY(), cr.getX(), cr.getBottom(), cr.getRight(), cr.getCentreY());
+                else
+                    tri.addTriangle (cr.getX(), cr.getY(), cr.getRight(), cr.getY(), cr.getCentreX(), cr.getBottom());
+                g.setColour (theme.accent);
+                g.fillPath (tri);
+            }
 
             // M / S / R button trio — mirrors TrackInspector's row, added here
             // so the timeline header carries the same controls per the
@@ -173,15 +237,26 @@ public:
             constexpr int kAudioNameH = 18, kAudioMeterH = 8, kAudioBlockGap = 5;
             const int audioBlockTop = rowR.getY() + (trackH - (kAudioNameH + kAudioBlockGap + kAudioMeterH)) / 2;
 
-            g.drawText (info.name, rowR.getX() + 14,
+            // Children drop the repeated audio-track name; a collapsed parent shows how many it hides.
+            juce::String shownName = info.name;
+            if (isChildRow)
+            {
+                const auto parentName = engine.getTrackInfo (nest[(size_t) i].parentIndex).name;
+                if (shownName.startsWith (parentName + " "))
+                    shownName = shownName.substring (parentName.length() + 1);
+            }
+            else if (collapsedRow)
+                shownName << "  [" << nest[(size_t) i].childCount << "]";
+
+            g.drawText (shownName, rowR.getX() + 14 + textShift,
                         audioMeterRow ? audioBlockTop : rowR.getY(),
-                        rowR.getWidth() - reservedRight - 14,
+                        rowR.getWidth() - reservedRight - 14 - textShift,
                         audioMeterRow ? kAudioNameH : trackH,
                         juce::Justification::centredLeft, true);
 
             if (audioRow && i < kMaxTracks)
             {
-                int meterX = rowR.getX() + 14;
+                int meterX = rowR.getX() + 14 + textShift;
                 const int meterRight = muteR.getX() - 10;
 
                 if (audioMeterRow)
@@ -224,14 +299,15 @@ public:
                 }
                 g.setFont (juce::Font (juce::jlimit (9.0f, 11.0f, (float)trackH * 0.17f)));
                 g.setColour (theme.foreground.withAlpha (0.55f));
-                g.drawText (badge, rowR.getX() + 14, rowR.getCentreY(), 26, trackH / 2,
+                g.drawText (badge, rowR.getX() + 14 + textShift, rowR.getCentreY(), 26, trackH / 2,
                             juce::Justification::centredLeft, false);
 
-                if (info.type == TrackType::SfPlayer || info.type == TrackType::ChromaticSlice)
+                if (info.type == TrackType::SfPlayer || info.type == TrackType::ChromaticSlice
+                    || info.type == TrackType::NetworkMidi)
                 {
                     g.setColour (theme.foreground.withAlpha (0.75f));
                     g.drawText ("CH" + juce::String (info.midiChannel + 1),
-                                rowR.getX() + 42, rowR.getCentreY(), 46, trackH / 2,
+                                rowR.getX() + 42 + textShift, rowR.getCentreY(), 46, trackH / 2,
                                 juce::Justification::centredLeft, false);
                 }
             }
@@ -244,8 +320,11 @@ public:
     //==========================================================================
     void mouseDown (const juce::MouseEvent& e) override
     {
-        const int i = e.y / trackH;
-        if (! juce::isPositiveAndBelow (i, engine.getNumTracks())) return;
+        const auto nest    = engine.getTrackNesting();
+        const auto visible = visibleFrom (nest);
+        const int rowIdx = e.y / trackH;
+        if (e.y < 0 || ! juce::isPositiveAndBelow (rowIdx, (int) visible.size())) return;
+        const int i = visible[(size_t) rowIdx];
         const auto info = engine.getTrackInfo (i);
 
         if (e.mods.isRightButtonDown())
@@ -254,7 +333,14 @@ public:
             return;
         }
 
-        const auto rowR  = getRowBounds (i);
+        const juce::Rectangle<int> rowR (0, rowIdx * trackH, getWidth(), trackH);
+
+        if (nest[(size_t) i].childCount > 0 && chevronRect (rowR).expanded (4).contains (e.getPosition()))
+        {
+            toggleCollapsed (nest, i);
+            return;
+        }
+
         const int btnW   = juce::jlimit (18, 24, trackH - 10);
         const int btnH   = juce::jlimit (12, 18, trackH - 8);
         const int btnGap = 3;
@@ -331,7 +417,45 @@ private:
 
     juce::Rectangle<int> getRowBounds (int i) const
     {
-        return { 0, i * trackH, getWidth(), trackH };
+        const int row = rowOfTrack (i);
+        if (row < 0) return {};
+        return { 0, row * trackH, getWidth(), trackH };
+    }
+
+    static constexpr int kChildIndent = 22;   // extra left inset for nested MIDI children
+    static constexpr int kChevronW    = 18;   // room for the collapse arrow on a parent
+
+    static juce::Rectangle<int> chevronRect (juce::Rectangle<int> rowR)
+    {
+        return { rowR.getX() + 12, rowR.getCentreY() - 8, 16, 16 };
+    }
+
+    std::vector<int> visibleFrom (const std::vector<SequencerEngine::TrackNest>& nest) const
+    {
+        std::vector<int> v;
+        v.reserve (nest.size());
+        for (int i = 0; i < (int) nest.size(); ++i)
+            if (! (nest[(size_t) i].parentIndex >= 0 && collapsed.count (nest[(size_t) i].deviceId) > 0))
+                v.push_back (i);
+        return v;
+    }
+
+    void toggleCollapsed (const std::vector<SequencerEngine::TrackNest>& nest, int parentTrack)
+    {
+        const int dev = nest[(size_t) parentTrack].deviceId;
+        if (collapsed.erase (dev) == 0)
+        {
+            collapsed.insert (dev);
+            // Selection must not stay on a track that just disappeared: move it to the parent.
+            if (selectedTrack >= 0 && selectedTrack < (int) nest.size()
+                && nest[(size_t) selectedTrack].parentIndex >= 0 && nest[(size_t) selectedTrack].deviceId == dev)
+            {
+                selectedTrack = parentTrack;
+                if (onTrackSelected) onTrackSelected (parentTrack);
+            }
+        }
+        repaint();
+        if (onLayoutChanged) onLayoutChanged();
     }
 
     void timerCallback() override
@@ -369,6 +493,7 @@ private:
     SequencerEngine& engine;
     int selectedTrack = 0;
     int trackH        = 64;
+    std::set<int> collapsed;   // linked device ids of audio parents whose children are hidden (not saved)
 
     static constexpr int kMaxTracks = SequencerEngine::kActivityFlagCount;
     static constexpr int kHoldTicks = 3;

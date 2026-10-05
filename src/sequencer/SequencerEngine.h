@@ -94,6 +94,12 @@ public:
     int addNetworkMidiChildForAudio(int audioTrackIndex, const juce::String& defaultPeer);
     /** Number of MIDI children on the device linked to this audio track (0 if unlinked). */
     int getLinkedNetworkMidiChildCount(int audioTrackIndex) const;
+    /** Per-track nesting for the track list. For a MIDI child of a network audio track:
+        parentIndex = that audio track's index, deviceId = the shared device id. For an
+        audio parent: deviceId = its linked device id, childCount = number of children.
+        Everything else is parentIndex -1, deviceId 0, childCount 0. */
+    struct TrackNest { int parentIndex = -1; int deviceId = 0; int childCount = 0; };
+    std::vector<TrackNest> getTrackNesting() const;
     void setNetworkMidiLinkState(int,int) const noexcept;
     int getNetworkMidiLinkState(int) const noexcept;
     int getSelectedNetworkMidiDevice() const noexcept;
