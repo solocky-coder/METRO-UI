@@ -78,6 +78,10 @@ public:
     static constexpr int kMaxNetworkMidiChildren=16;
     using NetworkMidiSink=void(*)(void*,int,const juce::MidiMessage&);
     void setNetworkMidiSink(NetworkMidiSink,void*) noexcept;
+    /** Lets the host tell the engine which IP a network audio source lives at, so MIDI
+        children of that audio track start at the audio device's own address. */
+    using AudioPeerResolver=juce::String(*)(void*,int32_t sourceId);
+    void setNetworkAudioPeerResolver(AudioPeerResolver,void*) noexcept;
     void sendNetworkMidi(int,const juce::MidiMessage&) const noexcept;
     int addNetworkMidiTrack(const juce::String&,const juce::String&);
     int addNetworkMidiChild(int,int=-1);

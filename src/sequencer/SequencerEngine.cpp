@@ -129,7 +129,7 @@ struct SequencerEngine::Impl
     std::atomic<int>  selectedLiveChannel  { 0 };  // 1-based; 0 = disabled
     std::atomic<SelectedLiveTarget> selectedLiveTarget {}; // player + channel for the selected track
     std::atomic<int>  recordingTrackIndex  { -1 }; // which track receives recorded MIDI (-1 = none)
-    std::atomic<SequencerEngine::NetworkMidiSink> netSink{nullptr}; std::atomic<void*> netSinkCtx{nullptr}; std::atomic<int> selectedNetworkMidiDevice{0}; std::atomic<int> netLinkState[64]{}; juce::MidiBuffer netScratch;
+    std::atomic<SequencerEngine::AudioPeerResolver> audioPeerResolver{nullptr}; std::atomic<void*> audioPeerResolverCtx{nullptr}; std::atomic<SequencerEngine::NetworkMidiSink> netSink{nullptr}; std::atomic<void*> netSinkCtx{nullptr}; std::atomic<int> selectedNetworkMidiDevice{0}; std::atomic<int> netLinkState[64]{}; juce::MidiBuffer netScratch;
     void sendNet(int id,const juce::MidiMessage&m) const noexcept { if(auto f=netSink.load(std::memory_order_acquire)) f(netSinkCtx.load(std::memory_order_relaxed),id,m); }
     std::atomic<SequencerEngine::RecordMode> recordMode { SequencerEngine::RecordMode::Overdub };
 
@@ -1647,6 +1647,7 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
 //==============================================================================
 // Network MIDI
 //==============================================================================
+void SequencerEngine::setNetworkAudioPeerResolver(AudioPeerResolver f,void*ctx) noexcept { if(!f) impl->audioPeerResolver.store(nullptr); impl->audioPeerResolverCtx.store(ctx); if(f) impl->audioPeerResolver.store(f); }
 void SequencerEngine::setNetworkMidiSink(NetworkMidiSink f,void*ctx) noexcept { if(!f) impl->netSink.store(nullptr); impl->netSinkCtx.store(ctx); if(f) impl->netSink.store(f); }
 void SequencerEngine::sendNetworkMidi(int id,const juce::MidiMessage&m) const noexcept { impl->sendNet(id,m); }
 int SequencerEngine::getSelectedNetworkMidiDevice() const noexcept { return impl->selectedNetworkMidiDevice.load(); }
@@ -1682,7 +1683,15 @@ int SequencerEngine::addNetworkMidiChildForAudio (int audioIdx, const juce::Stri
 
     int n = 0, insertAfter = audioIdx;
     uint32_t used = 0;
+    // First child: start at the audio device's own IP (from the audio source) when the host
+    // can tell us; otherwise the default. Later children copy a sibling's (possibly edited) IP.
     juce::String peer = defaultPeer.trim();
+    if (auto resolve = impl->audioPeerResolver.load (std::memory_order_acquire))
+    {
+        const auto audioPeer = resolve (impl->audioPeerResolverCtx.load (std::memory_order_relaxed),
+                                        audio->networkSourceId).trim();
+        if (isValidNetworkMidiPeer (audioPeer)) peer = audioPeer;
+    }
     for (size_t i = 0; i < cur->size(); ++i)
     {
         const auto& t = (*cur)[i];

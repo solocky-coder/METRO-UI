@@ -75,6 +75,17 @@ public:
         networkAudio->setSourceLabels (NetworkAudioLabels::load());
         networkAudio->start();
         processor->setNetworkAudio (networkAudio.get());
+        // MIDI children of a network audio track start at that audio device's own IP.
+        processor->sequencer.setNetworkAudioPeerResolver (
+            [] (void* ctx, int32_t sourceId) -> juce::String
+            {
+                if (auto* na = static_cast<MetroNetworkAudio*> (ctx))
+                    for (const auto& src : na->getSources())
+                        if (src.sourceId == sourceId && src.peerAddress.isNotEmpty())
+                            return src.peerAddress;
+                return {};
+            },
+            networkAudio.get());
         autoTrack = std::make_unique<NetworkAudioAutoTrack> (networkAudio.get());
 
         setContentNonOwned (editor.get(), true);
@@ -115,6 +126,7 @@ public:
         }
 
         processor->sequencer.setNetworkMidiSink (nullptr, nullptr);
+        processor->sequencer.setNetworkAudioPeerResolver (nullptr, nullptr);
         RtpMidiInputForwarder::instance().setEngine (nullptr);
         RtpMidiInputForwarder::instance().setManager (nullptr);
         networkMidiManager.reset();
