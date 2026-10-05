@@ -1969,11 +1969,6 @@ private:
                 m.addItem (41, "Delete Network MIDI track");
             }
         }
-        else
-        {
-            m.addSeparator();
-            m.addItem (42, "Add Network MIDI device");
-        }
 
         m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (juce::Rectangle<int> (e.getScreenX(), e.getScreenY(), 1, 1)),
             [this, trackIdx, clipIdx, info, onClip] (int result)
@@ -2026,16 +2021,6 @@ private:
                             trackStrip.setSelectedTrack (-1);
                         }
                         break;
-                    case 42:
-                    {
-                        const int idx = engine.addNetworkMidiTrack ("192.168.99.2", "Network MIDI");
-                        if (idx >= 0)
-                        {
-                            selectTrack (idx);
-                            trackStrip.setSelectedTrack (idx);
-                        }
-                        break;
-                    }
                     case 8:  // Repeat clip
                     {
                         MidiClip* src = engine.getClip (trackIdx, clipIdx);
