@@ -1684,6 +1684,9 @@ int SequencerEngine::addNetworkMidiChildForAudio (int audioIdx, const juce::Stri
         if (parent < 0) return -1;
         auto now = impl->getTracks();
         audio->linkedMidiDeviceId = (*now)[(size_t) parent]->networkMidiDeviceId;
+        // The device track is itself a playable MIDI track, so the first click
+        // adds just that one track; later clicks add children to it.
+        return parent;
     }
     return addNetworkMidiChild (parent);
 }
