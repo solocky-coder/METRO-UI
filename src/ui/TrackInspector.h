@@ -281,8 +281,8 @@ public:
         {
             peerEditor.setText (info.networkMidiPeer, false);
             channelCombo.setSelectedItemIndex (juce::jlimit (0, 15, info.midiChannel), juce::dontSendNotification);
-            networkStatusLabel.setText (info.networkMidiIsChild ? "CHILD • device " + juce::String (info.networkMidiDeviceId)
-                                                                 : "DEVICE • " + juce::String (engine.getNetworkMidiChildCount (selectedTrack)) + " child(s)", juce::dontSendNotification);
+            networkStatusLabel.setText (info.networkMidiIsChild ? "CHILD - device " + juce::String (info.networkMidiDeviceId)
+                                                                 : "DEVICE - " + juce::String (engine.getNetworkMidiChildCount (selectedTrack)) + " child(s)", juce::dontSendNotification);
         }
         muteButton.setToggleState    (! info.enabled, juce::dontSendNotification);
         soloButton.setToggleState    (info.solo, juce::dontSendNotification);
@@ -339,8 +339,8 @@ public:
         {
             peerEditor.setText (info.networkMidiPeer, false);
             channelCombo.setSelectedItemIndex (juce::jlimit (0, 15, info.midiChannel), juce::dontSendNotification);
-            networkStatusLabel.setText (info.networkMidiIsChild ? "CHILD TRACK • device " + juce::String (info.networkMidiDeviceId)
-                                                                 : "DEVICE TRACK • " + juce::String (engine.getNetworkMidiChildCount (selectedTrack)) + " child(s)", juce::dontSendNotification);
+            networkStatusLabel.setText (info.networkMidiIsChild ? "CHILD TRACK - device " + juce::String (info.networkMidiDeviceId)
+                                                                 : "DEVICE TRACK - " + juce::String (engine.getNetworkMidiChildCount (selectedTrack)) + " child(s)", juce::dontSendNotification);
             addChildButton.setVisible (! info.networkMidiIsChild && engine.getNetworkMidiChildCount (selectedTrack) < SequencerEngine::kMaxNetworkMidiChildren);
             deleteNetworkButton.setVisible (true);
             peerLabel.setVisible (true); peerEditor.setVisible (true); channelCombo.setVisible (true); networkStatusLabel.setVisible (true);
