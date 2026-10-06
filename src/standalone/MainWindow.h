@@ -121,6 +121,10 @@ public:
         if (editor != nullptr)
             editor->setWindowMenuBar (nullptr, 0);
         setMenuBar (nullptr);
+        // editor is owned by the unique_ptr below, so detach it from DocumentWindow
+        // before the member is destroyed. Otherwise DocumentWindow can retain a
+        // dangling contentComponent pointer until its base destructor runs.
+        clearContentComponent();
         deviceManager.removeAudioCallback (&player);
 
         for (const auto& id : registeredMidiInputIds)
