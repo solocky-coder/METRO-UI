@@ -77,12 +77,18 @@ public:
         processor->setNetworkAudio (networkAudio.get());
         // MIDI children of a network audio track start at that audio device's own IP.
         processor->sequencer.setNetworkAudioPeerResolver (
-            [] (void* ctx, int32_t sourceId) -> juce::String
+            [] (void* ctx, int64_t sourceKey, int32_t sourceId) -> juce::String
             {
                 if (auto* na = static_cast<MetroNetworkAudio*> (ctx))
-                    for (const auto& src : na->getSources())
+                {
+                    const auto sources = na->getSources();
+                    for (const auto& src : sources)           // exact device first
+                        if (src.sourceKey == sourceKey && src.peerAddress.isNotEmpty())
+                            return src.peerAddress;
+                    for (const auto& src : sources)           // then the (non-unique) source number
                         if (src.sourceId == sourceId && src.peerAddress.isNotEmpty())
                             return src.peerAddress;
+                }
                 return {};
             },
             networkAudio.get());

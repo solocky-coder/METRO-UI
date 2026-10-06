@@ -1689,8 +1689,10 @@ int SequencerEngine::addNetworkMidiChildForAudio (int audioIdx, const juce::Stri
     juce::String peer = defaultPeer.trim();
     if (auto resolve = impl->audioPeerResolver.load (std::memory_order_acquire))
     {
+        // networkRouteId is the audio source's unique key; the "source #n" number is not
+        // unique (two devices can both be source #0), so it is only a fallback.
         const auto audioPeer = resolve (impl->audioPeerResolverCtx.load (std::memory_order_relaxed),
-                                        audio->networkSourceId).trim();
+                                        audio->networkRouteId, audio->networkSourceId).trim();
         if (isValidNetworkMidiPeer (audioPeer)) peer = audioPeer;
     }
     for (size_t i = 0; i < cur->size(); ++i)
