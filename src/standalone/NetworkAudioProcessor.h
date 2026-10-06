@@ -16,6 +16,7 @@ public:
     NetworkAudioProcessor() { activeProcessor.store (this, std::memory_order_release); }
     ~NetworkAudioProcessor() override
     {
+        crashLogger.log ("SHUTDOWN[network-processor] NetworkAudioProcessor destructor ENTER");
         for (auto& slot : trackRecorders)   // finalize any take still being written
             slot.recorder.stop();
         if (activeProcessor.load (std::memory_order_acquire) == this)
