@@ -704,6 +704,8 @@ private:
         button.setColour (juce::TextButton::buttonOnColourId, colour);
         button.setColour (juce::TextButton::textColourOffId,  colour.brighter (0.35f));
         button.setColour (juce::TextButton::textColourOnId,   colour.darker (0.75f));
+        // Inspector buttons are only 25px tall; keep their one-letter controls readable.
+        button.getProperties().set ("transportFontSize", 14.0);
         addAndMakeVisible (button);
     }
 
