@@ -117,11 +117,14 @@ public:
 
     ~MainWindow() override
     {
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] MainWindow destructor ENTER");
         stopTimer();
         if (editor != nullptr)
             editor->setWindowMenuBar (nullptr, 0);
         setMenuBar (nullptr);
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] menu/editor hooks detached");
         deviceManager.removeAudioCallback (&player);
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] audio callback removed");
 
         for (const auto& id : registeredMidiInputIds)
         {
@@ -130,20 +133,30 @@ public:
             if (midiRouter != nullptr)
                 deviceManager.removeMidiInputDeviceCallback (id, midiRouter.get());
         }
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] MIDI input callbacks removed");
 
         processor->sequencer.setNetworkMidiSink (nullptr, nullptr);
         processor->sequencer.setNetworkAudioPeerResolver (nullptr, nullptr);
         RtpMidiInputForwarder::instance().setEngine (nullptr);
         RtpMidiInputForwarder::instance().setManager (nullptr);
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] sequencer/forwarder hooks detached");
         networkMidiManager.reset();
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] network MIDI manager destroyed");
 
         autoTrack.reset();
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] network audio auto-track destroyed");
 
         if (networkAudio != nullptr)
+        {
+            logShutdownCheckpoint ("SHUTDOWN[mainwindow] network audio stop ENTER");
             networkAudio->stop();
+            logShutdownCheckpoint ("SHUTDOWN[mainwindow] network audio stop RETURNED");
+        }
 
         deviceManager.removeChangeListener (this);
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] device manager listener removed");
         player.setProcessor (nullptr);
+        logShutdownCheckpoint ("SHUTDOWN[mainwindow] audio player processor detached; destructor body EXIT");
     }
 
     juce::StringArray getMenuBarNames() override
@@ -204,6 +217,13 @@ public:
     void closeButtonPressed() override
     {
         juce::JUCEApplication::getInstance()->systemRequestedQuit();
+    }
+
+    // Diagnostic-only hook used by the standalone application's shutdown tracer.
+    void logShutdownCheckpoint (const char* message)
+    {
+        if (processor != nullptr)
+            processor->crashLogger.log (message);
     }
 
 private:
