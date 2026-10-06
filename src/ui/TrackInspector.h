@@ -445,7 +445,7 @@ public:
         if (! hasTrack())
         {
             g.setColour (theme.foreground.withAlpha (0.42f));
-            g.setFont (DysektLookAndFeel::makeFont (12.0f, true));
+            g.setFont (DysektLookAndFeel::makeFont (16.0f, true));
             g.drawFittedText ("SELECT A TRACK", content, juce::Justification::centred, 1);
             return;
         }
@@ -460,30 +460,30 @@ public:
         g.setColour (info.colour);
         g.fillRect (swatch);
         g.setColour (info.colour.contrasting (0.85f));
-        g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+        g.setFont (DysektLookAndFeel::makeFont (16.0f, true));
         g.drawText (arrangerTrackName (info).substring (0, 1).toUpperCase(), swatch.toNearestInt(),
                     juce::Justification::centred, false);
 
         idRow.removeFromLeft (10);
-        auto nameArea = idRow.removeFromTop (17);
+        auto nameArea = idRow.removeFromTop (19);
         g.setColour (theme.foreground);
-        g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+        g.setFont (DysektLookAndFeel::makeFont (16.0f, true));
         g.drawFittedText (arrangerTrackName (info), nameArea, juce::Justification::centredLeft, 1);
 
-        auto metaArea = idRow.removeFromTop (14);
+        auto metaArea = idRow.removeFromTop (16);
         juce::String typeTag = trackTypeName (info.type);
         const int badgeW = juce::jmin (metaArea.getWidth() - 4,
-            juce::GlyphArrangement::getStringWidthInt (DysektLookAndFeel::makeFont (8.5f, true), typeTag) + 12);
+            juce::GlyphArrangement::getStringWidthInt (DysektLookAndFeel::makeFont (10.0f, true), typeTag) + 12);
         auto badgeR = metaArea.removeFromLeft (badgeW);
         g.setColour (theme.button);
         g.fillRect (badgeR);
         g.setColour (theme.foreground.withAlpha (0.6f));
-        g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
+        g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
         g.drawText (typeTag, badgeR, juce::Justification::centred, false);
 
         metaArea.removeFromLeft (6);
         g.setColour (theme.foreground.withAlpha (0.4f));
-        g.setFont (DysektLookAndFeel::makeFont (8.5f, false));
+        g.setFont (DysektLookAndFeel::makeFont (10.0f, false));
         g.drawText ("CH " + juce::String (info.midiChannel + 1), metaArea, juce::Justification::centredLeft, false);
 
         content.removeFromTop (kGapM);
@@ -494,7 +494,7 @@ public:
         // class's header comment, point 3). ──────────────────────────
         content.removeFromTop (25 + kGapL);
         g.setColour (theme.foreground.withAlpha (0.3f));
-        g.setFont (DysektLookAndFeel::makeFont (8.0f, true));
+        g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
         g.drawText ("ACT", activityDotBounds.withTrimmedBottom (activityDotBounds.getHeight() - 8),
                     juce::Justification::centredLeft, false);
         auto dot = activityDotBounds.withTrimmedTop (8).withHeight (5).toFloat();
@@ -516,10 +516,10 @@ public:
             {
                 auto row = presetRowBounds;
                 g.setColour (theme.foreground.withAlpha (0.85f));
-                g.setFont (DysektLookAndFeel::makeFont (11.5f, false));
+                g.setFont (DysektLookAndFeel::makeFont (13.0f, false));
                 g.drawFittedText (presetName, row.removeFromTop (16), juce::Justification::centredLeft, 1);
                 g.setColour (theme.foreground.withAlpha (0.4f));
-                g.setFont (DysektLookAndFeel::makeFont (9.0f, false));
+                g.setFont (DysektLookAndFeel::makeFont (10.5f, false));
                 g.drawText (presetTag, row.removeFromTop (14), juce::Justification::centredLeft, false);
             }
             content.removeFromTop (kPresetRowH + kGapL);
@@ -679,7 +679,7 @@ private:
     // never drift apart — the exact bug the old hardcoded-literal layout
     // (see this file's git history) already caused once before.
     static constexpr int kIdentityH     = 40;
-    static constexpr int kSectionLabelH = 16;
+    static constexpr int kSectionLabelH = 18;
     static constexpr int kPresetRowH    = 30;
     static constexpr int kGapS = 6, kGapM = 10, kGapL = 14;
 
@@ -750,14 +750,14 @@ private:
     {
         auto label = control.getBounds().withHeight (11).translated (0, -13);
         g.setColour (getTheme().foreground.withAlpha (0.48f));
-        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+        g.setFont (DysektLookAndFeel::makeFont (10.5f, true));
         g.drawText (text, label, juce::Justification::centredLeft, false);
     }
 
     static void sectionLabel (juce::Graphics& g, const juce::String& text, juce::Rectangle<int> bounds)
     {
         g.setColour (getTheme().foreground.withAlpha (0.48f));
-        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+        g.setFont (DysektLookAndFeel::makeFont (10.5f, true));
         g.drawText (text, bounds, juce::Justification::centredLeft);
         const float ruleY = (float) bounds.getCentreY();
         g.setColour (getTheme().separator.withAlpha (0.85f));
