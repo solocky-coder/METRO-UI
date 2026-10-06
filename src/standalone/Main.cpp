@@ -53,6 +53,12 @@ public:
 
     void shutdown() override
     {
+        // MainWindow owns the processor, so its CrashLogger remains available
+        // until the window is fully destroyed. Record the application-level
+        // boundary without changing shutdown ordering.
+        if (mainWindow != nullptr)
+            mainWindow->logShutdownCheckpoint ("SHUTDOWN[application] JUCEApplication::shutdown ENTER");
+
         mainWindow.reset();
     }
 
