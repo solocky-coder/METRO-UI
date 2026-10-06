@@ -21,6 +21,7 @@ public:
             slot.recorder.stop();
         if (activeProcessor.load (std::memory_order_acquire) == this)
             activeProcessor.store (nullptr, std::memory_order_release);
+        crashLogger.log ("SHUTDOWN[network-processor] NetworkAudioProcessor destructor EXIT");
     }
 
     static void setActiveNetworkAudio (MetroNetworkAudio* audio) noexcept
