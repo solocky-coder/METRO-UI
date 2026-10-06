@@ -272,6 +272,7 @@ DysektProcessor::~DysektProcessor()
     exchangeCompletedLoadData3 (nullptr);   // drops the SnapshotPtr; frees itself, no delete needed
     auto* pendingZones3 = pendingPreviewZones3.exchange (nullptr, std::memory_order_acq_rel);
     delete pendingZones3;
+    crashLogger.log ("SHUTDOWN[processor] DysektProcessor destructor EXIT");
 }
 
 bool DysektProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
