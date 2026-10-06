@@ -248,12 +248,34 @@ private:
             crashWrite ("\n");
         }
 
-        crashWrite ("   Exception code: 0x");
-        // Write the exception code as hex without sprintf (async-signal-safe workaround)
-        char buf[32];
         DWORD code = info ? info->ExceptionRecord->ExceptionCode : 0;
+        void* address = (info != nullptr && info->ExceptionRecord != nullptr)
+                            ? info->ExceptionRecord->ExceptionAddress : nullptr;
+
+        crashWrite ("   Exception code: 0x");
+        char buf[64];
         snprintf (buf, sizeof (buf), "%08lX\n", (unsigned long) code);
         crashWrite (buf);
+
+        crashWrite ("   Exception address: ");
+        snprintf (buf, sizeof (buf), "%p\n", address);
+        crashWrite (buf);
+
+        crashWrite ("   Thread ID: ");
+        snprintf (buf, sizeof (buf), "%lu\n", (unsigned long) GetCurrentThreadId());
+        crashWrite (buf);
+
+        if (code == EXCEPTION_ACCESS_VIOLATION && info != nullptr
+            && info->ExceptionRecord->NumberParameters >= 2)
+        {
+            const auto operation = info->ExceptionRecord->ExceptionInformation[0];
+            const auto target = info->ExceptionRecord->ExceptionInformation[1];
+            crashWrite ("   Access type: ");
+            crashWrite (operation == 0 ? "read\n" : operation == 1 ? "write\n" : "execute\n");
+            crashWrite ("   Access target: ");
+            snprintf (buf, sizeof (buf), "0x%llX\n", (unsigned long long) target);
+            crashWrite (buf);
+        }
 
         return EXCEPTION_CONTINUE_SEARCH;   // let default handler terminate
     }
