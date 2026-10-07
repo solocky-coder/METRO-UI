@@ -40,7 +40,10 @@ public:
         link->enableStartStopSync (true);
         link->setTempoCallback ([this] (double bpm)
         {
-            cachedBpm.store ((float) bpm, std::memory_order_relaxed);
+            const float received = (float) bpm;
+            cachedBpm.store (received, std::memory_order_relaxed);
+            lastRxBpm.store (received, std::memory_order_relaxed);
+            rxTempoCount.fetch_add (1, std::memory_order_relaxed);
         });
         link->setNumPeersCallback ([this] (std::size_t n)
         {
@@ -66,7 +69,9 @@ public:
     }
 
     bool isEnabled()   const noexcept { return enabled .load (std::memory_order_relaxed); }
-    int  getPeerCount()const noexcept { return numPeers.load (std::memory_order_relaxed); }
+    int  getPeerCount() const noexcept { return numPeers.load (std::memory_order_relaxed); }
+    uint32_t getRxTempoCount() const noexcept { return rxTempoCount.load (std::memory_order_relaxed); }
+    float getLastRxBpm() const noexcept { return lastRxBpm.load (std::memory_order_relaxed); }
 
     // ── Propagate local BPM change to Link session ────────────────────────────
     // Message-thread only: captureAppSessionState()/commitAppSessionState() take
@@ -106,6 +111,16 @@ public:
     float getBpm (float fallback = 120.f) const noexcept
     {
         return isEnabled() ? cachedBpm.load (std::memory_order_relaxed) : fallback;
+    }
+
+    /** Realtime-safe Link session tempo read. Use this from processBlock(). */
+    float getAudioBpm (float fallback = 120.f) const noexcept
+    {
+#if DYSEKT_HAS_LINK
+        if (link && isEnabled())
+            return (float) link->captureAudioSessionState().tempo();
+#endif
+        return fallback;
     }
 
     /** Phase in beats within the current quantum (0 .. quantum).
@@ -189,6 +204,8 @@ private:
     std::atomic<bool>  enabled  { false };
     std::atomic<float> cachedBpm{ 120.f };
     std::atomic<int>   numPeers { 0     };
+    std::atomic<uint32_t> rxTempoCount { 0 };
+    std::atomic<float> lastRxBpm { 120.f };
     std::atomic<float> pendingBpm{ 120.f }; // last value passed to requestBpm()
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AbletonLink)
