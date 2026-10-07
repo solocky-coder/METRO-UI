@@ -85,8 +85,13 @@ void MetroTransportBar::timerCallback()
     if (linkPtr != nullptr)
     {
         const int peers = linkPtr->getPeerCount();
+        const auto rx = linkPtr->getRxTempoCount();
+        const auto rxBpm = linkPtr->getLastRxBpm();
         linkButton.setButtonText (peers > 0 ? ("LINK " + juce::String (peers)) : "LINK");
         linkButton.setToggleState (linkPtr->isEnabled(), juce::dontSendNotification);
+        linkButton.setTooltip ("Link RX: " + juce::String ((int) rx)
+                               + " tempo updates, last " + juce::String (rxBpm, 1)
+                               + " BPM, peers " + juce::String (peers));
     }
 }
 
