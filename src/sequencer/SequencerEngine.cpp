@@ -113,7 +113,7 @@ struct SequencerEngine::Impl
     // Gates the remote-peer-reaction block below. Independent of
     // AbletonLink::isEnabled() (tempo sync) — see
     // SequencerEngine::setLinkFollowsTransport().
-    std::atomic<bool>    linkFollowsTransport { false };
+    std::atomic<bool>    linkFollowsTransport { true };
     // Set (message thread) whenever setLinkFollowsTransport() is called, so
     // processBlock() (audio thread) can re-baseline lastLinkSessionPlaying
     // itself instead of that plain bool being written cross-thread directly.
