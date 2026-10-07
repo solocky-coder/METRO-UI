@@ -1294,11 +1294,18 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     const float fallbackBpm = impl->syncToHost.load (std::memory_order_relaxed)
                                 ? impl->hostBpm.load     (std::memory_order_relaxed)
                                 : impl->internalBpm.load (std::memory_order_relaxed);
-    const float bpm = (impl->abletonLink != nullptr && impl->abletonLink->isEnabled())
+    const bool linkActive = (impl->abletonLink != nullptr && impl->abletonLink->isEnabled());
+    const float bpm = linkActive
                         ? impl->abletonLink->getAudioBpm (fallbackBpm)
                         : fallbackBpm;
 
-    // Track effective BPM even though there is no Edit to push it to.
+    // When Link is active, its session tempo is authoritative. Keep the
+    // engine's published BPM in lockstep with that realtime session value so
+    // UI, clip-length calculations, and standalone/network consumers don't
+    // continue using a stale host/internal tempo.
+    if (linkActive && bpm >= 20.f && bpm <= 999.f)
+        impl->internalBpm.store (bpm, std::memory_order_relaxed);
+
     if (bpm >= 20.f && bpm != impl->lastAppliedBpm)
         impl->lastAppliedBpm = bpm;
 
