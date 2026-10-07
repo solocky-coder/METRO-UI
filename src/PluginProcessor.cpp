@@ -3185,18 +3185,13 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 // pinned at 120 BPM if the tab were ever exposed in VST3
                 // without also remembering to remove this #if.
                 sequencer.setHostBpm ((float) *bpmOpt);
-#if DYSEKT_STANDALONE
-                // Audio thread: must use the realtime-safe requestBpm(), never
-                // setBpm() directly. setBpm() calls Link's
-                // captureAppSessionState()/commitAppSessionState(), which take
-                // an internal lock and are documented as message-thread-only;
-                // calling them here would risk audio dropouts/priority
-                // inversion on every single block. requestBpm() just records
-                // the value atomically and defers the actual Link session
-                // update to the message thread via AsyncUpdater.
-                if (abletonLink.isEnabled())
-                    abletonLink.requestBpm (*bpmOpt);
-#endif
+// Do not mirror the host BPM into Link here. This callback runs for every
+                // audio block, so doing so continuously commits the host tempo back
+                // into the Link session and can immediately overwrite a tempo
+                // proposal received from another Link peer. Link tempo is instead
+                // sent when the sequencer's own BPM is explicitly changed, while
+                // the Link session tempo is read from captureAudioSessionState()
+                // in the audio path.
             }
         }
     }
