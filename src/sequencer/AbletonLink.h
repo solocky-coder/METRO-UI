@@ -210,7 +210,7 @@ private:
     std::unique_ptr<ableton::Link> link;
 #endif
     std::atomic<bool>  enabled  { false };
-    std::atomic<float> cachedBpm{ 120.f };
+    mutable std::atomic<float> cachedBpm{ 120.f };  // mutable: written from const getAudioBpm()
     std::atomic<int>   numPeers { 0     };
     std::atomic<uint32_t> rxTempoCount { 0 };
     std::atomic<float> lastRxBpm { 120.f };
