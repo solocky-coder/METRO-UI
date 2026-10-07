@@ -53,13 +53,26 @@ public:
 
     void shutdown() override
     {
+        // Normally already hidden by systemRequestedQuit(); this also covers
+        // quit paths that don't go through it (e.g. Windows session end).
+        if (mainWindow != nullptr)
+            mainWindow->setVisible (false);
+
         mainWindow.reset();
     }
 
     //==========================================================================
     void systemRequestedQuit() override
     {
-        // Could add "save before quit?" dialog here
+        // Could add "save before quit?" dialog here (if one is added and the user
+        // cancels, move this setVisible (false) to after the confirmation).
+        //
+        // Hide the window first: tearing down the editor, network audio, audio
+        // device and processor takes a moment, and doing that with a fullscreen
+        // native-title-bar window still on screen shows up as repeated flashing.
+        if (mainWindow != nullptr)
+            mainWindow->setVisible (false);
+
         quit();
     }
 
