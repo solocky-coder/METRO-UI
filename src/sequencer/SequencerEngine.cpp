@@ -1295,7 +1295,7 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
                                 ? impl->hostBpm.load     (std::memory_order_relaxed)
                                 : impl->internalBpm.load (std::memory_order_relaxed);
     const float bpm = (impl->abletonLink != nullptr && impl->abletonLink->isEnabled())
-                        ? impl->abletonLink->getBpm (fallbackBpm)
+                        ? impl->abletonLink->getAudioBpm (fallbackBpm)
                         : fallbackBpm;
 
     // Track effective BPM even though there is no Edit to push it to.
