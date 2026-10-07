@@ -118,13 +118,25 @@ public:
     ~MainWindow() override
     {
         stopTimer();
+
+        // 1) Hide the window before touching anything. The window is maximised with
+        //    a native title bar, so any size change during teardown makes Windows
+        //    un-maximise it, shrink it and re-grow it, which shows up as the window
+        //    repeatedly flashing/resizing before it finally disappears.
+        setVisible (false);
+
+        // 2) Detach the editor BEFORE removing the menu bar. The editor is set as
+        //    non-owned content with resizeToFit = true, so while it is attached,
+        //    changing its menu bar changes its size, which resizes the window.
+        //    The editor is owned by the unique_ptr below, so it must be detached
+        //    from DocumentWindow before the member is destroyed. Otherwise
+        //    DocumentWindow can retain a dangling contentComponent pointer until
+        //    its base destructor runs.
+        clearContentComponent();
+
         if (editor != nullptr)
             editor->setWindowMenuBar (nullptr, 0);
         setMenuBar (nullptr);
-        // editor is owned by the unique_ptr below, so detach it from DocumentWindow
-        // before the member is destroyed. Otherwise DocumentWindow can retain a
-        // dangling contentComponent pointer until its base destructor runs.
-        clearContentComponent();
         deviceManager.removeAudioCallback (&player);
 
         for (const auto& id : registeredMidiInputIds)
