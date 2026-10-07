@@ -14,6 +14,7 @@
 #include "RtpMidiInputForwarder.h"
 #include "../network/NetworkMidiManager.h"
 #include "NetworkMidiSettings.h"
+#include "NetworkMidiPanel.h"
 
 class MainWindow : public juce::DocumentWindow,
                    public juce::MenuBarModel,
@@ -448,7 +449,7 @@ private:
 
     void showNetworkAudioSettings()
     {
-        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false, networkMidiManager.get());
+        auto* comp = new juce::MetroNetworkAudioSettingsSelector (deviceManager, networkAudio.get(), false);
         launchScrollableSettingsDialog (comp, "Network Audio", false);
     }
 

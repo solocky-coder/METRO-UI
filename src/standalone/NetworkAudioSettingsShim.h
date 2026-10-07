@@ -2,8 +2,6 @@
 
 #include "NetworkAudioSettingsComponent.h"
 #include "AppleUsbShareStatusComponent.h"
-#include "NetworkMidiPanel.h"
-#include "../network/NetworkMidiManager.h"
 #include "network/AppleUsbNetworkTransport.h"
 #include "NetworkAudioAutoTrack.h"
 #include <memory>
@@ -17,11 +15,9 @@ class MetroNetworkAudioSettingsSelector : public ::NetworkAudioSettingsComponent
 public:
     explicit MetroNetworkAudioSettingsSelector (juce::AudioDeviceManager& deviceManager,
                                                  ::MetroNetworkAudio* networkAudioToUse,
-                                                 bool showDeviceSelector = false,
-                                                 NetworkMidiManager* networkMidiManagerToUse = nullptr)
+                                                 bool showDeviceSelector = false)
         : ::NetworkAudioSettingsComponent (deviceManager, networkAudioToUse, showDeviceSelector),
-          networkAudio (networkAudioToUse),
-          networkMidiManager (networkMidiManagerToUse)
+          networkAudio (networkAudioToUse)
     {
         // Snapshot every child the base class constructor already created
         // (server/user/group fields, gain/pan, sources list, etc.) so the
@@ -106,14 +102,6 @@ public:
         tabUsbButton.onClick = [this] { setActivePage (1); };
         addAndMakeVisible (tabUsbButton);
 
-        // Third page: send DYSEKT's live incoming MIDI to the iPad over the same
-        // direct USB link (RTP-MIDI). The panel only controls/reflects the shared
-        // RtpMidiSession, so reopening this dialog never interrupts a running session.
-        tabMidiButton.setButtonText ("USB MIDI");
-        tabMidiButton.setClickingTogglesState (false);
-        tabMidiButton.onClick = [this] { setActivePage (2); };
-        addAndMakeVisible (tabMidiButton);
-
         // The complete iPhoneUsbShare surface is embedded here as a child of
         // Network Audio. It is not a second process and does not create a
         // separate top-level window. Owned via unique_ptr (not a leaked raw
@@ -126,10 +114,6 @@ public:
         usbStatusComponent = std::make_unique<::AppleUsbShareStatusComponent> (appleUsbService());
         addAndMakeVisible (usbStatusComponent.get());
 
-        if (networkMidiManager != nullptr)
-            midiPanel = std::make_unique<::NetworkMidiPanel> (*networkMidiManager, 1);
-        addAndMakeVisible (midiPanel.get());
-
         setActivePage (0);
     }
 
@@ -137,15 +121,14 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        if (! showingUsbTab && ! showingMidiTab)
+        if (! showingUsbTab)
         {
             ::NetworkAudioSettingsComponent::paint (g);
             return;
         }
 
         g.fillAll (juce::Colour (0xff0d0d14));
-        juce::Component* activePage = showingMidiTab ? static_cast<juce::Component*> (midiPanel.get())
-                                                      : static_cast<juce::Component*> (usbStatusComponent.get());
+        juce::Component* activePage = usbStatusComponent.get();
         if (activePage != nullptr)
         {
             const auto panel = activePage->getBounds().toFloat();
@@ -168,15 +151,14 @@ public:
 
         // Tab switcher sits in the header row, between the "NETWORK AUDIO" title
         // (left-aligned) and the Auto-create toggle / createTrackButton (right-aligned).
-        // The three tabs share whatever width is left, so they never overlap those.
+        // The two tabs share whatever width is left, so they never overlap those.
         constexpr int kTabH = 28, kTabGap = 6, kTabX = 230;
         const int tabAreaRight = autoTrackToggle.getX() - 8;
-        const int tabW = juce::jlimit (84, 140, (tabAreaRight - kTabX - 2 * kTabGap) / 3);
+        const int tabW = juce::jlimit (84, 140, (tabAreaRight - kTabX - kTabGap) / 2);
         tabSonoBusButton.setBounds (kTabX, 12, tabW, kTabH);
         tabUsbButton.setBounds (kTabX + tabW + kTabGap, 12, tabW, kTabH);
-        tabMidiButton.setBounds (kTabX + 2 * (tabW + kTabGap), 12, tabW, kTabH);
 
-        if (showingUsbTab || showingMidiTab)
+        if (showingUsbTab)
         {
             // Fill the exact same content region the base class's own cards
             // occupy (device/channel/connection/sources), rather than a
@@ -186,16 +168,14 @@ public:
                 full = full.getUnion (devicePanelBounds);
             full = full.getUnion (connectionPanelBounds).getUnion (sourcesPanelBounds);
             usbStatusComponent->setBounds (full);
-            midiPanel->setBounds (full);
         }
     }
 
 private:
-    // page: 0 = SonoBus / AOO, 1 = Apple USB Share, 2 = USB MIDI
+    // page: 0 = SonoBus / AOO, 1 = Apple USB Share
     void setActivePage (int page)
     {
         showingUsbTab  = (page == 1);
-        showingMidiTab = (page == 2);
         const bool showBase = (page == 0);
 
         for (auto* child : basePageChildren)
@@ -209,7 +189,6 @@ private:
         // tab already has its own Start / Stop / Diagnostics for the link.
         getDirectUsbButton().setVisible (showBase);
         usbStatusComponent->setVisible (showingUsbTab);
-        midiPanel->setVisible (showingMidiTab);
 
         auto style = [] (juce::TextButton& b, bool isActive)
         {
@@ -225,7 +204,6 @@ private:
         };
         style (tabSonoBusButton, page == 0);
         style (tabUsbButton, page == 1);
-        style (tabMidiButton, page == 2);
 
         resized();
     }
@@ -346,13 +324,10 @@ private:
 
     juce::TextButton createTrackButton;
     juce::ToggleButton autoTrackToggle;
-    juce::TextButton tabSonoBusButton, tabUsbButton, tabMidiButton;
+    juce::TextButton tabSonoBusButton, tabUsbButton;
     std::vector<juce::Component*> basePageChildren;
     bool showingUsbTab = false;
-    bool showingMidiTab = false;
     ::MetroNetworkAudio* networkAudio = nullptr;
-    NetworkMidiManager* networkMidiManager = nullptr;
     std::unique_ptr<::AppleUsbShareStatusComponent> usbStatusComponent;
-    std::unique_ptr<::NetworkMidiPanel> midiPanel;
 };
 }
