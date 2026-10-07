@@ -23,9 +23,12 @@ juce::Typeface::Ptr DysektLookAndFeel::sBoldTypeface;
 juce::Typeface::Ptr DysektLookAndFeel::sMonoTypeface;
 juce::Typeface::Ptr DysektLookAndFeel::sMonoBoldTypeface;
 float DysektLookAndFeel::sMenuScale = 1.0f;
+std::atomic<int> DysektLookAndFeel::sInstanceCount { 0 };
 
 DysektLookAndFeel::DysektLookAndFeel()
 {
+    ++sInstanceCount;
+
     setColour (juce::ResizableWindow::backgroundColourId, getTheme().background);
 
     // Labels / UI text — Barlow Condensed (sharp, narrow, technical)
@@ -44,6 +47,20 @@ DysektLookAndFeel::DysektLookAndFeel()
     sBoldTypeface     = boldTypeface;
     sMonoTypeface     = monoTypeface;
     sMonoBoldTypeface = monoBoldTypeface;
+}
+
+DysektLookAndFeel::~DysektLookAndFeel()
+{
+    // Last look-and-feel gone (editor / standalone window closed): drop the
+    // static typeface references now, while JUCE's font registry still exists.
+    // The per-instance members release themselves right after this body runs.
+    if (--sInstanceCount == 0)
+    {
+        sRegularTypeface  = nullptr;
+        sBoldTypeface     = nullptr;
+        sMonoTypeface     = nullptr;
+        sMonoBoldTypeface = nullptr;
+    }
 }
 
 juce::Font DysektLookAndFeel::makeFont (float pointSize, bool bold)

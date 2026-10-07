@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "ThemeData.h"
 
@@ -9,6 +10,7 @@ class DysektLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     DysektLookAndFeel();
+    ~DysektLookAndFeel() override;
 
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool isHighlighted, bool isDown) override;
@@ -88,6 +90,15 @@ private:
     static juce::Typeface::Ptr sMonoTypeface;      // JetBrainsMono-Regular    — values/numbers
     static juce::Typeface::Ptr sMonoBoldTypeface;  // JetBrainsMono-Bold       — bold values
     static float sMenuScale;
+
+    // Number of live DysektLookAndFeel objects (this class and subclasses). When
+    // the last one is destroyed, the static typeface references above are
+    // released while JUCE is still fully alive. If they were left to ordinary
+    // static destruction they would run AFTER JUCE's function-local
+    // StoredMemoryFonts registry has already been destroyed, and each typeface
+    // would then try to unregister itself from that dead std::list at process
+    // exit / plugin-DLL unload (access violation 0xC0000005, write to 0x8).
+    static std::atomic<int> sInstanceCount;
 
     juce::Typeface::Ptr regularTypeface;
     juce::Typeface::Ptr boldTypeface;
