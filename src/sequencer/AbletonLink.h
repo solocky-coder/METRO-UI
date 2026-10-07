@@ -118,7 +118,15 @@ public:
     {
 #if DYSEKT_HAS_LINK
         if (link && isEnabled())
-            return (float) link->captureAudioSessionState().tempo();
+        {
+            // The audio-thread session snapshot is the authoritative Link
+            // tempo. Mirror it into the atomic cache as well so UI and other
+            // realtime-safe consumers see the same received value even if the
+            // Link callback has not run yet.
+            const float tempo = (float) link->captureAudioSessionState().tempo();
+            cachedBpm.store (tempo, std::memory_order_relaxed);
+            return tempo;
+        }
 #endif
         return fallback;
     }
