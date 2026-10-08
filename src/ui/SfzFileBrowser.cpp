@@ -322,18 +322,14 @@ void SfzFileBrowser::rebuildFsList()
     files.removeIf ([] (const juce::File& f) { return f.isHidden(); });
     files.sort();
 
-    // .zip archives are always listed too (independent of the mode's
-    // extension filter) so the user can drill into one and pick a matching
-    // .sf2/.sfz entry — see rebuildZipList(). Not offered in kAddZone mode
-    // (zone-builder sample picking), since that's plain audio files, not
-    // instrument archives.
-    juce::Array<juce::File> zips;
-    if (mode != Mode::kAddZone)
-    {
-        zips = currentDir.findChildFiles (juce::File::findFiles, false, "*.zip");
-        zips.removeIf ([] (const juce::File& f) { return f.isHidden(); });
-        zips.sort();
-    }
+    // .zip archives are always listed (independent of the mode's extension
+    // filter) so the user can drill into one and pick a matching entry in
+    // every mode: audio samples (kAddZone), .sf2, or .sfz - see
+    // rebuildZipList(), which applies the same per-mode filter inside the
+    // archive.
+    auto zips = currentDir.findChildFiles (juce::File::findFiles, false, "*.zip");
+    zips.removeIf ([] (const juce::File& f) { return f.isHidden(); });
+    zips.sort();
 
     for (auto& d : dirs)
         rows.add ({ BrowserRow::Kind::Directory, d, {}, d.getFileName() });
