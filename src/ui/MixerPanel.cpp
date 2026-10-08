@@ -677,20 +677,36 @@ void MixerPanel::drawMeter (juce::Graphics& g,
                              float peakL, float peakR,
                              juce::Colour /*tint*/, int si) const
 {
-    // Match the Network Audio track meter's visual language exactly while
-    // preserving the Mixer's existing meter rectangle and dimensions.
-    // Two stacked bars: L on top, R on bottom.
+    // Match the Network Audio track meter's visual language while preserving
+    // the Mixer's existing meter rectangle and dimensions.
+    // The live levels are smoothed so the fill is solid and continuous
+    // instead of flashing with each raw audio peak snapshot.
     constexpr float kFloorDb     = -60.0f;
-    constexpr float kAmberStart = 0.70f; // -18 dB
-    constexpr float kRedStart   = 0.90f; //  -6 dB
-    constexpr int   kGap        = 1;
-    constexpr int   kHoldW      = 2;
+    constexpr float kAmberStart  = 0.70f; // -18 dB
+    constexpr float kRedStart    = 0.90f; //  -6 dB
+    constexpr float kAttack      = 0.55f;
+    constexpr float kRelease     = 0.18f;
+    constexpr int   kGap         = 1;
+    constexpr int   kHoldW       = 2;
 
     const int barH = juce::jmax (1, (h - kGap) / 2);
+    const int si2  = juce::jlimit (0, kTotalHoldSlots - 1, si);
 
-    const int si2 = juce::jlimit (0, kTotalHoldSlots - 1, si);
-    if (peakL > holdL[si2]) holdL[si2] = peakL;
-    if (peakR > holdR[si2]) holdR[si2] = peakR;
+    const float inL = juce::jmax (0.0f, peakL);
+    const float inR = juce::jmax (0.0f, peakR);
+
+    auto smooth = [] (float current, float target) -> float
+    {
+        const float alpha = target > current ? kAttack : kRelease;
+        return current + (target - current) * alpha;
+    };
+
+    meterL[si2] = smooth (meterL[si2], inL);
+    meterR[si2] = smooth (meterR[si2], inR);
+
+    // Peak hold remains independent from the smoothed live fill.
+    if (inL > holdL[si2]) holdL[si2] = inL;
+    if (inR > holdR[si2]) holdR[si2] = inR;
 
     const juce::Colour kGreen { 0xff2fbf71 };
     const juce::Colour kAmber { 0xffe0a93b };
@@ -751,8 +767,8 @@ void MixerPanel::drawMeter (juce::Graphics& g,
         }
     };
 
-    drawBar (y,                   peakL, holdL[si2]);
-    drawBar (y + barH + kGap,     peakR, holdR[si2]);
+    drawBar (y,               meterL[si2], holdL[si2]);
+    drawBar (y + barH + kGap, meterR[si2], holdR[si2]);
 }
 
 void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected) const
@@ -1628,7 +1644,10 @@ void MixerPanel::timerCallback()
         if (pkL > 0.001f || pkR > 0.001f) anyHeld = true;
     }
 
-    if (anyHeld) repaint();
+    // Keep the meter animation running continuously. The live fill is
+    // smoothed in drawMeter(), so repainting at the existing 30 Hz timer rate
+    // produces a stable, fluid bar instead of blinking raw peak snapshots.
+    repaint();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
