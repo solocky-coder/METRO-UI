@@ -1,6 +1,7 @@
 #include "MultisamplerZoneLcd.h"
 #include "../DysektLookAndFeel.h"
 #include "../UIHelpers.h"
+#include "../ZoneEnvelopeRanges.h"
 #include "../../MidiLearnManager.h"
 #include <cmath>
 
@@ -204,10 +205,10 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         // Matches SliceControlBar::toNorm's FieldVolume mapping (-100..+24dB)
         // so a gain knob sweeps the same visual arc everywhere in the app.
         case MultisamplerZoneField::gain:    return juce::jlimit (0.0f, 1.0f, (v + 100.0f) / 124.0f);
-        case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / 2.0f);
-        case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / 5.0f);
+        case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxAttackSec);
+        case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxDecaySec);
         case MultisamplerZoneField::sustain: return juce::jlimit (0.0f, 1.0f, v);
-        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, v / 5.0f);
+        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxReleaseSec);
         case MultisamplerZoneField::cutoff:
             return juce::jlimit (0.0f, 1.0f,
                 (std::log2 (juce::jmax (20.0f, v)) - std::log2 (20.0f))
@@ -265,10 +266,10 @@ float MultisamplerZoneLcd::nativeFromNorm (MultisamplerZoneField field, float no
         case MultisamplerZoneField::tune:      return norm * 2400.0f - 1200.0f;
         case MultisamplerZoneField::pan:       return norm * 2.0f - 1.0f;
         case MultisamplerZoneField::gain:      return norm * 124.0f - 100.0f;
-        case MultisamplerZoneField::attack:    return norm * 2.0f;
-        case MultisamplerZoneField::decay:     return norm * 5.0f;
+        case MultisamplerZoneField::attack:    return norm * ZoneEnv::kMaxAttackSec;
+        case MultisamplerZoneField::decay:     return norm * ZoneEnv::kMaxDecaySec;
         case MultisamplerZoneField::sustain:   return norm;
-        case MultisamplerZoneField::release:   return norm * 5.0f;
+        case MultisamplerZoneField::release:   return norm * ZoneEnv::kMaxReleaseSec;
         case MultisamplerZoneField::cutoff:
             return std::exp2 (std::log2 (20.0f) + norm * (std::log2 (20000.0f) - std::log2 (20.0f)));
         case MultisamplerZoneField::resonance: return norm;
@@ -351,10 +352,10 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::tune:        scale = 1.0f;   break;
         case MultisamplerZoneField::pan:         scale = 0.01f;  break;
         case MultisamplerZoneField::gain:        scale = 0.5f;   break;
-        case MultisamplerZoneField::attack:      scale = 0.01f;  break;
-        case MultisamplerZoneField::decay:       scale = 0.05f;  break;
+        case MultisamplerZoneField::attack:      scale = ZoneEnv::kAttackDragStep;  break;
+        case MultisamplerZoneField::decay:       scale = ZoneEnv::kDecayDragStep;   break;
         case MultisamplerZoneField::sustain:     scale = 0.01f;  break;
-        case MultisamplerZoneField::release:     scale = 0.01f;  break;
+        case MultisamplerZoneField::release:     scale = ZoneEnv::kReleaseDragStep; break;
         case MultisamplerZoneField::cutoff:      scale = 50.0f;  break;
         case MultisamplerZoneField::resonance:   scale = 0.01f;  break;
         case MultisamplerZoneField::loopEnabled: scale = 0.0f;   break; // toggle, not a drag

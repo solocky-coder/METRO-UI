@@ -6,6 +6,7 @@ static constexpr int kFieldGlide    = 9998;
 static constexpr int kFieldRootNote = 9999;
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "UIHelpers.h"
+#include "ZoneEnvelopeRanges.h"
 #include "DysektLookAndFeel.h"
 #include "IconManager.h"
 #include "../PluginProcessor.h"
@@ -1528,15 +1529,15 @@ void SliceControlBar::applySfzZoneDrag (int field, float value, bool commit)
         case ZonePitch:   z.tuneCents = juce::jlimit (-100.f, 100.f, value); break;
         case ZonePan:     z.pan = juce::jlimit (-1.f, 1.f, value); break;
         case ZoneVolume:  z.volDb = juce::jlimit (-60.f, 12.f, value); break;
-        case ZoneRelease: z.releaseSec = juce::jlimit (0.f, 60.f, value); break;
+        case ZoneRelease: z.releaseSec = juce::jlimit (0.f, ZoneEnv::kMaxReleaseSec, value); break;
         case ZoneLoop:    z.isLooped = value > 0.5f; break;
         // Phase 4 additions — ranges match the Slicer's own knob ranges for
         // the same concepts (FieldAttack 0..1s, FieldDecay 0..5s, FieldSustain
         // 0..1) where a Slicer equivalent exists; CUTOFF/RESONANCE/GROUP
         // mirror SampleZone.h's own field-range comments (20..20000 Hz,
         // 0..1, arbitrary non-negative sfz `group` id respectively).
-        case ZoneAttack:    z.attackSec       = juce::jlimit (0.f, 1.f, value); break;
-        case ZoneDecay:     z.decaySec        = juce::jlimit (0.f, 5.f, value); break;
+        case ZoneAttack:    z.attackSec       = juce::jlimit (0.f, ZoneEnv::kMaxAttackSec, value); break;
+        case ZoneDecay:     z.decaySec        = juce::jlimit (0.f, ZoneEnv::kMaxDecaySec, value); break;
         case ZoneSustain:   z.sustainLevel    = juce::jlimit (0.f, 1.f, value); break;
         case ZoneCutoff:    z.filterCutoffHz  = juce::jlimit (20.f, 20000.f, value); break;
         case ZoneResonance: z.filterResonance = juce::jlimit (0.f, 1.f, value); break;
@@ -2082,13 +2083,13 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
      float scale = e.mods.isShiftDown() ? 0.1f : 1.0f;
      if (activeSfzZoneField == ZonePan) scale *= 0.01f;
      else if (activeSfzZoneField == ZoneVolume) scale *= 0.5f;
-     else if (activeSfzZoneField == ZoneRelease) scale *= 0.01f;
+     else if (activeSfzZoneField == ZoneRelease) scale *= ZoneEnv::kReleaseDragStep;
      // Phase 4 additions — scale each drag pixel to a sensible fraction of
      // the field's own range, same convention as the cases above (a coarse
      // range like CUTOFF's 20..20000 needs a much bigger per-pixel step
      // than a 0..1 field like SUSTAIN/RESONANCE).
-     else if (activeSfzZoneField == ZoneAttack) scale *= 0.01f;
-     else if (activeSfzZoneField == ZoneDecay) scale *= 0.05f;
+     else if (activeSfzZoneField == ZoneAttack) scale *= ZoneEnv::kAttackDragStep;
+     else if (activeSfzZoneField == ZoneDecay) scale *= ZoneEnv::kDecayDragStep;
      else if (activeSfzZoneField == ZoneSustain) scale *= 0.01f;
      else if (activeSfzZoneField == ZoneCutoff) scale *= 50.0f;
      else if (activeSfzZoneField == ZoneResonance) scale *= 0.01f;

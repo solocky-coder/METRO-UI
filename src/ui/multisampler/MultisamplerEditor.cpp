@@ -1,4 +1,5 @@
 #include "MultisamplerEditor.h"
+#include "../ZoneEnvelopeRanges.h"
 #include "../../PluginProcessor.h"
 #include "../../PluginEditor.h"   // DysektEditor — needed for findParentComponentOfClass<DysektEditor>()
                                    // in showMidiLearnMenu's "Open MIDI Learn Dialog..." item below
@@ -995,10 +996,10 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
         // MultisamplerZoneLcd numeric fields (applyZoneFieldEdit) already
         // handled all four correctly. This is the "ADSR nodes and knobs
         // don't sync" bug: only Release ever reached the model.
-        case SliceControlBar::ZoneAttack:  z.attackSeconds  = juce::jmax (0.0f, value); break;
-        case SliceControlBar::ZoneDecay:   z.decaySeconds   = juce::jmax (0.0f, value); break;
+        case SliceControlBar::ZoneAttack:  z.attackSeconds  = juce::jlimit (0.0f, ZoneEnv::kMaxAttackSec, value); break;
+        case SliceControlBar::ZoneDecay:   z.decaySeconds   = juce::jlimit (0.0f, ZoneEnv::kMaxDecaySec, value); break;
         case SliceControlBar::ZoneSustain: z.sustainLevel   = juce::jlimit (0.0f, 1.0f, value); break;
-        case SliceControlBar::ZoneRelease: z.releaseSeconds = juce::jmax (0.0f, value); break;
+        case SliceControlBar::ZoneRelease: z.releaseSeconds = juce::jlimit (0.0f, ZoneEnv::kMaxReleaseSec, value); break;
         case SliceControlBar::ZoneLoop:
             z.loopMode = (value > 0.5f) ? LoopMode::loopContinuous : LoopMode::noLoop;
 
@@ -1107,17 +1108,17 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
             z.gainDb = value;
             break;
         case MultisamplerZoneField::attack:
-            z.attackSeconds = juce::jmax (0.0f, value);
+            z.attackSeconds = juce::jlimit (0.0f, ZoneEnv::kMaxAttackSec, value);
             break;
         case MultisamplerZoneField::decay:
-            z.decaySeconds = juce::jmax (0.0f, value);
+            z.decaySeconds = juce::jlimit (0.0f, ZoneEnv::kMaxDecaySec, value);
             break;
         case MultisamplerZoneField::sustain:
             // Matches SampleZone::sustainLevel's own documented 0..1 range.
             z.sustainLevel = juce::jlimit (0.0f, 1.0f, value);
             break;
         case MultisamplerZoneField::release:
-            z.releaseSeconds = juce::jmax (0.0f, value);
+            z.releaseSeconds = juce::jlimit (0.0f, ZoneEnv::kMaxReleaseSec, value);
             break;
         case MultisamplerZoneField::cutoff:
             z.filterCutoffHz = juce::jlimit (20.0f, 20000.0f, value);

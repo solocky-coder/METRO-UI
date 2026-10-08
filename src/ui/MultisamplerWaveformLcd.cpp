@@ -1,6 +1,7 @@
 #include "MultisamplerWaveformLcd.h"
 #include "DysektLookAndFeel.h"
 #include "SliceControlBar.h"
+#include "ZoneEnvelopeRanges.h"
 #include "../PluginProcessor.h"
 #include <cmath>
 
@@ -204,37 +205,36 @@ void MultisamplerWaveformLcd::buildEnvelopeNodes()
     int idx = -1;
     const SampleZone* z = resolveSelectedZone (idx);
 
-    float attackMs = 0.0f, decayMs = 0.0f, sustainPc = 100.0f, releaseMs = 0.0f;
+    float attackSec = 0.0f, decaySec = 0.0f, sustainPc = 100.0f, releaseSec = 0.0f;
     if (z != nullptr)
     {
-        attackMs  = z->attackSeconds  * 1000.0f;
-        decayMs   = z->decaySeconds   * 1000.0f;
-        sustainPc = z->sustainLevel   * 100.0f;
-        releaseMs = z->releaseSeconds * 1000.0f;
+        attackSec  = z->attackSeconds;
+        decaySec   = z->decaySeconds;
+        sustainPc  = z->sustainLevel * 100.0f;
+        releaseSec = z->releaseSeconds;
     }
 
     static constexpr float kMin = 0.01f, kMax = 0.99f, kGap = 0.01f;
+    const float span = kMax - kMin;
 
-    // Calculated against the selected playable range, not blindly against
-    // the full file — see getSliceDurMs()/computePlayableRange().
-    const float kViewMs = juce::jmax (1.0f, getSliceDurMs());
+    // Same linear seconds scale and the same A/D/R limits as the control-bar cells and the
+    // zone LCD (ZoneEnvelopeRanges.h): a node sits where the matching knob/readout says it
+    // is. A is measured from the left, R from the right, D from the end of A.
+    const float attackNorm  = juce::jmin (attackSec  / ZoneEnv::kMaxAttackSec,  1.0f);
+    const float decayNorm   = juce::jmin (decaySec   / ZoneEnv::kMaxDecaySec,   1.0f);
+    const float releaseNorm = juce::jmin (releaseSec / ZoneEnv::kMaxReleaseSec, 1.0f);
 
-    const float attackNorm  = std::sqrt (juce::jmin (attackMs  / kViewMs, 1.0f));
-    const float decayNorm   = std::sqrt (juce::jmin (decayMs   / kViewMs, 1.0f));
-    const float releaseNorm = std::sqrt (juce::jmin (releaseMs / kViewMs, 1.0f));
-
-    const float ax_raw = kMin + attackNorm  * (kMax - kMin);
-    const float rx_raw = (releaseMs < 0.5f)
+    const float ax_raw = kMin + attackNorm * span;
+    const float rx_raw = (releaseSec < 0.0005f)
                          ? kMax
-                         : juce::jlimit (kMin, kMax, kMax - releaseNorm * (kMax - kMin));
+                         : juce::jlimit (kMin, kMax, kMax - releaseNorm * span);
 
     env.ax = juce::jlimit (kMin, kMax - 2.0f * kGap, ax_raw);
     env.rx = juce::jlimit (env.ax + 2.0f * kGap, kMax, rx_raw);
 
-    const float dSpan = env.rx - env.ax - 2.0f * kGap;
     env.dx = juce::jlimit (env.ax + kGap,
                            env.rx - kGap,
-                           env.ax + kGap + decayNorm * dSpan);
+                           env.ax + kGap + decayNorm * span);
 
     env.sy    = juce::jlimit (0.04f, 0.94f, 1.0f - (sustainPc / 100.0f));
     env.ay    = 0.04f;
@@ -262,18 +262,13 @@ void MultisamplerWaveformLcd::buildEnvelopeNodes()
 void MultisamplerWaveformLcd::commitNodes()
 {
     static constexpr float kMin = 0.01f, kMax = 0.99f, kGap = 0.01f;
+    const float span = juce::jmax (0.001f, kMax - kMin);
 
-    const float kViewMs = juce::jmax (1.0f, getSliceDurMs());
-
-    const float aRatio = (env.ax - kMin) / juce::jmax (0.001f, kMax - kMin);
-    const float rRatio = (kMax - env.rx) / juce::jmax (0.001f, kMax - kMin);
-    const float dSpan  = env.rx - env.ax - 2.0f * kGap;
-    const float dRatio = (env.dx - (env.ax + kGap)) / juce::jmax (0.001f, dSpan);
-
-    const float attackMs  = juce::jlimit (0.0f, kViewMs, aRatio * aRatio * kViewMs);
-    const float decayMs   = juce::jlimit (0.0f, kViewMs, dRatio * dRatio * kViewMs);
-    const float sustainPc = juce::jlimit (0.0f, 100.0f, (1.0f - env.sy) * 100.0f);
-    const float releaseMs = juce::jlimit (0.0f, kViewMs, rRatio * rRatio * kViewMs);
+    // Inverse of buildEnvelopeNodes(): linear seconds on the shared ranges.
+    const float attackSec  = juce::jlimit (0.0f, ZoneEnv::kMaxAttackSec,  ((env.ax - kMin) / span) * ZoneEnv::kMaxAttackSec);
+    const float decaySec   = juce::jlimit (0.0f, ZoneEnv::kMaxDecaySec,   ((env.dx - (env.ax + kGap)) / span) * ZoneEnv::kMaxDecaySec);
+    const float sustainPc  = juce::jlimit (0.0f, 100.0f, (1.0f - env.sy) * 100.0f);
+    const float releaseSec = juce::jlimit (0.0f, ZoneEnv::kMaxReleaseSec, ((kMax - env.rx) / span) * ZoneEnv::kMaxReleaseSec);
 
     int idx = -1;
     resolveSelectedZone (idx);
@@ -283,16 +278,16 @@ void MultisamplerWaveformLcd::commitNodes()
         switch (dragRole)
         {
             case NodeRole::Attack:
-                onZoneParamEdited (idx, SliceControlBar::ZoneAttack,  attackMs  / 1000.0f);
+                onZoneParamEdited (idx, SliceControlBar::ZoneAttack,  attackSec);
                 break;
             case NodeRole::Decay:
-                onZoneParamEdited (idx, SliceControlBar::ZoneDecay,   decayMs   / 1000.0f);
+                onZoneParamEdited (idx, SliceControlBar::ZoneDecay,   decaySec);
                 break;
             case NodeRole::Sustain:
                 onZoneParamEdited (idx, SliceControlBar::ZoneSustain, sustainPc / 100.0f);
                 break;
             case NodeRole::Release:
-                onZoneParamEdited (idx, SliceControlBar::ZoneRelease, releaseMs / 1000.0f);
+                onZoneParamEdited (idx, SliceControlBar::ZoneRelease, releaseSec);
                 break;
             default: break;
         }
