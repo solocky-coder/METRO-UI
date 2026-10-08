@@ -692,9 +692,9 @@ void MixerPanel::drawMeter (juce::Graphics& g,
     if (peakL > holdL[si2]) holdL[si2] = peakL;
     if (peakR > holdR[si2]) holdR[si2] = peakR;
 
-    inline static const juce::Colour kGreen { 0xff2fbf71 };
-    inline static const juce::Colour kAmber { 0xffe0a93b };
-    inline static const juce::Colour kRed   { 0xffe0504f };
+    const juce::Colour kGreen { 0xff2fbf71 };
+    const juce::Colour kAmber { 0xffe0a93b };
+    const juce::Colour kRed   { 0xffe0504f };
 
     auto gainToPos = [] (float gain) -> float
     {
