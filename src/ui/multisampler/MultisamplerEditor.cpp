@@ -193,12 +193,6 @@ void MultisamplerEditor::paint (juce::Graphics& g)
 
     g.setColour (theme.separator);
     g.drawHorizontalLine (kHeaderH, 4.0f, bounds.getWidth() - 4.0f);
-
-    if (dirty)
-    {
-        g.setColour (theme.accent);
-        g.fillEllipse ((float) getWidth() - 14.0f, 10.0f, 6.0f, 6.0f);
-    }
 }
 
 void MultisamplerEditor::resized()

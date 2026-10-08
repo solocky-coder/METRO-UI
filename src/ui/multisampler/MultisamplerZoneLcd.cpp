@@ -473,61 +473,85 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     // isShowingPreview()/isShowingAuditioning() via refreshZoneLcdDisplay()).
     // All of `content` now goes straight to the knob grid.
 
-    // Three rows of knob cells — row 1 has 7 fields (mapping + tune/pan/gain),
-    // row 2 has 9 (envelope/filter/routing, including the LOOP and MIX flat
-    // toggles) or 8 when OUT is excluded (see outputBusVisible below), row 3
-    // has 9 (the EQ1/EQ2/EQ3 band controls) — matching
-    // SliceControlBar's own knob-row layouts (drawKnobCell in a straight
-    // horizontal run) instead of the old cramped 4/4/6 text-cell split.
+    // Knob cells are grouped into titled sections (each its own outlined
+    // panel) instead of one undifferentiated run per row:
+    //   row 1: KEY RANGE | TUNE / LEVEL | PLAYBACK / OUTPUT
+    //   row 2: ENVELOPE  | FILTER
+    //   row 3: EQ 1      | EQ 2          | EQ 3
+    // Within a row every cell has the same width (cellW), and each section is
+    // as wide as its cell count, so knobs line up across sections.
     const int rowH = content.getHeight() / 3;
 
-    // Takes a vector rather than an initializer_list so row 2 below can be
-    // built conditionally (OUT dropped entirely when !outputBusVisible,
-    // rather than left in the list and merely skipped — the row's cellW
-    // divides by however many fields actually get passed in, so dropping
-    // OUT here is also what makes the remaining fields reflow to fill the
-    // gap instead of leaving a blank cell where it used to sit).
-    auto layoutRow = [&] (juce::Rectangle<int> row, const std::vector<MultisamplerZoneField>& fields)
+    struct Section { const char* title; std::vector<MultisamplerZoneField> fields; };
+
+    auto layoutRow = [&] (juce::Rectangle<int> row, const std::vector<Section>& sections)
     {
-        const int n = (int) fields.size();
-        const int cellW = row.getWidth() / juce::jmax (1, n);
+        constexpr int kSectionGap = 6;
+        int totalCells = 0;
+        for (const auto& sec : sections)
+            totalCells += (int) sec.fields.size();
+
+        const int gaps  = juce::jmax (0, (int) sections.size() - 1) * kSectionGap;
+        const int cellW = (row.getWidth() - gaps) / juce::jmax (1, totalCells);
+        const int titleH = juce::roundToInt (11.0f * uiScale);
         int x = row.getX();
-        for (auto f : fields)
+
+        for (const auto& sec : sections)
         {
-            juce::Rectangle<int> cellBounds (x, row.getY(), cellW, row.getHeight());
-            cells.push_back ({ cellBounds, f });
-            drawCell (g, cellBounds, f);
-            x += cellW;
+            const int secW = cellW * (int) sec.fields.size();
+            auto secBounds = juce::Rectangle<int> (x, row.getY(), secW, row.getHeight()).reduced (0, 1);
+
+            g.setColour (theme.darkBar.brighter (0.06f));
+            g.fillRoundedRectangle (secBounds.toFloat(), 3.0f);
+            g.setColour (theme.separator);
+            g.drawRoundedRectangle (secBounds.toFloat().reduced (0.5f), 3.0f, 1.0f);
+
+            g.setColour (theme.accent.withAlpha (0.75f));
+            g.setFont (DysektLookAndFeel::makeFont (8.5f * uiScale, true));
+            g.drawText (sec.title, secBounds.getX() + 6, secBounds.getY() + 1,
+                        secBounds.getWidth() - 12, titleH, juce::Justification::centredLeft);
+
+            auto cellsArea = secBounds.withTrimmedTop (titleH);
+            int cx = cellsArea.getX();
+            for (auto f : sec.fields)
+            {
+                juce::Rectangle<int> cellBounds (cx, cellsArea.getY(), cellW, cellsArea.getHeight());
+                cells.push_back ({ cellBounds, f });
+                drawCell (g, cellBounds, f);
+                cx += cellW;
+            }
+
+            x += secW + kSectionGap;
         }
     };
 
-    layoutRow (content.removeFromTop (rowH),
-               { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
-                 MultisamplerZoneField::rootKey,
-                 MultisamplerZoneField::tune, MultisamplerZoneField::pan,
-                 MultisamplerZoneField::gain });
-
     // OUT is only meaningful when something downstream can actually honour
-    // an AUX 1–15 choice — see setOutputBusVisible()'s doc comment in the
-    // header for why the standalone build can't. Everything else in this
-    // row is unconditional.
-    std::vector<MultisamplerZoneField> row2 {
-        MultisamplerZoneField::loopEnabled, MultisamplerZoneField::attack,
-        MultisamplerZoneField::decay, MultisamplerZoneField::sustain,
-        MultisamplerZoneField::release, MultisamplerZoneField::cutoff,
-        MultisamplerZoneField::resonance
-    };
+    // an AUX 1-15 choice - see setOutputBusVisible()'s doc comment in the
+    // header for why the standalone build can't.
+    std::vector<MultisamplerZoneField> playbackFields { MultisamplerZoneField::loopEnabled };
     if (outputBusVisible)
-        row2.push_back (MultisamplerZoneField::outputBus);
-    row2.push_back (MultisamplerZoneField::showInMixer);
-    layoutRow (content.removeFromTop (rowH), row2);
+        playbackFields.push_back (MultisamplerZoneField::outputBus);
+    playbackFields.push_back (MultisamplerZoneField::showInMixer);
+
+    layoutRow (content.removeFromTop (rowH),
+               { { "KEY RANGE",  { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
+                                   MultisamplerZoneField::rootKey } },
+                 { "TUNE / LEVEL", { MultisamplerZoneField::tune, MultisamplerZoneField::pan,
+                                     MultisamplerZoneField::gain } },
+                 { "PLAYBACK / OUTPUT", playbackFields } });
+
+    layoutRow (content.removeFromTop (rowH),
+               { { "ENVELOPE", { MultisamplerZoneField::attack, MultisamplerZoneField::decay,
+                                 MultisamplerZoneField::sustain, MultisamplerZoneField::release } },
+                 { "FILTER",   { MultisamplerZoneField::cutoff, MultisamplerZoneField::resonance } } });
 
     layoutRow (content,
-               { MultisamplerZoneField::eq1Freq, MultisamplerZoneField::eq1Gain,
-                 MultisamplerZoneField::eq1Bw, MultisamplerZoneField::eq2Freq,
-                 MultisamplerZoneField::eq2Gain, MultisamplerZoneField::eq2Bw,
-                 MultisamplerZoneField::eq3Freq, MultisamplerZoneField::eq3Gain,
-                 MultisamplerZoneField::eq3Bw });
+               { { "EQ 1", { MultisamplerZoneField::eq1Freq, MultisamplerZoneField::eq1Gain,
+                             MultisamplerZoneField::eq1Bw } },
+                 { "EQ 2", { MultisamplerZoneField::eq2Freq, MultisamplerZoneField::eq2Gain,
+                             MultisamplerZoneField::eq2Bw } },
+                 { "EQ 3", { MultisamplerZoneField::eq3Freq, MultisamplerZoneField::eq3Gain,
+                             MultisamplerZoneField::eq3Bw } } });
 }
 
 void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field)
