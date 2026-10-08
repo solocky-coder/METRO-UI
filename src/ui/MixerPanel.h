@@ -245,6 +245,12 @@ private:
     mutable std::array<float, kTotalHoldSlots> holdL {};
     mutable std::array<float, kTotalHoldSlots> holdR {};
 
+    // Smoothed meter levels used for stable, continuous rendering. These are
+    // intentionally separate from the peak-hold registers so the live bars
+    // never blink when the audio snapshot briefly drops between UI frames.
+    mutable std::array<float, kTotalHoldSlots> meterL {};
+    mutable std::array<float, kTotalHoldSlots> meterR {};
+
     // Latest Network Audio peaks (linear), refreshed by timerCallback() from
     // NetworkTrackMeters reader 1 (the Mixer's own read cursor).
     std::array<float, NetworkTrackMeters::kMaxTracks> netPeakL {};
