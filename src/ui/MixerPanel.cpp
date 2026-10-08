@@ -675,93 +675,84 @@ void MixerPanel::drawChroBadge (juce::Graphics& g, int cx, int cy, int channel, 
 void MixerPanel::drawMeter (juce::Graphics& g,
                              int x, int y, int w, int h,
                              float peakL, float peakR,
-                             juce::Colour tint, int si) const
+                             juce::Colour /*tint*/, int si) const
 {
-    // ── Phosphor hairline meter ───────────────────────────────────────────
-    // Two channels (L top, R bottom), each a single 1px fill bar plus a
-    // glowing 1px hold marker.  Colours shift green → yellow → red like
-    // a phosphor CRT trace.
+    // Match the Network Audio track meter's visual language exactly while
+    // preserving the Mixer's existing meter rectangle and dimensions.
+    // Two stacked bars: L on top, R on bottom.
+    constexpr float kFloorDb     = -60.0f;
+    constexpr float kAmberStart = 0.70f; // -18 dB
+    constexpr float kRedStart   = 0.90f; //  -6 dB
+    constexpr int   kGap        = 1;
+    constexpr int   kHoldW      = 2;
 
-    const int gap    = 2;
-    const int barH   = (h - gap) / 2;   // height of each channel bar
-    const int holdW  = 2;               // hold marker width in px
+    const int barH = juce::jmax (1, (h - kGap) / 2);
 
-    // Update hold registers
     const int si2 = juce::jlimit (0, kTotalHoldSlots - 1, si);
     if (peakL > holdL[si2]) holdL[si2] = peakL;
     if (peakR > holdR[si2]) holdR[si2] = peakR;
 
-    // Perceptual mapping: sqrt gives better visual resolution in the low end
-    auto toFill = [] (float pk) -> float
+    inline static const juce::Colour kGreen { 0xff2fbf71 };
+    inline static const juce::Colour kAmber { 0xffe0a93b };
+    inline static const juce::Colour kRed   { 0xffe0504f };
+
+    auto gainToPos = [] (float gain) -> float
     {
-        return std::sqrt (juce::jlimit (0.0f, 1.0f, pk));
+        if (gain <= 0.001f) return 0.0f;
+        const float db = 20.0f * std::log10 (gain);
+        return juce::jlimit (0.0f, 1.0f, (db - kFloorDb) / -kFloorDb);
     };
 
-    // Phosphor colour at normalised position 0-1 along bar
-    auto phosphorCol = [&] (float pos, float /*pk*/) -> juce::Colour
+    auto drawBar = [&] (int barY, float levelGain, float holdGain)
     {
-        if (pos < 0.70f)
-        {
-            // Green zone: dim base → bright phosphor green
-            const float t = pos / 0.70f;
-            return tint.withAlpha (0.25f + t * 0.65f);
-        }
-        else if (pos < 0.85f)
-        {
-            // Yellow zone
-            const float t = (pos - 0.70f) / 0.15f;
-            return tint.interpolatedWith (juce::Colour (0xFFFFE000), t)
-                       .withAlpha (0.88f);
-        }
-        else
-        {
-            // Red zone
-            const float t = (pos - 0.85f) / 0.15f;
-            return juce::Colour (0xFFFF2222).withAlpha (0.75f + t * 0.20f);
-        }
-    };
+        const float level = gainToPos (levelGain);
+        const float hold  = gainToPos (holdGain);
+        const int fillW = juce::jmax (0, juce::roundToInt (level * (float) (w - kHoldW - 2)));
 
-    auto drawBar = [&] (int barY, float pk, float hold)
-    {
-        const float fill = toFill (pk);
-        const int   litW = juce::roundToInt (fill * (float)(w - holdW - 2));
-
-        // Dark background track
-        g.setColour (juce::Colour (0xFF0A0A0A));
+        g.setColour (juce::Colour (0xff0a0a0a));
         g.fillRect (x, barY, w, barH);
 
-        // Thin border
-        g.setColour (juce::Colour (0xFF1E1E1E));
+        g.setColour (juce::Colour (0xff1e1e1e));
         g.drawRect (x, barY, w, barH);
 
-        // Flat fill — single accent colour, no gradient
-        if (litW > 0)
+        auto drawZone = [&] (float from, float to, juce::Colour colour)
         {
-            g.setColour (phosphorCol (fill, pk));
-            g.fillRect (x + 1, barY + 1, litW, barH - 2);
+            const float x0 = from * (float) w;
+            const float x1 = std::min (to * (float) w, (float) fillW);
+            if (x1 > x0)
+            {
+                g.setColour (colour);
+                g.fillRect (juce::Rectangle<float> ((float) x + x0,
+                                                    (float) barY,
+                                                    x1 - x0,
+                                                    (float) barH));
+            }
+        };
+
+        drawZone (0.0f,        kAmberStart, kGreen);
+        drawZone (kAmberStart, kRedStart,   kAmber);
+        drawZone (kRedStart,   1.0f,        kRed);
+
+        if (barH >= 3)
+        {
+            g.setColour (juce::Colour (0xff0a0a0a));
+            g.fillRect (x + (int) (kAmberStart * (float) w), barY, 1, barH);
+            g.fillRect (x + (int) (kRedStart   * (float) w), barY, 1, barH);
         }
 
-        // Hold marker — bright hairline, no glow
-        const float hFill = toFill (hold);
-        const int   hx    = x + 1 + juce::roundToInt (hFill * (float)(w - holdW - 2));
-        if (hFill > 0.01f && hx < x + w - 1)
+        if (hold > 0.0f)
         {
-            g.setColour (phosphorCol (hFill, hold).withAlpha (0.95f));
-            g.fillRect  (hx, barY + 1, holdW, barH - 2);
+            const int hx = x + 1 + juce::roundToInt (hold * (float) (w - kHoldW - 2));
+            if (hx < x + w - 1)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.9f));
+                g.fillRect (hx, barY, kHoldW, barH);
+            }
         }
     };
 
-    drawBar (y,            peakL, holdL[si2]);
-    drawBar (y + barH + gap, peakR, holdR[si2]);
-
-    // Divider hairline between L and R bars, in place of the old dB tick
-    // grid — the 4-line grid plus labels was too busy when repeated on
-    // every row; a single line here still separates the channels clearly.
-    if (gap > 0)
-    {
-        g.setColour (juce::Colour (0xFF3A3A3A));
-        g.drawHorizontalLine (y + barH, (float) x, (float)(x + w));
-    }
+    drawBar (y,                   peakL, holdL[si2]);
+    drawBar (y + barH + kGap,     peakR, holdR[si2]);
 }
 
 void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected) const
