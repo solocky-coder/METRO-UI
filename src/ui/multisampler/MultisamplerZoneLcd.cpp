@@ -208,7 +208,7 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxAttackSec);
         case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxDecaySec);
         case MultisamplerZoneField::sustain: return juce::jlimit (0.0f, 1.0f, v);
-        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxReleaseSec);
+        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, 1.0f - v / ZoneEnv::kMaxReleaseSec); // inverted: arc right = short release, follows the node
         case MultisamplerZoneField::cutoff:
             return juce::jlimit (0.0f, 1.0f,
                 (std::log2 (juce::jmax (20.0f, v)) - std::log2 (20.0f))
@@ -269,7 +269,7 @@ float MultisamplerZoneLcd::nativeFromNorm (MultisamplerZoneField field, float no
         case MultisamplerZoneField::attack:    return norm * ZoneEnv::kMaxAttackSec;
         case MultisamplerZoneField::decay:     return norm * ZoneEnv::kMaxDecaySec;
         case MultisamplerZoneField::sustain:   return norm;
-        case MultisamplerZoneField::release:   return norm * ZoneEnv::kMaxReleaseSec;
+        case MultisamplerZoneField::release:   return (1.0f - norm) * ZoneEnv::kMaxReleaseSec;
         case MultisamplerZoneField::cutoff:
             return std::exp2 (std::log2 (20.0f) + norm * (std::log2 (20000.0f) - std::log2 (20.0f)));
         case MultisamplerZoneField::resonance: return norm;
@@ -851,7 +851,8 @@ void MultisamplerZoneLcd::mouseDrag (const juce::MouseEvent& e)
 
     const bool fineMode = e.mods.isShiftDown();
     const float scale = dragScaleFor (activeField, fineMode);
-    const float newValue = dragStartValue + (float) deltaPixels * scale;
+    const float dragDir = (activeField == MultisamplerZoneField::release) ? -1.0f : 1.0f; // release knob follows the node
+    const float newValue = dragStartValue + dragDir * (float) deltaPixels * scale;
 
     applyDrag (activeField, newValue, /*commit=*/false);
 }

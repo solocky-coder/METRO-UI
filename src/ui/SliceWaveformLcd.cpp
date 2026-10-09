@@ -3,6 +3,7 @@
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 #include "../audio/Slice.h"
+#include "ZoneEnvelopeRanges.h"
 #include <vector>
 
 // ── Fixed black STN-LCD palette ──────────────────────────────────────────────
@@ -212,12 +213,16 @@ void SliceWaveformLcd::buildEnvelopeNodes()
     static constexpr float kMin = 0.01f, kMax = 0.99f;
     static constexpr float kGap = 0.01f;
 
-    const float sliceDurMs_  = juce::jmax (1.0f, getSliceDurMs());
-    const float kViewMs      = sliceDurMs_;
+    // Shared linear scale (same fixed ranges as the knobs and the readout,
+    // and the same as the multisampler) -- NOT tied to the slice length.
+    // Release is capped at 5 s because the slicer's APVTS release tops out there.
+    const float kMaxAtkMs = ZoneEnv::kMaxAttackSec  * 1000.0f;
+    const float kMaxDecMs = ZoneEnv::kMaxDecaySec   * 1000.0f;
+    const float kMaxRelMs = 5000.0f;
 
-    const float attackNorm  = std::sqrt (juce::jmin (attackMs  / kViewMs, 1.0f));
-    const float decayNorm   = std::sqrt (juce::jmin (decayMs   / kViewMs, 1.0f));
-    const float releaseNorm = std::sqrt (juce::jmin (releaseMs / kViewMs, 1.0f));
+    const float attackNorm  = juce::jmin (attackMs  / kMaxAtkMs, 1.0f);
+    const float decayNorm   = juce::jmin (decayMs   / kMaxDecMs, 1.0f);
+    const float releaseNorm = juce::jmin (releaseMs / kMaxRelMs, 1.0f);
 
     // Place A and R first, then fit D in the remaining span.
     // R node: when releaseMs is effectively zero (default/unset), place R at
@@ -268,7 +273,9 @@ void SliceWaveformLcd::commitNodes()
     static constexpr float kMin = 0.01f, kMax = 0.99f;
     static constexpr float kGap = 0.01f;
 
-    const float kViewMs = juce::jmax (1.0f, getSliceDurMs());
+    const float kMaxAtkMs = ZoneEnv::kMaxAttackSec * 1000.0f;
+    const float kMaxDecMs = ZoneEnv::kMaxDecaySec  * 1000.0f;
+    const float kMaxRelMs = 5000.0f;
 
     // A: position within full [kMin..kMax] span (left=short, right=long)
     const float aRatio = (env.ax - kMin) / juce::jmax (0.001f, kMax - kMin);
@@ -279,10 +286,10 @@ void SliceWaveformLcd::commitNodes()
     const float dSpan  = env.rx - env.ax - 2.0f * kGap;
     const float dRatio = (env.dx - (env.ax + kGap)) / juce::jmax (0.001f, dSpan);
 
-    const float attackMs  = juce::jlimit (0.0f, kViewMs, aRatio * aRatio * kViewMs);
-    const float decayMs   = juce::jlimit (0.0f, kViewMs, dRatio * dRatio * kViewMs);
+    const float attackMs  = juce::jlimit (0.0f, kMaxAtkMs, aRatio * kMaxAtkMs);
+    const float decayMs   = juce::jlimit (0.0f, kMaxDecMs, dRatio * kMaxDecMs);
     const float sustainPc = juce::jlimit (0.0f, 100.0f, (1.0f - env.sy) * 100.0f);
-    const float releaseMs = juce::jlimit (0.0f, kViewMs, rRatio * rRatio * kViewMs);
+    const float releaseMs = juce::jlimit (0.0f, kMaxRelMs, rRatio * kMaxRelMs);
 
     // Read the lock state for the selected slice so we can decide whether to
     // write per-slice or global APVTS — mirroring SliceControlBar::mouseDrag

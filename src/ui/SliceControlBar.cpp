@@ -13,6 +13,7 @@ static constexpr int kFieldRootNote = 9999;
 #include "../MidiLearnManager.h"
 #include "../audio/GrainEngine.h"
 #include "../PluginEditor.h"
+namespace { constexpr float kSlicerMaxReleaseSec = 5.0f; } // APVTS defaultRelease tops out at 5000 ms
 
 // ── Fixed ADSR knob colours — match LCD node colours, theme-independent ───────
 static const juce::Colour kAdsrAttack { 0xFF00FF87 }; // Toxic Lime
@@ -304,11 +305,11 @@ float SliceControlBar::toNorm (int fieldId, float v) const
  case F::FieldCentsDetune: return juce::jlimit (0.f, 1.f, (v + 100.f) / 200.f);
  case F::FieldTonality: return juce::jlimit (0.f, 1.f, v / 8000.f);
  case F::FieldFormant: return juce::jlimit (0.f, 1.f, (v + 24.f) / 48.f);
- case F::FieldAttack: return juce::jlimit (0.f, 1.f, v / 1.f);
+ case F::FieldAttack: return juce::jlimit (0.f, 1.f, v / ZoneEnv::kMaxAttackSec);
  case F::FieldHold:   return juce::jlimit (0.f, 1.f, v / 5.f);
- case F::FieldDecay: return juce::jlimit (0.f, 1.f, v / 5.f);
+ case F::FieldDecay: return juce::jlimit (0.f, 1.f, v / ZoneEnv::kMaxDecaySec);
  case F::FieldSustain: return juce::jlimit (0.f, 1.f, v);
- case F::FieldRelease: return juce::jlimit (0.f, 1.f, v / 5.f);
+ case F::FieldRelease: return juce::jlimit (0.f, 1.f, v / kSlicerMaxReleaseSec);
  case F::FieldMuteGroup: return juce::jlimit (0.f, 1.f, v / 32.f);
  case F::FieldMidiNote: return juce::jlimit (0.f, 1.f, v / 127.f);
  case F::FieldVolume: return juce::jlimit (0.f, 1.f, (v + 100.f) / 124.f);
@@ -1210,18 +1211,7 @@ void SliceControlBar::paint (juce::Graphics& g)
  // ── Row 2 ─────────────────────────────────────────────────────────
  x = si (8);
  int adsrGroupX1 = x, adsrGroupX2 = x;
-float relMaxSec = 5.0f;
-{
-    const int total = (sfzMode ? processor.sampleData2 : processor.sampleData).getNumFrames();
-    if (total > 0)
-    {
-        const int sliceEnd = (idx >= 0 && idx < ui.numSlices) ? ui.sliceEndSamples[idx] : total;
-        const int sliceLen = sliceEnd - s.startSample;
-        const float sr = (float) processor.voicePool.getSampleRate();
-        if (sliceLen > 0 && sr > 0.0f)
-            relMaxSec = juce::jmax (0.001f, (float) sliceLen / sr);
-    }
-}
+const float relMaxSec = kSlicerMaxReleaseSec;
 
  // ATK — knob (stored seconds, display ms)
  {
@@ -1229,9 +1219,9 @@ float relMaxSec = 5.0f;
  bool locked = (s.lockMask & kLockAttack) != 0;
  float atk = effAttack;
  drawKnobCell (g, x, row2y, "ATK",
- juce::String ((int) (atk * 1000.f)) + "ms",
+ juce::String (atk, 3) + "s",
  toNorm (F::FieldAttack, atk),
- locked, kLockAttack, F::FieldAttack, 0.f, 1.f, 0.001f, cw);
+ locked, kLockAttack, F::FieldAttack, 0.f, ZoneEnv::kMaxAttackSec, 0.001f, cw);
  x += cw + si (4);
  }
 
@@ -1243,9 +1233,9 @@ float relMaxSec = 5.0f;
  bool locked = (s.lockMask & kLockDecay) != 0;
  float dec = effDecay;
  drawKnobCell (g, x, row2y, "DEC",
- juce::String ((int) (dec * 1000.f)) + "ms",
+ juce::String (dec, 3) + "s",
  toNorm (F::FieldDecay, dec),
- locked, kLockDecay, F::FieldDecay, 0.f, 5.f, 0.001f, cw);
+ locked, kLockDecay, F::FieldDecay, 0.f, ZoneEnv::kMaxDecaySec, 0.001f, cw);
  x += cw + si (4);
  }
 
@@ -1271,9 +1261,9 @@ float relMaxSec = 5.0f;
 //   rel=0ms  → norm=1.0 → knob hard RIGHT  (node at hard right)
 //   rel=max  → norm=0.0 → knob hard LEFT   (node at hard left)
 const float relNorm = juce::jlimit (0.f, 1.f,
-    1.0f - std::sqrt (juce::jmin (rel / relMaxSec, 1.0f)));
+    1.0f - juce::jmin (rel / relMaxSec, 1.0f));
  drawKnobCell (g, x, row2y, "REL",
- juce::String ((int) (rel * 1000.f)) + "ms",
+ juce::String (rel, 3) + "s",
  relNorm,
 locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
  x += cw + si (4);
@@ -2198,10 +2188,10 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
  // BPM: 2 bpm/px
  // Shift = fine mode (÷10)
  float sensitivity = 1.0f;
- if (cell.fieldId == F::FieldAttack) sensitivity = 2.0f;
+ if (cell.fieldId == F::FieldAttack) sensitivity = ZoneEnv::kAttackDragStep * 1000.f;
  else if (cell.fieldId == F::FieldHold)  sensitivity = 10.0f;
- else if (cell.fieldId == F::FieldDecay) sensitivity = 10.0f;
- else if (cell.fieldId == F::FieldRelease) sensitivity = 10.0f;
+ else if (cell.fieldId == F::FieldDecay) sensitivity = ZoneEnv::kDecayDragStep * 1000.f;
+ else if (cell.fieldId == F::FieldRelease) sensitivity = kSlicerMaxReleaseSec / 500.f * 1000.f;
  else if (cell.fieldId == F::FieldSustain) sensitivity = 0.5f;
  else if (cell.fieldId == F::FieldBpm) sensitivity = 2.0f;
  if (e.mods.isShiftDown()) sensitivity *= 0.1f;
@@ -2398,11 +2388,11 @@ void SliceControlBar::mouseDoubleClick (const juce::MouseEvent& e)
  case F::FieldCentsDetune: currentVal = sl.centsDetune; break;
  case F::FieldTonality: currentVal = sl.tonalityHz; break;
  case F::FieldFormant: currentVal = sl.formantSemitones; break;
- case F::FieldAttack:  currentVal = sl.attackSec   * 1000.f; break;
+ case F::FieldAttack:  currentVal = sl.attackSec; break;
  case F::FieldHold:    currentVal = sl.holdSec     * 1000.f; break;
- case F::FieldDecay:   currentVal = sl.decaySec    * 1000.f; break;
+ case F::FieldDecay:   currentVal = sl.decaySec; break;
  case F::FieldSustain: currentVal = sl.sustainLevel * 100.f; break;
- case F::FieldRelease: currentVal = sl.releaseSec  * 1000.f; break;
+ case F::FieldRelease: currentVal = sl.releaseSec; break;
  case F::FieldMuteGroup: currentVal = (float)((sl.lockMask & kLockMuteGroup) ? sl.muteGroup : (int) processor.apvts.getRawParameterValue (ParamIds::defaultMuteGroup)->load()); break;
  case F::FieldMidiNote: currentVal = (float) sl.midiNote; break;
  case F::FieldVolume: currentVal = sl.volume; break;
@@ -2633,7 +2623,9 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 
  using F = DysektProcessor;
  juce::String displayVal;
- if (cell.fieldId == F::FieldAttack || cell.fieldId == F::FieldHold || cell.fieldId == F::FieldDecay || cell.fieldId == F::FieldRelease)
+ if (cell.fieldId == F::FieldAttack || cell.fieldId == F::FieldDecay || cell.fieldId == F::FieldRelease)
+ displayVal = juce::String (currentValue, 3);
+ else if (cell.fieldId == F::FieldHold)
  displayVal = juce::String ((int) currentValue);
  else if (cell.fieldId == F::FieldSustain)
  displayVal = juce::String ((int) currentValue);
@@ -2656,9 +2648,7 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
  using F2 = DysektProcessor;
  const bool isAdsrField = (fieldId == F2::FieldAttack || fieldId == F2::FieldDecay
                            || fieldId == F2::FieldSustain || fieldId == F2::FieldRelease);
- if (fieldId == F2::FieldAttack || fieldId == F2::FieldDecay || fieldId == F2::FieldRelease)
- val /= 1000.f;
- else if (fieldId == F2::FieldSustain)
+ if (fieldId == F2::FieldSustain)
  val /= 100.f;
  val = juce::jlimit (minV, maxV, val);
  // Check the current lock state from the snapshot
