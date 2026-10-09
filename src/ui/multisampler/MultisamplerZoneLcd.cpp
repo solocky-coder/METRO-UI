@@ -208,7 +208,9 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxAttackSec);
         case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxDecaySec);
         case MultisamplerZoneField::sustain: return juce::jlimit (0.0f, 1.0f, v);
-        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxReleaseSec);
+        // Inverted on purpose: release is measured from the right edge in the envelope graph,
+        // so 0 s = knob hard right = node hard right; more release turns the knob left.
+        case MultisamplerZoneField::release: return 1.0f - juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxReleaseSec);
         case MultisamplerZoneField::cutoff:
             return juce::jlimit (0.0f, 1.0f,
                 (std::log2 (juce::jmax (20.0f, v)) - std::log2 (20.0f))
@@ -269,7 +271,7 @@ float MultisamplerZoneLcd::nativeFromNorm (MultisamplerZoneField field, float no
         case MultisamplerZoneField::attack:    return norm * ZoneEnv::kMaxAttackSec;
         case MultisamplerZoneField::decay:     return norm * ZoneEnv::kMaxDecaySec;
         case MultisamplerZoneField::sustain:   return norm;
-        case MultisamplerZoneField::release:   return norm * ZoneEnv::kMaxReleaseSec;
+        case MultisamplerZoneField::release:   return (1.0f - norm) * ZoneEnv::kMaxReleaseSec;   // inverted - see normForField
         case MultisamplerZoneField::cutoff:
             return std::exp2 (std::log2 (20.0f) + norm * (std::log2 (20000.0f) - std::log2 (20.0f)));
         case MultisamplerZoneField::resonance: return norm;
@@ -355,7 +357,7 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::attack:      scale = ZoneEnv::kAttackDragStep;  break;
         case MultisamplerZoneField::decay:       scale = ZoneEnv::kDecayDragStep;   break;
         case MultisamplerZoneField::sustain:     scale = 0.01f;  break;
-        case MultisamplerZoneField::release:     scale = ZoneEnv::kReleaseDragStep; break;
+        case MultisamplerZoneField::release:     scale = -ZoneEnv::kReleaseDragStep; break;   // inverted: drag up (clockwise) = shorter release
         case MultisamplerZoneField::cutoff:      scale = 50.0f;  break;
         case MultisamplerZoneField::resonance:   scale = 0.01f;  break;
         case MultisamplerZoneField::loopEnabled: scale = 0.0f;   break; // toggle, not a drag
