@@ -245,6 +245,11 @@ private:
     // here — zones aren't Slicer slices — so this only carries the subset
     // of drawKnobCell's state that applies: hover and active-drag.
     void drawKnobField (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field, int cellIdx);
+
+    // Key-range fields (LO / HI / ROOT) are note pickers: dropdown box + popup menu.
+    static bool isNoteDropdownField (MultisamplerZoneField field) noexcept;
+    void drawDropdownField (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field, int cellIdx);
+    void showNoteMenu (MultisamplerZoneField field, juce::Rectangle<int> cellBounds);
     void drawKnobArc (juce::Graphics& g, int cx, int cy, int r, float normVal, bool hovered, bool dragging) const;
 
     // LOOP is boolean — drawn as a flat toggle badge rather than a knob,

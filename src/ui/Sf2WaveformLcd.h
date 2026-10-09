@@ -105,7 +105,6 @@ private:
     static constexpr int   kScanlineAlpha = 18;
     static constexpr float kNodeR         = 14.0f;
     static constexpr float kHitR          = 26.0f;
-    static constexpr float kViewMs        = 2000.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Sf2WaveformLcd)
 };

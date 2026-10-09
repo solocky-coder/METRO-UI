@@ -1,4 +1,5 @@
 #include "Sf2WaveformLcd.h"
+#include "ZoneEnvelopeRanges.h"
 #include "UIHelpers.h"
 #include "DysektLookAndFeel.h"
 #include "../PluginProcessor.h"
@@ -47,29 +48,33 @@ void Sf2WaveformLcd::repaintLcd()
 
 void Sf2WaveformLcd::buildEnvelopeNodes()
 {
-    const float attackMs  = processor.sfzPlayer.getSfzAttack()  * 1000.0f;
-    const float decayMs   = processor.sfzPlayer.getSfzDecay()   * 1000.0f;
+    const float attackSec = processor.sfzPlayer.getSfzAttack();
+    const float decaySec  = processor.sfzPlayer.getSfzDecay();
     const float sustainPc = processor.sfzPlayer.getSfzSustain();
-    const float releaseMs = processor.sfzPlayer.getSfzRelease() * 1000.0f;
+    const float releaseSec = processor.sfzPlayer.getSfzRelease();
 
     static constexpr float kMin = 0.01f, kMax = 0.99f, kGap = 0.01f;
+    const float span = kMax - kMin;
 
-    const float attackNorm  = std::sqrt (juce::jmin (attackMs  / kViewMs, 1.0f));
-    const float decayNorm   = std::sqrt (juce::jmin (decayMs   / kViewMs, 1.0f));
-    const float releaseNorm = std::sqrt (juce::jmin (releaseMs / kViewMs, 1.0f));
+    // Same linear seconds scale and A/D/R limits as the multisampler's nodes
+    // (ZoneEnvelopeRanges.h), so a node sits exactly where the LCD readout
+    // says it is: position = seconds / max. A is measured from the left, R
+    // from the right, D from the end of A.
+    const float attackNorm  = juce::jmin (attackSec  / ZoneEnv::kMaxAttackSec,  1.0f);
+    const float decayNorm   = juce::jmin (decaySec   / ZoneEnv::kMaxDecaySec,   1.0f);
+    const float releaseNorm = juce::jmin (releaseSec / ZoneEnv::kMaxReleaseSec, 1.0f);
 
-    const float ax_raw = kMin + attackNorm  * (kMax - kMin);
-    const float rx_raw = (releaseMs < 0.5f)
+    const float ax_raw = kMin + attackNorm * span;
+    const float rx_raw = (releaseSec < 0.0005f)
                          ? kMax
-                         : juce::jlimit (kMin, kMax, kMax - releaseNorm * (kMax - kMin));
+                         : juce::jlimit (kMin, kMax, kMax - releaseNorm * span);
 
     env.ax = juce::jlimit (kMin, kMax - 2.0f * kGap, ax_raw);
     env.rx = juce::jlimit (env.ax + 2.0f * kGap, kMax, rx_raw);
 
-    const float dSpan = env.rx - env.ax - 2.0f * kGap;
     env.dx = juce::jlimit (env.ax + kGap,
                            env.rx - kGap,
-                           env.ax + kGap + decayNorm * dSpan);
+                           env.ax + kGap + decayNorm * span);
 
     env.sy    = juce::jlimit (0.04f, 0.94f, 1.0f - (sustainPc / 100.0f));
     env.ay    = 0.04f;
@@ -98,15 +103,13 @@ void Sf2WaveformLcd::commitNodes()
 {
     static constexpr float kMin = 0.01f, kMax = 0.99f, kGap = 0.01f;
 
-    const float aRatio = (env.ax - kMin) / juce::jmax (0.001f, kMax - kMin);
-    const float rRatio = (kMax - env.rx) / juce::jmax (0.001f, kMax - kMin);
-    const float dSpan  = env.rx - env.ax - 2.0f * kGap;
-    const float dRatio = (env.dx - (env.ax + kGap)) / juce::jmax (0.001f, dSpan);
+    const float span = juce::jmax (0.001f, kMax - kMin);
 
-    const float attackMs  = juce::jlimit (0.0f, kViewMs, aRatio * aRatio * kViewMs);
-    const float decayMs   = juce::jlimit (0.0f, kViewMs, dRatio * dRatio * kViewMs);
+    // Inverse of buildEnvelopeNodes(): linear seconds on the shared ranges.
+    const float attackMs  = juce::jlimit (0.0f, ZoneEnv::kMaxAttackSec,  ((env.ax - kMin) / span) * ZoneEnv::kMaxAttackSec) * 1000.0f;
+    const float decayMs   = juce::jlimit (0.0f, ZoneEnv::kMaxDecaySec,   ((env.dx - (env.ax + kGap)) / span) * ZoneEnv::kMaxDecaySec) * 1000.0f;
     const float sustainPc = juce::jlimit (0.0f, 100.0f, (1.0f - env.sy) * 100.0f);
-    const float releaseMs = juce::jlimit (0.0f, kViewMs, rRatio * rRatio * kViewMs);
+    const float releaseMs = juce::jlimit (0.0f, ZoneEnv::kMaxReleaseSec, ((kMax - env.rx) / span) * ZoneEnv::kMaxReleaseSec) * 1000.0f;
 
     if (dragRole == NodeRole::Attack)
         processor.sfzPlayer.setSfzAttack  (attackMs  / 1000.0f);

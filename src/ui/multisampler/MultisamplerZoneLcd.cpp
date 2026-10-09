@@ -1,6 +1,7 @@
 #include "MultisamplerZoneLcd.h"
 #include "../DysektLookAndFeel.h"
 #include "../UIHelpers.h"
+#include "../ZoneEnvelopeRanges.h"
 #include "../../MidiLearnManager.h"
 #include <cmath>
 
@@ -204,10 +205,10 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         // Matches SliceControlBar::toNorm's FieldVolume mapping (-100..+24dB)
         // so a gain knob sweeps the same visual arc everywhere in the app.
         case MultisamplerZoneField::gain:    return juce::jlimit (0.0f, 1.0f, (v + 100.0f) / 124.0f);
-        case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / 2.0f);
-        case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / 5.0f);
+        case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxAttackSec);
+        case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxDecaySec);
         case MultisamplerZoneField::sustain: return juce::jlimit (0.0f, 1.0f, v);
-        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, v / 5.0f);
+        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxReleaseSec);
         case MultisamplerZoneField::cutoff:
             return juce::jlimit (0.0f, 1.0f,
                 (std::log2 (juce::jmax (20.0f, v)) - std::log2 (20.0f))
@@ -265,10 +266,10 @@ float MultisamplerZoneLcd::nativeFromNorm (MultisamplerZoneField field, float no
         case MultisamplerZoneField::tune:      return norm * 2400.0f - 1200.0f;
         case MultisamplerZoneField::pan:       return norm * 2.0f - 1.0f;
         case MultisamplerZoneField::gain:      return norm * 124.0f - 100.0f;
-        case MultisamplerZoneField::attack:    return norm * 2.0f;
-        case MultisamplerZoneField::decay:     return norm * 5.0f;
+        case MultisamplerZoneField::attack:    return norm * ZoneEnv::kMaxAttackSec;
+        case MultisamplerZoneField::decay:     return norm * ZoneEnv::kMaxDecaySec;
         case MultisamplerZoneField::sustain:   return norm;
-        case MultisamplerZoneField::release:   return norm * 5.0f;
+        case MultisamplerZoneField::release:   return norm * ZoneEnv::kMaxReleaseSec;
         case MultisamplerZoneField::cutoff:
             return std::exp2 (std::log2 (20.0f) + norm * (std::log2 (20000.0f) - std::log2 (20.0f)));
         case MultisamplerZoneField::resonance: return norm;
@@ -351,10 +352,10 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::tune:        scale = 1.0f;   break;
         case MultisamplerZoneField::pan:         scale = 0.01f;  break;
         case MultisamplerZoneField::gain:        scale = 0.5f;   break;
-        case MultisamplerZoneField::attack:      scale = 0.01f;  break;
-        case MultisamplerZoneField::decay:       scale = 0.05f;  break;
+        case MultisamplerZoneField::attack:      scale = ZoneEnv::kAttackDragStep;  break;
+        case MultisamplerZoneField::decay:       scale = ZoneEnv::kDecayDragStep;   break;
         case MultisamplerZoneField::sustain:     scale = 0.01f;  break;
-        case MultisamplerZoneField::release:     scale = 0.01f;  break;
+        case MultisamplerZoneField::release:     scale = ZoneEnv::kReleaseDragStep; break;
         case MultisamplerZoneField::cutoff:      scale = 50.0f;  break;
         case MultisamplerZoneField::resonance:   scale = 0.01f;  break;
         case MultisamplerZoneField::loopEnabled: scale = 0.0f;   break; // toggle, not a drag
@@ -532,15 +533,27 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
         return t;
     };
 
-    int cellW = juce::roundToInt (70.0f * sc);
-    const int minCellW = juce::roundToInt (48.0f * sc);
-    while (cellW > minCellW && totalWidth (cellW) > content.getWidth())
-        --cellW;
+    // Cells share ALL the width left after module padding/gaps, so the strip
+    // always fills the panel edge to edge (wider panel = wider cells, narrower
+    // panel = narrower cells, down to a floor).
+    int totalCells = 0;
+    for (const auto& m : modules)
+        for (const auto& gr : m.groups)
+            totalCells += (int) gr.size();
+
+    const int fixedWidth = totalWidth (0);
+    const int minCellW   = juce::roundToInt (48.0f * sc);
+    const int cellW      = juce::jmax (minCellW,
+                                       (content.getWidth() - fixedWidth) / juce::jmax (1, totalCells));
+    // Rounding leftover (< totalCells px) goes to the last module so the right
+    // edge lines up exactly with the panel.
+    int leftover = juce::jmax (0, content.getWidth() - totalWidth (cellW));
 
     int x = content.getX();
     for (const auto& m : modules)
     {
-        const int w = moduleWidth (m, cellW);
+        const bool isLast = (&m == &modules.back());
+        const int w = moduleWidth (m, cellW) + (isLast ? leftover : 0);
         const juce::Rectangle<int> mb (x, content.getY(), w, content.getHeight());
 
         g.setColour (theme.darkBar.brighter (0.06f));
@@ -627,7 +640,9 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
         g.drawRect (fb.reduced (0.5f), 1.0f + 1.0f * pulse);
     }
 
-    if (field == MultisamplerZoneField::loopEnabled)
+    if (isNoteDropdownField (field))
+        drawDropdownField (g, bounds, field, idx);
+    else if (field == MultisamplerZoneField::loopEnabled)
         drawLoopToggleCell (g, bounds, idx);
     else if (field == MultisamplerZoneField::showInMixer)
         drawMixerToggleCell (g, bounds, idx);
@@ -746,6 +761,91 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
 }
 
 // =============================================================================
+// Key-range fields (LO / HI / ROOT) are note pickers, not continuous values -
+// drawn as a dropdown box (note name + chevron) and edited through a popup
+// menu of notes grouped by octave.
+// =============================================================================
+bool MultisamplerZoneLcd::isNoteDropdownField (MultisamplerZoneField field) noexcept
+{
+    return field == MultisamplerZoneField::lowKey
+        || field == MultisamplerZoneField::highKey
+        || field == MultisamplerZoneField::rootKey;
+}
+
+void MultisamplerZoneLcd::drawDropdownField (juce::Graphics& g, juce::Rectangle<int> bounds,
+                                              MultisamplerZoneField field, int cellIdx)
+{
+    const auto& theme = getTheme();
+    auto r = bounds.reduced (1, 0);
+
+    const bool hoveredNow = editable && (cellIdx == hoveredCellIdx);
+
+    const int labelH = juce::roundToInt (12.0f * uiScale);
+    auto labelRow = r.removeFromTop (labelH);
+
+    g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.28f));
+    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
+    g.drawText (labelFor (field), labelRow, juce::Justification::centred);
+
+    const int boxH = juce::jmin (r.getHeight() - 4, juce::roundToInt (26.0f * uiScale));
+    const int boxW = juce::jmin (r.getWidth() - 8, juce::roundToInt (64.0f * uiScale));
+    const auto box = juce::Rectangle<int> (boxW, boxH).withCentre (r.getCentre()).toFloat();
+
+    g.setColour (theme.darkBar.brighter (hoveredNow ? 0.28f : 0.14f));
+    g.fillRoundedRectangle (box, 4.0f);
+    g.setColour (hoveredNow ? theme.accent : theme.separator);
+    g.drawRoundedRectangle (box.reduced (0.5f), 4.0f, 1.0f);
+
+    // Note name (left of centre) + chevron on the right edge.
+    const float chevW = 14.0f * uiScale;
+    g.setColour (editable ? theme.foreground.withAlpha (0.9f) : theme.foreground.withAlpha (0.4f));
+    g.setFont (DysektLookAndFeel::makeMonoFont (11.5f * uiScale, true));
+    g.drawText (formatFieldValue (field),
+                box.withTrimmedRight (chevW).toNearestInt(), juce::Justification::centred);
+
+    juce::Path chevron;
+    const float cx = box.getRight() - chevW * 0.55f;
+    const float cy = box.getCentreY();
+    const float cw = 3.5f * uiScale;
+    chevron.startNewSubPath (cx - cw, cy - cw * 0.5f);
+    chevron.lineTo          (cx,      cy + cw * 0.5f);
+    chevron.lineTo          (cx + cw, cy - cw * 0.5f);
+    g.setColour (theme.accent.withAlpha (editable ? 0.9f : 0.4f));
+    g.strokePath (chevron, juce::PathStrokeType (1.4f));
+}
+
+void MultisamplerZoneLcd::showNoteMenu (MultisamplerZoneField field, juce::Rectangle<int> cellBounds)
+{
+    const int current = juce::roundToInt (getFieldValue (field));
+
+    juce::PopupMenu menu;
+    // Notes 0..127 (C-2..G8 in this app's naming), one submenu per octave.
+    for (int octaveStart = 0; octaveStart <= 127; octaveStart += 12)
+    {
+        juce::PopupMenu sub;
+        bool hasCurrent = false;
+        for (int n = octaveStart; n < octaveStart + 12 && n <= 127; ++n)
+        {
+            const bool isCur = (n == current);
+            hasCurrent = hasCurrent || isCur;
+            sub.addItem (n + 1, UIHelpers::midiNoteToName (n), true, isCur);
+        }
+        const juce::String title = UIHelpers::midiNoteToName (octaveStart) + " - "
+                                 + UIHelpers::midiNoteToName (juce::jmin (127, octaveStart + 11));
+        menu.addSubMenu (title, sub, true, std::unique_ptr<juce::Drawable>(), hasCurrent);
+    }
+
+    const auto area = localAreaToGlobal (cellBounds);
+    juce::Component::SafePointer<MultisamplerZoneLcd> safeThis (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea (area).withMinimumWidth (110),
+                        [safeThis, field] (int result)
+                        {
+                            if (safeThis == nullptr || result <= 0) return;
+                            safeThis->applyDrag (field, (float) (result - 1), /*commit=*/true);
+                        });
+}
+
+// =============================================================================
 // drawTogglePill - shared by LOOP and MIX (both boolean, so a flat pill
 // button rather than a knob): label on top, pill below filled with the accent
 // colour when ON.
@@ -836,6 +936,12 @@ void MultisamplerZoneLcd::mouseDown (const juce::MouseEvent& e)
             return;
         }
 
+        if (isNoteDropdownField (cell.field))
+        {
+            showNoteMenu (cell.field, cell.bounds);
+            return;
+        }
+
         if (cell.field == MultisamplerZoneField::loopEnabled)
         {
             // Click toggles immediately — no drag gesture for a boolean.
@@ -895,6 +1001,7 @@ void MultisamplerZoneLcd::mouseDoubleClick (const juce::MouseEvent& e)
     for (const auto& cell : cells)
     {
         if (! cell.bounds.contains (e.getPosition())) continue;
+        if (isNoteDropdownField (cell.field)) return;   // a dropdown, not a knob - nothing to reset
         applyDrag (cell.field, defaultValueFor (cell.field), /*commit=*/true);
         return;
     }
