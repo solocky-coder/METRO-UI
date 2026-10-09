@@ -1,7 +1,6 @@
 #include "MultisamplerZoneLcd.h"
 #include "../DysektLookAndFeel.h"
 #include "../UIHelpers.h"
-#include "../ZoneEnvelopeRanges.h"
 #include "../../MidiLearnManager.h"
 #include <cmath>
 
@@ -137,19 +136,19 @@ juce::String MultisamplerZoneLcd::labelFor (MultisamplerZoneField field) const
         case MultisamplerZoneField::decay:       return "DECAY";
         case MultisamplerZoneField::sustain:     return "SUSTAIN";
         case MultisamplerZoneField::release:     return "RELEASE";
-        case MultisamplerZoneField::cutoff:      return "FILTER";
+        case MultisamplerZoneField::cutoff:      return "CUTOFF";
         case MultisamplerZoneField::resonance:   return "RES";
         case MultisamplerZoneField::outputBus:   return "OUT";
         case MultisamplerZoneField::showInMixer: return "MIX";
-        case MultisamplerZoneField::eq1Freq:     return "EQ1 F";
-        case MultisamplerZoneField::eq1Gain:     return "EQ1 G";
-        case MultisamplerZoneField::eq1Bw:       return "EQ1 BW";
-        case MultisamplerZoneField::eq2Freq:     return "EQ2 F";
-        case MultisamplerZoneField::eq2Gain:     return "EQ2 G";
-        case MultisamplerZoneField::eq2Bw:       return "EQ2 BW";
-        case MultisamplerZoneField::eq3Freq:     return "EQ3 F";
-        case MultisamplerZoneField::eq3Gain:     return "EQ3 G";
-        case MultisamplerZoneField::eq3Bw:       return "EQ3 BW";
+        case MultisamplerZoneField::eq1Freq:     return "FREQ";
+        case MultisamplerZoneField::eq1Gain:     return "GAIN";
+        case MultisamplerZoneField::eq1Bw:       return "BW";
+        case MultisamplerZoneField::eq2Freq:     return "FREQ";
+        case MultisamplerZoneField::eq2Gain:     return "GAIN";
+        case MultisamplerZoneField::eq2Bw:       return "BW";
+        case MultisamplerZoneField::eq3Freq:     return "FREQ";
+        case MultisamplerZoneField::eq3Gain:     return "GAIN";
+        case MultisamplerZoneField::eq3Bw:       return "BW";
         case MultisamplerZoneField::kCount:      break;   // sentinel, never a real field
     }
     return {};
@@ -205,10 +204,10 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         // Matches SliceControlBar::toNorm's FieldVolume mapping (-100..+24dB)
         // so a gain knob sweeps the same visual arc everywhere in the app.
         case MultisamplerZoneField::gain:    return juce::jlimit (0.0f, 1.0f, (v + 100.0f) / 124.0f);
-        case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxAttackSec);
-        case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxDecaySec);
+        case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / 2.0f);
+        case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / 5.0f);
         case MultisamplerZoneField::sustain: return juce::jlimit (0.0f, 1.0f, v);
-        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, 1.0f - v / ZoneEnv::kMaxReleaseSec); // inverted: arc right = short release, follows the node
+        case MultisamplerZoneField::release: return juce::jlimit (0.0f, 1.0f, v / 5.0f);
         case MultisamplerZoneField::cutoff:
             return juce::jlimit (0.0f, 1.0f,
                 (std::log2 (juce::jmax (20.0f, v)) - std::log2 (20.0f))
@@ -266,10 +265,10 @@ float MultisamplerZoneLcd::nativeFromNorm (MultisamplerZoneField field, float no
         case MultisamplerZoneField::tune:      return norm * 2400.0f - 1200.0f;
         case MultisamplerZoneField::pan:       return norm * 2.0f - 1.0f;
         case MultisamplerZoneField::gain:      return norm * 124.0f - 100.0f;
-        case MultisamplerZoneField::attack:    return norm * ZoneEnv::kMaxAttackSec;
-        case MultisamplerZoneField::decay:     return norm * ZoneEnv::kMaxDecaySec;
+        case MultisamplerZoneField::attack:    return norm * 2.0f;
+        case MultisamplerZoneField::decay:     return norm * 5.0f;
         case MultisamplerZoneField::sustain:   return norm;
-        case MultisamplerZoneField::release:   return (1.0f - norm) * ZoneEnv::kMaxReleaseSec;
+        case MultisamplerZoneField::release:   return norm * 5.0f;
         case MultisamplerZoneField::cutoff:
             return std::exp2 (std::log2 (20.0f) + norm * (std::log2 (20000.0f) - std::log2 (20.0f)));
         case MultisamplerZoneField::resonance: return norm;
@@ -352,10 +351,10 @@ float MultisamplerZoneLcd::dragScaleFor (MultisamplerZoneField field, bool fineM
         case MultisamplerZoneField::tune:        scale = 1.0f;   break;
         case MultisamplerZoneField::pan:         scale = 0.01f;  break;
         case MultisamplerZoneField::gain:        scale = 0.5f;   break;
-        case MultisamplerZoneField::attack:      scale = ZoneEnv::kAttackDragStep;  break;
-        case MultisamplerZoneField::decay:       scale = ZoneEnv::kDecayDragStep;   break;
+        case MultisamplerZoneField::attack:      scale = 0.01f;  break;
+        case MultisamplerZoneField::decay:       scale = 0.05f;  break;
         case MultisamplerZoneField::sustain:     scale = 0.01f;  break;
-        case MultisamplerZoneField::release:     scale = ZoneEnv::kReleaseDragStep; break;
+        case MultisamplerZoneField::release:     scale = 0.01f;  break;
         case MultisamplerZoneField::cutoff:      scale = 50.0f;  break;
         case MultisamplerZoneField::resonance:   scale = 0.01f;  break;
         case MultisamplerZoneField::loopEnabled: scale = 0.0f;   break; // toggle, not a drag
@@ -474,85 +473,127 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     // isShowingPreview()/isShowingAuditioning() via refreshZoneLcdDisplay()).
     // All of `content` now goes straight to the knob grid.
 
-    // Knob cells are grouped into titled sections (each its own outlined
-    // panel) instead of one undifferentiated run per row:
-    //   row 1: KEY RANGE | TUNE / LEVEL | PLAYBACK / OUTPUT
-    //   row 2: ENVELOPE  | FILTER
-    //   row 3: EQ 1      | EQ 2          | EQ 3
-    // Within a row every cell has the same width (cellW), and each section is
-    // as wide as its cell count, so knobs line up across sections.
-    const int rowH = content.getHeight() / 3;
+    // One strip of titled modules, left to right:
+    //   KEY RANGE | TUNE / LEVEL | ENVELOPE | FILTER | PLAYBACK | EQUALIZER
+    // Every knob cell has the same fixed width (shrunk uniformly only if the
+    // strip would overflow), laid out vertically: label, knob, value. The
+    // EQUALIZER module holds the three bands as divided sub-groups.
+    const float sc = uiScale;
+    const int kModGap  = juce::roundToInt (10.0f * sc);
+    const int modPadX  = juce::roundToInt (8.0f * sc);
+    const int groupGap = modPadX;
+    const int titleH   = juce::roundToInt (15.0f * sc);
+    const int padBot   = juce::roundToInt (4.0f * sc);
 
-    struct Section { const char* title; std::vector<MultisamplerZoneField> fields; };
+    using Fields = std::vector<MultisamplerZoneField>;
+    struct Module { const char* title; std::vector<Fields> groups; };
 
-    auto layoutRow = [&] (juce::Rectangle<int> row, const std::vector<Section>& sections)
+    std::vector<Module> modules;
+    auto addModule = [&] (const char* title, std::vector<Fields> groups)
     {
-        constexpr int kSectionGap = 6;
-        int totalCells = 0;
-        for (const auto& sec : sections)
-            totalCells += (int) sec.fields.size();
-
-        const int gaps  = juce::jmax (0, (int) sections.size() - 1) * kSectionGap;
-        const int cellW = (row.getWidth() - gaps) / juce::jmax (1, totalCells);
-        const int titleH = juce::roundToInt (11.0f * uiScale);
-        int x = row.getX();
-
-        for (const auto& sec : sections)
-        {
-            const int secW = cellW * (int) sec.fields.size();
-            auto secBounds = juce::Rectangle<int> (x, row.getY(), secW, row.getHeight()).reduced (0, 1);
-
-            g.setColour (theme.darkBar.brighter (0.06f));
-            g.fillRoundedRectangle (secBounds.toFloat(), 3.0f);
-            g.setColour (theme.separator);
-            g.drawRoundedRectangle (secBounds.toFloat().reduced (0.5f), 3.0f, 1.0f);
-
-            g.setColour (theme.accent.withAlpha (0.75f));
-            g.setFont (DysektLookAndFeel::makeFont (8.5f * uiScale, true));
-            g.drawText (sec.title, secBounds.getX() + 6, secBounds.getY() + 1,
-                        secBounds.getWidth() - 12, titleH, juce::Justification::centredLeft);
-
-            auto cellsArea = secBounds.withTrimmedTop (titleH);
-            int cx = cellsArea.getX();
-            for (auto f : sec.fields)
-            {
-                juce::Rectangle<int> cellBounds (cx, cellsArea.getY(), cellW, cellsArea.getHeight());
-                cells.push_back ({ cellBounds, f });
-                drawCell (g, cellBounds, f);
-                cx += cellW;
-            }
-
-            x += secW + kSectionGap;
-        }
+        modules.push_back ({ title, std::move (groups) });
     };
 
     // OUT is only meaningful when something downstream can actually honour
     // an AUX 1-15 choice - see setOutputBusVisible()'s doc comment in the
     // header for why the standalone build can't.
-    std::vector<MultisamplerZoneField> playbackFields { MultisamplerZoneField::loopEnabled };
+    Fields playback { MultisamplerZoneField::loopEnabled };
     if (outputBusVisible)
-        playbackFields.push_back (MultisamplerZoneField::outputBus);
-    playbackFields.push_back (MultisamplerZoneField::showInMixer);
+        playback.push_back (MultisamplerZoneField::outputBus);
+    playback.push_back (MultisamplerZoneField::showInMixer);
 
-    layoutRow (content.removeFromTop (rowH),
-               { { "KEY RANGE",  { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
-                                   MultisamplerZoneField::rootKey } },
-                 { "TUNE / LEVEL", { MultisamplerZoneField::tune, MultisamplerZoneField::pan,
-                                     MultisamplerZoneField::gain } },
-                 { "PLAYBACK / OUTPUT", playbackFields } });
+    addModule ("KEY RANGE",    { Fields { MultisamplerZoneField::lowKey, MultisamplerZoneField::highKey,
+                                          MultisamplerZoneField::rootKey } });
+    addModule ("TUNE / LEVEL", { Fields { MultisamplerZoneField::tune, MultisamplerZoneField::pan,
+                                          MultisamplerZoneField::gain } });
+    addModule ("ENVELOPE",     { Fields { MultisamplerZoneField::attack, MultisamplerZoneField::decay,
+                                          MultisamplerZoneField::sustain, MultisamplerZoneField::release } });
+    addModule ("FILTER",       { Fields { MultisamplerZoneField::cutoff, MultisamplerZoneField::resonance } });
+    addModule ("PLAYBACK",     { playback });
+    addModule ("EQUALIZER",    { Fields { MultisamplerZoneField::eq1Freq, MultisamplerZoneField::eq1Gain,
+                                          MultisamplerZoneField::eq1Bw },
+                                 Fields { MultisamplerZoneField::eq2Freq, MultisamplerZoneField::eq2Gain,
+                                          MultisamplerZoneField::eq2Bw },
+                                 Fields { MultisamplerZoneField::eq3Freq, MultisamplerZoneField::eq3Gain,
+                                          MultisamplerZoneField::eq3Bw } });
 
-    layoutRow (content.removeFromTop (rowH),
-               { { "ENVELOPE", { MultisamplerZoneField::attack, MultisamplerZoneField::decay,
-                                 MultisamplerZoneField::sustain, MultisamplerZoneField::release } },
-                 { "FILTER",   { MultisamplerZoneField::cutoff, MultisamplerZoneField::resonance } } });
+    auto moduleWidth = [&] (const Module& m, int cw)
+    {
+        int n = 0;
+        for (const auto& gr : m.groups)
+            n += (int) gr.size();
+        return 2 * modPadX + n * cw + ((int) m.groups.size() - 1) * groupGap;
+    };
+    auto totalWidth = [&] (int cw)
+    {
+        int t = ((int) modules.size() - 1) * kModGap;
+        for (const auto& m : modules)
+            t += moduleWidth (m, cw);
+        return t;
+    };
 
-    layoutRow (content,
-               { { "EQ 1", { MultisamplerZoneField::eq1Freq, MultisamplerZoneField::eq1Gain,
-                             MultisamplerZoneField::eq1Bw } },
-                 { "EQ 2", { MultisamplerZoneField::eq2Freq, MultisamplerZoneField::eq2Gain,
-                             MultisamplerZoneField::eq2Bw } },
-                 { "EQ 3", { MultisamplerZoneField::eq3Freq, MultisamplerZoneField::eq3Gain,
-                             MultisamplerZoneField::eq3Bw } } });
+    int cellW = juce::roundToInt (70.0f * sc);
+    const int minCellW = juce::roundToInt (48.0f * sc);
+    while (cellW > minCellW && totalWidth (cellW) > content.getWidth())
+        --cellW;
+
+    int x = content.getX();
+    for (const auto& m : modules)
+    {
+        const int w = moduleWidth (m, cellW);
+        const juce::Rectangle<int> mb (x, content.getY(), w, content.getHeight());
+
+        g.setColour (theme.darkBar.brighter (0.06f));
+        g.fillRoundedRectangle (mb.toFloat(), 4.0f);
+        g.setColour (theme.separator);
+        g.drawRoundedRectangle (mb.toFloat().reduced (0.5f), 4.0f, 1.0f);
+
+        // Title: small accent tick + bold caps.
+        const float tickH = 10.0f * sc;
+        g.setColour (theme.accent);
+        g.fillRoundedRectangle ((float) (mb.getX() + modPadX),
+                                (float) mb.getY() + 3.0f + ((float) titleH - 3.0f - tickH) * 0.5f,
+                                3.0f, tickH, 1.5f);
+        g.setFont (DysektLookAndFeel::makeFont (11.0f * sc, true));
+        g.drawText (m.title, mb.getX() + modPadX + juce::roundToInt (8.0f * sc), mb.getY() + 3,
+                    juce::jmax (0, w - 2 * modPadX - juce::roundToInt (8.0f * sc)), titleH - 3,
+                    juce::Justification::centredLeft);
+
+        const int cellsY = mb.getY() + titleH;
+        const int cellsH = mb.getHeight() - titleH - padBot;
+        int cx = mb.getX() + modPadX;
+
+        for (size_t gi = 0; gi < m.groups.size(); ++gi)
+        {
+            const auto& group = m.groups[gi];
+            const int groupW = (int) group.size() * cellW;
+
+            if (gi > 0)
+            {
+                g.setColour (theme.separator);
+                g.drawVerticalLine (cx - groupGap / 2, (float) (cellsY + 2), (float) (cellsY + cellsH - 2));
+            }
+
+            if (m.groups.size() > 1)
+            {
+                g.setColour (theme.foreground.withAlpha (0.4f));
+                g.setFont (DysektLookAndFeel::makeFont (9.5f * sc, false));
+                g.drawText ("BAND " + juce::String ((int) gi + 1), cx, mb.getY() + 3, groupW, titleH - 3,
+                            juce::Justification::centredRight);
+            }
+
+            for (auto f : group)
+            {
+                const juce::Rectangle<int> cellBounds (cx, cellsY, cellW, cellsH);
+                cells.push_back ({ cellBounds, f });
+                drawCell (g, cellBounds, f);
+                cx += cellW;
+            }
+            cx += groupGap;
+        }
+
+        x += w + kModGap;
+    }
 }
 
 void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field)
@@ -670,112 +711,88 @@ void MultisamplerZoneLcd::drawKnobArc (juce::Graphics& g, int cx, int cy, int r,
 }
 
 // =============================================================================
-// drawKnobField — rotary knob cell: arc on the left, LABEL above VALUE to its
-// right. Same visual arrangement as SliceControlBar::drawKnobCell, minus the
-// MIDI Learn pulse/lock-icon/pickup-chase machinery that doesn't apply here.
+// drawKnobField - vertical knob cell: LABEL on top, rotary knob in the middle,
+// VALUE underneath, all centred in the cell. (MIDI Learn pulse/lock-icon
+// machinery from SliceControlBar::drawKnobCell doesn't apply here.)
 // =============================================================================
 void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int> bounds,
                                           MultisamplerZoneField field, int cellIdx)
 {
     const auto& theme = getTheme();
-    auto r = bounds.reduced (2, 1);
+    auto r = bounds.reduced (1, 0);
 
     const bool hoveredNow  = editable && (cellIdx == hoveredCellIdx);
     const bool draggingNow = haveActiveDrag && activeField == field;
 
-    // Knob radius matches SliceControlBar::psKnobR exactly (kKnobR * scale)
-    // instead of a per-cell dynamic size — this LCD's knobs sat next to the
-    // SCB's own knobs often enough (same instrument, same session) that a
-    // different radius read as an inconsistency rather than a deliberate
-    // layout choice. SCB derives its scale from getHeight()/72 (paintSf);
-    // this component's uiScale is set from the same global UI-scale value
-    // PluginEditor passes everywhere else (see MultisamplerEditor::
-    // setUiScale), so the two stay numerically equal without this
-    // component needing to know anything about the SCB's own height.
-    const int knobR  = juce::roundToInt ((float) kKnobR * uiScale);
-    const int knobCX = r.getX() + knobR + juce::roundToInt (4.0f * uiScale);
-    const int knobCY = r.getY() + r.getHeight() / 2;
+    const int labelH = juce::roundToInt (12.0f * uiScale);
+    const int valueH = juce::roundToInt (14.0f * uiScale);
+    auto labelRow = r.removeFromTop (labelH);
+    auto valueRow = r.removeFromBottom (valueH);
 
-    drawKnobArc (g, knobCX, knobCY, knobR, normForField (field), hoveredNow, draggingNow);
+    // Knob radius: nominal kKnobR * scale, but never larger than what the
+    // remaining middle band can hold (leaves room for the 3.5px hover ring).
+    const int knobR = juce::jmin (juce::roundToInt ((float) kKnobR * uiScale),
+                                  juce::jmax (4, r.getHeight() / 2 - 4));
 
-    const int textX = knobCX + knobR + juce::roundToInt (8.0f * uiScale);
-    const int textW = juce::jmax (0, r.getRight() - textX);
+    drawKnobArc (g, r.getCentreX(), r.getCentreY(), knobR, normForField (field), hoveredNow, draggingNow);
 
-    // Label/value alphas match SliceControlBar::drawKnobCell's own default
-    // (unlocked, non-ADSR) cell: label foreground.withAlpha(0.42f), value
-    // foreground.withAlpha(0.38f) — this component previously used 0.55f/
-    // full-opacity for its "editable" state, which is actually brighter
-    // than SCB's ordinary knob text and only matched SCB's LOCKED-highlight
-    // brightness by coincidence. Disabled (not editable) keeps the same
-    // proportional dimming it had before relative to the corrected values.
-    g.setColour (editable ? theme.foreground.withAlpha (0.42f) : theme.foreground.withAlpha (0.24f));
+    g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.28f));
     g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
-    g.drawText (labelFor (field), textX, r.getY(), textW, r.getHeight() / 2, juce::Justification::centredLeft);
+    g.drawText (labelFor (field), labelRow, juce::Justification::centred);
 
-    g.setColour (editable ? theme.foreground.withAlpha (0.38f) : theme.foreground.withAlpha (0.22f));
-    g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
-    g.drawText (formatFieldValue (field), textX, r.getY() + r.getHeight() / 2,
-                textW, r.getHeight() - r.getHeight() / 2, juce::Justification::centredLeft);
+    g.setColour (editable ? theme.foreground.withAlpha (0.88f) : theme.foreground.withAlpha (0.4f));
+    g.setFont (DysektLookAndFeel::makeMonoFont (11.5f * uiScale, true));
+    g.drawText (formatFieldValue (field), valueRow, juce::Justification::centred);
 }
 
 // =============================================================================
-// drawLoopToggleCell — LOOP is boolean, so it draws as a flat ON/OFF badge
-// rather than a knob (a 0..1 arc reads as a fader, not a toggle, for a
-// binary field) — same treatment this component used for LOOP before.
+// drawTogglePill - shared by LOOP and MIX (both boolean, so a flat pill
+// button rather than a knob): label on top, pill below filled with the accent
+// colour when ON.
 // =============================================================================
+void MultisamplerZoneLcd::drawTogglePill (juce::Graphics& g, juce::Rectangle<int> bounds,
+                                           MultisamplerZoneField field, bool isOn, int cellIdx)
+{
+    const auto& theme = getTheme();
+    auto r = bounds.reduced (1, 0);
+
+    const bool hoveredNow  = editable && (cellIdx == hoveredCellIdx);
+    const bool draggingNow = haveActiveDrag && activeField == field;
+
+    const int labelH = juce::roundToInt (12.0f * uiScale);
+    auto labelRow = r.removeFromTop (labelH);
+
+    g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.28f));
+    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
+    g.drawText (labelFor (field), labelRow, juce::Justification::centred);
+
+    const int pillH = juce::jmin (r.getHeight() - 4, juce::roundToInt (24.0f * uiScale));
+    const int pillW = juce::jmin (r.getWidth() - 4, juce::roundToInt (60.0f * uiScale));
+    const auto pill = juce::Rectangle<int> (pillW, pillH).withCentre (r.getCentre()).toFloat();
+
+    if (isOn)
+        g.setColour (theme.accent.withAlpha (draggingNow ? 1.0f : editable ? 0.9f : 0.5f));
+    else
+        g.setColour (theme.darkBar.brighter (hoveredNow || draggingNow ? 0.28f : 0.14f));
+    g.fillRoundedRectangle (pill, 4.0f);
+
+    g.setColour (isOn ? theme.accent : theme.separator);
+    g.drawRoundedRectangle (pill.reduced (0.5f), 4.0f, 1.0f);
+
+    g.setColour (isOn ? theme.darkBar.darker (0.6f)
+                      : (editable ? theme.foreground.withAlpha (0.75f) : theme.foreground.withAlpha (0.4f)));
+    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * uiScale, true));
+    g.drawText (formatFieldValue (field), pill.toNearestInt(), juce::Justification::centred);
+}
+
 void MultisamplerZoneLcd::drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx)
 {
-    const auto& theme = getTheme();
-    auto r = bounds.reduced (2, 1);
-
-    const bool hoveredNow  = editable && (cellIdx == hoveredCellIdx);
-    const bool draggingNow = haveActiveDrag && activeField == MultisamplerZoneField::loopEnabled;
-
-    if (draggingNow || hoveredNow)
-    {
-        g.setColour (draggingNow ? theme.accent.withAlpha (0.25f) : theme.accent.withAlpha (0.12f));
-        g.fillRoundedRectangle (r.toFloat(), 3.0f);
-    }
-
-    g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
-    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
-    auto labelRow = r.removeFromTop (r.getHeight() / 2);
-    g.drawText (labelFor (MultisamplerZoneField::loopEnabled), labelRow, juce::Justification::centredLeft);
-
-    g.setColour (snapshot.loopOn ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
-    g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
-    g.drawText (formatFieldValue (MultisamplerZoneField::loopEnabled), r, juce::Justification::centredLeft);
+    drawTogglePill (g, bounds, MultisamplerZoneField::loopEnabled, snapshot.loopOn, cellIdx);
 }
 
-// =============================================================================
-// drawMixerToggleCell — MIX is boolean, same flat badge treatment as LOOP
-// above. This is the zone-level equivalent of SliceControlBar's own
-// drawMixerToggleCell (show-in-MixerPanel pin/hide toggle for a Slicer/
-// SFZ-PLAYER slice) — see SampleZone::showInMixer's doc comment for how the
-// underlying flag reaches an actual MixerPanel row.
-// =============================================================================
 void MultisamplerZoneLcd::drawMixerToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx)
 {
-    const auto& theme = getTheme();
-    auto r = bounds.reduced (2, 1);
-
-    const bool hoveredNow  = editable && (cellIdx == hoveredCellIdx);
-    const bool draggingNow = haveActiveDrag && activeField == MultisamplerZoneField::showInMixer;
-
-    if (draggingNow || hoveredNow)
-    {
-        g.setColour (draggingNow ? theme.accent.withAlpha (0.25f) : theme.accent.withAlpha (0.12f));
-        g.fillRoundedRectangle (r.toFloat(), 3.0f);
-    }
-
-    g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.32f));
-    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
-    auto labelRow = r.removeFromTop (r.getHeight() / 2);
-    g.drawText (labelFor (MultisamplerZoneField::showInMixer), labelRow, juce::Justification::centredLeft);
-
-    g.setColour (snapshot.showInMixer ? theme.accent : (editable ? theme.foreground : theme.foreground.withAlpha (0.6f)));
-    g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * uiScale, true));
-    g.drawText (formatFieldValue (MultisamplerZoneField::showInMixer), r, juce::Justification::centredLeft);
+    drawTogglePill (g, bounds, MultisamplerZoneField::showInMixer, snapshot.showInMixer, cellIdx);
 }
 
 // ── Mouse / editing ──────────────────────────────────────────────────────
@@ -851,8 +868,7 @@ void MultisamplerZoneLcd::mouseDrag (const juce::MouseEvent& e)
 
     const bool fineMode = e.mods.isShiftDown();
     const float scale = dragScaleFor (activeField, fineMode);
-    const float dragDir = (activeField == MultisamplerZoneField::release) ? -1.0f : 1.0f; // release knob follows the node
-    const float newValue = dragStartValue + dragDir * (float) deltaPixels * scale;
+    const float newValue = dragStartValue + (float) deltaPixels * scale;
 
     applyDrag (activeField, newValue, /*commit=*/false);
 }

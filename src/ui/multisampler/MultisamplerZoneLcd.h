@@ -163,12 +163,12 @@ public:
     // MultisamplerEditor's own header toolbar (zoneTagLabel/zoneBadgeLabel),
     // so this constant shrank by the ~20px that row used to cost. Grew from
     // 80 (two rows) to 120 (three rows) when the EQ1/EQ2/EQ3 row was added.
-    static constexpr int kPreferredHeight = 156;   // 3 rows x (11px section title + knob cell)
+    static constexpr int kPreferredHeight = 104;   // one strip: 15px module title + 12px label + knob + 14px value
 
 private:
     // Same base knob radius as SliceControlBar::kKnobR — see drawKnobField()
     // in the .cpp for why this used to be a per-cell dynamic size instead.
-    static constexpr int kKnobR = 9;
+    static constexpr int kKnobR = 14;   // vertical cells: knob sits between label and value rows
 
     float uiScale = 1.0f;
 
@@ -249,6 +249,10 @@ private:
 
     // LOOP is boolean — drawn as a flat toggle badge rather than a knob,
     // same call this component made before for that field.
+    // Shared pill-button drawing for the two boolean fields (LOOP, MIX).
+    void drawTogglePill (juce::Graphics& g, juce::Rectangle<int> bounds,
+                         MultisamplerZoneField field, bool isOn, int cellIdx);
+
     void drawLoopToggleCell (juce::Graphics& g, juce::Rectangle<int> bounds, int cellIdx);
 
     // MIX — show-in-MixerPanel pin/hide toggle, same flat badge treatment
