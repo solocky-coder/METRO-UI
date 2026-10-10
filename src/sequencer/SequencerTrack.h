@@ -52,6 +52,13 @@ struct SequencerTrack
     std::atomic<int> midiChannel { 0 };
     Sf2PresetInfo preset;
     bool isSfzInstrument = false;
+    // SFZ layer child track: plays only the notes of one layer (note range) of the
+    // SFZ instrument. Also has isSfzInstrument == true (same sfizz player, same
+    // MIDI channel as the parent), so everything that routes SFZ tracks keeps
+    // working. Set before the track is published; read-only afterwards.
+    bool isSfzLayer   = false;
+    int  layerLoKey   = 0;
+    int  layerHiKey   = 127;
 
     int64_t networkRouteId = 0;
     int32_t networkSourceId = 0;
@@ -125,6 +132,8 @@ struct SequencerTrack
     static std::shared_ptr<SequencerTrack> makeChromatic (int sliceIdxIn, int chromaticChannel, const juce::String& sliceName, juce::Colour sliceColour) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::ChromaticSlice; t->sliceIdx = sliceIdxIn; t->midiChannel.store (chromaticChannel - 1); t->name = sliceName.isEmpty() ? ("CHROM " + juce::String (sliceIdxIn + 1)) : sliceName; t->colour = sliceColour; return t; }
     static std::shared_ptr<SequencerTrack> makeSfPlayer (const Sf2PresetInfo& p, juce::Colour c) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->midiChannel.store (15); t->name = p.name; t->colour = c; return t; }
     static std::shared_ptr<SequencerTrack> makeSfzInstrument (const juce::String& n, juce::Colour c) { Sf2PresetInfo p; p.name = n; p.bank = 0; p.preset = 0; auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::SfPlayer; t->preset = p; t->isSfzInstrument = true; t->midiChannel.store (15); t->name = n; t->colour = c; return t; }
+    static std::shared_ptr<SequencerTrack> makeSfzLayer (const juce::String& n, juce::Colour c, int midiChannel0Based, int loKey, int hiKey)
+    { auto t = makeSfzInstrument (n, c); t->isSfzLayer = true; t->layerLoKey = loKey; t->layerHiKey = hiKey; t->midiChannel.store (midiChannel0Based); return t; }
     static std::shared_ptr<SequencerTrack> makeNetworkMidi (int id,const juce::String& peer,const juce::String& n,int ch,juce::Colour c) { auto t=std::make_shared<SequencerTrack>(); t->type=TrackType::NetworkMidi; t->networkMidiDeviceId=id; t->networkMidiPeer=peer; t->midiChannel.store(juce::jlimit(0,15,ch)); t->name=n; t->colour=c; return t; }
     static std::shared_ptr<SequencerTrack> makeNetworkMidiChild (int id,const juce::String& n,int ch,juce::Colour c) { auto t=std::make_shared<SequencerTrack>(); t->type=TrackType::NetworkMidi; t->networkMidiDeviceId=id; t->networkMidiIsChild=true; t->midiChannel.store(juce::jlimit(0,15,ch)); t->name=n; t->colour=c; return t; }
     static std::shared_ptr<SequencerTrack> makeAudio (const NetworkAudioInput& input, juce::Colour c = juce::Colour (0xFF406080)) { auto t = std::make_shared<SequencerTrack>(); t->type = TrackType::Audio; t->networkRouteId = input.routeId; t->networkSourceId = input.sourceId; t->networkSourceChannel = input.sourceChannel; t->name = input.sourceName.isNotEmpty() ? input.sourceName : ("NETWORK " + juce::String (input.sourceId) + " " + networkChannelLabel (input.sourceChannel)); t->colour = c; t->volumeDb.store (input.gainDb.load()); t->pan.store (input.pan.load()); return t; }
@@ -140,8 +149,10 @@ struct SequencerTrack
         auto audioSnap = getAudioClips();
         s.writeInt ((int) audioSnap->size());
         for (auto& c : *audioSnap) c.writeToStream (s);
+        // Stream v7: SFZ instrument / layer info.
+        s.writeBool (isSfzInstrument); s.writeBool (isSfzLayer); s.writeInt (layerLoKey); s.writeInt (layerHiKey);
     }
-    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool hasAudioClips = false, bool hasNetworkMidi = false, bool hasMidiLink = false)
+    bool readFromStream (juce::MemoryInputStream& s, bool hasExtendedFields = true, bool hasAudioClips = false, bool hasNetworkMidi = false, bool hasMidiLink = false, bool hasSfzLayer = false)
     {
         type = (TrackType) s.readInt(); enabled.store (s.readBool()); name = s.readString(); colour = juce::Colour ((juce::uint32) s.readInt()); sliceIdx = s.readInt(); midiChannel.store (s.readInt());
         preset.bank = s.readInt(); preset.preset = s.readInt(); preset.name = s.readString();
@@ -163,6 +174,11 @@ struct SequencerTrack
             }
             std::sort (audioNext->begin(), audioNext->end(), [] (const auto& a, const auto& b) { return a.startTick < b.startTick; });
             audioClipsSnapshot.store (std::move (audioNext), std::memory_order_release);
+        }
+        if (hasSfzLayer)
+        {
+            isSfzInstrument = s.readBool(); isSfzLayer = s.readBool();
+            layerLoKey = juce::jlimit (0, 127, s.readInt()); layerHiKey = juce::jlimit (0, 127, s.readInt());
         }
         return true;
     }

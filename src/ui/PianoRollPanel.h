@@ -93,6 +93,13 @@ public:
         engine.addSfzTrack (name, 1, colour);
     }
 
+    /** Creates/updates the SFZ instrument's per-layer child tracks (one per note-range layer
+     *  of the given .sfz file). Call after addSfzInstrumentTrack(). */
+    void syncSfzLayerTracks (const juce::File& sfzFile)
+    {
+        engine.syncSfzLayerTracks (SfzPlayer::scanLayers (sfzFile));
+    }
+
     SequencerTrackInfo getTrackInfo (int i) const { return engine.getTrackInfo (i); }
 
     /** Kept for API compatibility with PluginEditor's wiring — no longer fired
@@ -183,6 +190,7 @@ public:
 
     void addSfzInstrumentTrack (const juce::String& name, juce::Colour colour)
     { panel.addSfzInstrumentTrack (name, colour); }
+    void syncSfzLayerTracks (const juce::File& sfzFile) { panel.syncSfzLayerTracks (sfzFile); }
 
     /** Wire this in PluginEditor after construction to receive SF track channel changes. */
     std::function<void(int trackIndex, int midiChannel1Based)> onSfTrackChannelChanged;

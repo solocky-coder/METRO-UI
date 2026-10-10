@@ -348,6 +348,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      if (! isSfz) return;
      static const juce::Colour kSfzTrackColour (0xFF9060D0);
      pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
+     pianoRollPanel.syncSfzLayerTracks (f);
  };
 #endif
  shortcutsPanel.setVisible (false);
@@ -2669,6 +2670,7 @@ void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArra
         {
             static const juce::Colour kSfzTrackColour (0xFF9060D0);
             pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
+            pianoRollPanel.syncSfzLayerTracks (f);
         }
        #else
         juce::ignoreUnused (createArrangerTrack);

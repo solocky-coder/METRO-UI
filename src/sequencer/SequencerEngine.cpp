@@ -52,6 +52,7 @@ static constexpr int kStreamVersion3 = 3;  // + per-track solo/volumeDb/pan
 static constexpr int kStreamVersion4 = 4;  // + per-track recorded AudioClip list
 static constexpr int kStreamVersion5 = 5;
 static constexpr int kStreamVersion6 = 6;  // + audio track -> Network MIDI device link
+static constexpr int kStreamVersion7 = 7;  // + SFZ instrument / layer track info
 
 //==============================================================================
 struct SequencerEngine::Impl
@@ -635,6 +636,7 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.preset      = t.preset;
     info.numClips    = t.getNumClips();
     info.isSfzInstrument = t.isSfzInstrument;
+    info.isSfzLayer = t.isSfzLayer; info.layerLoKey = t.layerLoKey; info.layerHiKey = t.layerHiKey;
     info.linkedMidiDeviceId=t.linkedMidiDeviceId; info.networkMidiDeviceId=t.networkMidiDeviceId; info.networkMidiIsChild=t.networkMidiIsChild; info.networkMidiPeer=t.networkMidiPeer;
     return info;
 }
@@ -888,7 +890,7 @@ void SequencerEngine::addSfzTrack (const juce::String& name, int midiChannel0Bas
     // for why both the browser-load and Add Zone workflows share this one
     // track instead of getting one each.
     for (auto& t : *current)
-        if (t->type == TrackType::SfPlayer && t->isSfzInstrument)
+        if (t->type == TrackType::SfPlayer && t->isSfzInstrument && ! t->isSfzLayer)
         {
             t->name   = name;
             t->colour = colour;
@@ -919,6 +921,82 @@ void SequencerEngine::removeSfzTrack()
     }
     if (removedAny)
         impl->publishTracks (std::move (next));
+}
+
+int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
+{
+    auto current = impl->getTracks();
+
+    int parentIdx = -1;
+    for (size_t i = 0; i < current->size(); ++i)
+        if ((*current)[i]->type == TrackType::SfPlayer && (*current)[i]->isSfzInstrument && ! (*current)[i]->isSfzLayer)
+            { parentIdx = (int) i; break; }
+    if (parentIdx < 0) return 0;
+
+    const auto& parent = (*current)[(size_t) parentIdx];
+    const int ch = parent->midiChannel.load (std::memory_order_relaxed);
+
+    // One layer is just the whole instrument: no children needed.
+    const bool wantChildren = layers.size() >= 2;
+
+    // Existing layer tracks, by note range, so their clips survive a reload of the same SFZ.
+    auto findExisting = [&] (const SfzLayer& l) -> std::shared_ptr<SequencerTrack>
+    {
+        for (auto& t : *current)
+            if (t->isSfzLayer && t->layerLoKey == l.loKey && t->layerHiKey == l.hiKey) return t;
+        return nullptr;
+    };
+
+    auto next = std::make_shared<Impl::TrackList>();
+    next->reserve (current->size() + layers.size());
+    int numLayerTracks = 0;
+    bool changed = false;
+
+    for (auto& t : *current)
+    {
+        if (t->isSfzLayer)
+        {
+            bool keep = false;
+            if (wantChildren)
+                for (auto& l : layers)
+                    if (l.loKey == t->layerLoKey && l.hiKey == t->layerHiKey) { keep = true; break; }
+            if (! keep) changed = true;
+            continue;                      // kept layer tracks are re-inserted in order below
+        }
+
+        next->push_back (t);
+        if (t != parent) continue;
+
+        if (wantChildren)
+            for (auto& l : layers)
+            {
+                auto child = findExisting (l);
+                if (child == nullptr)
+                {
+                    child = SequencerTrack::makeSfzLayer (l.name, parent->colour.darker (0.25f), ch, l.loKey, l.hiKey);
+                    changed = true;
+                }
+                else if (child->midiChannel.load() != ch)
+                {
+                    child->midiChannel.store (ch);   // follows the parent's channel
+                }
+                next->push_back (child);
+                ++numLayerTracks;
+            }
+    }
+
+    // Order of existing children may also have changed (layers are sorted by note range).
+    if (! changed)
+    {
+        std::vector<std::shared_ptr<SequencerTrack>> before, after;
+        for (auto& t : *current) if (t->isSfzLayer) before.push_back (t);
+        for (auto& t : *next)    if (t->isSfzLayer) after.push_back (t);
+        changed = (before != after) || next->size() != current->size();
+    }
+
+    if (changed)
+        impl->publishTracks (std::move (next));
+    return numLayerTracks;
 }
 
 //==============================================================================
@@ -1586,7 +1664,7 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
 //==============================================================================
 void SequencerEngine::writeToStream (juce::MemoryOutputStream& s) const
 {
-    s.writeInt   (kStreamVersion6);
+    s.writeInt   (kStreamVersion7);
     s.writeFloat (impl->internalBpm.load (std::memory_order_relaxed));
     s.writeBool  (impl->looping    .load (std::memory_order_relaxed));
     s.writeBool  (impl->syncToHost .load (std::memory_order_relaxed));
@@ -1612,8 +1690,9 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     const bool isV4 = (firstInt == kStreamVersion4);
     const bool isV5 = (firstInt == kStreamVersion5);
     const bool isV6 = (firstInt == kStreamVersion6);
+    const bool isV7 = (firstInt == kStreamVersion7);
 
-    if (isV2 || isV3 || isV4 || isV5 || isV6)
+    if (isV2 || isV3 || isV4 || isV5 || isV6 || isV7)
     {
         bpm  = s.readFloat();
         loop = s.readBool();
@@ -1638,7 +1717,7 @@ bool SequencerEngine::readFromStream (juce::MemoryInputStream& s)
     for (int i = 0; i < n; ++i)
     {
         auto t  = std::make_shared<SequencerTrack>();
-        bool ok = (isV2 || isV3 || isV4 || isV5 || isV6) ? t->readFromStream (s, isV3 || isV4 || isV5 || isV6, isV4 || isV5 || isV6, isV5 || isV6, isV6) : t->readFromStreamV1 (s);
+        bool ok = (isV2 || isV3 || isV4 || isV5 || isV6 || isV7) ? t->readFromStream (s, isV3 || isV4 || isV5 || isV6 || isV7, isV4 || isV5 || isV6 || isV7, isV5 || isV6 || isV7, isV6 || isV7, isV7) : t->readFromStreamV1 (s);
         if (! ok) return false;
         loaded->push_back (t);
     }
@@ -1756,6 +1835,23 @@ std::vector<SequencerEngine::TrackNest> SequencerEngine::getTrackNesting() const
         out[j].deviceId    = t->networkMidiDeviceId;
         ++out[(size_t) it->second].childCount;
     }
+
+    // SFZ layer tracks nest under the (singleton) SFZ instrument track. They share one
+    // pseudo device id, chosen far above any Network MIDI device id.
+    constexpr int kSfzLayerNestId = 0x40000000;
+    int sfzParent = -1;
+    for (size_t i = 0; i < cur->size(); ++i)
+        if ((*cur)[i]->type == TrackType::SfPlayer && (*cur)[i]->isSfzInstrument && ! (*cur)[i]->isSfzLayer)
+            { sfzParent = (int) i; break; }
+    if (sfzParent >= 0)
+        for (size_t j = 0; j < cur->size(); ++j)
+            if ((*cur)[j]->isSfzLayer)
+            {
+                out[j].parentIndex = sfzParent;
+                out[j].deviceId    = kSfzLayerNestId;
+                out[(size_t) sfzParent].deviceId = kSfzLayerNestId;
+                ++out[(size_t) sfzParent].childCount;
+            }
     return out;
 }
 
