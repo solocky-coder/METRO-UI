@@ -1352,11 +1352,12 @@ namespace
 
 // ── applyFluidAdsrFromUi ──────────────────────────────────────────────────────
 //  Applies the UI A/D/S/R values (juceAdsrAttack/Decay/Sustain/Release —
-//  the same atomics the envelope graph reads) as ABSOLUTE per-channel generator
-//  values on channels 2-15. IMPORTANT: fluid_synth_set_gen() is additive, so
-//  passing these converted absolute values to it incorrectly adds them to every
-//  preset/zone envelope. fluid_synth_set_gen2(..., absolute=1, normalized=0)
-//  is used here to override the SoundFont zone values in native generator units.
+//  the same atomics the envelope graph reads) as per-channel generator values
+//  on channels 2-15. NOTE: the public fluid_synth_set_gen() is additive (an
+//  offset on top of the preset/zone envelope). FluidSynth has no public
+//  absolute-override call (fluid_synth_set_gen2 does not exist in 2.6.1), so
+//  true absolute override would need a different approach (e.g. modifying the
+//  SoundFont preset zones or a custom modulator).
 //  FluidSynth then shapes each voice independently, so releasing one note does
 //  not fade other notes. Reapply after load/program changes and UI edits.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1372,12 +1373,14 @@ void SfzPlayer::applyFluidAdsrFromUi()
 
     for (int ch = 2; ch < 16; ++ch)
     {
-        // set_gen2's absolute flag overrides preset/instrument zone generators;
-        // normalized=0 means values are already in native timecents/centibels.
-        fluid_synth_set_gen2 (synth, ch, GEN_VOLENVATTACK,  atkTc, 1, 0);
-        fluid_synth_set_gen2 (synth, ch, GEN_VOLENVDECAY,   decTc, 1, 0);
-        fluid_synth_set_gen2 (synth, ch, GEN_VOLENVSUSTAIN, susCb, 1, 0);
-        fluid_synth_set_gen2 (synth, ch, GEN_VOLENVRELEASE, relTc, 1, 0);
+        // fluid_synth_set_gen2 is not part of FluidSynth's public API (absent in
+        // 2.6.1 headers; MSVC C3861). The public fluid_synth_set_gen applies the
+        // value as an offset on top of the preset/instrument zone generators,
+        // in native timecents/centibels.
+        fluid_synth_set_gen (synth, ch, GEN_VOLENVATTACK,  atkTc);
+        fluid_synth_set_gen (synth, ch, GEN_VOLENVDECAY,   decTc);
+        fluid_synth_set_gen (synth, ch, GEN_VOLENVSUSTAIN, susCb);
+        fluid_synth_set_gen (synth, ch, GEN_VOLENVRELEASE, relTc);
     }
 #endif
 }
