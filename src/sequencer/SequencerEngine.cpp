@@ -1615,10 +1615,18 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
         && impl->playing.load (std::memory_order_relaxed)
         && juce::isPositiveAndBelow (recTi, (int) tracksSnap->size()))
     {
+        // An SFZ layer track only records notes inside its layer's note range.
+        const auto& recTrack = *(*tracksSnap)[(size_t) recTi];
+        const int recLo = recTrack.isSfzLayer ? recTrack.layerLoKey : 0;
+        const int recHi = recTrack.isSfzLayer ? recTrack.layerHiKey : 127;
+
         for (const auto meta : inMidi)
         {
             const auto msg = meta.getMessage();
             if (msg.getChannel() == 16) continue;   // skip SFZ-internal channel
+            if ((msg.isNoteOn (true) || msg.isNoteOff (true))
+                && (msg.getNoteNumber() < recLo || msg.getNoteNumber() > recHi))
+                continue;
 
             const double evTickGlobal = impl->currentTick + meta.samplePosition * ticksPerSample;
 
