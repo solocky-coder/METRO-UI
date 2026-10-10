@@ -10,9 +10,9 @@
 //    Do not use the presence of adsrAtkZone/etc. in this class as evidence
 //    that the SF2-Player has rotary ADSR knobs.
 //
-//  The panel is currently not made visible by PluginEditor.cpp. Some helper
-//  paths are retained for legacy/data-layer use. Review visibility call sites
-//  before treating any control in this component as part of the active UI.
+//  PluginEditor.cpp currently comments that this panel is not made visible in
+//  the live SFZ-Player mode. Check actual visibility call sites before treating
+//  any control here as part of the active UI.
 //
 //  Header strip layout (left → right):
 //    [< Preset Name  📁 >] [TRN] [FINE] [REV MIX] [REV SIZE] [PAN] [VOL] [METER]
@@ -93,8 +93,7 @@ public:
     // ── Keyboard sub-component ────────────────────────────────────────────────
     KeysPanel keysPanel;
 
-    // This legacy panel's ADSR knobs target processor.sfzPlayer2, not the
-    // SF2-Player's processor.sfzPlayer instance.
+    // SFZ-Player: no SF2 program grid
 
     // ── Zone parsers — public so PluginEditor can call them directly ──────────
     static std::vector<KeysPanel::Keyzone> parseSfzZones (const juce::File& f);
@@ -119,7 +118,7 @@ private:
                           rvMixZone, rvSizeZone,
                           meterZone;
 
-    // Legacy ADSR knob hit-zones. These are not the SF2-Player envelope graph.
+    // Legacy ADSR knob zones. These target processor.sfzPlayer2, not the SF2 graph.
     juce::Rectangle<int> adsrAtkZone, adsrDecZone, adsrSusZone, adsrRelZone;
 
     // Per-channel SF2 FX zones — overlap the ADSR slots when SF2 is loaded
@@ -132,7 +131,7 @@ private:
     // Sub-zones inside nameZone
     juce::Rectangle<int> presetDecBtn, presetLabel, presetIncBtn, folderIconZone;
 
-    // ── Drag state for knobs ──────────────────────────────────────────────────
+    // ── Drag state for legacy panel knobs ──────────────────────────────────────
     enum class ActiveKnob { None, Volume, Transpose, Pan, FineTune, ReverbMix, ReverbSize,
                             AdsrAttack, AdsrDecay, AdsrSustain, AdsrRelease };
     ActiveKnob activeKnob  { ActiveKnob::None };
@@ -153,12 +152,12 @@ private:
     // ── Cached preset list ────────────────────────────────────────────────────
     std::vector<Sf2PresetInfo> presetList;
 
-    // ── Inline file browser ────────────────────────────────────────────────────
+    // ── Inline file browser ───────────────────────────────────────────────────
     SfzFileBrowser fileBrowser;
     bool           browserOpen      { false };
 
-    // ── MIDI channel-range spinners (replaces sf2ChCombo) ─────────────────────
-    // Drawn as:  CH [◂ 1 ▸] – [◂ 16 ▸] inside the SF2 strip.
+    // ── MIDI channel-range spinners (replaces sf2ChCombo) ────────────────
+    // Drawn as:  CH [◂ 1 ▸] – [◂ 16 ▸]  inside the SF2 strip.
     // Hit-zones laid out in resized(); clicks handled in mouseDown().
     juce::Rectangle<int> chLowDec,  chLowLabel,  chLowInc;
     juce::Rectangle<int> chHighDec, chHighLabel, chHighInc;
@@ -187,10 +186,11 @@ private:
     // (openAddZoneChooser / showAddZoneOverlay / appendZoneToSfz /
     // openSaveAsOverlay / openSaveAsNewForZone), but SfzPlayerDropdownPanel
     // is never made visible (see every setVisible() call site in
-    // PluginEditor.cpp) — that flow was unreachable dead code, duplicated
-    // by DysektEditor's zone-builder flow in PluginEditor.cpp.
-    // parseSfzZones / writeSfzZoneChange / deleteSfzZone / reloadZones remain
-    // because PluginEditor calls those directly as data-layer utilities.
+    // PluginEditor.cpp) — that flow was 100% unreachable dead code, fully
+    // duplicated by DysektEditor's own zone-builder flow in PluginEditor.cpp,
+    // which is what the live [+ ZONE]/SAVE UI actually drives. Removed.
+    // parseSfzZones / writeSfzZoneChange / deleteSfzZone / reloadZones stay —
+    // PluginEditor calls those directly as data-layer utilities.
 
     void showMidiLearnMenu (int fieldId, juce::Point<int> screenPos);
 
