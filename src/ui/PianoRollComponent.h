@@ -98,6 +98,20 @@ public:
     {
         activeTrack = trackIndex;
         activeClip  = clipIndex;
+
+        // An SFZ layer track only covers its layer's notes: show and allow just that range.
+        const auto trackInfoForRange = engine.getTrackInfo (trackIndex);
+        const int oldLo = noteLo, oldHi = noteHi;
+        noteLo = trackInfoForRange.isSfzLayer ? juce::jlimit (0, 127, trackInfoForRange.layerLoKey) : 0;
+        noteHi = trackInfoForRange.isSfzLayer ? juce::jlimit (noteLo, 127, trackInfoForRange.layerHiKey) : 127;
+        if (noteLo != oldLo || noteHi != oldHi)
+        {
+            // Put the top of the range at the top of the grid; the scroll limits keep it in view.
+            noteRowOffset = (noteLo == 0 && noteHi == 127) ? 48 : 127 - noteHi;
+            noteRowOffset = clampRowOffset (noteRowOffset);
+            updateScrollRanges();
+        }
+
         velocityLane.setClip (engine.getClip (trackIndex, clipIndex));
         velocityLane.setSelectedNote (-1);
         selectedNotes.clear();
@@ -242,7 +256,7 @@ public:
             case DragMode::Move:
             {
                 int64_t newStart = snap (juce::jmax ((int64_t)0, dragOrigStart + (tick - dragStartTick)));
-                int     newNote  = juce::jlimit (0, 127, dragOrigNote + (noteNum - dragStartNote));
+                int     newNote  = juce::jlimit (noteLo, noteHi, dragOrigNote + (noteNum - dragStartNote));
 
                 // Move all selected notes together
                 const int64_t deltaTick = newStart - dragOrigStart;
@@ -260,7 +274,7 @@ public:
                     }
                     clip->moveNote (idx,
                         juce::jmax ((int64_t)0, n.startTick + deltaTick - dragGroupDeltaTick),
-                        juce::jlimit (0, 127, n.note + deltaPitch - dragGroupDeltaPitch));
+                        juce::jlimit (noteLo, noteHi, n.note + deltaPitch - dragGroupDeltaPitch));
                 }
                 clip->moveNote (dragNoteIdx, newStart, newNote);
                 dragGroupDeltaTick  = deltaTick;
@@ -363,8 +377,7 @@ public:
         }
         else
         {
-            noteRowOffset = juce::jlimit (0, kNumNotes - visibleRows(),
-                                         noteRowOffset + (w.deltaY < 0 ? 3 : -3));
+            noteRowOffset = clampRowOffset (noteRowOffset + (w.deltaY < 0 ? 3 : -3));
         }
         syncScroll(); updateScrollRanges(); repaint();
     }
@@ -562,6 +575,8 @@ private:
     double  pixelsPerTick = 0.2;
     double  scrollX       = 0.0;
     int     noteRowOffset = 48;
+    // Editable note range: 0..127, or the layer's range on an SFZ layer track.
+    int     noteLo = 0, noteHi = 127;
     int     noteRowH      = 10;
     int64_t snapTicks     = MidiClip::kPPQ / 2;
 
@@ -704,9 +719,17 @@ private:
     //  Helpers: coordinate mapping
     //==========================================================================
     int  visibleRows() const { return noteRowH > 0 ? gridBounds.getHeight() / noteRowH : 1; }
+    /** Keeps the scroll position inside the editable note range (the whole keyboard unless
+     *  this is an SFZ layer track). noteRowOffset counts rows down from note 127. */
+    int  clampRowOffset (int off) const
+    {
+        const int minOff = 127 - noteHi;
+        const int maxOff = juce::jmax (minOff, 128 - noteLo - visibleRows());
+        return juce::jlimit (minOff, maxOff, off);
+    }
     int64_t xToTick (int x) const noexcept { return (int64_t)((x - kKeysW + scrollX) / pixelsPerTick); }
     float   tickToX (int64_t t) const noexcept { return (float)(t * pixelsPerTick - scrollX + kKeysW); }
-    int     yToNote (int y)  const noexcept { return juce::jlimit (0, 127, (kNumNotes-1) - ((y - kRulerH - kToolbarH) / noteRowH + noteRowOffset)); }
+    int     yToNote (int y)  const noexcept { return juce::jlimit (noteLo, noteHi, (kNumNotes-1) - ((y - kRulerH - kToolbarH) / noteRowH + noteRowOffset)); }
     float   noteToY (int n)  const noexcept { return (float)(kRulerH + kToolbarH + ((kNumNotes-1-n) - noteRowOffset) * noteRowH); }
     int64_t snap    (int64_t t) const noexcept { return snapTicks > 0 ? ((t + snapTicks/2) / snapTicks) * snapTicks : t; }
 
@@ -846,6 +869,7 @@ private:
 
         for (const auto& n : sortedClipboard)
         {
+            if (n.note < noteLo || n.note > noteHi) continue;   // outside this layer's note range
             MidiNote pasted = n;
             pasted.startTick += pasteStart;
             int idx = clip->addNote (pasted);
@@ -1003,7 +1027,7 @@ private:
 
         const int noteSpan = juce::jmax (1, hiNote - loNote + 4);
         noteRowH = juce::jlimit (4, 24, gridBounds.getHeight() / noteSpan);
-        noteRowOffset = juce::jmax (0, loNote - 2);
+        noteRowOffset = clampRowOffset (juce::jmax (0, loNote - 2));
         syncScroll(); updateScrollRanges(); repaint();
     }
 
@@ -1170,7 +1194,7 @@ private:
         const double totalW = engine.getLengthTicks() * pixelsPerTick + gridBounds.getWidth();
         hScroll.setRangeLimits (0.0, totalW);
         hScroll.setCurrentRange (scrollX, scrollX + gridBounds.getWidth(), juce::dontSendNotification);
-        vScroll.setRangeLimits (0.0, (double) kNumNotes);
+        vScroll.setRangeLimits ((double) (127 - noteHi), (double) (128 - noteLo));
         vScroll.setCurrentRange ((double) noteRowOffset, (double)(noteRowOffset + visibleRows()), juce::dontSendNotification);
         syncScroll();
     }
@@ -1189,7 +1213,7 @@ private:
         }
         else if (bar == &vScroll)
         {
-            noteRowOffset = juce::jlimit (0, kNumNotes - visibleRows(), (int) newRangeStart);
+            noteRowOffset = clampRowOffset ((int) newRangeStart);
             repaint();
         }
     }
@@ -1587,6 +1611,16 @@ private:
 
         const int top = yToNote (kRulerH + kToolbarH);
         const int bot = yToNote (gridBounds.getBottom());
+
+        // Outside the editable note range (SFZ layer tracks): dimmed, not editable.
+        if (noteLo > 0 || noteHi < 127)
+        {
+            g.setColour (juce::Colour (0xFF06080C));
+            const int hiEdge = (int) noteToY (noteHi);
+            const int loEdge = (int) noteToY (noteLo) + noteRowH;
+            g.fillRect (gridBounds.getIntersection (juce::Rectangle<int> (gridBounds.getX(), gridBounds.getY(), gridBounds.getWidth(), hiEdge - gridBounds.getY())));
+            g.fillRect (gridBounds.getIntersection (juce::Rectangle<int> (gridBounds.getX(), loEdge, gridBounds.getWidth(), gridBounds.getBottom() - loEdge)));
+        }
 
         // Horizontal note rows
         for (int note = bot; note <= top; ++note)

@@ -165,10 +165,8 @@ private:
     int tickScrollPx = 0; // horizontal scroll, in pixels (time axis)
 
     static constexpr int kRowHeight = 12;
-    // Visible/editable note range. 0..127 normally; an SFZ layer track limits it to
-    // its layer's note range (set in setActiveClip).
-    int lowestNote  = 0;
-    int highestNote = 127;
+    static constexpr int kLowestNote  = 0;
+    static constexpr int kHighestNote = 127;
 
     // Drag-gesture state.
     DragMode dragMode = DragMode::none;

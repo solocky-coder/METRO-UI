@@ -70,7 +70,7 @@ MetroPianoRoll::MetroPianoRoll (SequencerEngine& sequencer)
     updateToolbarTitle();
 
     // Start scrolled to a reasonable octave range around middle C.
-    rowScrollPx = (highestNote - 72) * kRowHeight;
+    rowScrollPx = (kHighestNote - 72) * kRowHeight;
 
     startTimerHz (30);
 }
@@ -88,13 +88,6 @@ void MetroPianoRoll::setActiveClip (int trackIndex, int clipIndex)
     activeClipIndex  = clipIndex;
     activeTrackInfo  = engine.getTrackInfo (trackIndex);
     activeClipInfo   = engine.getClipInfo (trackIndex, clipIndex);
-
-    // An SFZ layer track only covers its layer's notes: show and allow just that range.
-    const int oldLow = lowestNote, oldHigh = highestNote;
-    lowestNote  = activeTrackInfo.isSfzLayer ? juce::jlimit (0, 127, activeTrackInfo.layerLoKey) : 0;
-    highestNote = activeTrackInfo.isSfzLayer ? juce::jlimit (lowestNote, 127, activeTrackInfo.layerHiKey) : 127;
-    if (lowestNote != oldLow || highestNote != oldHigh)
-        rowScrollPx = juce::jmax (0, (highestNote - juce::jmin (highestNote, 72)) * kRowHeight);
 
     // A different clip means the previous selection/gesture state no
     // longer refers to anything meaningful.
@@ -180,7 +173,7 @@ int MetroPianoRoll::gridContentWidth() const
 
 int MetroPianoRoll::gridContentHeight() const
 {
-    return (highestNote - lowestNote + 1) * kRowHeight;
+    return (kHighestNote - kLowestNote + 1) * kRowHeight;
 }
 
 void MetroPianoRoll::clampScroll()
@@ -231,7 +224,7 @@ int64_t MetroPianoRoll::tickForX (int x, bool snap) const
 
 int MetroPianoRoll::yForNote (int note) const
 {
-    const int rowIndex = highestNote - juce::jlimit (lowestNote, highestNote, note);
+    const int rowIndex = kHighestNote - juce::jlimit (kLowestNote, kHighestNote, note);
     return gridBounds().getY() + rowIndex * kRowHeight - rowScrollPx;
 }
 
@@ -239,8 +232,8 @@ int MetroPianoRoll::noteForY (int y) const
 {
     const auto grid = gridBounds();
     const int rowIndex = (y - grid.getY() + rowScrollPx) / kRowHeight;
-    const int note = highestNote - rowIndex;
-    return juce::jlimit (lowestNote, highestNote, note);
+    const int note = kHighestNote - rowIndex;
+    return juce::jlimit (kLowestNote, kHighestNote, note);
 }
 
 bool MetroPianoRoll::isBlackKey (int note) const noexcept { return isBlackKeyNote (note); }
@@ -391,7 +384,7 @@ void MetroPianoRoll::drawKeyGutter (juce::Graphics& g)
     g.reduceClipRegion (gutter);
     g.setFont (MetroTypography::caption());
 
-    for (int note = highestNote; note >= lowestNote; --note)
+    for (int note = kHighestNote; note >= kLowestNote; --note)
     {
         const auto cell = juce::Rectangle<int> (gutter.getX(), yForNote (note), gutter.getWidth(), kRowHeight);
         if (! cell.intersects (gutter))
@@ -426,7 +419,7 @@ void MetroPianoRoll::drawGrid (juce::Graphics& g)
     g.saveState();
     g.reduceClipRegion (grid);
 
-    for (int note = highestNote; note >= lowestNote; --note)
+    for (int note = kHighestNote; note >= kLowestNote; --note)
     {
         const auto row = juce::Rectangle<int> (grid.getX(), yForNote (note), grid.getWidth(), kRowHeight);
         if (! row.intersects (grid))
@@ -692,17 +685,8 @@ void MetroPianoRoll::pasteClipboard()
     if (clip == nullptr || clipboard.empty())
         return;
 
-    // Notes copied from another track may lie outside this track's note range
-    // (an SFZ layer track); only paste the ones inside it.
-    std::vector<MidiNote> toPaste;
-    for (const auto& n : clipboard)
-        if (n.note >= lowestNote && n.note <= highestNote)
-            toPaste.push_back (n);
-    if (toPaste.empty())
-        return;
-
     undoManager.beginNewTransaction();
-    undoManager.perform (new ClipEditAction (*clip, std::move (toPaste), {}));
+    undoManager.perform (new ClipEditAction (*clip, clipboard, {}));
     repaint (gridBounds());
 }
 
@@ -848,7 +832,7 @@ void MetroPianoRoll::mouseDrag (const juce::MouseEvent& e)
                                                               : rawStart);
 
             const int deltaRows = (int) std::round ((float) (dragStartPos.y - e.y) / (float) kRowHeight);
-            const int newNote = juce::jlimit (lowestNote, highestNote, dragNoteOriginal.note + deltaRows);
+            const int newNote = juce::jlimit (kLowestNote, kHighestNote, dragNoteOriginal.note + deltaRows);
 
             const auto& current = clip->getNotes().getReference (dragNoteIndex);
             if (current.startTick != newStart || current.note != newNote)
@@ -1037,7 +1021,7 @@ bool MetroPianoRoll::keyPressed (const juce::KeyPress& key)
                 continue;
             const auto& n = clip->getNotes().getReference (idx);
             const int64_t newStart = juce::jmax ((int64_t) 0, n.startTick + tickDelta);
-            const int newNote = juce::jlimit (lowestNote, highestNote, n.note + noteDelta);
+            const int newNote = juce::jlimit (kLowestNote, kHighestNote, n.note + noteDelta);
             if (newStart != n.startTick || newNote != n.note)
                 undoManager.perform (new MoveNoteAction (*clip, n.startTick, n.note, newStart, newNote));
         }
