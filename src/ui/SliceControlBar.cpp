@@ -7,6 +7,7 @@ static constexpr int kFieldRootNote = 9999;
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "UIHelpers.h"
 #include "ZoneEnvelopeRanges.h"
+#include "EnvelopeDisplay.h"
 #include "DysektLookAndFeel.h"
 #include "IconManager.h"
 #include "../PluginProcessor.h"
@@ -305,9 +306,9 @@ float SliceControlBar::toNorm (int fieldId, float v) const
  case F::FieldCentsDetune: return juce::jlimit (0.f, 1.f, (v + 100.f) / 200.f);
  case F::FieldTonality: return juce::jlimit (0.f, 1.f, v / 8000.f);
  case F::FieldFormant: return juce::jlimit (0.f, 1.f, (v + 24.f) / 48.f);
- case F::FieldAttack: return juce::jlimit (0.f, 1.f, v / ZoneEnv::kMaxAttackSec);
+ case F::FieldAttack: return ZoneEnv::timeToKnob (v, ZoneEnv::kMaxAttackSec);
  case F::FieldHold:   return juce::jlimit (0.f, 1.f, v / 5.f);
- case F::FieldDecay: return juce::jlimit (0.f, 1.f, v / ZoneEnv::kMaxDecaySec);
+ case F::FieldDecay: return ZoneEnv::timeToKnob (v, ZoneEnv::kMaxDecaySec);
  case F::FieldSustain: return juce::jlimit (0.f, 1.f, v);
  case F::FieldRelease: return juce::jlimit (0.f, 1.f, v / kSlicerMaxReleaseSec);
  case F::FieldMuteGroup: return juce::jlimit (0.f, 1.f, v / 32.f);
@@ -425,13 +426,13 @@ void SliceControlBar::drawKnobCell (juce::Graphics& g, int x, int y,
  // ADSR label always uses the fixed ADSR colour — even when locked.
  // Non-ADSR locked params use lockActive; everything else uses foreground.
  g.setColour (locked && ! hasAdsr ? getTheme().lockActive.withAlpha (0.8f)
- : hasAdsr ? adsr.withAlpha (0.70f)
+ : hasAdsr ? adsr.withAlpha (0.95f)
  : getTheme().foreground.withAlpha (0.42f));
  g.drawText (label, textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
  g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
  g.setColour (locked ? getTheme().foreground
- : getTheme().foreground.withAlpha (0.38f));
+ : getTheme().foreground.withAlpha (hasAdsr ? 0.80f : 0.38f));
  g.drawText (valueText, textX, y + juce::roundToInt (13.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
 
  outWidth = cellW;
@@ -1213,13 +1214,35 @@ void SliceControlBar::paint (juce::Graphics& g)
  int adsrGroupX1 = x, adsrGroupX2 = x;
 const float relMaxSec = kSlicerMaxReleaseSec;
 
+ // ── Live ADSR curve (compact thumbnail) — sits in front of the ATK/DEC/SUS/REL
+ // knobs and mirrors them. Paint-only: not registered in cells[], so it never
+ // intercepts a click. Brightens the segment whose knob is being dragged.
+ {
+ const int curveW = si (76);
+ int hlSeg = EnvDisplay::SegNone;
+ if (activeDragCell >= 0)
+ {
+     using FA = DysektProcessor;
+     if      (activeCellSnapshot.fieldId == FA::FieldAttack)  hlSeg = EnvDisplay::SegAttack;
+     else if (activeCellSnapshot.fieldId == FA::FieldDecay)   hlSeg = EnvDisplay::SegDecay;
+     else if (activeCellSnapshot.fieldId == FA::FieldSustain) hlSeg = EnvDisplay::SegSustain;
+     else if (activeCellSnapshot.fieldId == FA::FieldRelease) hlSeg = EnvDisplay::SegRelease;
+ }
+ const EnvDisplay::CurveParams curveParams { effAttack, effDecay, effSustain, effRelease,
+                                             ZoneEnv::kMaxAttackSec, ZoneEnv::kMaxDecaySec, relMaxSec };
+ EnvDisplay::drawCurve (g, juce::Rectangle<float> ((float) x, (float) row2y, (float) curveW, (float) psCellH),
+                        curveParams, hlSeg, false, paintSf,
+                        getTheme().darkBar.darker (0.15f), getTheme().separator);
+ x += curveW + si (6);
+ }
+
  // ATK — knob (stored seconds, display ms)
  {
  adsrGroupX1 = x;
  bool locked = (s.lockMask & kLockAttack) != 0;
  float atk = effAttack;
  drawKnobCell (g, x, row2y, "ATK",
- juce::String (atk, 3) + "s",
+ EnvDisplay::formatTime (atk),
  toNorm (F::FieldAttack, atk),
  locked, kLockAttack, F::FieldAttack, 0.f, ZoneEnv::kMaxAttackSec, 0.001f, cw);
  x += cw + si (4);
@@ -1233,7 +1256,7 @@ const float relMaxSec = kSlicerMaxReleaseSec;
  bool locked = (s.lockMask & kLockDecay) != 0;
  float dec = effDecay;
  drawKnobCell (g, x, row2y, "DEC",
- juce::String (dec, 3) + "s",
+ EnvDisplay::formatTime (dec),
  toNorm (F::FieldDecay, dec),
  locked, kLockDecay, F::FieldDecay, 0.f, ZoneEnv::kMaxDecaySec, 0.001f, cw);
  x += cw + si (4);
@@ -1260,10 +1283,10 @@ const float relMaxSec = kSlicerMaxReleaseSec;
 // This aligns the knob arc direction with the node position:
 //   rel=0ms  → norm=1.0 → knob hard RIGHT  (node at hard right)
 //   rel=max  → norm=0.0 → knob hard LEFT   (node at hard left)
-const float relNorm = juce::jlimit (0.f, 1.f,
-    1.0f - juce::jmin (rel / relMaxSec, 1.0f));
+// Same cube taper as ATK/DEC (see ZoneEnv::timeToKnob) so short releases get real travel.
+const float relNorm = 1.0f - ZoneEnv::timeToKnob (rel, relMaxSec);
  drawKnobCell (g, x, row2y, "REL",
- juce::String (rel, 3) + "s",
+ EnvDisplay::formatTime (rel),
  relNorm,
 locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
  x += cw + si (4);
@@ -2178,7 +2201,22 @@ void SliceControlBar::mouseDrag (const juce::MouseEvent& e)
  bool isBpm = (cell.fieldId == F::FieldBpm);
 
  float newNative;
- if (isAdsr || isBpm)
+ // ATK / DEC / REL use the cube-tapered knob travel (ZoneEnv::timeToKnob) so short
+ // times are easy to dial in; REL is inverted (drag up = shorter release).
+ const bool isEnvTime = (cell.fieldId == F::FieldAttack
+                      || cell.fieldId == F::FieldDecay
+                      || cell.fieldId == F::FieldRelease);
+ if (isEnvTime)
+ {
+     const float maxSec = (cell.fieldId == F::FieldAttack) ? ZoneEnv::kMaxAttackSec
+                        : (cell.fieldId == F::FieldDecay)  ? ZoneEnv::kMaxDecaySec
+                                                           : kSlicerMaxReleaseSec;
+     const float sign   = (cell.fieldId == F::FieldRelease) ? -1.0f : 1.0f;
+     const float perPx  = ZoneEnv::kKnobNormPerPixel * (e.mods.isShiftDown() ? 0.1f : 1.0f);
+     const float n0     = ZoneEnv::timeToKnob (dragStartValue, maxSec);
+     newNative = ZoneEnv::knobToTime (juce::jlimit (0.0f, 1.0f, n0 + sign * deltaY * perPx), maxSec);
+ }
+ else if (isAdsr || isBpm)
  {
  // Sensitivity in display units per pixel:
  // Attack: 2 ms/px (range 0-1000ms → 500px full sweep)
@@ -2624,7 +2662,7 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
  using F = DysektProcessor;
  juce::String displayVal;
  if (cell.fieldId == F::FieldAttack || cell.fieldId == F::FieldDecay || cell.fieldId == F::FieldRelease)
- displayVal = juce::String (currentValue, 3);
+ displayVal = EnvDisplay::formatTime (currentValue);
  else if (cell.fieldId == F::FieldHold)
  displayVal = juce::String ((int) currentValue);
  else if (cell.fieldId == F::FieldSustain)
@@ -2641,10 +2679,14 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 
  int fieldId = cell.fieldId;
  float minV = cell.minVal, maxV = cell.maxVal;
+ const bool bareIsMs = currentValue < 1.0f;   // a bare number is read in the unit shown on screen
 
- textEditor->onReturnKey = [this, fieldId, minV, maxV] {
+ textEditor->onReturnKey = [this, fieldId, minV, maxV, bareIsMs] {
  if (! textEditor) return;
- float val = textEditor->getText().getFloatValue();
+ float val = (fieldId == DysektProcessor::FieldAttack || fieldId == DysektProcessor::FieldDecay
+              || fieldId == DysektProcessor::FieldRelease)
+                 ? EnvDisplay::parseTime (textEditor->getText(), bareIsMs)
+                 : textEditor->getText().getFloatValue();
  using F2 = DysektProcessor;
  const bool isAdsrField = (fieldId == F2::FieldAttack || fieldId == F2::FieldDecay
                            || fieldId == F2::FieldSustain || fieldId == F2::FieldRelease);

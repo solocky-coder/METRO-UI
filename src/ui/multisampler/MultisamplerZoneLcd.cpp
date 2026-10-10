@@ -2,6 +2,7 @@
 #include "../DysektLookAndFeel.h"
 #include "../UIHelpers.h"
 #include "../ZoneEnvelopeRanges.h"
+#include "../EnvelopeDisplay.h"
 #include "../../MidiLearnManager.h"
 #include <cmath>
 
@@ -18,6 +19,19 @@ namespace
     // dependency on SliceControlBar (see this file's header doc comment).
     constexpr float kKnobStart = juce::MathConstants<float>::pi * 1.25f;
     constexpr float kKnobEnd   = juce::MathConstants<float>::pi * 2.75f;
+
+    // Envelope field -> EnvDisplay segment (-1 for every non-envelope field).
+    int envSegmentForField (MultisamplerZoneField f) noexcept
+    {
+        switch (f)
+        {
+            case MultisamplerZoneField::attack:  return EnvDisplay::SegAttack;
+            case MultisamplerZoneField::decay:   return EnvDisplay::SegDecay;
+            case MultisamplerZoneField::sustain: return EnvDisplay::SegSustain;
+            case MultisamplerZoneField::release: return EnvDisplay::SegRelease;
+            default:                             return EnvDisplay::SegNone;
+        }
+    }
 }
 
 MultisamplerZoneLcd::MultisamplerZoneLcd()
@@ -205,12 +219,12 @@ float MultisamplerZoneLcd::normForField (MultisamplerZoneField field) const
         // Matches SliceControlBar::toNorm's FieldVolume mapping (-100..+24dB)
         // so a gain knob sweeps the same visual arc everywhere in the app.
         case MultisamplerZoneField::gain:    return juce::jlimit (0.0f, 1.0f, (v + 100.0f) / 124.0f);
-        case MultisamplerZoneField::attack:  return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxAttackSec);
-        case MultisamplerZoneField::decay:   return juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxDecaySec);
+        case MultisamplerZoneField::attack:  return ZoneEnv::timeToKnob (v, ZoneEnv::kMaxAttackSec);
+        case MultisamplerZoneField::decay:   return ZoneEnv::timeToKnob (v, ZoneEnv::kMaxDecaySec);
         case MultisamplerZoneField::sustain: return juce::jlimit (0.0f, 1.0f, v);
         // Inverted on purpose: release is measured from the right edge in the envelope graph,
         // so 0 s = knob hard right = node hard right; more release turns the knob left.
-        case MultisamplerZoneField::release: return 1.0f - juce::jlimit (0.0f, 1.0f, v / ZoneEnv::kMaxReleaseSec);
+        case MultisamplerZoneField::release: return 1.0f - ZoneEnv::timeToKnob (v, ZoneEnv::kMaxReleaseSec);
         case MultisamplerZoneField::cutoff:
             return juce::jlimit (0.0f, 1.0f,
                 (std::log2 (juce::jmax (20.0f, v)) - std::log2 (20.0f))
@@ -268,10 +282,10 @@ float MultisamplerZoneLcd::nativeFromNorm (MultisamplerZoneField field, float no
         case MultisamplerZoneField::tune:      return norm * 2400.0f - 1200.0f;
         case MultisamplerZoneField::pan:       return norm * 2.0f - 1.0f;
         case MultisamplerZoneField::gain:      return norm * 124.0f - 100.0f;
-        case MultisamplerZoneField::attack:    return norm * ZoneEnv::kMaxAttackSec;
-        case MultisamplerZoneField::decay:     return norm * ZoneEnv::kMaxDecaySec;
+        case MultisamplerZoneField::attack:    return ZoneEnv::knobToTime (norm, ZoneEnv::kMaxAttackSec);
+        case MultisamplerZoneField::decay:     return ZoneEnv::knobToTime (norm, ZoneEnv::kMaxDecaySec);
         case MultisamplerZoneField::sustain:   return norm;
-        case MultisamplerZoneField::release:   return (1.0f - norm) * ZoneEnv::kMaxReleaseSec;   // inverted - see normForField
+        case MultisamplerZoneField::release:   return ZoneEnv::knobToTime (1.0f - norm, ZoneEnv::kMaxReleaseSec);   // inverted - see normForField
         case MultisamplerZoneField::cutoff:
             return std::exp2 (std::log2 (20.0f) + norm * (std::log2 (20000.0f) - std::log2 (20.0f)));
         case MultisamplerZoneField::resonance: return norm;
@@ -399,10 +413,10 @@ juce::String MultisamplerZoneLcd::formatFieldValue (MultisamplerZoneField field)
             return (snapshot.pan < 0.0f ? "L" : "R") + juce::String (juce::roundToInt (std::abs (snapshot.pan) * 100.0f));
         case MultisamplerZoneField::gain:      return juce::String (snapshot.gainDb, 1) + "dB";
         case MultisamplerZoneField::loopEnabled: return snapshot.loopOn ? "ON" : "OFF";
-        case MultisamplerZoneField::attack:    return juce::String (snapshot.attackSeconds, 3) + "s";
-        case MultisamplerZoneField::decay:     return juce::String (snapshot.decaySeconds, 3) + "s";
+        case MultisamplerZoneField::attack:    return EnvDisplay::formatTime (snapshot.attackSeconds);
+        case MultisamplerZoneField::decay:     return EnvDisplay::formatTime (snapshot.decaySeconds);
         case MultisamplerZoneField::sustain:   return juce::String (juce::roundToInt (snapshot.sustainLevel * 100.0f)) + "%";
-        case MultisamplerZoneField::release:   return juce::String (snapshot.releaseSeconds, 3) + "s";
+        case MultisamplerZoneField::release:   return EnvDisplay::formatTime (snapshot.releaseSeconds);
         case MultisamplerZoneField::cutoff:
             return snapshot.filterCutoffHz >= 1000.0f
                        ? juce::String (snapshot.filterCutoffHz / 1000.0f, 1) + "kHz"
@@ -489,7 +503,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     const int padBot   = juce::roundToInt (4.0f * sc);
 
     using Fields = std::vector<MultisamplerZoneField>;
-    struct Module { const char* title; std::vector<Fields> groups; };
+    struct Module { const char* title; std::vector<Fields> groups; int leadCells = 0; };
 
     std::vector<Module> modules;
     auto addModule = [&] (const char* title, std::vector<Fields> groups)
@@ -511,6 +525,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
                                           MultisamplerZoneField::gain } });
     addModule ("ENVELOPE",     { Fields { MultisamplerZoneField::attack, MultisamplerZoneField::decay,
                                           MultisamplerZoneField::sustain, MultisamplerZoneField::release } });
+    modules.back().leadCells = 2;   // ENVELOPE: live ADSR curve, two cells wide, ahead of the knobs
     addModule ("FILTER",       { Fields { MultisamplerZoneField::cutoff, MultisamplerZoneField::resonance } });
     addModule ("PLAYBACK",     { playback });
     addModule ("EQUALIZER",    { Fields { MultisamplerZoneField::eq1Freq, MultisamplerZoneField::eq1Gain,
@@ -525,7 +540,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
         int n = 0;
         for (const auto& gr : m.groups)
             n += (int) gr.size();
-        return 2 * modPadX + n * cw + ((int) m.groups.size() - 1) * groupGap;
+        return 2 * modPadX + (n + m.leadCells) * cw + ((int) m.groups.size() - 1) * groupGap;
     };
     auto totalWidth = [&] (int cw)
     {
@@ -540,8 +555,11 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     // panel = narrower cells, down to a floor).
     int totalCells = 0;
     for (const auto& m : modules)
+    {
+        totalCells += m.leadCells;
         for (const auto& gr : m.groups)
             totalCells += (int) gr.size();
+    }
 
     const int fixedWidth = totalWidth (0);
     const int minCellW   = juce::roundToInt (48.0f * sc);
@@ -577,6 +595,22 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
         const int cellsY = mb.getY() + titleH;
         const int cellsH = mb.getHeight() - titleH - padBot;
         int cx = mb.getX() + modPadX;
+
+        if (m.leadCells > 0)
+        {
+            const int leadW = m.leadCells * cellW;
+            const EnvDisplay::CurveParams cp { snapshot.attackSeconds, snapshot.decaySeconds,
+                                               snapshot.sustainLevel, snapshot.releaseSeconds,
+                                               ZoneEnv::kMaxAttackSec, ZoneEnv::kMaxDecaySec,
+                                               ZoneEnv::kMaxReleaseSec };
+            const int hl = haveActiveDrag ? envSegmentForField (activeField) : (int) EnvDisplay::SegNone;
+            EnvDisplay::drawCurve (g,
+                                   juce::Rectangle<float> ((float) cx, (float) cellsY + 2.0f * sc,
+                                                           (float) leadW - 6.0f * sc, (float) cellsH - 2.0f * sc),
+                                   cp, hl, true, sc,
+                                   theme.darkBar.darker (0.15f), theme.separator);
+            cx += leadW;
+        }
 
         for (size_t gi = 0; gi < m.groups.size(); ++gi)
         {
@@ -677,7 +711,7 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
 // none of those concepts exist for a multisampler zone field.
 // =============================================================================
 void MultisamplerZoneLcd::drawKnobArc (juce::Graphics& g, int cx, int cy, int r,
-                                        float normVal, bool hovered, bool dragging) const
+                                        float normVal, bool hovered, bool dragging, juce::Colour tint) const
 {
     const auto& theme = getTheme();
 
@@ -706,9 +740,13 @@ void MultisamplerZoneLcd::drawKnobArc (juce::Graphics& g, int cx, int cy, int r,
     // knob drawn on the SCB even at identical radius and normVal. Disabled
     // (not editable) keeps the same proportional dimming it had before
     // relative to the corrected resting value.
-    const juce::Colour arcCol = dragging ? theme.accent
-                                          : editable ? theme.accent.withAlpha (0.55f)
-                                                     : theme.accent.withAlpha (0.32f);
+    // Envelope knobs pass their ADSR colour (same lime/yellow/ice/orange as the
+    // Slicer's ADSR knobs); everything else keeps the theme accent.
+    const juce::Colour base = tint.isTransparent() ? theme.accent : tint;
+    const float restAlpha   = tint.isTransparent() ? 0.55f : 0.85f;
+    const juce::Colour arcCol = dragging ? base
+                                          : editable ? base.withAlpha (restAlpha)
+                                                     : base.withAlpha (0.32f);
 
     juce::Path arc;
     arc.addCentredArc (fcx, fcy, fr, fr, 0.0f, kKnobStart, angle, true);
@@ -751,14 +789,26 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
     const int knobR = juce::jmin (juce::roundToInt ((float) kKnobR * uiScale),
                                   juce::jmax (4, r.getHeight() / 2 - 4));
 
-    drawKnobArc (g, r.getCentreX(), r.getCentreY(), knobR, normForField (field), hoveredNow, draggingNow);
+    // Envelope fields: ADSR-coloured arc + label, bigger label/value.
+    const int envSeg = envSegmentForField (field);
+    const juce::Colour tint = envSeg >= 0 ? EnvDisplay::colourForSegment (envSeg) : juce::Colour();
 
-    g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.28f));
-    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
+    drawKnobArc (g, r.getCentreX(), r.getCentreY(), knobR, normForField (field), hoveredNow, draggingNow, tint);
+
+    if (envSeg >= 0)
+    {
+        g.setColour (editable ? tint.withAlpha (0.95f) : tint.withAlpha (0.4f));
+        g.setFont (DysektLookAndFeel::makeFont (10.5f * uiScale, true));
+    }
+    else
+    {
+        g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.28f));
+        g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
+    }
     g.drawText (labelFor (field), labelRow, juce::Justification::centred);
 
-    g.setColour (editable ? theme.foreground.withAlpha (0.88f) : theme.foreground.withAlpha (0.4f));
-    g.setFont (DysektLookAndFeel::makeMonoFont (11.5f * uiScale, true));
+    g.setColour (editable ? theme.foreground.withAlpha (envSeg >= 0 ? 0.95f : 0.88f) : theme.foreground.withAlpha (0.4f));
+    g.setFont (DysektLookAndFeel::makeMonoFont ((envSeg >= 0 ? 12.0f : 11.5f) * uiScale, true));
     g.drawText (formatFieldValue (field), valueRow, juce::Justification::centred);
 }
 
@@ -975,8 +1025,26 @@ void MultisamplerZoneLcd::mouseDrag (const juce::MouseEvent& e)
     if (deltaPixels != 0) dragMoved = true;
 
     const bool fineMode = e.mods.isShiftDown();
-    const float scale = dragScaleFor (activeField, fineMode);
-    const float newValue = dragStartValue + (float) deltaPixels * scale;
+    float newValue;
+    if (activeField == MultisamplerZoneField::attack
+        || activeField == MultisamplerZoneField::decay
+        || activeField == MultisamplerZoneField::release)
+    {
+        // Cube-tapered knob travel (ZoneEnv::timeToKnob) so short times get real
+        // resolution. Release is inverted: drag up = shorter release.
+        const float maxSec = activeField == MultisamplerZoneField::attack ? ZoneEnv::kMaxAttackSec
+                           : activeField == MultisamplerZoneField::decay  ? ZoneEnv::kMaxDecaySec
+                                                                          : ZoneEnv::kMaxReleaseSec;
+        const float sign  = activeField == MultisamplerZoneField::release ? -1.0f : 1.0f;
+        const float perPx = ZoneEnv::kKnobNormPerPixel * (fineMode ? kFineModeScale : 1.0f);
+        const float n0    = ZoneEnv::timeToKnob (dragStartValue, maxSec);
+        newValue = ZoneEnv::knobToTime (juce::jlimit (0.0f, 1.0f, n0 + sign * (float) deltaPixels * perPx), maxSec);
+    }
+    else
+    {
+        const float scale = dragScaleFor (activeField, fineMode);
+        newValue = dragStartValue + (float) deltaPixels * scale;
+    }
 
     applyDrag (activeField, newValue, /*commit=*/false);
 }

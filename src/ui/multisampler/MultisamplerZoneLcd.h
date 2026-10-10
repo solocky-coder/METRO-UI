@@ -250,7 +250,8 @@ private:
     static bool isNoteDropdownField (MultisamplerZoneField field) noexcept;
     void drawDropdownField (juce::Graphics& g, juce::Rectangle<int> bounds, MultisamplerZoneField field, int cellIdx);
     void showNoteMenu (MultisamplerZoneField field, juce::Rectangle<int> cellBounds);
-    void drawKnobArc (juce::Graphics& g, int cx, int cy, int r, float normVal, bool hovered, bool dragging) const;
+    void drawKnobArc (juce::Graphics& g, int cx, int cy, int r, float normVal, bool hovered, bool dragging,
+                      juce::Colour tint = {}) const;
 
     // LOOP is boolean — drawn as a flat toggle badge rather than a knob,
     // same call this component made before for that field.
