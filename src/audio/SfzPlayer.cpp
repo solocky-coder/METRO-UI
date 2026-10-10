@@ -1350,6 +1350,12 @@ namespace
     }
 }
 
+std::vector<SfzLayer> SfzPlayer::scanLayers (const juce::File& sfzFile)
+{
+    if (! sfzFile.existsAsFile()) return {};
+    return SfzLayerScanner::scan (sfzFile.loadFileAsString().toStdString());
+}
+
 // ── applyFluidAdsrFromUi ──────────────────────────────────────────────────────
 //  Applies the UI A/D/S/R values (juceAdsrAttack/Decay/Sustain/Release —
 //  the same atomics the envelope graph reads) as per-channel generator values

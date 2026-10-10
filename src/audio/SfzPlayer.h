@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "Sf2ChannelMixer.h"
+#include "SfzLayerScanner.h"
 
 #if DYSEKT_HAS_FLUIDSYNTH
   #include <fluidsynth.h>
@@ -71,6 +72,11 @@ public:
 
     /** Queue a new SF2 file for loading. Returns immediately. */
     void loadFile (const juce::File& f, juce::ThreadPool& pool);
+
+    /** Reads an .sfz file and returns its layers (one per distinct note range).
+     *  Pure text parsing, no sfizz needed. UI/message thread; returns an empty
+     *  list if the file can't be read or has no regions. See SfzLayerScanner.h. */
+    static std::vector<SfzLayer> scanLayers (const juce::File& sfzFile);
 
     /** Unload current instrument (silent output). */
     void unload();
