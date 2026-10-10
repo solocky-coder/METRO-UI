@@ -8,7 +8,7 @@ This note documents the current code ownership to avoid confusing the SF2-Player
 - UI: `src/ui/Sf2WaveformLcd.cpp` / `.h`.
 - UI behavior: draggable A/D/S/R nodes on the envelope graph; this is not a row of rotary knobs.
 - UI-facing values: `processor.sfzPlayer` methods named `getSfzAttack/Decay/Sustain/Release` and `setSfzAttack/Decay/Sustain/Release`. These names are legacy and are misleading in the SF2 context.
-- Synchronization: the graph calls `setJuceAdsr(...)` after edits. In the SF2 FluidSynth path, `SfzPlayer::applyFluidAdsrFromUi()` converts the values and writes `GEN_VOLENVATTACK`, `GEN_VOLENVDECAY`, `GEN_VOLENVSUSTAIN`, and `GEN_VOLENVRELEASE` to FluidSynth channels 2–15.
+- Synchronization: the graph calls `setJuceAdsr(...)` after edits. In the SF2 FluidSynth path, `SfzPlayer::applyFluidAdsrFromUi()` converts values to native timecents/centibels and uses `fluid_synth_set_gen2(..., absolute=1, normalized=0)` for `GEN_VOLENVATTACK`, `GEN_VOLENVDECAY`, `GEN_VOLENVSUSTAIN`, and `GEN_VOLENVRELEASE` on channels 2–15. Do not replace this with `fluid_synth_set_gen()`: that API applies an additive offset, not an absolute override.
 
 ## SFZ-Player and legacy dropdown panel
 
@@ -28,6 +28,11 @@ The Multisampler has its own zone-level envelope data and edit callbacks. Its en
 3. If the legacy dropdown panel is retired, remove it only after confirming its non-ADSR helpers (preset/file loading, SF2 channel FX, and zone utilities) have no remaining callers.
 4. Verify envelope behavior with a built plugin: test each ADSR stage on an SF2 preset, then separately test SFZ and Multisampler envelopes.
 
-## Verification status
+## ADSR semantics and verification checklist
 
-This document records the source-level call paths. It does not claim a live audio test or a successful build; those should be run in the project build environment.
+- The SF2 graph is intended to express absolute attack/decay/sustain/release values. FluidSynth's `fluid_synth_set_gen()` applies offsets, so using it with converted UI values changes the preset values additively and can produce unexpectedly long/short envelopes. The SF2 path now uses `fluid_synth_set_gen2(..., 1, 0)` to request absolute native-unit generator values.
+- Sustain is a level percentage in the UI but attenuation in centibels in SF2. 100% maps to 0 cB; 0% maps to the 1000 cB (-100 dB) floor.
+- Reapplication is required after SF2 load and program/preset changes because those operations reset generator state. It also runs when the UI ADSR parameters change.
+- Runtime verification still requires a build with the target FluidSynth version and audio tests: check attack/decay/sustain/release independently, switch between presets with substantially different native envelopes, confirm the UI's custom envelope remains consistent, test 0% and 100% sustain, and verify releasing one note does not fade another held note.
+
+This documents the implementation and the verification procedure; it does not claim a successful build or live audio test.
