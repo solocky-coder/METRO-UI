@@ -1316,8 +1316,14 @@ namespace
 
     float levelPercentToSustainCentibels (float pct) noexcept
     {
-        const float lvl = juce::jlimit (0.0001f, 1.0f, pct * 0.01f);
-        return juce::jlimit (0.0f, 1000.0f, -200.0f * std::log10 (lvl));
+        pct = juce::jlimit (0.0f, 100.0f, pct);
+        // 0% is the envelope floor (-100 dB); avoid log10(0) while preserving
+        // the full UI range. Positive values map to attenuation in centibels.
+        if (pct <= 0.0f)
+            return 1000.0f;
+
+        const float level = pct * 0.01f;
+        return juce::jlimit (0.0f, 1000.0f, -200.0f * std::log10 (level));
     }
 }
 
@@ -1345,15 +1351,14 @@ namespace
 }
 
 // ── applyFluidAdsrFromUi ──────────────────────────────────────────────────────
-//  Writes the current UI A/D/S/R values (juceAdsrAttack/Decay/Sustain/Release —
-//  the same atomics the amp-envelope graph and LCD display read/write) into
-//  FluidSynth's per-channel generators on channels 2-15 (0-based; channels 0/1
-//  are reserved for the Slicer/SFZ-Player and are never touched). FluidSynth then
-//  shapes each voice's envelope internally and independently, so releasing
-//  one note no longer affects any other currently-sounding note the way the
-//  old shared post-mix JUCE ADSR did. Called after load, after every
-//  program/preset change (both reset a channel's generators back to the
-//  SoundFont's own defaults), and whenever the UI values change.
+//  Applies the UI A/D/S/R values (juceAdsrAttack/Decay/Sustain/Release —
+//  the same atomics the envelope graph reads) as ABSOLUTE per-channel generator
+//  values on channels 2-15. IMPORTANT: fluid_synth_set_gen() is additive, so
+//  passing these converted absolute values to it incorrectly adds them to every
+//  preset/zone envelope. fluid_synth_set_gen2(..., absolute=1, normalized=0)
+//  is used here to override the SoundFont zone values in native generator units.
+//  FluidSynth then shapes each voice independently, so releasing one note does
+//  not fade other notes. Reapply after load/program changes and UI edits.
 // ─────────────────────────────────────────────────────────────────────────────
 void SfzPlayer::applyFluidAdsrFromUi()
 {
@@ -1367,10 +1372,12 @@ void SfzPlayer::applyFluidAdsrFromUi()
 
     for (int ch = 2; ch < 16; ++ch)
     {
-        fluid_synth_set_gen (synth, ch, GEN_VOLENVATTACK,  atkTc);
-        fluid_synth_set_gen (synth, ch, GEN_VOLENVDECAY,   decTc);
-        fluid_synth_set_gen (synth, ch, GEN_VOLENVSUSTAIN, susCb);
-        fluid_synth_set_gen (synth, ch, GEN_VOLENVRELEASE, relTc);
+        // set_gen2's absolute flag overrides preset/instrument zone generators;
+        // normalized=0 means values are already in native timecents/centibels.
+        fluid_synth_set_gen2 (synth, ch, GEN_VOLENVATTACK,  atkTc, 1, 0);
+        fluid_synth_set_gen2 (synth, ch, GEN_VOLENVDECAY,   decTc, 1, 0);
+        fluid_synth_set_gen2 (synth, ch, GEN_VOLENVSUSTAIN, susCb, 1, 0);
+        fluid_synth_set_gen2 (synth, ch, GEN_VOLENVRELEASE, relTc, 1, 0);
     }
 #endif
 }
