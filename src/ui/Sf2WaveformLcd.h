@@ -3,21 +3,28 @@
 
 class DysektProcessor;
 
-/**  Right LCD panel shown when uiMode == 2 (SF2-Player / FluidSynth).
+/**
+ * Right LCD panel shown when uiMode == 2 (SF2-Player / FluidSynth).
  *
- *   Renders the SF2-player ADSR envelope as a draggable node graph.
- *   Nodes map directly to sfzPlayer.setSfzAttack/Decay/Sustain/Release.
- *   No APVTS writes — sfzPlayer ADSR params are atomic, not registered
- *   parameters.
+ * ADSR UI ownership:
+ *   - This component is the SF2-Player's ADSR editor.
+ *   - It edits the SF2 player's envelope through processor.sfzPlayer and
+ *     synchronizes the JUCE ADSR values consumed by the FluidSynth path.
+ *   - The setSfzAttack/Decay/Sustain/Release method names are legacy naming;
+ *     in this component they refer to the SF2-Player's stored envelope values,
+ *     not the separate SFZ-Player (processor.sfzPlayer2).
+ *   - The UI here is a draggable envelope graph, not four rotary knobs.
  *
- *   Uses processor.sampleData3 for the waveform backdrop — its own
- *   independent render via SoundFontLoadTarget::SfPlayer, decoupled from
- *   the Slicer's sampleData and from the SFZ-PLAYER tab's sampleData2
- *   (the SFZ-PLAYER tab is now a full second Slicer instance — see
- *   sliceManager2/voicePool2 — and uses SliceLcdDisplay/SliceWaveformLcd
- *   in mode-aware fashion instead of a dedicated class like this one).
+ * No APVTS writes: these envelope values are atomics, not registered
+ * parameters.
  *
- *   Call repaintLcd() from the editor's timerCallback() at ~30 Hz.
+ * Uses processor.sampleData3 for the waveform backdrop — its own independent
+ * render via SoundFontLoadTarget::SfPlayer, decoupled from the Slicer's
+ * sampleData and from the SFZ-PLAYER tab's sampleData2 (sliceManager2 /
+ * voicePool2). The SFZ-PLAYER tab uses SliceLcdDisplay/SliceWaveformLcd in
+ * mode-aware fashion instead of this dedicated SF2 component.
+ *
+ * Call repaintLcd() from the editor's timerCallback() at ~30 Hz.
  */
 class Sf2WaveformLcd : public juce::Component
 {

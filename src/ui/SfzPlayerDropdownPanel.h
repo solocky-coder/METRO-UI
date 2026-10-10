@@ -1,7 +1,19 @@
 #pragma once
 // =============================================================================
-//  SfzPlayerDropdownPanel.h  —  SFZ-only instrument strip (SFZ-Player, ch3 default)
+//  SfzPlayerDropdownPanel.h — legacy SFZ-Player panel / SF2 shared strip helpers
 // =============================================================================
+//  IMPORTANT OWNERSHIP NOTE:
+//    This panel is not the SF2-Player's ADSR editor. Its ADSR knob handlers
+//    read/write processor.sfzPlayer2 (the SFZ/sfizz player instance). The
+//    SF2-Player's dedicated envelope UI is Sf2WaveformLcd, which edits
+//    processor.sfzPlayer and synchronizes the FluidSynth-facing JUCE ADSR.
+//    Do not use the presence of adsrAtkZone/etc. in this class as evidence
+//    that the SF2-Player has rotary ADSR knobs.
+//
+//  PluginEditor.cpp currently comments that this panel is not made visible in
+//  the live SFZ-Player mode. Check actual visibility call sites before treating
+//  any control here as part of the active UI.
+//
 //  Header strip layout (left → right):
 //    [< Preset Name  📁 >] [TRN] [FINE] [REV MIX] [REV SIZE] [PAN] [VOL] [METER]
 //
@@ -76,7 +88,7 @@ public:
 
     // ── Layout constants ──────────────────────────────────────────────────────
     static constexpr int kStripH  = 36;
-    static constexpr int kAdsrH   = 34;   ///< height of the ADSR knob row
+    static constexpr int kAdsrH   = 34;   ///< height of the legacy ADSR knob row
 
     // ── Keyboard sub-component ────────────────────────────────────────────────
     KeysPanel keysPanel;
@@ -106,7 +118,7 @@ private:
                           rvMixZone, rvSizeZone,
                           meterZone;
 
-    // ADSR knob zones (second row, below header strip)
+    // Legacy ADSR knob zones. These target processor.sfzPlayer2, not the SF2 graph.
     juce::Rectangle<int> adsrAtkZone, adsrDecZone, adsrSusZone, adsrRelZone;
 
     // Per-channel SF2 FX zones — overlap the ADSR slots when SF2 is loaded
@@ -119,7 +131,7 @@ private:
     // Sub-zones inside nameZone
     juce::Rectangle<int> presetDecBtn, presetLabel, presetIncBtn, folderIconZone;
 
-    // ── Drag state for knobs ──────────────────────────────────────────────────
+    // ── Drag state for legacy panel knobs ──────────────────────────────────────
     enum class ActiveKnob { None, Volume, Transpose, Pan, FineTune, ReverbMix, ReverbSize,
                             AdsrAttack, AdsrDecay, AdsrSustain, AdsrRelease };
     ActiveKnob activeKnob  { ActiveKnob::None };
