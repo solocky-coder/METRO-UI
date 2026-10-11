@@ -111,7 +111,7 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
                                                bool isHighlighted, bool isDown)
 {
     auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
-    const float r = 0.0f;   // flat, square corners — was Metro-only, now universal
+    const float r = getTheme().glass ? getTheme().cornerRadius : 0.0f;   // flat, square corners — was Metro-only, now universal
 
     auto btnCol = button.findColour (juce::TextButton::buttonColourId);
     auto baseBg = (btnCol != juce::Colour()) ? btnCol : getTheme().button;
@@ -229,7 +229,7 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
 // ── Popup menus ───────────────────────────────────────────────────────────────
 void DysektLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
-    const float r = 0.0f;   // flat, square corners — was Metro-only, now universal
+    const float r = getTheme().glass ? getTheme().cornerRadius : 0.0f;   // flat, square corners — was Metro-only, now universal
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
     const auto bgColour = getTheme().darkBar.brighter (0.06f);
 
@@ -350,7 +350,7 @@ void DysektLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     const auto& t = getTheme();
     auto cbBounds = juce::Rectangle<float> (0, 0, (float)width, (float)height).reduced (0.5f);
 
-    const float r = 0.0f;   // Flat — matches every other flattened control in the app
+    const float r = getTheme().glass ? getTheme().cornerRadius : 0.0f;   // Flat — matches every other flattened control in the app
     g.setColour (isButtonDown ? t.buttonHover : t.button);
     g.fillRoundedRectangle (cbBounds, r);
 
@@ -405,7 +405,7 @@ void DysektLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text
 {
     // Flattened — was a fixed 2.0f radius regardless of theme; now square
     // corners everywhere, in line with the rest of the shape language.
-    const float r = 0.0f;
+    const float r = getTheme().glass ? getTheme().cornerRadius : 0.0f;
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
 
     g.setColour (getTheme().darkBar.brighter (0.10f));
@@ -562,7 +562,7 @@ void DysektLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, 
 
     auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
     g.setColour (bg);
-    g.fillRoundedRectangle (bounds, 0.0f);
+    g.fillRoundedRectangle (bounds, getTheme().glass ? getTheme().cornerRadius : 0.0f);
 }
 
 void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
@@ -574,7 +574,7 @@ void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int
     const bool focused = te.hasKeyboardFocus (true);
     g.setColour (focused ? getTheme().accent
                           : getTheme().separator.withAlpha (0.60f));
-    g.drawRoundedRectangle (bounds, 0.0f, focused ? 1.4f : 1.0f);
+    g.drawRoundedRectangle (bounds, getTheme().glass ? getTheme().cornerRadius : 0.0f, focused ? 1.4f : 1.0f);
 }
 
 //==============================================================================
@@ -600,7 +600,7 @@ void DysektLookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& aler
                                       juce::TextLayout& textLayout)
 {
     const auto& t = getTheme();
-    const float r = 0.0f;   // flattened — was a fixed 4.0f radius regardless of theme
+    const float r = getTheme().glass ? getTheme().cornerRadius : 0.0f;   // flattened — was a fixed 4.0f radius regardless of theme
 
     // Background
     g.setColour (t.darkBar);
@@ -670,7 +670,7 @@ namespace
         {
             const auto& t = getTheme();
             const auto  b = getLocalBounds().toFloat().reduced (2.f);
-            const float r = 0.0f;   // flattened — was a fixed 3.f radius regardless of theme
+            const float r = getTheme().glass ? getTheme().cornerRadius : 0.0f;   // flattened — was a fixed 3.f radius regardless of theme
 
             // Hover / press fill
             if (isDown)

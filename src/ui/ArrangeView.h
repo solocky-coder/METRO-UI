@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "FloatingTransportBar.h"
 #include "TrackHeaderStrip.h"
+#include "GlassStyle.h"
 #include "TrackInspector.h"
 #include "DysektLookAndFeel.h"
 #include "../sequencer/SequencerEngine.h"
@@ -505,9 +506,9 @@ public:
 
         // ── LCD-style frame — flat, square-cornered, no gradient, no glow ────
         g.setColour (theme.waveformBg);
-        g.fillRoundedRectangle (b.toFloat(), 0.0f);
+        g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
         g.setColour (theme.separator);
-        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
+        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
 
         // Clip all track content to the inner screen rect
         g.saveState();
@@ -2770,16 +2771,17 @@ private:
             ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
             : info.colour;
 
-        g.setColour (tile);
-        g.fillRect (clipR.reduced (1, 1));
-
-        // Selection reads as a single accent-colour edge line rather than a
-        // brightened outline — an outline implies "this shape has a
-        // border", which doesn't fit tiles that otherwise have none.
-        if (isSel)
+        if (GlassStyle::on())
+            GlassStyle::paintClip (g, clipR.toFloat().reduced (1.0f, 1.5f), info.colour, isSel, muted);
+        else
         {
-            g.setColour (getTheme().accent);
-            g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
+            g.setColour (tile);
+            g.fillRect (clipR.reduced (1, 1));
+            if (isSel)
+            {
+                g.setColour (getTheme().accent);
+                g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
+            }
         }
 
         // Track name
@@ -2826,7 +2828,8 @@ private:
                 clipR.reduced (1, 1).withLeft (clipR.getRight() - 8));
             g.setColour (isSel ? juce::Colours::black.withAlpha (0.35f)
                                : juce::Colours::black.withAlpha (0.18f));
-            g.fillRect (handleR);
+            if (GlassStyle::on()) g.fillRoundedRectangle (handleR.toFloat(), GlassStyle::radius() * 0.6f);
+            else                  g.fillRect (handleR);
             g.setColour (juce::Colours::white.withAlpha (isSel ? 0.55f : 0.30f));
             const float cx = (float) handleR.getCentreX();
             for (int dot = 0; dot < 3; ++dot)
@@ -2858,8 +2861,13 @@ private:
             ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
             : info.colour;
 
-        g.setColour (tile);
-        g.fillRect (clipR.reduced (1, 1));
+        if (GlassStyle::on())
+            GlassStyle::paintClip (g, clipR.toFloat().reduced (1.0f, 1.5f), info.colour, isSel, muted);
+        else
+        {
+            g.setColour (tile);
+            g.fillRect (clipR.reduced (1, 1));
+        }
 
         // Waveform, decoded from the recording itself — see
         // getAudioClipWaveform()/paintAudioClipWaveform() below. Peaks are
@@ -2867,7 +2875,7 @@ private:
         // re-decode on every repaint.
         paintAudioClipWaveform (g, clipR, clip.filePath, muted);
 
-        if (isSel)
+        if (isSel && ! GlassStyle::on())
         {
             g.setColour (getTheme().accent);
             g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);

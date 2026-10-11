@@ -8,6 +8,7 @@
 #include "../metro/MetroColours.h"
 #include "../metro/MetroTypography.h"
 #include "DysektLookAndFeel.h"
+#include "GlassStyle.h"
 #include "UIHelpers.h"
 #include "ContextMenuButton.h"
 #include "TransportIconButton.h"
@@ -290,9 +291,14 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (Base::SurfaceAlt);
-        g.setColour (Base::Border);
-        g.fillRect (getLocalBounds().removeFromBottom (1));
+        if (GlassStyle::on())
+            GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));
+        else
+        {
+            g.fillAll (Base::SurfaceAlt);
+            g.setColour (Base::Border);
+            g.fillRect (getLocalBounds().removeFromBottom (1));
+        }
 
         // Locator captions, painted the same way FloatingTransportBar's
         // paint() draws its own "L"/"R" — outside the editable field so the

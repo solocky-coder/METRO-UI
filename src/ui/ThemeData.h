@@ -21,6 +21,11 @@ struct ThemeData
     juce::Colour buttonHover;
     juce::Colour separator;
 
+    // Optional Glass theme styling. Defaults keep all existing themes unchanged.
+    bool         glass        = false;
+    float        cornerRadius = 0.0f;
+    juce::Colour glowA, glowB;
+
     static constexpr int kSlicePaletteSize = 32;
     juce::Colour slicePalette[kSlicePaletteSize] {};
 
@@ -531,6 +536,34 @@ struct ThemeData
         return t;
     }
 
+    // ── GLASS ────────────────────────────────────────────────────────────────
+    // Rounded translucent surfaces, soft violet/blue ambient light and a cool
+    // periwinkle accent. The existing Metro and custom themes remain untouched.
+    static ThemeData glassTheme()
+    {
+        ThemeData t = darkTheme();
+        t.name             = "glass";
+        t.glass            = true;
+        t.cornerRadius     = 6.0f;
+        t.background       = juce::Colour (0xFF0E0F14);
+        t.waveformBg       = juce::Colour (0xFF121318);
+        t.darkBar          = juce::Colour (0xFF181A22);
+        t.foreground       = juce::Colour (0xFFE6E6EB);
+        t.header           = juce::Colour (0xFF1B1D27);
+        t.waveform         = juce::Colour (0xFFB9A8FF);
+        t.selectionOverlay = juce::Colour (0xFF3A2F66);
+        t.lockActive       = juce::Colour (0xFF7A8CFF);
+        t.lockInactive     = juce::Colour (0xFF34364A);
+        t.gridLine         = juce::Colour (0xFF23252F);
+        t.accent           = juce::Colour (0xFF7A8CFF);
+        t.button           = juce::Colour (0xFF262833);
+        t.buttonHover      = juce::Colour (0xFF30323F);
+        t.separator        = juce::Colour (0xFF2C2E3B);
+        t.glowA            = juce::Colour (0xFF5A3FB8);
+        t.glowB            = juce::Colour (0xFF1F4FA8);
+        return t;
+    }
+
     static juce::Colour parseHex (const juce::String& hex)
     {
         return juce::Colour ((juce::uint32) (0xFF000000 | hex.getHexValue32()));
@@ -546,6 +579,7 @@ struct ThemeData
         if (text.contains("name: serum"))    return serumTheme();
         if (text.contains("name: opendaw"))  return opendawTheme();
         if (text.contains("name: metro"))    return metroTheme();
+        if (text.contains("name: glass"))    return glassTheme();
 
         for (auto line : juce::StringArray::fromLines (text))
         {
