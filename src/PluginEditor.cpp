@@ -182,6 +182,14 @@ DysektEditor::DysektEditor (DysektProcessor& p)
          processor.sequencer.removeSfzTrack();
      else
          processor.sequencer.addSfzTrack (instrument.name, 1, kSfzTrackColour);
+
+     // One layer child track per zone (note range) of the instrument.
+     {
+         std::vector<SfzZone> zonesForLayers;
+         for (const auto& kz : keyzones)
+             zonesForLayers.push_back ({ kz.name.toStdString(), kz.loKey, kz.hiKey });
+         processor.sequencer.syncSfzLayerTracks (SfzLayerScanner::buildLayers (zonesForLayers));
+     }
 #endif
 
      // An edit here can be exactly the add/import/delete that changes what
@@ -2670,7 +2678,6 @@ void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArra
         {
             static const juce::Colour kSfzTrackColour (0xFF9060D0);
             pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
-            pianoRollPanel.syncSfzLayerTracks (f);
         }
        #else
         juce::ignoreUnused (createArrangerTrack);
@@ -2685,6 +2692,13 @@ void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArra
         // two competing sources of truth for what's actually loaded, the
         // exact desync class this plan exists to close (see plan §5.5).
         multisamplerEditor.importFromFile (f);
+
+       #if DYSEKT_STANDALONE
+        // Layer child tracks must be created AFTER the import: importFromFile() clears the
+        // instrument first, and the zone-edit callback removes the SFZ track (and with it
+        // the layer tracks) whenever there are no zones. Does nothing if there is no SFZ track.
+        pianoRollPanel.syncSfzLayerTracks (f);
+       #endif
 
         offerDrumKitAutoRouting (f);
     };

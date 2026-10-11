@@ -2,21 +2,20 @@
 // =============================================================================
 //  SfzLayerScanner.h  —  finds the "layers" of an SFZ instrument
 // =============================================================================
-//  A layer is a note range of the instrument. The scanner reads the SFZ text
-//  (no sfizz, no JUCE: std only) and returns one SfzLayer per distinct note
-//  range, so the arranger can create one child track per layer whose piano
-//  roll is limited to that range.
+//  A layer is one zone of the instrument: a <region> with its own note range
+//  (lokey..hikey). The scanner reads the SFZ text (no sfizz, no JUCE: std only)
+//  and returns one SfzLayer per distinct note range, so the arranger can create
+//  one child track per layer whose piano roll is limited to that range.
 //
 //  Rules:
-//    * Regions are grouped by their <group> header (regions before the first
-//      <group> form an implicit group).
-//    * A group's range is the union of its regions' lokey..hikey. lokey/hikey/
-//      key may be set on <global>, <master>, <group> or <region> and are
-//      inherited downwards; a region value overrides its parent's.
-//    * Groups with the identical range (velocity layers, round robins) are
+//    * lokey/hikey/key may be set on <global>, <master>, <group> or <region> and
+//      are inherited downwards; a region value overrides its parent's.
+//    * Regions with the identical range (velocity layers, round robins) are
 //      merged into one layer.
-//    * The layer name is the first non-empty group_label of its groups,
-//      otherwise "Layer N".
+//    * The layer name is the sample file name of its first region (no folder, no
+//      extension), otherwise "Layer N".
+//    * At most kMaxLayers layers are returned (lowest notes first); SfzLayer
+//      lists are sorted by note range.
 //    * Layers whose ranges share keys are flagged (SfzLayer::overlaps), since
 //      playing a note on one of them would also sound the other.
 //
@@ -32,13 +31,16 @@
 
 struct SfzLayer
 {
+    static constexpr int kMaxLayers = 32;
     std::string name;
     int  loKey       = 0;
     int  hiKey       = 127;
     int  numRegions  = 0;
-    int  numGroups   = 0;     // groups merged into this layer
     bool overlaps    = false; // shares at least one key with another layer
 };
+
+/** One zone (region) of an instrument: a name and a note range. */
+struct SfzZone { std::string name; int lo = 0, hi = 127; };
 
 namespace SfzLayerScanner
 {
@@ -148,16 +150,52 @@ namespace detail
     }
 }
 
+/** Turns a zone list into layers: identical ranges merge, sorted by range, capped at
+    SfzLayer::kMaxLayers. */
+inline std::vector<SfzLayer> buildLayers (const std::vector<SfzZone>& zones)
+{
+    // Merge regions with the identical range into one layer.
+    std::vector<SfzLayer> layers;
+    for (const auto& z : zones)
+    {
+        auto it = std::find_if (layers.begin(), layers.end(),
+                                [&] (const SfzLayer& l) { return l.loKey == z.lo && l.hiKey == z.hi; });
+        if (it == layers.end())
+        {
+            SfzLayer l;
+            l.name = z.name; l.loKey = z.lo; l.hiKey = z.hi; l.numRegions = 1;
+            layers.push_back (std::move (l));
+        }
+        else
+        {
+            if (it->name.empty()) it->name = z.name;
+            ++it->numRegions;
+        }
+    }
+
+    std::sort (layers.begin(), layers.end(), [] (const SfzLayer& a, const SfzLayer& b)
+               { return a.loKey != b.loKey ? a.loKey < b.loKey : a.hiKey < b.hiKey; });
+    if ((int) layers.size() > SfzLayer::kMaxLayers)
+        layers.resize ((size_t) SfzLayer::kMaxLayers);
+
+    for (size_t i = 0; i < layers.size(); ++i)
+    {
+        if (layers[i].name.empty()) layers[i].name = "Layer " + std::to_string (i + 1);
+        for (size_t j = 0; j < layers.size(); ++j)
+            if (i != j && layers[i].loKey <= layers[j].hiKey && layers[j].loKey <= layers[i].hiKey)
+                layers[i].overlaps = true;
+    }
+    return layers;
+}
+
 /** Scans SFZ text and returns the instrument's layers (empty if it has no regions). */
 inline std::vector<SfzLayer> scan (const std::string& sfzText)
 {
     using namespace detail;
 
-    struct Group { std::string label; int lo = 128, hi = -1, regions = 0; };
-    std::vector<Group> groups;
+    std::vector<SfzZone> zones;
 
     Range global, master, group;
-    int current = -1;                       // index into groups, -1 = none yet
 
     const std::string text = stripComments (sfzText);
     size_t pos = 0;
@@ -176,72 +214,42 @@ inline std::vector<SfzLayer> scan (const std::string& sfzText)
 
         if (header == "global")
         {
-            global = {}; master = {}; group = {}; current = -1;
+            global = {}; master = {}; group = {};
             applyKeyOpcodes (ops, global);
         }
         else if (header == "master")
         {
-            master = {}; group = {}; current = -1;
+            master = {}; group = {};
             applyKeyOpcodes (ops, master);
         }
         else if (header == "group")
         {
             group = {};
             applyKeyOpcodes (ops, group);
-            groups.emplace_back();
-            current = (int) groups.size() - 1;
-            for (auto& op : ops)
-                if (op.name == "group_label") groups.back().label = op.value;
         }
         else if (header == "region")
         {
-            if (current < 0) { groups.emplace_back(); current = (int) groups.size() - 1; }
-
             Range region;
             applyKeyOpcodes (ops, region);
             const Range eff = inherit (inherit (inherit (global, master), group), region);
-            const int lo = eff.lo >= 0 ? eff.lo : 0;
-            const int hi = eff.hi >= 0 ? eff.hi : 127;
 
-            auto& g = groups[(size_t) current];
-            g.lo = std::min (g.lo, lo);
-            g.hi = std::max (g.hi, hi);
-            ++g.regions;
+            SfzZone z;
+            z.lo = eff.lo >= 0 ? eff.lo : 0;
+            z.hi = eff.hi >= 0 ? eff.hi : 127;
+            for (auto& op : ops)
+                if (op.name == "sample")
+                {
+                    std::string n = op.value;
+                    const size_t slash = n.find_last_of ("/\\");
+                    if (slash != std::string::npos) n = n.substr (slash + 1);
+                    const size_t dot = n.find_last_of ('.');
+                    if (dot != std::string::npos && dot > 0) n = n.substr (0, dot);
+                    z.name = n;
+                }
+            zones.push_back (std::move (z));
         }
     }
 
-    // Merge groups with the identical range into one layer.
-    std::vector<SfzLayer> layers;
-    for (auto& g : groups)
-    {
-        if (g.regions == 0) continue;
-        auto it = std::find_if (layers.begin(), layers.end(),
-                                [&] (const SfzLayer& l) { return l.loKey == g.lo && l.hiKey == g.hi; });
-        if (it == layers.end())
-        {
-            SfzLayer l;
-            l.name = g.label; l.loKey = g.lo; l.hiKey = g.hi;
-            l.numRegions = g.regions; l.numGroups = 1;
-            layers.push_back (std::move (l));
-        }
-        else
-        {
-            if (it->name.empty()) it->name = g.label;
-            it->numRegions += g.regions;
-            ++it->numGroups;
-        }
-    }
-
-    std::sort (layers.begin(), layers.end(), [] (const SfzLayer& a, const SfzLayer& b)
-               { return a.loKey != b.loKey ? a.loKey < b.loKey : a.hiKey < b.hiKey; });
-
-    for (size_t i = 0; i < layers.size(); ++i)
-    {
-        if (layers[i].name.empty()) layers[i].name = "Layer " + std::to_string (i + 1);
-        for (size_t j = 0; j < layers.size(); ++j)
-            if (i != j && layers[i].loKey <= layers[j].hiKey && layers[j].loKey <= layers[i].hiKey)
-                layers[i].overlaps = true;
-    }
-    return layers;
+    return buildLayers (zones);
 }
 } // namespace SfzLayerScanner

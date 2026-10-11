@@ -636,7 +636,7 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.preset      = t.preset;
     info.numClips    = t.getNumClips();
     info.isSfzInstrument = t.isSfzInstrument;
-    info.isSfzLayer = t.isSfzLayer; info.layerLoKey = t.layerLoKey; info.layerHiKey = t.layerHiKey;
+    info.isSfzLayer = t.isSfzLayer; info.layerLoKey = t.layerLoKey.load(); info.layerHiKey = t.layerHiKey.load();
     info.linkedMidiDeviceId=t.linkedMidiDeviceId; info.networkMidiDeviceId=t.networkMidiDeviceId; info.networkMidiIsChild=t.networkMidiIsChild; info.networkMidiPeer=t.networkMidiPeer;
     return info;
 }
@@ -939,13 +939,27 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
     // One layer is just the whole instrument: no children needed.
     const bool wantChildren = layers.size() >= 2;
 
-    // Existing layer tracks, by note range, so their clips survive a reload of the same SFZ.
-    auto findExisting = [&] (const SfzLayer& l) -> std::shared_ptr<SequencerTrack>
+    // Match existing layer tracks to the layers so their clips survive: first by note
+    // range, then (a zone that was resized) by name. Unmatched ones are removed.
+    std::vector<std::shared_ptr<SequencerTrack>> assigned (layers.size());
+    std::vector<std::shared_ptr<SequencerTrack>> used;
+    auto isUsed = [&] (const std::shared_ptr<SequencerTrack>& t)
+    { return std::find (used.begin(), used.end(), t) != used.end(); };
+    if (wantChildren)
     {
-        for (auto& t : *current)
-            if (t->isSfzLayer && t->layerLoKey == l.loKey && t->layerHiKey == l.hiKey) return t;
-        return nullptr;
-    };
+        for (size_t i = 0; i < layers.size(); ++i)
+            for (auto& t : *current)
+                if (t->isSfzLayer && ! isUsed (t) && t->layerLoKey.load() == layers[i].loKey && t->layerHiKey.load() == layers[i].hiKey)
+                    { assigned[i] = t; used.push_back (t); break; }
+        for (size_t i = 0; i < layers.size(); ++i)
+            if (assigned[i] == nullptr)
+                for (auto& t : *current)
+                    if (t->isSfzLayer && ! isUsed (t) && t->name == layers[i].name)
+                    {
+                        t->layerLoKey.store (layers[i].loKey); t->layerHiKey.store (layers[i].hiKey);
+                        assigned[i] = t; used.push_back (t); break;
+                    }
+    }
 
     auto next = std::make_shared<Impl::TrackList>();
     next->reserve (current->size() + layers.size());
@@ -956,29 +970,28 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
     {
         if (t->isSfzLayer)
         {
-            bool keep = false;
-            if (wantChildren)
-                for (auto& l : layers)
-                    if (l.loKey == t->layerLoKey && l.hiKey == t->layerHiKey) { keep = true; break; }
-            if (! keep) changed = true;
-            continue;                      // kept layer tracks are re-inserted in order below
+            if (! isUsed (t)) changed = true;   // stale layer track: dropped
+            continue;                            // used ones are re-inserted in order below
         }
 
         next->push_back (t);
         if (t != parent) continue;
 
         if (wantChildren)
-            for (auto& l : layers)
+            for (size_t i = 0; i < layers.size(); ++i)
             {
-                auto child = findExisting (l);
+                auto child = assigned[i];
                 if (child == nullptr)
                 {
-                    child = SequencerTrack::makeSfzLayer (l.name, parent->colour.darker (0.25f), ch, l.loKey, l.hiKey);
+                    child = SequencerTrack::makeSfzLayer (layers[i].name, parent->colour.darker (0.25f), ch,
+                                                          layers[i].loKey, layers[i].hiKey);
                     changed = true;
                 }
-                else if (child->midiChannel.load() != ch)
+                else
                 {
-                    child->midiChannel.store (ch);   // follows the parent's channel
+                    if (child->midiChannel.load() != ch)
+                        child->midiChannel.store (ch);   // follows the parent's channel
+                    child->name = layers[i].name;         // zone renamed
                 }
                 next->push_back (child);
                 ++numLayerTracks;
@@ -1617,8 +1630,8 @@ void SequencerEngine::processBlock (juce::MidiBuffer& outMidi, const juce::MidiB
     {
         // An SFZ layer track only records notes inside its layer's note range.
         const auto& recTrack = *(*tracksSnap)[(size_t) recTi];
-        const int recLo = recTrack.isSfzLayer ? recTrack.layerLoKey : 0;
-        const int recHi = recTrack.isSfzLayer ? recTrack.layerHiKey : 127;
+        const int recLo = recTrack.isSfzLayer ? recTrack.layerLoKey.load() : 0;
+        const int recHi = recTrack.isSfzLayer ? recTrack.layerHiKey.load() : 127;
 
         for (const auto meta : inMidi)
         {
