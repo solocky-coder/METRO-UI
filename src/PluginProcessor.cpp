@@ -3916,6 +3916,25 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         midi = std::move (transformed);
     }
 
+    // ── SFZ layer track selected: live input only plays that zone's notes ────────
+    {
+        int liveLo = 0, liveHi = 127;
+        sequencer.getSelectedLiveNoteRange (liveLo, liveHi);
+        if (liveLo > 0 || liveHi < 127)
+        {
+            juce::MidiBuffer inRange;
+            for (const auto meta : midi)
+            {
+                const auto msg = meta.getMessage();
+                if ((msg.isNoteOn() || msg.isNoteOff())
+                    && (msg.getNoteNumber() < liveLo || msg.getNoteNumber() > liveHi))
+                    continue;
+                inRange.addEvent (msg, meta.samplePosition);
+            }
+            midi = std::move (inRange);
+        }
+    }
+
     // ── Snoop note messages to update active-note bitmask for keyboard display ──
     // Standalone build only. Must run *after* the channel-1 retarget above,
     // not before it: live controller input generally arrives on channel 1

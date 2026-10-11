@@ -130,6 +130,9 @@ struct SequencerEngine::Impl
     std::atomic<bool> midiActivityFlags[SequencerEngine::kActivityFlagCount] = {};
     std::atomic<int>  selectedLiveChannel  { 0 };  // 1-based; 0 = disabled
     std::atomic<SelectedLiveTarget> selectedLiveTarget {}; // player + channel for the selected track
+    // Note range of the selected live-input track: lo | (hi << 8). 0..127 unless an SFZ layer
+    // track is selected, which only plays/records its own zone's notes.
+    std::atomic<int>  selectedLiveNoteRange { 127 << 8 };
     std::atomic<int>  recordingTrackIndex  { -1 }; // which track receives recorded MIDI (-1 = none)
     std::atomic<SequencerEngine::AudioPeerResolver> audioPeerResolver{nullptr}; std::atomic<void*> audioPeerResolverCtx{nullptr}; std::atomic<SequencerEngine::NetworkMidiSink> netSink{nullptr}; std::atomic<void*> netSinkCtx{nullptr}; std::atomic<int> selectedNetworkMidiDevice{0}; std::atomic<int> netLinkState[64]{}; juce::MidiBuffer netScratch;
     void sendNet(int id,const juce::MidiMessage&m) const noexcept { if(auto f=netSink.load(std::memory_order_acquire)) f(netSinkCtx.load(std::memory_order_relaxed),id,m); }
@@ -296,8 +299,17 @@ struct SequencerEngine::Impl
         const double clipLocalEnd   = winEnd   - clipStart;
 
         const juce::ScopedReadLock cl (slot.clip.getLock());
+        // An SFZ layer track plays only the notes of its own zone (note range), even if its
+        // clip holds others (copied/pasted, or the zone was resized afterwards).
+        const bool isLayer = track.isSfzLayer;
+        const int  layerLo = track.layerLoKey.load (std::memory_order_relaxed);
+        const int  layerHi = track.layerHiKey.load (std::memory_order_relaxed);
+
         for (const auto& n : slot.clip.getNotes())
         {
+            if (isLayer && (n.note < layerLo || n.note > layerHi))
+                continue;
+
             const double nStart = (double) n.startTick;
             const double nEnd   = (double) n.endTick();
 
@@ -1200,9 +1212,24 @@ void SequencerEngine::setSelectedTrack (int trackIndex) noexcept
         }
     }
 
+    int noteLo = 0, noteHi = 127;
+    if (juce::isPositiveAndBelow (trackIndex, (int) snap->size()) && (*snap)[(size_t) trackIndex]->isSfzLayer)
+    {
+        noteLo = juce::jlimit (0, 127, (*snap)[(size_t) trackIndex]->layerLoKey.load());
+        noteHi = juce::jlimit (noteLo, 127, (*snap)[(size_t) trackIndex]->layerHiKey.load());
+    }
+    impl->selectedLiveNoteRange.store (noteLo | (noteHi << 8), std::memory_order_relaxed);
+
     impl->selectedNetworkMidiDevice.store(netDevice); impl->selectedLiveTarget.store (target, std::memory_order_relaxed);
     // Keep the legacy channel-only accessor in sync for any remaining callers.
     impl->selectedLiveChannel.store (target.midiChannel, std::memory_order_relaxed);
+}
+
+void SequencerEngine::getSelectedLiveNoteRange (int& lo, int& hi) const noexcept
+{
+    const int packed = impl->selectedLiveNoteRange.load (std::memory_order_relaxed);
+    lo = packed & 0xFF;
+    hi = (packed >> 8) & 0xFF;
 }
 
 SelectedLiveTarget SequencerEngine::getSelectedLiveTarget() const noexcept

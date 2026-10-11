@@ -155,7 +155,10 @@ public:
     void writeToStream(juce::MemoryOutputStream& s) const; bool readFromStream(juce::MemoryInputStream& s);
     void setAbletonLink(AbletonLink* l) noexcept; void setLinkFollowsTransport(bool shouldFollow) noexcept; bool getLinkFollowsTransport() const noexcept;
     void setSfzPlayer(class SfzPlayer* player) noexcept; void setSelectedSfLiveChannels(uint16_t channelMask) noexcept; uint16_t getAllSfPlayerChannelMask() const noexcept;
-    void setSelectedLiveChannel(int ch1Based) noexcept; int getSelectedLiveChannel() const noexcept; void setSelectedTrack(int trackIndex) noexcept; SelectedLiveTarget getSelectedLiveTarget() const noexcept; uint16_t getSfzInstrumentChannelMask() const noexcept;
+    void setSelectedLiveChannel(int ch1Based) noexcept; int getSelectedLiveChannel() const noexcept; void setSelectedTrack(int trackIndex) noexcept; SelectedLiveTarget getSelectedLiveTarget() const noexcept;
+    /** Note range live input may play on the selected track: 0..127 normally, the zone's range
+        when an SFZ layer track is selected. Audio thread safe. */
+    void getSelectedLiveNoteRange (int& lo, int& hi) const noexcept; uint16_t getSfzInstrumentChannelMask() const noexcept;
     void setRecordingTrack(int trackIndex) noexcept; int getRecordingTrackIndex() const noexcept; void drainRecordedEvents();
     static constexpr int kActivityFlagCount = 64; bool getMidiActivityAndClear(int trackIndex) noexcept;
 
