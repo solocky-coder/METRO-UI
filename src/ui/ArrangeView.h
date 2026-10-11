@@ -1011,7 +1011,19 @@ public:
         }
         else
         {
-            scrollX = juce::jmax (0.0, scrollX - w.deltaY * 80.0);
+            // Plain wheel scrolls the track list up/down when there are more rows than fit
+            // (e.g. an SFZ with many layer tracks); otherwise it keeps scrolling the timeline.
+            const int totalH = trackStrip.getVisibleTrackCount() * trackH;
+            const int viewH  = clipGridBounds.getHeight();
+            if (totalH > viewH && w.deltaY != 0.0f)
+                scrollY = juce::jlimit (0, juce::jmax (0, totalH - viewH),
+                                        scrollY - (int) (w.deltaY * 160.0));
+            else
+                scrollX = juce::jmax (0.0, scrollX - w.deltaY * 80.0);
+
+            // Trackpad / tilt-wheel sideways motion always moves the timeline.
+            if (w.deltaX != 0.0f)
+                scrollX = juce::jmax (0.0, scrollX - w.deltaX * 200.0);
         }
         updateScrollRanges();
         repaint();
