@@ -292,12 +292,14 @@ public:
     void paint (juce::Graphics& g) override
     {
         if (GlassStyle::on())
-            GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));
+        {
+            GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));   // floating rounded transport card
+        }
         else
         {
-            g.fillAll (Base::SurfaceAlt);
-            g.setColour (Base::Border);
-            g.fillRect (getLocalBounds().removeFromBottom (1));
+        g.fillAll (Base::SurfaceAlt);
+        g.setColour (Base::Border);
+        g.fillRect (getLocalBounds().removeFromBottom (1));
         }
 
         // Locator captions, painted the same way FloatingTransportBar's

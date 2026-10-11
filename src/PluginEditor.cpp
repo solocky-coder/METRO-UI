@@ -1292,7 +1292,7 @@ static juce::Rectangle<float> waveformFrameRect (const DysektEditor& ed,
 void DysektEditor::paint (juce::Graphics& g)
 {
  g.fillAll (getTheme().background);
- GlassStyle::paintAmbient (g, getLocalBounds());
+ GlassStyle::paintAmbient (g, getLocalBounds());   // glass theme only; no-op otherwise
 
  // Draw the CRT frame in waveform mode, or whenever trim mode forces the waveform visible
  const bool wvVisible  = waveformView.isVisible() && waveformView.getHeight() > 0;

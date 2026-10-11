@@ -437,10 +437,10 @@ void SfzPlayer::applyFluidLfoFromUi()
 
     for (int ch = 2; ch < 16; ++ch)
     {
-        fluid_synth_set_gen (synth, ch, GEN_FREQMODLFO,    rateOffsetCents);
+        fluid_synth_set_gen (synth, ch, GEN_MODLFOFREQ,    rateOffsetCents);
         fluid_synth_set_gen (synth, ch, GEN_MODLFOTOPITCH, pitch);
         fluid_synth_set_gen (synth, ch, GEN_MODLFOTOVOL,   vol);
-        fluid_synth_set_gen (synth, ch, GEN_MODLFOTOFC,    cut);
+        fluid_synth_set_gen (synth, ch, GEN_MODLFOTOFILTERFC,    cut);
     }
 #endif
 }

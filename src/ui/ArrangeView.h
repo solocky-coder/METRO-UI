@@ -2772,16 +2772,24 @@ private:
             : info.colour;
 
         if (GlassStyle::on())
+        {
+            // Glass theme: translucent rounded clip, soft top sheen, 1px edge in the
+            // track colour (accent + thicker edge when selected).
             GlassStyle::paintClip (g, clipR.toFloat().reduced (1.0f, 1.5f), info.colour, isSel, muted);
+        }
         else
         {
-            g.setColour (tile);
-            g.fillRect (clipR.reduced (1, 1));
-            if (isSel)
-            {
-                g.setColour (getTheme().accent);
-                g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
-            }
+        g.setColour (tile);
+        g.fillRect (clipR.reduced (1, 1));
+
+        // Selection reads as a single accent-colour edge line rather than a
+        // brightened outline — an outline implies "this shape has a
+        // border", which doesn't fit tiles that otherwise have none.
+        if (isSel)
+        {
+            g.setColour (getTheme().accent);
+            g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
+        }
         }
 
         // Track name
@@ -2861,13 +2869,8 @@ private:
             ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
             : info.colour;
 
-        if (GlassStyle::on())
-            GlassStyle::paintClip (g, clipR.toFloat().reduced (1.0f, 1.5f), info.colour, isSel, muted);
-        else
-        {
-            g.setColour (tile);
-            g.fillRect (clipR.reduced (1, 1));
-        }
+        g.setColour (tile);
+        g.fillRect (clipR.reduced (1, 1));
 
         // Waveform, decoded from the recording itself — see
         // getAudioClipWaveform()/paintAudioClipWaveform() below. Peaks are
@@ -2875,7 +2878,7 @@ private:
         // re-decode on every repaint.
         paintAudioClipWaveform (g, clipR, clip.filePath, muted);
 
-        if (isSel && ! GlassStyle::on())
+        if (isSel)
         {
             g.setColour (getTheme().accent);
             g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);

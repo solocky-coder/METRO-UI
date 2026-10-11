@@ -405,7 +405,7 @@ void DysektLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text
 {
     // Flattened — was a fixed 2.0f radius regardless of theme; now square
     // corners everywhere, in line with the rest of the shape language.
-    const float r = getTheme().glass ? getTheme().cornerRadius : 0.0f;
+    const float r = 0.0f;
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
 
     g.setColour (getTheme().darkBar.brighter (0.10f));
@@ -574,7 +574,7 @@ void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int
     const bool focused = te.hasKeyboardFocus (true);
     g.setColour (focused ? getTheme().accent
                           : getTheme().separator.withAlpha (0.60f));
-    g.drawRoundedRectangle (bounds, getTheme().glass ? getTheme().cornerRadius : 0.0f, focused ? 1.4f : 1.0f);
+    g.drawRoundedRectangle (bounds, 0.0f, focused ? 1.4f : 1.0f);
 }
 
 //==============================================================================
