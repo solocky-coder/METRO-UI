@@ -1,4 +1,5 @@
 #include "ShortcutsPanel.h"
+#include "GlassStyle.h"
 #include <BinaryData.h>
 #include "DysektLookAndFeel.h"
 #include "../PluginProcessor.h"
@@ -329,7 +330,7 @@ void ShortcutsPanel::paint (juce::Graphics& g)
     g.fillAll (juce::Colours::black.withAlpha (0.55f));
 
     auto panel = getLocalBounds().reduced (24, 20);
-    const bool metro = (getTheme().name == "metro");
+    const bool metro = ((getTheme().name == "metro" || getTheme().glass));
     g.setColour (getTheme().header);
     g.fillRect (panel);
     g.setColour (metro ? getTheme().separator : getTheme().accent.withAlpha (0.5f));

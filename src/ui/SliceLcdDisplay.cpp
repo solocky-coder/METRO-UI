@@ -1,4 +1,5 @@
 #include "SliceLcdDisplay.h"
+#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "LcdColours.h"
 #include "UIHelpers.h"
@@ -474,7 +475,7 @@ void SliceLcdDisplay::drawFlagsRow (juce::Graphics& g, int /*row*/)
 
         fillPhosphorFlag (g, box.toFloat(), pal.phosphor, pal.flagBg, f.on, 0.0f);
         g.setColour (f.on ? pal.flagOn : pal.flagOff);
-        g.drawRoundedRectangle(box.toFloat(), 0.0f, 1.0f);
+        g.drawRoundedRectangle(box.toFloat(), GlassStyle::radius(), 1.0f);
         g.drawText (f.text, box.getX() + pad, box.getY(),
                     box.getWidth() - pad * 2, box.getHeight(),
                     juce::Justification::centred, false);
@@ -732,11 +733,12 @@ void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
 void SliceLcdDisplay::paint (juce::Graphics& g)
 {
     // Fill corners with plugin background before clipping so no white dots appear.
-    g.fillAll (getTheme().background);
+    if (! GlassStyle::on()) g.fillAll (getTheme().background);   // glass: let the rounded frame + window glow show at the corners
     // Clip to rounded LCD boundary.
     {
         juce::Path clipPath;
-        const float clipRadius = getTheme().name == "metro" ? 0.0f : 4.0f;
+        const float clipRadius = getTheme().glass ? getTheme().cornerRadius
+                                               : (getTheme().name == "metro" ? 0.0f : 4.0f);   // glass frame is rounded, so clip to match
         clipPath.addRoundedRectangle (getLocalBounds().toFloat(), clipRadius);
         g.reduceClipRegion (clipPath);
     }
@@ -749,7 +751,7 @@ void SliceLcdDisplay::paint (juce::Graphics& g)
     // ── Clip all row drawing to the inner screen ─────────────────────────────
     auto screen = getLocalBounds().reduced (4);
     g.saveState();
-    g.reduceClipRegion (screen);
+    GlassStyle::reduceClip (g, screen);
 
     // ── Row 0:  Header — centred: "SL xx / xx  SAMPLENAME" ──────────────────
     {
@@ -801,9 +803,9 @@ void SliceLcdDisplay::paint (juce::Graphics& g)
             const int lkY = y + 1;
             const int lkH = rowH - 3;
             g.setColour (pal.phosphor.withAlpha (0.25f));
-            g.fillRoundedRectangle((float) lkX, (float) lkY, (float) lkW, (float) lkH, 0.0f);
+            g.fillRoundedRectangle((float) lkX, (float) lkY, (float) lkW, (float) lkH, GlassStyle::radius());
             g.setColour (pal.highlight);
-            g.drawRoundedRectangle((float) lkX, (float) lkY, (float) lkW, (float) lkH, 0.0f, 1.0f);
+            g.drawRoundedRectangle((float) lkX, (float) lkY, (float) lkW, (float) lkH, GlassStyle::radius(), 1.0f);
             g.setFont (lkF);
             g.setColour (pal.highlight);
             g.drawText (lkStr, lkX + 3, lkY, lkW - 6, lkH, juce::Justification::centred, false);

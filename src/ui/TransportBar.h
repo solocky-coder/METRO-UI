@@ -306,7 +306,8 @@ public:
         // paint() draws its own "L"/"R" — outside the editable field so the
         // numeric value inside stays centred.
         g.setColour (Text::Muted);
-        g.setFont (MetroTypography::caption());
+        // Glass uses the app's Barlow Condensed (via makeFont) instead of Metro's Segoe UI caption.
+        g.setFont (GlassStyle::on() ? DysektLookAndFeel::makeFont (11.0f) : MetroTypography::caption());
         g.drawText ("L", leftLocatorLabel.getBounds().translated (-14, 0).withWidth (14),
                     juce::Justification::centred);
         g.drawText ("R", rightLocatorLabel.getBounds().translated (-14, 0).withWidth (14),

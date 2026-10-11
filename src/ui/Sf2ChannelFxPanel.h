@@ -60,6 +60,7 @@
 #include "../audio/SfzPlayer.h"
 #include "ThemeData.h"
 #include "DysektLookAndFeel.h"
+#include "GlassStyle.h"
 #include "UIHelpers.h"
 
 class Sf2ChannelFxPanel  : public juce::Component,
@@ -145,8 +146,10 @@ public:
         // panel (no other call site — checked), so a textured background
         // here reads as a visual seam between two different UI languages
         // rather than one continuous column 3. Flat fill to match.
-        const auto theme = ThemeData::darkTheme();
-        g.fillAll (juce::Colour::fromString ("FF080e12"));
+        // Glass theme: follow the active theme and stay transparent so the workspace card shows through.
+        const auto theme = GlassStyle::on() ? getTheme() : ThemeData::darkTheme();
+        if (! GlassStyle::on())
+            g.fillAll (juce::Colour::fromString ("FF080e12"));
 
         const int numActive = countActiveBits();
         if (numActive == 0)

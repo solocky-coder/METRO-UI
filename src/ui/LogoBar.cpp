@@ -1,4 +1,5 @@
 #include "LogoBar.h"
+#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include <BinaryData.h>
@@ -70,7 +71,7 @@ void LogoBar::paint (juce::Graphics& g)
     const auto& accent = getTheme().accent;
     const juce::Rectangle<float> fr (getLocalBounds().toFloat().withTrimmedTop (3.0f));
 
-    if (getTheme().name == "metro")
+    if ((getTheme().name == "metro" || getTheme().glass))
     {
         // Metro: single flat 1px square border, no glow/gloss (per manual —
         // "Borders 1 px only. Corners Square. Gloss None.").
@@ -80,10 +81,10 @@ void LogoBar::paint (juce::Graphics& g)
     else
     {
         g.setColour (accent.withAlpha (0.18f));
-        g.drawRoundedRectangle(fr.expanded (0.5f), 0.0f, 1.0f);
+        g.drawRoundedRectangle(fr.expanded (0.5f), GlassStyle::radius(), 1.0f);
         g.setColour (accent);
-        g.drawRoundedRectangle(fr.reduced (0.5f), 0.0f, 1.5f);
+        g.drawRoundedRectangle(fr.reduced (0.5f), GlassStyle::radius(), 1.5f);
         g.setColour (accent.withAlpha (0.15f));
-        g.drawRoundedRectangle(fr.reduced (2.0f), 0.0f, 1.0f);
+        g.drawRoundedRectangle(fr.reduced (2.0f), GlassStyle::radius(), 1.0f);
     }
 }

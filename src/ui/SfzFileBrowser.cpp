@@ -2,6 +2,7 @@
 //  SfzFileBrowser.cpp  —  Implementation of the self-contained directory browser
 // =============================================================================
 #include "SfzFileBrowser.h"
+#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include <algorithm>
 
@@ -21,8 +22,8 @@ static void drawFolderGlyph (juce::Graphics& g, juce::Rectangle<float> box, juce
     const float bodyY = box.getY() + tabH;
 
     g.setColour (colour);
-    g.fillRoundedRectangle (box.getX(), box.getY(), tabW, tabH, 0.0f);
-    g.fillRoundedRectangle (box.getX(), bodyY, box.getWidth(), box.getBottom() - bodyY, 0.0f);
+    g.fillRoundedRectangle (box.getX(), box.getY(), tabW, tabH, GlassStyle::radius());
+    g.fillRoundedRectangle (box.getX(), bodyY, box.getWidth(), box.getBottom() - bodyY, GlassStyle::radius());
 }
 
 // =============================================================================
@@ -69,7 +70,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
 
     // Background
     g.setColour (theme.darkBar.darker (0.45f));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), GlassStyle::radius());
 
     // Breadcrumb bar background
     g.setColour (theme.darkBar.darker (0.20f));
@@ -82,7 +83,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
         if (upHover)
         {
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle (upBtnZone.toFloat(), 0.0f);
+            g.fillRoundedRectangle (upBtnZone.toFloat(), GlassStyle::radius());
         }
         g.setFont (DysektLookAndFeel::makeFont (14.0f * sf));
         g.setColour (canGoUp ? theme.accent.withAlpha (0.90f)
@@ -596,7 +597,7 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
             const auto badgeRect = juce::Rectangle<int> (w - badgeW - juce::roundToInt (4 * sf),
                                                           (h - badgeH) / 2, badgeW, badgeH);
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.fillRoundedRectangle (badgeRect.toFloat(), 0.0f);
+            g.fillRoundedRectangle (badgeRect.toFloat(), GlassStyle::radius());
             g.setFont (DysektLookAndFeel::makeFont (10.0f * sf));
             g.setColour (theme.accent.withAlpha (0.80f));
             g.drawText (ext, badgeRect, juce::Justification::centred, false);

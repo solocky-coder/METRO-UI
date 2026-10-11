@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_graphics/juce_graphics.h>
+#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 
 // ── Fixed black STN-LCD palette ──────────────────────────────────────────────
@@ -24,7 +25,7 @@ namespace LcdColours
     static const juce::Colour kOutline  { 0xFF1C3A12 };
 
     // ── Metro helpers ─────────────────────────────────────────────────────
-    static inline bool currentThemeIsMetro() { return getTheme().name == "metro"; }
+    static inline bool currentThemeIsMetro() { return (getTheme().name == "metro" || getTheme().glass); }
     static inline juce::Colour metroWaveformBg() { return getTheme().waveformBg; }
     static inline juce::Colour metroSeparator()  { return getTheme().separator; }
 
@@ -73,9 +74,9 @@ namespace LcdColours
         if (currentThemeIsMetro())
         {
             g.setColour (metroWaveformBg());
-            g.fillRoundedRectangle (b.toFloat(), 0.0f);
+            g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
             g.setColour (metroSeparator());
-            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
+            g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
             return;
         }
 
@@ -83,26 +84,26 @@ namespace LcdColours
         juce::ColourGradient outerGrad (juce::Colour (0xFF131313), 0, 0,
                                          juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
         g.setGradientFill (outerGrad);
-        g.fillRoundedRectangle(b.toFloat(), 0.0f);
+        g.fillRoundedRectangle(b.toFloat(), GlassStyle::radius());
         // Main LCD frame border — dark green bezel
         g.setColour (kOutline);
-        g.drawRoundedRectangle(b.toFloat().reduced (0.5f), 0.0f, 1.5f);
+        g.drawRoundedRectangle(b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.5f);
 
         // ── Outer backlight glow — faint ink-coloured spill onto the chassis ──
         g.setColour (juce::Colour (0x306BFF4A));      // tight, low opacity
-        g.drawRoundedRectangle(b.toFloat().expanded (1.0f), 0.0f, 3.0f);
+        g.drawRoundedRectangle(b.toFloat().expanded (1.0f), GlassStyle::radius(), 3.0f);
         g.setColour (juce::Colour (0x186BFF4A));      // wide, lower opacity
-        g.drawRoundedRectangle(b.toFloat().expanded (4.0f), 0.0f, 6.0f);
+        g.drawRoundedRectangle(b.toFloat().expanded (4.0f), GlassStyle::radius(), 6.0f);
 
         // ── Inner screen — solid near-black fill with a subtle top glow ─────
         auto screen = b.reduced (4);
         g.setColour (kBgMid);
-        g.fillRoundedRectangle(screen.toFloat(), 0.0f);
+        g.fillRoundedRectangle(screen.toFloat(), GlassStyle::radius());
 
         juce::ColourGradient glow (pal.phosphor.withAlpha (0.06f), 0, (float) screen.getY(),
                                     juce::Colours::transparentBlack, 0, (float) (screen.getY() + 20), false);
         g.setGradientFill (glow);
-        g.fillRoundedRectangle(screen.toFloat(), 0.0f);
+        g.fillRoundedRectangle(screen.toFloat(), GlassStyle::radius());
 
         // ── Scanline texture — subtle physical-screen feel ──────────────────
         g.setColour (pal.scanline.withAlpha ((uint8_t) scanlineAlpha));
@@ -110,6 +111,6 @@ namespace LcdColours
             g.drawHorizontalLine (y, (float) screen.getX(), (float) screen.getRight());
 
         g.setColour (kOutline.withAlpha (0.5f));
-        g.drawRoundedRectangle(screen.toFloat().expanded (0.5f), 0.0f, 1.0f);
+        g.drawRoundedRectangle(screen.toFloat().expanded (0.5f), GlassStyle::radius(), 1.0f);
     }
 }

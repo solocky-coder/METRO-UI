@@ -7,6 +7,7 @@
 //  deliberate compatibility deviation; it has no separate control in the SVG.
 // =============================================================================
 #include "Sf2InstrumentWorkspace.h"
+#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
@@ -70,17 +71,37 @@ public:
         if (rowIsSelected || isCurrent)
         {
             const auto highlightColour = assigned ? presetColour : theme.accent;
+            if (GlassStyle::on())
+            {
+                g.setColour (highlightColour.withAlpha (0.20f));
+                g.fillRoundedRectangle (row.toFloat().reduced (2.0f, 1.0f), GlassStyle::radius());
+                g.setColour (highlightColour);
+                g.fillRoundedRectangle (row.removeFromLeft (4).toFloat().reduced (0.0f, 4.0f), 2.0f);
+            }
+            else
+            {
             g.setColour (highlightColour.withAlpha (0.16f));
             g.fillRect (row);
             g.setColour (highlightColour);
             g.fillRect (row.removeFromLeft (4));
+            }
         }
         else if (assigned)
         {
+            if (GlassStyle::on())
+            {
+                g.setColour (presetColour.withAlpha (0.10f));
+                g.fillRoundedRectangle (row.toFloat().reduced (2.0f, 1.0f), GlassStyle::radius());
+                g.setColour (presetColour.withAlpha (0.78f));
+                g.fillRoundedRectangle (row.removeFromLeft (4).toFloat().reduced (0.0f, 4.0f), 2.0f);
+            }
+            else
+            {
             g.setColour (presetColour.withAlpha (0.08f));
             g.fillRect (row);
             g.setColour (presetColour.withAlpha (0.78f));
             g.fillRect (row.removeFromLeft (4));
+            }
         }
 
         auto textArea = row.reduced (12, 0);
@@ -153,11 +174,16 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour::fromString ("FF0a1216"));
+        const bool glass = GlassStyle::on();
+        if (glass) GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (1.0f), 0.55f);
+        else       g.fillAll (juce::Colour::fromString ("FF0a1216"));
         for (auto& k : keyRects) if (! k.isBlack) drawKey (g, k);
         for (auto& k : keyRects) if (k.isBlack)   drawKey (g, k);
-        g.setColour (juce::Colour::fromString ("FF263b45"));
-        g.drawRect (getLocalBounds(), 1);
+        if (! glass)
+        {
+            g.setColour (juce::Colour::fromString ("FF263b45"));
+            g.drawRect (getLocalBounds(), 1);
+        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override { handlePress (e.getPosition()); }
@@ -345,6 +371,19 @@ private:
     {
         const auto& theme = getTheme();
         const bool active = k.note == heldNote || isNoteActive (k.note);
+
+        if (theme.glass)
+        {
+            // Glass: keys come from the theme (light = foreground, dark = near-black chassis), softly rounded.
+            juce::Colour gbase = k.isBlack ? theme.background.darker (0.5f) : theme.foreground.withMultipliedBrightness (0.97f);
+            if (active) gbase = theme.accent;
+            const auto kb = k.bounds.toFloat().reduced (0.5f);
+            g.setColour (gbase);
+            g.fillRoundedRectangle (kb, theme.cornerRadius * 0.5f);
+            g.setColour (theme.separator.withAlpha (0.9f));
+            g.drawRoundedRectangle (kb, theme.cornerRadius * 0.5f, 1.0f);
+            return;
+        }
 
         juce::Colour base = k.isBlack ? juce::Colour::fromString ("FF10181c")
                                        : juce::Colour::fromString ("FFe8edf0");
@@ -967,6 +1006,15 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
 void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
 {
     const auto& theme = getTheme();
+    if (GlassStyle::on())
+    {
+        // Glass theme: workspace is a rounded card on the ambient glow; top bar is a darker rounded strip.
+        GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));
+        g.setColour (theme.darkBar.withAlpha (0.65f));
+        g.fillRoundedRectangle (topBarZone.toFloat().reduced (5.0f, 3.0f), GlassStyle::radius());
+    }
+    else
+    {
     g.fillAll (juce::Colour::fromString ("FF080e12"));   // mockup's literal panel bg
     g.setColour (juce::Colour::fromString ("FF263b45"));
     g.drawRect (getLocalBounds(), 2);
@@ -974,6 +1022,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     // ── Top bar ─────────────────────────────────────────────────────────────
     g.setColour (juce::Colour::fromString ("FF10191e"));
     g.fillRect (topBarZone);
+    }
     g.setColour (theme.foreground.withAlpha (0.8f));
     g.setFont (DysektLookAndFeel::makeFont (18.f, true));
     g.drawText ("SF2 INSTRUMENT PANEL", topBarZone.withTrimmedLeft (16),
@@ -982,11 +1031,11 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     if (! loadedPillZone.isEmpty())
     {
         const bool loaded = processor.sfzPlayer.getLoadedFile().existsAsFile();
-        g.setColour (juce::Colour::fromString ("FF142c34"));
-        g.fillRoundedRectangle (loadedPillZone.toFloat(), 3.f);
+        g.setColour (theme.glass ? theme.button : juce::Colour::fromString ("FF142c34"));
+        g.fillRoundedRectangle (loadedPillZone.toFloat(), theme.glass ? theme.cornerRadius : 3.f);
         g.setColour (loaded ? juce::Colour::fromString ("FF83d96b") : theme.foreground.withAlpha (0.3f));
         g.fillEllipse (loadedPillZone.getX() + 10.f, loadedPillZone.getCentreY() - 4.f, 8.f, 8.f);
-        g.setColour (juce::Colour::fromString ("FFc9efd0"));
+        g.setColour (theme.glass ? theme.foreground : juce::Colour::fromString ("FFc9efd0"));
         g.setFont (DysektLookAndFeel::makeFont (14.f, true));
         g.drawText (loaded ? "SOUNDFONT LOADED" : "NO SOUNDFONT",
                     loadedPillZone.withTrimmedLeft (24), juce::Justification::centredLeft);

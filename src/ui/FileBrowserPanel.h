@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "GlassStyle.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "DysektLookAndFeel.h"
@@ -121,7 +122,7 @@ public:
                 const auto badgeRect = juce::Rectangle<int> (width - badgeW - juce::roundToInt (4 * sf),
                                                               (height - badgeH) / 2, badgeW, badgeH);
                 g.setColour (t.accent.withAlpha (0.18f));
-                g.fillRoundedRectangle(badgeRect.toFloat(), 0.0f);
+                g.fillRoundedRectangle(badgeRect.toFloat(), GlassStyle::radius());
                 g.setFont (juce::Font (juce::FontOptions{}.withHeight (10.0f * sf)));
                 g.setColour (t.accent.withAlpha (0.80f));
                 g.drawText (ext, badgeRect, juce::Justification::centred, false);

@@ -1,4 +1,5 @@
 #include "SliceControlBar.h"
+#include "GlassStyle.h"
 
 // Synthetic field ID for the GLIDE cell — not in DysektProcessor::SliceParamField enum
 // because it maps directly to VoicePool::legatoGlideMs (global, not per-slice).
@@ -47,7 +48,7 @@ static void fillGlassBadge (juce::Graphics& g, juce::Rectangle<float> bounds,
                              juce::Colour fillColour, float /*radius*/)
 {
     g.setColour (fillColour);
-    g.fillRoundedRectangle (bounds, 0.0f);
+    g.fillRoundedRectangle (bounds, GlassStyle::radius());
 }
 
 namespace
@@ -835,7 +836,7 @@ void SliceControlBar::drawMidiLearnCell (juce::Graphics& g, int x, int y,
  if (armed)
  {
  g.setColour (getTheme().accent.withAlpha (0.2f));
- g.fillRoundedRectangle ((float) x, (float) y, (float) cellW, (float) cellH, 0.0f);
+ g.fillRoundedRectangle ((float) x, (float) y, (float) cellW, (float) cellH, GlassStyle::radius());
  }
 
  g.setColour (armed ? getTheme().accent
@@ -924,14 +925,14 @@ void SliceControlBar::paint (juce::Graphics& g)
  auto b = getLocalBounds();
 
  g.setColour (juce::Colour (0xFF0F0F0F));
- g.fillRoundedRectangle (b.toFloat(), 0.0f);
+ g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
 
  g.setColour (getTheme().separator);
- g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
+ g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
 
  auto screen = b.reduced (4);
  g.setColour (getTheme().darkBar.darker (0.55f));
- g.fillRoundedRectangle (screen.toFloat(), 0.0f);
+ g.fillRoundedRectangle (screen.toFloat(), GlassStyle::radius());
 
  g.setColour (juce::Colours::black.withAlpha (0.18f));
  for (int y = screen.getY(); y < screen.getBottom(); y += 2)
@@ -2508,7 +2509,7 @@ void SliceControlBar::drawChroBadgeCell (juce::Graphics& g, int x, int y,
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : (locked ? theme.lockActive.withAlpha (0.5f)
                                   : theme.foreground.withAlpha (0.22f)));
-    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
+    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, GlassStyle::radius(), 0.8f);
 
     g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
@@ -2551,7 +2552,7 @@ void SliceControlBar::drawMixerToggleCell (juce::Graphics& g, int x, int y,
     fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
                     col.withAlpha (on ? 0.15f : 0.08f), 0.0f);
     g.setColour (col);
-    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
+    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, GlassStyle::radius(), 0.8f);
 
     g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
     g.setColour (col);
@@ -2596,7 +2597,7 @@ void SliceControlBar::drawLegatoToggleCell (juce::Graphics& g, int x, int y,
     fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
                     col.withAlpha (on ? 0.15f : 0.08f), 0.0f);
     g.setColour (col);
-    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
+    g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, GlassStyle::radius(), 0.8f);
 
     g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
     g.setColour (col);

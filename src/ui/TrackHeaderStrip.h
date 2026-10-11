@@ -222,11 +222,11 @@ public:
             // colour language most of the time. Now all three literally
             // share on/off colours with the inspector's copy.
             g.setColour (info.enabled  ? kMuteAccent.darker (0.55f)   : kMuteAccent);
-            g.fillRoundedRectangle (muteR.toFloat(), 0.0f);
+            g.fillRoundedRectangle (muteR.toFloat(), GlassStyle::radius() * 0.6f);
             g.setColour (info.solo     ? kSoloAccent                  : kSoloAccent.darker (0.55f));
-            g.fillRoundedRectangle (soloR.toFloat(), 0.0f);
+            g.fillRoundedRectangle (soloR.toFloat(), GlassStyle::radius() * 0.6f);
             g.setColour (recordArmed   ? kRecordAccent                : kRecordAccent.darker (0.55f));
-            g.fillRoundedRectangle (recR.toFloat(), 0.0f);
+            g.fillRoundedRectangle (recR.toFloat(), GlassStyle::radius() * 0.6f);
 
             g.setColour (juce::Colours::white.withAlpha (0.7f));
             g.setFont (juce::Font (juce::jlimit (10.5f, 16.5f, (float)trackH * 0.22f), juce::Font::bold));

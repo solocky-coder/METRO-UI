@@ -1,4 +1,5 @@
 #include "GlobalEqPanel.h"
+#include "GlassStyle.h"
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 #include "ThemeData.h"
@@ -58,12 +59,12 @@ void GlobalEqPanel::paint (juce::Graphics& g)
 
     // ── Theme-aware frame: gradient background + accent border ────────────────
     {
-        if (theme.name == "metro")
+        if ((theme.name == "metro" || theme.glass))
         {
             g.setColour (theme.waveformBg);
-            g.fillRoundedRectangle (bounds, 0.0f);
+            g.fillRoundedRectangle (bounds, GlassStyle::radius());
             g.setColour (theme.separator);
-            g.drawRoundedRectangle (bounds.reduced (0.5f), 0.0f, 1.0f);
+            g.drawRoundedRectangle (bounds.reduced (0.5f), GlassStyle::radius(), 1.0f);
         }
         else
         {
@@ -71,14 +72,14 @@ void GlobalEqPanel::paint (juce::Graphics& g)
             auto bgBot = theme.darkBar.darker (0.65f);
             juce::ColourGradient grad (bgTop, 0, 0, bgBot, 0, bounds.getHeight(), false);
             g.setGradientFill (grad);
-            g.fillRoundedRectangle(bounds, 0.0f);
+            g.fillRoundedRectangle(bounds, GlassStyle::radius());
 
             // Outer glow ring
             g.setColour (theme.accent.withAlpha (0.18f));
-            g.drawRoundedRectangle(bounds.expanded (1.0f), 0.0f, 1.0f);
+            g.drawRoundedRectangle(bounds.expanded (1.0f), GlassStyle::radius(), 1.0f);
             // Main accent border
             g.setColour (theme.accent.withAlpha (0.60f));
-            g.drawRoundedRectangle(bounds.reduced (0.5f), 0.0f, 1.5f);
+            g.drawRoundedRectangle(bounds.reduced (0.5f), GlassStyle::radius(), 1.5f);
         }
     }
 
@@ -176,7 +177,7 @@ void GlobalEqPanel::paint (juce::Graphics& g)
     // Filled area — the soft glow-under-curve look. Metro skips this; its
     // flat aesthetic doesn't carry translucent fills the way the gradient
     // themes do, so a bare stroke reads cleaner against the flat frame.
-    if (theme.name != "metro")
+    if ((theme.name != "metro" && !theme.glass))
     {
         auto filled = curve;
         filled.lineTo (plot.getRight(), gainToY (0.f));
@@ -188,8 +189,8 @@ void GlobalEqPanel::paint (juce::Graphics& g)
 
     // Curve stroke — slightly thinner and fuller-alpha for Metro, matching
     // its flat/precise line language rather than the softer glow strokes.
-    g.setColour (theme.accent.withAlpha (theme.name == "metro" ? 0.95f : 0.85f));
-    g.strokePath (curve, juce::PathStrokeType (theme.name == "metro" ? 1.4f : 1.8f,
+    g.setColour (theme.accent.withAlpha ((theme.name == "metro" || theme.glass) ? 0.95f : 0.85f));
+    g.strokePath (curve, juce::PathStrokeType ((theme.name == "metro" || theme.glass) ? 1.4f : 1.8f,
                           juce::PathStrokeType::curved,
                           juce::PathStrokeType::rounded));
 
@@ -210,7 +211,7 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         auto  col = theme.accent.withAlpha (bandAlpha[i]);
         const bool active = (dragBand == i || hoverBand == i);
 
-        if (theme.name == "metro")
+        if ((theme.name == "metro" || theme.glass))
         {
             // Flat Metro tile, same restraint as TransportLAF: no shadow,
             // no gradient — a semantic-tinted fill and a hairline border
@@ -244,7 +245,7 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         // Label inside node — Metro's flat fill is lighter than the
         // gradient themes' full-saturation fill, so a background-colour
         // label doesn't read; use foreground instead.
-        g.setColour (theme.name == "metro" ? theme.foreground.withAlpha (0.90f)
+        g.setColour ((theme.name == "metro" || theme.glass) ? theme.foreground.withAlpha (0.90f)
                                             : theme.background.withAlpha (0.90f));
         g.setFont (DysektLookAndFeel::makeFont (8.f, true));
         g.drawText (bandLabels[i],

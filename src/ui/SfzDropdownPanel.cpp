@@ -2,6 +2,7 @@
 //  SfzDropdownPanel.cpp  —  SF2 / SFZ instrument strip with inline file browser
 // =============================================================================
 #include "SfzDropdownPanel.h"
+#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
@@ -409,18 +410,18 @@ void SfzDropdownPanel::paint (juce::Graphics& g)
     // Full background
     {
         const auto bounds = getLocalBounds().toFloat();
-        if (theme.name == "metro")
+        if ((theme.name == "metro" || theme.glass))
         {
             // Flat, square, no gradient — manual forbids gloss/glow/gradient.
             g.setColour (theme.darkBar);
-            g.fillRoundedRectangle (bounds, 0.0f);
+            g.fillRoundedRectangle (bounds, GlassStyle::radius());
         }
         else
         {
             juce::ColourGradient bg (theme.darkBar.darker (0.35f), 0.f, 0.f,
                                       theme.darkBar.darker (0.10f), 0.f, (float) h, false);
             g.setGradientFill (bg);
-            g.fillRoundedRectangle(bounds, 0.0f);
+            g.fillRoundedRectangle(bounds, GlassStyle::radius());
         }
 
         const int sepY = kStripH;
@@ -640,7 +641,7 @@ void SfzDropdownPanel::drawMeter (juce::Graphics& g) const
     auto leftBar  = juce::Rectangle<int> (area.getX(),              area.getY(), barW, barH);
     auto rightBar = juce::Rectangle<int> (area.getX() + barW + 4,  area.getY(), barW, barH);
 
-    const bool metroMeter = (theme.name == "metro");
+    const bool metroMeter = ((theme.name == "metro" || theme.glass));
     const float meterR = 0.0f;   // flat, all themes
 
     g.setColour (theme.darkBar.darker (0.2f));
@@ -657,14 +658,14 @@ void SfzDropdownPanel::drawMeter (juce::Graphics& g) const
             {
                 // Flat single colour — manual forbids gradient fills.
                 g.setColour (theme.accent);
-                g.fillRoundedRectangle (fillArea, 0.0f);
+                g.fillRoundedRectangle (fillArea, GlassStyle::radius());
             }
             else
             {
                 juce::ColourGradient grad (theme.accent.withAlpha (0.85f), 0.f, (float) bar.getBottom(),
                                             theme.accent.brighter (0.5f),  0.f, (float) bar.getY(), false);
                 g.setGradientFill (grad);
-                g.fillRoundedRectangle(fillArea, 0.0f);
+                g.fillRoundedRectangle(fillArea, GlassStyle::radius());
             }
         }
         const int holdY = bar.getBottom() - juce::roundToInt ((float) bar.getHeight()

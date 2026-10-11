@@ -17,6 +17,15 @@ namespace GlassStyle
     inline bool  on()     { return getTheme().glass; }
     inline float radius() { return getTheme().glass ? getTheme().cornerRadius : 0.0f; }
 
+    /** One soft radial blob of colour, used to build the cached ambient-glow image. */
+    inline void glowBlob (juce::Graphics& ig, juce::Rectangle<int> area, juce::Colour c,
+                          float cx, float cy, float rad, float alpha)
+    {
+        juce::ColourGradient grad (c.withAlpha (alpha), cx, cy, c.withAlpha (0.0f), cx + rad, cy, true);
+        ig.setGradientFill (grad);
+        ig.fillRect (area);
+    }
+
     /** Soft purple/blue ambient glow behind the whole window (cached image). */
     inline void paintAmbient (juce::Graphics& g, juce::Rectangle<int> area)
     {
@@ -35,19 +44,20 @@ namespace GlassStyle
             const float w = (float) area.getWidth(), h = (float) area.getHeight();
             ig.fillAll (t.background);
 
-            auto blob = [&] (juce::Colour c, float cx, float cy, float rad, float alpha)
-            {
-                juce::ColourGradient grad (c.withAlpha (alpha), cx, cy, c.withAlpha (0.0f), cx + rad, cy, true);
-                ig.setGradientFill (grad);
-                ig.fillRect (cache.getBounds());
-            };
-            blob (t.glowA, w * 0.92f, h * 0.05f, juce::jmax (w, h) * 0.55f, 0.20f);   // top-right
-            blob (t.glowB, w * 0.00f, h * 0.55f, juce::jmax (w, h) * 0.45f, 0.18f);   // left edge
-            blob (t.glowB, w * 0.35f, h * 1.05f, juce::jmax (w, h) * 0.50f, 0.10f);   // bottom
+            glowBlob (ig, cache.getBounds(), t.glowA, w * 0.92f, h * 0.05f, juce::jmax (w, h) * 0.55f, 0.20f);   // top-right
+            glowBlob (ig, cache.getBounds(), t.glowB, w * 0.00f, h * 0.55f, juce::jmax (w, h) * 0.45f, 0.18f);   // left edge
+            glowBlob (ig, cache.getBounds(), t.glowB, w * 0.35f, h * 1.05f, juce::jmax (w, h) * 0.50f, 0.10f);   // bottom
 
             cachedArea = area; cachedA = t.glowA.getARGB(); cachedB = t.glowB.getARGB(); cachedBg = t.background.getARGB();
         }
         g.drawImageAt (cache, area.getX(), area.getY());
+    }
+
+    /** Clip drawing to a rect — softly rounded in Glass so content never squares off a rounded frame. */
+    inline void reduceClip (juce::Graphics& g, juce::Rectangle<int> r)
+    {
+        if (on()) { juce::Path p; p.addRoundedRectangle (r.toFloat(), radius() * 0.6f); g.reduceClipRegion (p); }
+        else      { g.reduceClipRegion (r); }
     }
 
     /** Rounded translucent card with a 1px hairline — panels, toolbars, transport. */

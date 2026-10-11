@@ -1,4 +1,5 @@
 #include "SliceWaveformLcd.h"
+#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
@@ -602,14 +603,14 @@ void SliceWaveformLcd::drawBackground (juce::Graphics& g)
  auto b = getLocalBounds();
 
  g.setColour (getTheme().waveformBg);
- g.fillRoundedRectangle (b.toFloat(), 0.0f);
+ g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
  g.setColour (getTheme().separator);
- g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
+ g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
 
  // ── Inner screen — solid near-black fill, no gradient, no glow ──────────
  auto screen = b.reduced (4);
  g.setColour (lcd2BgMid());
- g.fillRoundedRectangle (screen.toFloat(), 0.0f);
+ g.fillRoundedRectangle (screen.toFloat(), GlassStyle::radius());
 
  // ── Scanline texture — subtle physical-screen feel ──────────────────────
  g.setColour (juce::Colour (0xFF000000).withAlpha ((uint8_t) kScanlineAlpha));
@@ -953,9 +954,9 @@ void SliceWaveformLcd::drawNodes (juce::Graphics& g, const juce::Rectangle<float
  g.strokePath (shackle, juce::PathStrokeType (1.2f));
  // body rect
  g.setColour (node.colour.withAlpha (hov ? 0.70f : 0.50f));
- g.fillRoundedRectangle(lx, ly, 6.0f, 5.0f, 0.0f);
+ g.fillRoundedRectangle(lx, ly, 6.0f, 5.0f, GlassStyle::radius());
  g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.80f));
- g.drawRoundedRectangle(lx, ly, 6.0f, 5.0f, 0.0f, 0.8f);
+ g.drawRoundedRectangle(lx, ly, 6.0f, 5.0f, GlassStyle::radius(), 0.8f);
  }
 
  // Label BELOW node (always inside frame)
@@ -1097,7 +1098,7 @@ void SliceWaveformLcd::paint (juce::Graphics& g)
  // on rounding here — a square clip removes the same off-panel overdraw.
  {
   juce::Path clipPath;
-  clipPath.addRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
+  clipPath.addRoundedRectangle (getLocalBounds().toFloat(), GlassStyle::radius());
   g.reduceClipRegion (clipPath);
  }
  buildDisplayData();

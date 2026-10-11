@@ -1,4 +1,5 @@
 #include "WaveformOverview.h"
+#include "GlassStyle.h"
 #include "../PluginProcessor.h"
 #include "DysektLookAndFeel.h"   // getTheme()
 #include "../PluginEditor.h"
@@ -347,15 +348,15 @@ void WaveformOverview::paint (juce::Graphics& g)
     auto b = getLocalBounds();
 
     g.setColour (juce::Colour (0xFF0F0F0F));
-    g.fillRoundedRectangle (b.toFloat(), 0.0f);
+    g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
 
     // Border
     g.setColour (getTheme().separator);
-    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
+    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
 
     auto screen = b.reduced (4);
     g.setColour (getTheme().darkBar.darker (0.55f));
-    g.fillRoundedRectangle (screen.toFloat(), 0.0f);
+    g.fillRoundedRectangle (screen.toFloat(), GlassStyle::radius());
 
     // Scanline texture
     g.setColour (juce::Colours::black.withAlpha (0.18f));
@@ -372,7 +373,7 @@ void WaveformOverview::paint (juce::Graphics& g)
     if (hasSample && ! peaks.empty())
     {
         // Clip drawing to screen interior
-        g.reduceClipRegion (screen);
+        GlassStyle::reduceClip (g, screen);
 
         // ── Waveform — rendered in theme waveform colour, mode-aware ──────
         drawMiniWaveform (g, screen, vr);

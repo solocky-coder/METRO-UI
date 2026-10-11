@@ -118,6 +118,14 @@ public:
             addChildComponent (b);
         }
 
+        colourStrip.onPick = [this] (juce::Colour c)
+        {
+            if (hasTrack())
+                engine.setTrackColour (selectedTrack, c);
+            refresh();
+        };
+        addChildComponent (colourStrip);
+
         // Mockup styling: both VOLUME and PAN share one thin-groove/flat-thumb
         // vocabulary instead of two unrelated widgets. VOLUME fills from the
         // left edge with a unity-gain tick at 0 dB; PAN fills outward from a
@@ -327,8 +335,10 @@ public:
                    + juce::String::charToString (juce::juce_wchar (0x00B7))   // middle dot
                    + " PGM " + juce::String (info.preset.preset).paddedLeft ('0', 3);
 
+        colourStrip.setCurrent (info.colour);
         for (auto* b : colourButtons)
-            b->setVisible (true);
+            b->setVisible (! GlassStyle::on());
+        colourStrip.setVisible (GlassStyle::on());
 
         resized();
         repaint();
@@ -341,6 +351,7 @@ public:
         if (! hasTrack())
         {
             for (auto* b : colourButtons) b->setBounds ({});
+            colourStrip.setBounds ({});
             return;
         }
 
@@ -424,6 +435,14 @@ public:
         // 192px-wide inspector column, so wrap into two rows of 8 (matches
         // the panel width exactly: 8*20 + 7*4 = 188px).
         area.removeFromTop (kSectionLabelH + kGapS);
+        if (GlassStyle::on())
+        {
+            for (auto* b : colourButtons) { b->setVisible (false); b->setBounds ({}); }
+            colourStrip.setBounds (area.removeFromTop (48));
+            colourStrip.setVisible (true);
+            return;
+        }
+        colourStrip.setVisible (false);
         constexpr int swatchSize = 20, swatchGap = 4, swatchCols = 8;
         for (int i = 0; i < colourButtons.size(); ++i)
         {
@@ -559,6 +578,7 @@ public:
         content.removeFromTop (kGapS);
         // Selection ring around whichever swatch matches the track's
         // current colour exactly.
+        if (! GlassStyle::on())
         for (auto* b : colourButtons)
         {
             if (b->findColour (juce::TextButton::buttonColourId) == info.colour)
@@ -639,6 +659,29 @@ private:
             const float zeroT  = range > 0.0 ? (float) ((0.0 - slider.getMinimum()) / range) : 0.5f;
             const float zeroX  = (float) x + zeroT * (float) width;
 
+            if (getTheme().glass)
+            {
+                // Glass: slim rounded capsule groove + accent capsule fill + rounded thumb
+                // (instead of the tapered wedge). Same value mapping and zero tick as below.
+                const float gh = 4.0f;
+                const juce::Rectangle<float> groove ((float) x, centreY - gh * 0.5f, (float) width, gh);
+                g.setColour (getTheme().gridLine.darker (0.25f));
+                g.fillRoundedRectangle (groove, gh * 0.5f);
+
+                const float f0 = isPan ? juce::jmin (zeroX, sliderPos) : (float) x;
+                const float f1 = isPan ? juce::jmax (zeroX, sliderPos) : sliderPos;
+                if (f1 > f0 + 0.5f)
+                {
+                    g.setColour (accent);
+                    g.fillRoundedRectangle (juce::Rectangle<float>::leftTopRightBottom (f0, groove.getY(), f1, groove.getBottom()), gh * 0.5f);
+                }
+                g.setColour (juce::Colours::white.withAlpha (0.30f));
+                g.fillRect (juce::Rectangle<float> (1.0f, 10.0f).withCentre ({ zeroX, centreY }));
+                g.setColour (juce::Colours::white);
+                g.fillRoundedRectangle (juce::Rectangle<float> (6.0f, (float) juce::jmin (height, 16)).withCentre ({ sliderPos, centreY }), 3.0f);
+                return;
+            }
+
             // Base wedge — full width, dark
             g.setColour (juce::Colour (0xFF1A1A1A));
             g.fillPath (wedgeSegment ((float) x, (float) (x + width), x, width, centreY, isPan));
@@ -665,6 +708,77 @@ private:
         }
     };
 
+    //==========================================================================
+    //  ColourStrip — Glass theme only. Replaces the 16-swatch grid with the
+    //  concept's two-band picker: a full-spectrum hue band on top, and a
+    //  light-to-dark shade band of the track's CURRENT hue underneath.
+    //  Click or drag to pick; calls onPick() with the chosen colour.
+    //==========================================================================
+    class ColourStrip : public juce::Component
+    {
+    public:
+        std::function<void (juce::Colour)> onPick;
+
+        void setCurrent (juce::Colour c)
+        {
+            if (c != current) { current = c; repaint(); }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            const auto r   = getLocalBounds().toFloat();
+            const float bh = (r.getHeight() - 3.0f) * 0.5f;
+            const auto top = r.withHeight (bh);
+            const auto bot = r.withTrimmedTop (bh + 3.0f);
+            const float rad = GlassStyle::radius() * 0.7f;
+
+            juce::ColourGradient hue (hueAt (0.0f), top.getX(), 0.0f, hueAt (1.0f), top.getRight(), 0.0f, false);
+            for (int i = 1; i < 7; ++i) hue.addColour ((double) i / 7.0, hueAt ((float) i / 7.0f));
+            g.setGradientFill (hue);
+            g.fillRoundedRectangle (top, rad);
+
+            juce::ColourGradient shade (shadeAt (0.0f), bot.getX(), 0.0f, shadeAt (1.0f), bot.getRight(), 0.0f, false);
+            for (int i = 1; i < 4; ++i) shade.addColour ((double) i / 4.0, shadeAt ((float) i / 4.0f));
+            g.setGradientFill (shade);
+            g.fillRoundedRectangle (bot, rad);
+
+            // Marker on the hue band where the current colour's hue sits.
+            const float mx = r.getX() + juce::jlimit (0.0f, 1.0f, current.getHue()) * r.getWidth();
+            const auto ring = juce::Rectangle<float> (11.0f, 11.0f).withCentre ({ mx, top.getCentreY() });
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.drawEllipse (ring.expanded (1.0f), 2.0f);
+            g.setColour (juce::Colours::white);
+            g.drawEllipse (ring, 1.6f);
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override { pick (e.position); }
+        void mouseDrag (const juce::MouseEvent& e) override { pick (e.position); }
+
+    private:
+        juce::Colour current { juce::Colours::grey };
+
+        static juce::Colour hueAt (float t) { return juce::Colour::fromHSV (juce::jlimit (0.0f, 1.0f, t), 0.85f, 1.0f, 1.0f); }
+
+        // Shade band: left = pale tint, middle = full colour, right = deep shade (same hue throughout).
+        juce::Colour shadeAt (float t) const
+        {
+            const float h   = current.getHue();
+            const float sat = 0.15f + 0.70f * juce::jmin (1.0f, t * 2.0f);
+            const float bri = 1.0f  - 0.65f * juce::jmax (0.0f, (t - 0.5f) * 2.0f);
+            return juce::Colour::fromHSV (h, sat, bri, 1.0f);
+        }
+
+        void pick (juce::Point<float> p)
+        {
+            const float t = juce::jlimit (0.0f, 1.0f, p.x / juce::jmax (1.0f, (float) getWidth()));
+            const bool inTop = p.y < (float) getHeight() * 0.5f;
+            const auto c = inTop ? hueAt (t) : shadeAt (t);
+            current = c;
+            repaint();
+            if (onPick) onPick (c);
+        }
+    };
+
     SequencerEngine& engine;
     int  selectedTrack   = -1;
 
@@ -677,6 +791,7 @@ private:
     juce::TextButton addChildButton, addMidiChildButton, deleteNetworkButton;
 
     juce::OwnedArray<juce::TextButton> colourButtons;   // fixed palette — see constructor
+    ColourStrip colourStrip;                              // Glass theme replaces the swatch grid with this
 
     bool showPreset   = false;
     juce::String presetName, presetTag;
@@ -735,6 +850,7 @@ private:
         if (! visible)
         {
             for (auto* b : colourButtons) b->setVisible (false);
+            colourStrip.setVisible (false);
         }
     }
 

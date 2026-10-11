@@ -132,7 +132,7 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
         auto outline = toggled ? getTheme().accent
                                 : getTheme().accent.withAlpha (isHighlighted ? 0.85f : 0.55f);
         g.setColour (outline);
-        g.drawRect (bounds, 1.0f);
+        g.drawRoundedRectangle (bounds, r, 1.0f);
         return;
     }
 
@@ -147,7 +147,23 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
         auto roleFill = toggled ? button.findColour (juce::TextButton::buttonOnColourId)
                                  : button.findColour (juce::TextButton::buttonColourId);
         g.setColour (roleFill);
-        g.fillRect (bounds);
+        g.fillRoundedRectangle (bounds, r);   // r is 0 outside the glass theme, so identical to fillRect there
+        return;
+    }
+
+    if (getTheme().glass)
+    {
+        // Glass: toggled/pressed buttons are a tinted translucent fill with an accent outline
+        // (the concept's active tool look), not a solid accent block.
+        const bool lit = toggled || isDown;
+        g.setColour (lit ? getTheme().accent.withAlpha (isDown ? 0.34f : 0.22f)
+                         : (isHighlighted ? getTheme().buttonHover : getTheme().button));
+        g.fillRoundedRectangle (bounds, r);
+        if (lit)
+        {
+            g.setColour (getTheme().accent.withAlpha (0.85f));
+            g.drawRoundedRectangle (bounds, r, 1.2f);
+        }
         return;
     }
 
@@ -500,14 +516,15 @@ void DysektLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w
     const float trackH = 3.0f;   // thin flat track — was Metro-only, now universal
     auto track = bounds.withSizeKeepingCentre (bounds.getWidth(), trackH);
     g.setColour (t.gridLine);
-    g.fillRect (track);
+    if (t.glass) g.fillRoundedRectangle (track, trackH * 0.5f); else g.fillRect (track);
 
     const float fillLeft  = track.getX();
     const float fillRight = juce::jlimit (fillLeft, track.getRight(), sliderPos);
     if (fillRight > fillLeft)
     {
         g.setColour (t.accent);
-        g.fillRect (juce::Rectangle<float> (fillLeft, track.getY(), fillRight - fillLeft, track.getHeight()));
+        const juce::Rectangle<float> fillR (fillLeft, track.getY(), fillRight - fillLeft, track.getHeight());
+        if (t.glass) g.fillRoundedRectangle (fillR, trackH * 0.5f); else g.fillRect (fillR);
     }
 
     const float thumbD = juce::jmin (bounds.getHeight(), 14.0f);

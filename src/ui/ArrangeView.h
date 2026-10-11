@@ -3105,7 +3105,7 @@ private:
                 const float nh = juce::jmax (1.5f, (float)previewH / (float)range);
                 const float va = muted ? 0.22f : (0.4f + 0.5f * n.velocity / 127.f);
                 g.setColour (base.brighter (0.2f).withAlpha (va));
-                g.fillRoundedRectangle(nx, ny, nw, nh, 0.0f);
+                g.fillRoundedRectangle(nx, ny, nw, nh, GlassStyle::radius());
             }
         }
 

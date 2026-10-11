@@ -1,4 +1,5 @@
 #include "DualLcdControlFrame.h"
+#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "IconManager.h"
 #include "../PluginProcessor.h"
@@ -60,8 +61,8 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
 
     if (type == 0) // Folder / Browser
     {
-        g.fillRoundedRectangle(cx - 8, cy2 - 3, 7, 3, 0.0f);
-        g.fillRoundedRectangle(cx - 9, cy2 - 2, 18, 11, 0.0f);
+        g.fillRoundedRectangle(cx - 8, cy2 - 3, 7, 3, GlassStyle::radius());
+        g.fillRoundedRectangle(cx - 9, cy2 - 2, 18, 11, GlassStyle::radius());
     }
     else if (type == 1) // Waveform — distinct shape per waveMode
     {
@@ -171,7 +172,7 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
                 for (int i = 0; i < 5; ++i)
                 {
                     float h = barH[i] * 1.1f;
-                    g.fillRoundedRectangle(bx, cy2 - h, barW, h * 2.0f, 0.0f);
+                    g.fillRoundedRectangle(bx, cy2 - h, barW, h * 2.0f, GlassStyle::radius());
                     bx += barW + gap;
                 }
                 break;
@@ -187,7 +188,7 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
                 {
                     float h = rmsH[i] * 1.1f;
                     // Draw as a wide rounded rectangle (RMS looks "fatter/smoother")
-                    g.fillRoundedRectangle(bx, cy2 - h, barW, h * 2.0f, 0.0f);
+                    g.fillRoundedRectangle(bx, cy2 - h, barW, h * 2.0f, GlassStyle::radius());
                     bx += barW + gap;
                 }
                 // Add a subtle envelope curve on top
@@ -316,16 +317,16 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
         {
             float kx = startX + k * (keyW + 1.0f);
             g.setColour (active ? accent.withAlpha (0.20f) : fg.withAlpha (0.08f));
-            g.fillRoundedRectangle(kx, keyY, keyW, keyH, 0.0f);
+            g.fillRoundedRectangle(kx, keyY, keyW, keyH, GlassStyle::radius());
             g.setColour (col);
-            g.drawRoundedRectangle(kx, keyY, keyW, keyH, 0.0f, 1.0f);
+            g.drawRoundedRectangle(kx, keyY, keyW, keyH, GlassStyle::radius(), 1.0f);
         }
 
         // Two black keys between white keys
         const float bkW = 3.5f, bkH = 6.5f;
         g.setColour (col.withAlpha (active ? 0.95f : 0.70f));
-        g.fillRoundedRectangle(startX + keyW - bkW * 0.5f,                 keyY, bkW, bkH, 0.0f);
-        g.fillRoundedRectangle(startX + keyW * 2.0f + 1.0f - bkW * 0.5f,  keyY, bkW, bkH, 0.0f);
+        g.fillRoundedRectangle(startX + keyW - bkW * 0.5f,                 keyY, bkW, bkH, GlassStyle::radius());
+        g.fillRoundedRectangle(startX + keyW * 2.0f + 1.0f - bkW * 0.5f,  keyY, bkW, bkH, GlassStyle::radius());
     }
     else if (type == 6) // Sequencer — mini piano-roll grid (note blocks)
     {
@@ -352,10 +353,10 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
             float nw = (rows[r].x1 - rows[r].x0) * gridW;
             // Note fill
             g.setColour (col.withAlpha (active ? 0.85f : 0.55f));
-            g.fillRoundedRectangle(nx, rowY, nw, noteH, 0.0f);
+            g.fillRoundedRectangle(nx, rowY, nw, noteH, GlassStyle::radius());
             // Note outline
             g.setColour (col);
-            g.drawRoundedRectangle(nx, rowY, nw, noteH, 0.0f, 0.7f);
+            g.drawRoundedRectangle(nx, rowY, nw, noteH, GlassStyle::radius(), 0.7f);
             rowY += noteH + gap2;
         }
 
@@ -383,7 +384,7 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
 
         g.setColour (active ? accent.brighter (0.3f) : fg.withAlpha (0.90f));
         for (int i = 0; i < 3; ++i)
-            g.fillRoundedRectangle(gx[i] - thumbW / 2, thumbY[i], thumbW, thumbH, 0.0f);
+            g.fillRoundedRectangle(gx[i] - thumbW / 2, thumbY[i], thumbW, thumbH, GlassStyle::radius());
     }
 }
 
@@ -401,12 +402,12 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
     auto sf1 = [sf](float v) -> float { return v * sf; };
 
     // ── Background + border ───────────────────────────────────────────────────
-    if (getTheme().name == "metro")
+    if ((getTheme().name == "metro" || getTheme().glass))
     {
         g.setColour (getTheme().button);
-        g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), GlassStyle::radius());
         g.setColour (getTheme().separator);
-        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 0.0f, 1.0f);
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
     }
     else
     {
@@ -414,11 +415,11 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         auto bgBot = getTheme().darkBar.darker (0.65f);
         juce::ColourGradient grad (bgTop, 0, 0, bgBot, 0, (float) h, false);
         g.setGradientFill (grad);
-        g.fillRoundedRectangle(getLocalBounds().toFloat(), 0.0f);
+        g.fillRoundedRectangle(getLocalBounds().toFloat(), GlassStyle::radius());
         g.setColour (accent.withAlpha (0.18f));
-        g.drawRoundedRectangle(getLocalBounds().toFloat().expanded (1.0f), 0.0f, 1.0f);
+        g.drawRoundedRectangle(getLocalBounds().toFloat().expanded (1.0f), GlassStyle::radius(), 1.0f);
         g.setColour (accent.withAlpha (0.60f));
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced (0.5f), 0.0f, 1.5f);
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced (0.5f), GlassStyle::radius(), 1.5f);
     }
 
     // ── Divider ───────────────────────────────────────────────────────────────
