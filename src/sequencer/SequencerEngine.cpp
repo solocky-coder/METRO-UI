@@ -954,7 +954,7 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
         for (size_t i = 0; i < layers.size(); ++i)
             if (assigned[i] == nullptr)
                 for (auto& t : *current)
-                    if (t->isSfzLayer && ! isUsed (t) && t->name == layers[i].name)
+                    if (t->isSfzLayer && ! isUsed (t) && t->name == juce::String (layers[i].name))
                     {
                         t->layerLoKey.store (layers[i].loKey); t->layerHiKey.store (layers[i].hiKey);
                         assigned[i] = t; used.push_back (t); break;
@@ -991,7 +991,7 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
                 {
                     if (child->midiChannel.load() != ch)
                         child->midiChannel.store (ch);   // follows the parent's channel
-                    child->name = layers[i].name;         // zone renamed
+                    child->name = juce::String (layers[i].name);         // zone renamed
                 }
                 next->push_back (child);
                 ++numLayerTracks;
