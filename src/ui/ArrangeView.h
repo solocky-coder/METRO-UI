@@ -1156,6 +1156,7 @@ private:
 
     // Vertical scroll (pixels from top of track list)
     int      scrollY        = 0;
+    int      lastVisibleTrackRows = -1;   // timerCallback: detects track rows added/removed
 
     // Per-track clip start offsets (arrange-view only, not serialised)
     // clip offsets are now stored per ClipSlot inside the engine
@@ -1249,6 +1250,19 @@ private:
     //==========================================================================
     void timerCallback() override
     {
+        // Rows can appear/disappear without any layout event (e.g. SFZ layer tracks being
+        // created after a load, a collapse toggle): keep the vertical scroll range in step.
+        {
+            const int visibleRows = trackStrip.getVisibleTrackCount();
+            if (visibleRows != lastVisibleTrackRows)
+            {
+                lastVisibleTrackRows = visibleRows;
+                updateScrollRanges();
+                trackStrip.repaint();
+                repaint();
+            }
+        }
+
         if (engine.isPlaying())
             autoScrollToPlayhead();
 
@@ -1738,6 +1752,7 @@ private:
         const int totalH = trackStrip.getVisibleTrackCount() * trackH;
         const int viewH  = clipGridBounds.getHeight();
         scrollY = juce::jlimit (0, juce::jmax (0, totalH - viewH), scrollY);
+        trackStrip.setScrollY (scrollY);
         vScroll.setRangeLimits (0.0, (double)juce::jmax (viewH, totalH));
         vScroll.setCurrentRange ((double)scrollY, (double)(scrollY + viewH),
                                  juce::dontSendNotification);
@@ -1754,7 +1769,10 @@ private:
         if (sb == &hScroll)
             scrollX = newRangeStart;
         else
+        {
             scrollY = (int) newRangeStart;
+            trackStrip.setScrollY (scrollY);
+        }
         updateHoverHandle (getMouseXYRelative());
         repaint();
     }

@@ -356,7 +356,6 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      if (! isSfz) return;
      static const juce::Colour kSfzTrackColour (0xFF9060D0);
      pianoRollPanel.addSfzInstrumentTrack (f.getFileNameWithoutExtension(), kSfzTrackColour);
-     pianoRollPanel.syncSfzLayerTracks (f);
  };
 #endif
  shortcutsPanel.setVisible (false);
@@ -2692,13 +2691,6 @@ void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArra
         // two competing sources of truth for what's actually loaded, the
         // exact desync class this plan exists to close (see plan §5.5).
         multisamplerEditor.importFromFile (f);
-
-       #if DYSEKT_STANDALONE
-        // Layer child tracks must be created AFTER the import: importFromFile() clears the
-        // instrument first, and the zone-edit callback removes the SFZ track (and with it
-        // the layer tracks) whenever there are no zones. Does nothing if there is no SFZ track.
-        pianoRollPanel.syncSfzLayerTracks (f);
-       #endif
 
         offerDrumKitAutoRouting (f);
     };

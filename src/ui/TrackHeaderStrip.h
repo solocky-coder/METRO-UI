@@ -24,6 +24,8 @@ public:
     ~TrackHeaderStrip() override { stopTimer(); }
 
     void setTrackHeight (int h) { trackH = juce::jmax (18, h); repaint(); }
+    /** Vertical scroll in pixels (same value as the arranger's clip grid). */
+    void setScrollY (int y) { y = juce::jmax (0, y); if (y != scrollY) { scrollY = y; repaint(); } }
     int  getTrackHeight()       const noexcept { return trackH; }
     int  getSelectedTrack()     const noexcept { return selectedTrack; }
     void setSelectedTrack (int i)
@@ -70,6 +72,7 @@ public:
     {
         const auto& theme = getTheme();
         g.fillAll (theme.waveformBg);
+        g.setOrigin (0, -scrollY);   // rows scroll with the arranger's vertical scroll bar
         const auto nest    = engine.getTrackNesting();
         const auto visible = visibleFrom (nest);
         for (int row = 0; row < (int) visible.size(); ++row)
@@ -326,8 +329,9 @@ public:
     {
         const auto nest    = engine.getTrackNesting();
         const auto visible = visibleFrom (nest);
-        const int rowIdx = e.y / trackH;
-        if (e.y < 0 || ! juce::isPositiveAndBelow (rowIdx, (int) visible.size())) return;
+        const auto pos = e.getPosition().translated (0, scrollY);   // strip scrolls with the arranger
+        const int rowIdx = pos.y / trackH;
+        if (pos.y < 0 || ! juce::isPositiveAndBelow (rowIdx, (int) visible.size())) return;
         const int i = visible[(size_t) rowIdx];
         const auto info = engine.getTrackInfo (i);
 
@@ -339,7 +343,7 @@ public:
 
         const juce::Rectangle<int> rowR (0, rowIdx * trackH, getWidth(), trackH);
 
-        if (nest[(size_t) i].childCount > 0 && chevronRect (rowR).expanded (4).contains (e.getPosition()))
+        if (nest[(size_t) i].childCount > 0 && chevronRect (rowR).expanded (4).contains (pos))
         {
             toggleCollapsed (nest, i);
             return;
@@ -353,16 +357,16 @@ public:
         const auto soloR = recR.translated (-(btnW + btnGap), 0);
         const auto muteR = soloR.translated (-(btnW + btnGap), 0);
 
-        if (muteR.contains (e.getPosition()))
+        if (muteR.contains (pos))
         {
             engine.setTrackEnabled (i, ! info.enabled);
             if (onTrackMuted) onTrackMuted (i, ! info.enabled);
         }
-        else if (soloR.contains (e.getPosition()))
+        else if (soloR.contains (pos))
         {
             engine.setTrackSolo (i, ! info.solo);
         }
-        else if (recR.contains (e.getPosition()) && i < kMaxTracks)
+        else if (recR.contains (pos) && i < kMaxTracks)
         {
             // Toggles the real recording-target track (SequencerEngine's
             // recordingTrackIndex). This is independent of track *selection*
@@ -423,7 +427,7 @@ private:
     {
         const int row = rowOfTrack (i);
         if (row < 0) return {};
-        return { 0, row * trackH, getWidth(), trackH };
+        return { 0, row * trackH - scrollY, getWidth(), trackH };
     }
 
     static constexpr int kChildIndent = 22;   // extra left inset for nested MIDI children
@@ -497,6 +501,7 @@ private:
     SequencerEngine& engine;
     int selectedTrack = 0;
     int trackH        = 64;
+    int scrollY       = 0;
     std::set<int> collapsed;   // linked device ids of audio parents whose children are hidden (not saved)
 
     static constexpr int kMaxTracks = SequencerEngine::kActivityFlagCount;
