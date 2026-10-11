@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
 #include "DysektLookAndFeel.h"
+#include "GlassStyle.h"
 #include <cmath>
 
 //==============================================================================
@@ -436,10 +437,17 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto& theme = getTheme();
+        if (GlassStyle::on())
+        {
+            GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (4.0f, 3.0f));
+        }
+        else
+        {
         g.setColour (theme.header.darker (0.12f));
         g.fillRect (getLocalBounds());
         g.setColour (theme.separator);
         g.fillRect (getWidth() - 1, 0, 1, getHeight());
+        }
 
         auto content = getLocalBounds().reduced (12);
         if (! hasTrack())
@@ -458,7 +466,7 @@ public:
         auto idRow = content.removeFromTop (kIdentityH);
         auto swatch = idRow.removeFromLeft (kIdentityH).reduced (2).toFloat();
         g.setColour (info.colour);
-        g.fillRect (swatch);
+        g.fillRoundedRectangle (swatch, GlassStyle::radius());
         g.setColour (info.colour.contrasting (0.85f));
         g.setFont (DysektLookAndFeel::makeFont (16.0f, true));
         g.drawText (arrangerTrackName (info).substring (0, 1).toUpperCase(), swatch.toNearestInt(),
@@ -476,7 +484,7 @@ public:
             juce::GlyphArrangement::getStringWidthInt (DysektLookAndFeel::makeFont (10.0f, true), typeTag) + 12);
         auto badgeR = metaArea.removeFromLeft (badgeW);
         g.setColour (theme.button);
-        g.fillRect (badgeR);
+        g.fillRoundedRectangle (badgeR.toFloat(), GlassStyle::radius() * 0.6f);
         g.setColour (theme.foreground.withAlpha (0.6f));
         g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
         g.drawText (typeTag, badgeR, juce::Justification::centred, false);

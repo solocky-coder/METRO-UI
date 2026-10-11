@@ -2339,10 +2339,17 @@ private:
     {
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
+        if (GlassStyle::on())
+        {
+            GlassStyle::fillCard (g, header.toFloat().reduced (4.0f, 3.0f));
+        }
+        else
+        {
         g.setColour (theme.header);
         g.fillRect (header);
         g.setColour (theme.accent.withAlpha (0.8f));
         g.fillRect (header.getX(), header.getY(), 3, header.getHeight());
+        }
         // "QUANTIZE" labels the button row that follows it — replaces the
         // old "ARRANGE" caption (redundant with the window title bar, which
         // already reads "ARRANGE ⋮ TRACKS") now that this row hosts an
@@ -2391,6 +2398,7 @@ private:
     {
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
+        if (GlassStyle::on()) return;   // glass: the header is a floating card, no seam line
         g.setColour (theme.separator);
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
     }

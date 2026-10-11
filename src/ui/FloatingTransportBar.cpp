@@ -6,6 +6,7 @@
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
 #include "DysektLookAndFeel.h"
+#include "GlassStyle.h"
 
 
 using namespace dysekt::metro; // MetroColours' Base/Text/Accent/Transport + MetroMetrics/MetroTypography —
@@ -685,6 +686,16 @@ void FloatingTransportBar::paint (juce::Graphics& g)
  const auto L = computeLayout();
 
 
+    if (GlassStyle::on())
+    {
+        // Glass theme: leave the window's ambient glow showing through, put the whole bar on a
+        // rounded card and give the tab strip its own slightly darker rounded track.
+        GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));
+        g.setColour (getTheme().darkBar.withAlpha (0.55f));
+        g.fillRoundedRectangle (L.titleStrip.toFloat().reduced (6.0f, 4.0f), GlassStyle::radius());
+    }
+    else
+    {
     g.fillAll (Base::Background);
 
 
@@ -692,6 +703,7 @@ void FloatingTransportBar::paint (juce::Graphics& g)
     g.fillRect (L.titleStrip);
     g.setColour (Base::Border);
     g.drawHorizontalLine (L.titleStrip.getBottom(), 0.0f, (float) getWidth());
+    }
 
 
  // Drag grip — two short bars centred in the strip, matching the mockup.
