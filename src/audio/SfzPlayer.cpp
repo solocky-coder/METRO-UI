@@ -64,6 +64,8 @@ SfzPlayer::SfzPlayer()
     // Initialise all channel slots to "no pending change"
     for (auto& slot : pendingChannelAssignment)
         slot.store (-1, std::memory_order_relaxed);
+    for (int i = 0; i < kNumSf2Tweaks; ++i)
+        sf2Tweak[i].store (getSf2TweakDefaultNorm (i), std::memory_order_relaxed);
 
 #if DYSEKT_HAS_FLUIDSYNTH
     // Prevent FluidSynth from spawning its own audio driver thread.
@@ -332,16 +334,188 @@ void SfzPlayer::setReverb (float level)
 void SfzPlayer::setChorus (float level)
 {
     chorus.store (juce::jlimit (0.0f, 1.0f, level), std::memory_order_relaxed);
+    applyFluidChorus();
+}
+
+void SfzPlayer::applyFluidChorus()
+{
 #if DYSEKT_HAS_FLUIDSYNTH
     if (synth != nullptr && !isSfzFile)
         fluid_synth_set_chorus (synth,
-            3,                        // voice count (1–99)
-            (double) level * 10.0,    // level       (0.0–10.0)
-            0.3,                      // speed Hz    (0.29–5.0)
-            8.0,                      // depth ms    (0.0–21.0)
+            3,                                                                  // voice count (1–99)
+            (double) chorus.load (std::memory_order_relaxed) * 10.0,           // level       (0.0–10.0)
+            (double) sf2TweakValue (TweakChorusRate,  sf2Tweak[TweakChorusRate] .load (std::memory_order_relaxed)), // speed Hz (0.29–5.0)
+            (double) sf2TweakValue (TweakChorusDepth, sf2Tweak[TweakChorusDepth].load (std::memory_order_relaxed)), // depth ms (0.0–21.0)
             FLUID_CHORUS_MOD_SINE);
 #endif
     // sfizz: no chorus API
+}
+
+// ── SF2 TWEAK ─────────────────────────────────────────────────────────────────
+float SfzPlayer::getSf2TweakDefaultNorm (int id) noexcept
+{
+    switch (id)
+    {
+        case TweakLfoRate:       return 0.738f;                          // ~5 Hz
+        case TweakChorusRate:    return (0.3f - 0.29f) / (5.0f - 0.29f); // old hard-coded 0.3 Hz
+        case TweakChorusDepth:   return 8.0f / 21.0f;                    // old hard-coded 8 ms
+        case TweakChorusLevel:   return 0.2f;                            // matches `chorus` default
+        case TweakDelayTime:     return 0.642f;                          // ~250 ms
+        case TweakDelayFeedback: return 0.333f;                          // ~30 %
+        default:                 return 0.0f;                            // depths / mix / drive: neutral
+    }
+}
+
+float SfzPlayer::sf2TweakValue (int id, float n) noexcept
+{
+    n = juce::jlimit (0.0f, 1.0f, n);
+    switch (id)
+    {
+        case TweakLfoRate:       return 0.1f * std::pow (200.0f, n);    // 0.1 .. 20 Hz (log)
+        case TweakLfoPitch:      return n * 200.0f;                     // cents (vibrato, 0..2 semitones)
+        case TweakLfoVolume:     return n * 120.0f;                     // centibels (0..12 dB tremolo)
+        case TweakLfoCutoff:     return n * 2400.0f;                    // cents (0..2 octaves)
+        case TweakChorusRate:    return 0.29f + n * (5.0f - 0.29f);     // Hz
+        case TweakChorusDepth:   return n * 21.0f;                      // ms
+        case TweakChorusLevel:   return n;
+        case TweakDelayTime:     return 10.0f * std::pow (150.0f, n);   // 10 .. 1500 ms (log)
+        case TweakDelayFeedback: return n * 0.90f;
+        case TweakDelayMix:      return n;
+        case TweakDrive:         return n;
+        default:                 return 0.0f;
+    }
+}
+
+void SfzPlayer::setSf2Tweak (int id, float norm) noexcept
+{
+    if (id < 0 || id >= kNumSf2Tweaks) return;
+    norm = juce::jlimit (0.0f, 1.0f, norm);
+    if (id == TweakChorusLevel) { setChorus (norm); return; }
+    sf2Tweak[id].store (norm, std::memory_order_relaxed);
+    if (id == TweakChorusRate || id == TweakChorusDepth)
+        applyFluidChorus();
+}
+
+float SfzPlayer::getSf2Tweak (int id) const noexcept
+{
+    if (id < 0 || id >= kNumSf2Tweaks) return 0.0f;
+    return id == TweakChorusLevel ? chorus.load (std::memory_order_relaxed)
+                                  : sf2Tweak[id].load (std::memory_order_relaxed);
+}
+
+juce::String SfzPlayer::getSf2TweakText (int id) const
+{
+    const float v = sf2TweakValue (id, getSf2Tweak (id));
+    switch (id)
+    {
+        case TweakLfoRate:     return juce::String (v, v < 10.0f ? 1 : 0) + " Hz";
+        case TweakLfoPitch:    return juce::String (juce::roundToInt (v)) + " c";
+        case TweakLfoVolume:   return juce::String (v / 10.0f, 1) + " dB";
+        case TweakLfoCutoff:   return juce::String (v / 1200.0f, 1) + " oct";
+        case TweakChorusRate:  return juce::String (v, 2) + " Hz";
+        case TweakChorusDepth: return juce::String (v, 1) + " ms";
+        case TweakDelayTime:   return juce::String (juce::roundToInt (v)) + " ms";
+        default:               return juce::String (juce::roundToInt (v * 100.0f)) + "%";   // level / feedback / mix / drive
+    }
+}
+
+// Mod-LFO generators on channels 2-15 (0-based; 0/1 are Slicer/SFZ-Player). Like the filter/ADSR
+// these are additive offsets on the SoundFont's own values and program changes reset them, so
+// this is re-applied every block and after load. All three depths at 0 -> every offset is 0,
+// i.e. the SoundFont plays exactly as authored.
+void SfzPlayer::applyFluidLfoFromUi()
+{
+#if DYSEKT_HAS_FLUIDSYNTH
+    if (synth == nullptr) return;
+
+    const float pitch = sf2TweakValue (TweakLfoPitch,  sf2Tweak[TweakLfoPitch] .load (std::memory_order_relaxed));
+    const float vol   = sf2TweakValue (TweakLfoVolume, sf2Tweak[TweakLfoVolume].load (std::memory_order_relaxed));
+    const float cut   = sf2TweakValue (TweakLfoCutoff, sf2Tweak[TweakLfoCutoff].load (std::memory_order_relaxed));
+    const bool  on    = (pitch > 0.0f || vol > 0.0f || cut > 0.0f);
+    const float hz    = sf2TweakValue (TweakLfoRate,   sf2Tweak[TweakLfoRate]  .load (std::memory_order_relaxed));
+    const float rateOffsetCents = on ? 1200.0f * std::log2 (hz / 8.176f) : 0.0f;   // FREQMODLFO: 0 cents = 8.176 Hz
+
+    for (int ch = 2; ch < 16; ++ch)
+    {
+        fluid_synth_set_gen (synth, ch, GEN_FREQMODLFO,    rateOffsetCents);
+        fluid_synth_set_gen (synth, ch, GEN_MODLFOTOPITCH, pitch);
+        fluid_synth_set_gen (synth, ch, GEN_MODLFOTOVOL,   vol);
+        fluid_synth_set_gen (synth, ch, GEN_MODLFOTOFC,    cut);
+    }
+#endif
+}
+
+// Drive: tanh saturation blended in over the first ~12 % of the knob, so 0 % is a bit-exact
+// bypass with no step as it leaves zero. Gain is matched so a 0.5-amplitude signal keeps its
+// level at any setting (the change is tone, not loudness).
+void SfzPlayer::applySf2Drive (float* l, float* r, int n) noexcept
+{
+    driveSm.setTargetValue (sf2TweakValue (TweakDrive, sf2Tweak[TweakDrive].load (std::memory_order_relaxed)));
+    if (! driveSm.isSmoothing() && driveSm.getTargetValue() <= 0.0f)
+        return;
+
+    for (int i = 0; i < n; ++i)
+    {
+        const float a   = driveSm.getNextValue();
+        const float w   = juce::jmin (1.0f, a * 8.0f);
+        const float pre = 1.0f + 11.0f * a;
+        const float g   = 0.5f / std::tanh (0.5f * pre);
+        l[i] += w * (g * std::tanh (pre * l[i]) - l[i]);
+        r[i] += w * (g * std::tanh (pre * r[i]) - r[i]);
+    }
+}
+
+// Delay: stereo, send-style (dry untouched, echoes added), smoothed time (no zipper while
+// turning), feedback through a gentle one-pole low-pass so repeats darken like tape. At mix 0
+// the line is skipped and cleared once, so old echoes never reappear when it's turned back up.
+void SfzPlayer::applySf2Delay (float* l, float* r, int n) noexcept
+{
+    const int size = (int) delayBufL.size();
+    if (size < 8) return;
+
+    const float mixT = sf2TweakValue (TweakDelayMix, sf2Tweak[TweakDelayMix].load (std::memory_order_relaxed));
+    delayMixSm.setTargetValue (mixT);
+    if (! delayMixSm.isSmoothing() && mixT <= 0.0f)
+    {
+        if (delayWasActive)
+        {
+            std::fill (delayBufL.begin(), delayBufL.end(), 0.0f);
+            std::fill (delayBufR.begin(), delayBufR.end(), 0.0f);
+            delayLpL = delayLpR = 0.0f;
+            delayWasActive = false;
+        }
+        return;
+    }
+    delayWasActive = true;
+
+    const float sr = (float) currentSR;
+    delayTimeSm.setTargetValue (sf2TweakValue (TweakDelayTime, sf2Tweak[TweakDelayTime].load (std::memory_order_relaxed)) * 0.001f * sr);
+    const float fb   = sf2TweakValue (TweakDelayFeedback, sf2Tweak[TweakDelayFeedback].load (std::memory_order_relaxed));
+    const float damp = 1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi * 6500.0f / sr);   // ~6.5 kHz LP in the loop
+
+    for (int i = 0; i < n; ++i)
+    {
+        const float dSamp = juce::jlimit (1.0f, (float) (size - 2), delayTimeSm.getNextValue());
+        float rp = (float) delayWritePos - dSamp;
+        if (rp < 0.0f) rp += (float) size;
+        const int   i0   = (int) rp;
+        const int   i1   = (i0 + 1) % size;
+        const float frac = rp - (float) i0;
+
+        const float echoL = delayBufL[(size_t) i0] + frac * (delayBufL[(size_t) i1] - delayBufL[(size_t) i0]);
+        const float echoR = delayBufR[(size_t) i0] + frac * (delayBufR[(size_t) i1] - delayBufR[(size_t) i0]);
+
+        delayLpL += damp * (echoL - delayLpL);
+        delayLpR += damp * (echoR - delayLpR);
+
+        delayBufL[(size_t) delayWritePos] = l[i] + delayLpL * fb;
+        delayBufR[(size_t) delayWritePos] = r[i] + delayLpR * fb;
+        delayWritePos = (delayWritePos + 1) % size;
+
+        const float m = delayMixSm.getNextValue();
+        l[i] += echoL * m;
+        r[i] += echoR * m;
+    }
 }
 
 // ── Post-processing Reverb EFX setters ───────────────────────────────────────
@@ -666,6 +840,18 @@ void SfzPlayer::prepare (double sampleRate, int maxBlockSize)
         updateReverbParams();
     }
 
+    // ── SF2 TWEAK: delay line (1.6 s max) + smoothers ───────────────────────
+    {
+        const int delaySize = (int) (sampleRate * 1.6) + maxBlockSize + 8;
+        delayBufL.assign ((size_t) delaySize, 0.0f);
+        delayBufR.assign ((size_t) delaySize, 0.0f);
+        delayWritePos = 0; delayLpL = delayLpR = 0.0f; delayWasActive = false;
+        delayTimeSm.reset (sampleRate, 0.05);
+        delayTimeSm.setCurrentAndTargetValue (sf2TweakValue (TweakDelayTime, sf2Tweak[TweakDelayTime].load()) * 0.001f * (float) sampleRate);
+        delayMixSm.reset (sampleRate, 0.03);  delayMixSm.setCurrentAndTargetValue (0.0f);
+        driveSm   .reset (sampleRate, 0.03);  driveSm   .setCurrentAndTargetValue (0.0f);
+    }
+
 #if DYSEKT_HAS_FLUIDSYNTH
     // Keep the existing synth in sync with the new sample rate.
     if (synth != nullptr)
@@ -956,6 +1142,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     juceAdsrParamsDirty.exchange (false, std::memory_order_acquire);   // clear; consumed here instead of the old post-mix block
     applyFluidAdsrFromUi();
     applyFluidFilterFromUi();
+    applyFluidLfoFromUi();
 
     // ── Forward MIDI to FluidSynth ────────────────────────────────────────────
     // Multi-timbral mode: route each message to its own FluidSynth channel (0-based).
@@ -1157,6 +1344,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
                 // envelope/filter shape rather than the raw SoundFont one.
                 applyFluidAdsrFromUi();
                 applyFluidFilterFromUi();
+                applyFluidLfoFromUi();
             }
             else if (msg.isAllNotesOff() || msg.isAllSoundOff())
             {
@@ -1211,6 +1399,9 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         scratchR[(size_t) i] *= vol;
     }
 
+    // SF2 TWEAK — drive sits before the reverb, delay after it (SF2 bus only).
+    applySf2Drive (scratchL.data(), scratchR.data(), numSamples);
+
     // Apply post-processing reverb
     updateReverbParams();
     {
@@ -1219,6 +1410,8 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         juce::dsp::ProcessContextReplacing<float> ctx (block);
         dspReverb.process (ctx);
     }
+
+    applySf2Delay (scratchL.data(), scratchR.data(), numSamples);
 
     // ── Playhead tracking (replaces the old post-mix shared-envelope block) ──
     // FluidSynth has already shaped each voice's envelope internally via the
@@ -1666,6 +1859,7 @@ void SfzPlayer::applyPendingLoad()
     // the UI-owned cutoff/resonance immediately (see applyFluidFilterFromUi
     // doc comment).
     applyFluidFilterFromUi();
+    applyFluidLfoFromUi();
 
     // Switch to omni so all incoming MIDI reaches FluidSynth without needing
     // the host to route on a specific channel.  In VST3, processMidi() already

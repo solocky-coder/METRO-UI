@@ -631,6 +631,29 @@ void Sf2InstrumentWorkspace::resized()
         layoutWide (bounds);
 }
 
+void Sf2InstrumentWorkspace::layoutTweakRow (juce::Rectangle<int> rowBounds)
+{
+    // 11 knobs + 3 half-knob gaps between the 4 groups (LFO 0-3 | CHORUS 4-6 | DELAY 7-9 | DRIVE 10).
+    static constexpr int kGroupStart[5] = { 0, 4, 7, 10, 11 };
+    const float unitW = (float) rowBounds.getWidth() / ((float) kTweakKnobs + 1.5f);
+    const int   knobW = juce::jlimit (28, (int) kKnobW, (int) unitW - 2);
+    const int   capH  = 14;
+
+    float x = (float) rowBounds.getX();
+    for (int g = 0; g < 4; ++g)
+    {
+        const float gx = x;
+        for (int i = kGroupStart[g]; i < kGroupStart[g + 1]; ++i)
+        {
+            const int cx = (int) (x + unitW * 0.5f);
+            tweakZones[i] = { cx - knobW / 2, rowBounds.getY() + capH, knobW, rowBounds.getHeight() - capH };
+            x += unitW;
+        }
+        tweakGroupZones[g] = { (int) gx, rowBounds.getY(), (int) (x - gx), rowBounds.getHeight() };
+        x += unitW * 0.5f;
+    }
+}
+
 void Sf2InstrumentWorkspace::layoutKnobRow (juce::Rectangle<int> rowBounds)
 {
     constexpr int kNumKnobs = 8;
@@ -719,7 +742,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
     // topSectionW and left-aligned (it's text, no benefit to stretching
     // wide).
     {
-        auto top = c.removeFromTop (180 - kPad);
+        auto top = c.removeFromTop (180 - kPad + 4 + kTweakRowH);
 
         // Knob cell is label(16) + circle + value(20), not just the circle —
         // drawKnob() carves those three sub-rects out of whatever bounds it's
@@ -731,6 +754,9 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
         constexpr int kKnobCellH = 84;
         auto knobRow = top.removeFromTop (kKnobCellH);
         layoutKnobRow (knobRow);
+
+        top.removeFromTop (4);
+        layoutTweakRow (top.removeFromTop (kTweakRowH));
 
         top.removeFromTop (6);
         knobHeaderDividerZone = top.removeFromTop (1);
@@ -873,6 +899,9 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
         auto knobRow = c.removeFromTop (kKnobCellH);
         layoutKnobRow (knobRow);
 
+        c.removeFromTop (4);
+        layoutTweakRow (c.removeFromTop (kTweakRowH));
+
         c.removeFromTop (6);
         knobHeaderDividerZone = c.removeFromTop (1);
         c.removeFromTop (6);
@@ -1002,6 +1031,31 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
                   juce::String (juce::roundToInt (processor.sfzPlayer.getReverbMix())) + "%");
         drawKnob (g, reverbDampZone, processor.sfzPlayer.getReverbDamp() / 100.f, "REVERB DAMP",
                   juce::String (juce::roundToInt (processor.sfzPlayer.getReverbDamp())) + "%");
+    }
+
+    // ── SF2 TWEAK row — LFO / CHORUS / DELAY / DRIVE ───────────────────────
+    {
+        static const char* const kTweakLabels[kTweakKnobs] =
+            { "RATE", "PITCH", "VOL", "CUT", "RATE", "DEPTH", "LEVEL", "TIME", "FDBK", "MIX", "DRIVE" };
+        static const char* const kGroupNames[4] = { "MOD LFO", "CHORUS", "DELAY", "DRIVE" };
+
+        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+        for (int gi = 0; gi < 4; ++gi)
+        {
+            g.setColour (theme.accent.withAlpha (0.85f));
+            g.drawText (kGroupNames[gi], tweakGroupZones[gi].withHeight (14).withTrimmedLeft (4),
+                        juce::Justification::centredLeft);
+            if (gi > 0)
+            {
+                g.setColour (theme.separator);
+                g.drawVerticalLine (tweakGroupZones[gi].getX() - (int) (kKnobW * 0.2f),
+                                    (float) tweakGroupZones[gi].getY() + 2.0f,
+                                    (float) tweakGroupZones[gi].getBottom() - 2.0f);
+            }
+        }
+        for (int i = 0; i < kTweakKnobs; ++i)
+            drawKnob (g, tweakZones[i], processor.sfzPlayer.getSf2Tweak (i), kTweakLabels[i],
+                      processor.sfzPlayer.getSf2TweakText (i));
     }
 
     // ── Divider between the knob row above and the active-preset header ────
@@ -1488,6 +1542,16 @@ void Sf2InstrumentWorkspace::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // ── SF2 TWEAK knob drag start ──────────────────────────────────────────
+    for (int i = 0; i < kTweakKnobs; ++i)
+        if (tweakZones[i].contains (pos))
+        {
+            activeTweak  = i;
+            dragStartY   = pos.y;
+            dragStartVal = processor.sfzPlayer.getSf2Tweak (i);
+            return;
+        }
+
     // ── Knob/slider drag start ─────────────────────────────────────────────
     struct { juce::Rectangle<int>& zone; ActiveKnob id; float val; } controls[] =
     {
@@ -1514,6 +1578,13 @@ void Sf2InstrumentWorkspace::mouseDown (const juce::MouseEvent& e)
 
 void Sf2InstrumentWorkspace::mouseDrag (const juce::MouseEvent& e)
 {
+    if (activeTweak >= 0)
+    {
+        const float d = (float) (dragStartY - e.getPosition().y) / 120.0f;
+        processor.sfzPlayer.setSf2Tweak (activeTweak, juce::jlimit (0.f, 1.f, dragStartVal + d));
+        repaint();
+        return;
+    }
     if (activeKnob == ActiveKnob::None) return;
     const float delta   = (float) (dragStartY - e.getPosition().y) / 120.0f;
     const float newNorm = juce::jlimit (0.f, 1.f, dragStartVal + delta);
@@ -1536,11 +1607,19 @@ void Sf2InstrumentWorkspace::mouseDrag (const juce::MouseEvent& e)
 void Sf2InstrumentWorkspace::mouseUp (const juce::MouseEvent&)
 {
     activeKnob = ActiveKnob::None;
+    activeTweak = -1;
 }
 
 void Sf2InstrumentWorkspace::mouseDoubleClick (const juce::MouseEvent& e)
 {
     const auto pos = e.getPosition();
+    for (int i = 0; i < kTweakKnobs; ++i)
+        if (tweakZones[i].contains (pos))
+        {
+            processor.sfzPlayer.setSf2Tweak (i, SfzPlayer::getSf2TweakDefaultNorm (i));
+            repaint();
+            return;
+        }
     if (levelZone.contains      (pos)) { processor.sfzPlayer.setVolume     (1.0f);  repaint(); }
     if (transZone.contains      (pos)) { processor.sfzPlayer.setTranspose (0);     repaint(); }
     if (panZone.contains        (pos)) { processor.sfzPlayer.setPan       (0.0f);  repaint(); }
@@ -1559,6 +1638,14 @@ void Sf2InstrumentWorkspace::mouseWheelMove (const juce::MouseEvent& e,
     const auto  pos  = e.getPosition();
     const float step = w.deltaY * (e.mods.isShiftDown() ? 0.01f : 0.05f);
     auto adjustNorm = [&] (float current, float s) { return juce::jlimit (0.f, 1.f, current + s); };
+
+    for (int i = 0; i < kTweakKnobs; ++i)
+        if (tweakZones[i].contains (pos))
+        {
+            processor.sfzPlayer.setSf2Tweak (i, adjustNorm (processor.sfzPlayer.getSf2Tweak (i), step));
+            repaint();
+            return;
+        }
 
     if (levelZone.contains (pos))
         processor.sfzPlayer.setVolume (normToVol (adjustNorm (volToNorm (processor.sfzPlayer.getVolume()), step)));

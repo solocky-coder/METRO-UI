@@ -266,6 +266,29 @@ public:
     float getSf2FilterCutoff()    const noexcept { return sf2FilterCutoffHz    .load (std::memory_order_relaxed); }
     float getSf2FilterResonance() const noexcept { return sf2FilterResonancePct.load (std::memory_order_relaxed); }
 
+    // ── SF2 TWEAK: mod-LFO / chorus / delay / drive — UI-driven, SF2 only ────
+    //  Every control is a normalised 0..1 value (UI knobs drag in that space);
+    //  the real-unit mapping and display text live in sf2TweakValue()/
+    //  getSf2TweakText(). Same UI-atomic / reapply-every-block pattern as the
+    //  ADSR and filter controls. Not saved with the project (like the filter).
+    //    LFO     -> FluidSynth mod-LFO generators (triangle, SF2-fixed shape)
+    //    CHORUS  -> FluidSynth's built-in chorus (rate / depth / level)
+    //    DELAY   -> JUCE DSP on the SF2 bus, after the reverb
+    //    DRIVE   -> JUCE DSP on the SF2 bus, before the reverb
+    enum Sf2Tweak
+    {
+        TweakLfoRate = 0, TweakLfoPitch, TweakLfoVolume, TweakLfoCutoff,
+        TweakChorusRate,  TweakChorusDepth, TweakChorusLevel,
+        TweakDelayTime,   TweakDelayFeedback, TweakDelayMix,
+        TweakDrive,
+        kNumSf2Tweaks
+    };
+    static float        getSf2TweakDefaultNorm (int id) noexcept;
+    static float        sf2TweakValue          (int id, float norm) noexcept; ///< norm -> real units (Hz / cents / cB / ms / 0..1)
+    void                setSf2Tweak            (int id, float norm) noexcept;
+    float               getSf2Tweak            (int id) const noexcept;
+    juce::String        getSf2TweakText        (int id) const;
+
     /**
      * Returns the cached preset list for the currently loaded SF2.
      * If the audio thread has posted new data since the last call,
@@ -539,6 +562,18 @@ private:
     // ── SF2 filter atomics (UI-written, audio-thread-read; see applyFluidFilterFromUi) ──
     std::atomic<float> sf2FilterCutoffHz     { kSf2FilterCutoffDefaultHz };
     std::atomic<float> sf2FilterResonancePct { kSf2FilterResonanceDefaultPct };
+
+    // ── SF2 TWEAK state (see Sf2Tweak). TweakChorusLevel is stored in `chorus`. ──
+    std::atomic<float> sf2Tweak[kNumSf2Tweaks];
+    std::vector<float> delayBufL, delayBufR;           // audio thread, sized in prepare()
+    int                delayWritePos { 0 };
+    float              delayLpL { 0.f }, delayLpR { 0.f };   // feedback damping (one-pole LP)
+    bool               delayWasActive { false };
+    juce::SmoothedValue<float> delayTimeSm, delayMixSm, driveSm;
+    void applyFluidLfoFromUi();                        ///< per-block, channels 2-15 (see .cpp)
+    void applyFluidChorus();                           ///< (re)sends rate/depth/level to FluidSynth
+    void applySf2Drive  (float* l, float* r, int n) noexcept;   ///< before reverb, SF2 bus only
+    void applySf2Delay  (float* l, float* r, int n) noexcept;   ///< after reverb, SF2 bus only
 
     // ── Per-channel mixer strip state ─────────────────────────────────────────
     // Written on UI thread via setChannel*(); read on audio thread in applyDirtyStrips().

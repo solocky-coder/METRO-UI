@@ -228,6 +228,16 @@ private:
      *  layoutWide()/layoutNarrow() so the two can't drift apart. */
     void layoutKnobRow (juce::Rectangle<int> rowBounds);
 
+    // ── SF2 TWEAK row (LFO / CHORUS / DELAY / DRIVE) under the 8-knob row ────
+    //  11 knobs in 4 captioned groups, all backed by SfzPlayer::setSf2Tweak()/getSf2Tweak()
+    //  (normalised 0..1; real-unit mapping + value text live in SfzPlayer).
+    static constexpr int kTweakKnobs = 11;
+    static constexpr int kTweakRowH  = 98;   // 14 px group caption + 84 px knob cell
+    juce::Rectangle<int> tweakZones[kTweakKnobs];
+    juce::Rectangle<int> tweakGroupZones[4];
+    int                  activeTweak { -1 };
+    void layoutTweakRow (juce::Rectangle<int> rowBounds);
+
     // ── Top bar ────────────────────────────────────────────────────────────
     juce::Rectangle<int> topBarZone, loadedPillZone;
 
