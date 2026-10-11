@@ -128,6 +128,9 @@ struct SequencerEngine::Impl
     SfzPlayer*   sfzPlayer   = nullptr;
 
     std::atomic<bool> midiActivityFlags[SequencerEngine::kActivityFlagCount] = {};
+    // Keyzone-highlight feed (see SequencerEngine::notifySfzNoteOn). Bit n of [0] = note n, of [1] = note n+64.
+    std::atomic<uint64_t> sfzNoteLatch[2] = {};
+    std::atomic<uint64_t> sfzNoteHeld[2]  = {};
     std::atomic<int>  selectedLiveChannel  { 0 };  // 1-based; 0 = disabled
     std::atomic<SelectedLiveTarget> selectedLiveTarget {}; // player + channel for the selected track
     // Note range of the selected live-input track: lo | (hi << 8). 0..127 unless an SFZ layer
@@ -1394,6 +1397,38 @@ void SequencerEngine::drainRecordedEvents()
         {
             impl->liveRecordClip = {};
         }
+    }
+}
+
+//==============================================================================
+void SequencerEngine::notifySfzNoteOn (int note) noexcept
+{
+    if (! juce::isPositiveAndBelow (note, 128)) return;
+    const int w = note < 64 ? 0 : 1;
+    const uint64_t bit = (uint64_t) 1 << (note & 63);
+    impl->sfzNoteLatch[w].fetch_or (bit, std::memory_order_relaxed);
+    impl->sfzNoteHeld [w].fetch_or (bit, std::memory_order_relaxed);
+}
+
+void SequencerEngine::notifySfzNoteOff (int note) noexcept
+{
+    if (! juce::isPositiveAndBelow (note, 128)) return;
+    const int w = note < 64 ? 0 : 1;
+    impl->sfzNoteHeld[w].fetch_and (~((uint64_t) 1 << (note & 63)), std::memory_order_relaxed);
+}
+
+void SequencerEngine::notifySfzAllNotesOff() noexcept
+{
+    impl->sfzNoteHeld[0].store (0, std::memory_order_relaxed);
+    impl->sfzNoteHeld[1].store (0, std::memory_order_relaxed);
+}
+
+void SequencerEngine::pollSfzNotes (uint64_t (&played)[2], uint64_t (&held)[2]) noexcept
+{
+    for (int w = 0; w < 2; ++w)
+    {
+        played[w] = impl->sfzNoteLatch[w].exchange (0, std::memory_order_relaxed);
+        held[w]   = impl->sfzNoteHeld [w].load (std::memory_order_relaxed);
     }
 }
 

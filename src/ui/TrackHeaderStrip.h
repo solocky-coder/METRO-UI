@@ -42,6 +42,11 @@ public:
         repaint();
     }
 
+    /** Fired (message thread) when a track's keyzone-played highlight switches on (0 -> lit), with the
+        track that is lit (the parent if the zone's row is collapsed away). The arranger uses it to
+        scroll that row into view. Not re-fired while the same track stays lit. */
+    std::function<void(int)> onZoneTrackLit;
+
     /** Called when rows are shown/hidden, so the timeline can re-layout. */
     std::function<void()> onLayoutChanged;
 
@@ -114,6 +119,18 @@ public:
             // against without flattening into its own background.
             g.setColour (info.colour.withAlpha (sel ? 0.62f : 0.14f));
             g.fillRect (rowR);
+
+            // Keyzone-played highlight (SFZ layer child tracks, or the parent row while its
+            // children are collapsed): accent wash + a wider accent bar on the left edge, faded
+            // by zoneGlow. Outline is drawn at the end of the row (see below).
+            const float glow = (i < kMaxTracks) ? zoneGlow[i] : 0.0f;
+            if (glow > 0.01f)
+            {
+                g.setColour (theme.accent.withAlpha (0.38f * glow));
+                g.fillRect (rowR);
+                g.setColour (theme.accent.withAlpha (glow));
+                g.fillRect (rowR.getX(), rowR.getY(), 6, rowR.getHeight());
+            }
 
             // Left accent bar on the selected row, now in the track's own
             // colour (was theme.accent) so it matches the wash above.
@@ -319,6 +336,12 @@ public:
                 }
             }
 
+            if (glow > 0.01f)
+            {
+                g.setColour (theme.accent.withAlpha (glow));
+                g.drawRect (rowR.reduced (1), 2);
+            }
+
             g.setColour (theme.separator);
             g.fillRect (0, rowR.getBottom() - 1, getWidth(), 1);
         }
@@ -466,6 +489,65 @@ private:
         if (onLayoutChanged) onLayoutChanged();
     }
 
+    /** Lights the arranger track of whichever SFZ keyzone (layer child track) the played note falls in.
+     *  Fed by SequencerEngine::pollSfzNotes() (notes the SFZ-PLAYER/MULTISAMPLER engine actually
+     *  received, live or sequenced). Glow = 1 while a note in the zone's range is down or was just
+     *  struck, then fades over ~0.6 s. If the zone's row is hidden inside a collapsed parent, the
+     *  parent row lights instead so the activity is still findable. Returns true if anything changed. */
+    bool updateZoneGlow (int numTracks)
+    {
+        uint64_t played[2], held[2];
+        engine.pollSfzNotes (played, held);
+
+        bool anyGlow = false;
+        for (int i = 0; i < numTracks; ++i)
+            if (zoneGlow[i] > 0.0f) { anyGlow = true; break; }
+
+        const bool anyNote = (played[0] | played[1] | held[0] | held[1]) != 0;
+        if (! anyNote && ! anyGlow)
+            return false;
+
+        auto rangeHit = [] (const uint64_t (&mask)[2], int lo, int hi)
+        {
+            for (int note = juce::jmax (0, lo); note <= juce::jmin (127, hi); ++note)
+                if ((mask[note >> 6] >> (note & 63)) & 1u)
+                    return true;
+            return false;
+        };
+
+        bool lit[kMaxTracks] = {};
+        if (anyNote)
+        {
+            const auto nest = engine.getTrackNesting();
+            for (int i = 0; i < numTracks && i < (int) nest.size(); ++i)
+            {
+                const auto info = engine.getTrackInfo (i);
+                if (! info.isSfzLayer) continue;
+                if (! rangeHit (played, info.layerLoKey, info.layerHiKey)
+                    && ! rangeHit (held, info.layerLoKey, info.layerHiKey))
+                    continue;
+
+                const int parent = nest[(size_t) i].parentIndex;
+                const bool hidden = parent >= 0 && collapsed.count (nest[(size_t) i].deviceId) > 0;
+                lit[(hidden && parent < kMaxTracks) ? parent : i] = true;
+            }
+        }
+
+        bool changed = false;
+        int newlyLit = -1;
+        for (int i = 0; i < numTracks; ++i)
+        {
+            const float before = zoneGlow[i];
+            zoneGlow[i] = lit[i] ? 1.0f : juce::jmax (0.0f, before - kGlowFallPerTick);
+            if (lit[i] && before <= 0.0f && onZoneTrackLit)
+                newlyLit = i;   // last one wins if several light at once
+            if (zoneGlow[i] != before) changed = true;
+        }
+        if (newlyLit >= 0)
+            onZoneTrackLit (newlyLit);
+        return changed;
+    }
+
     void timerCallback() override
     {
         const int n = juce::jmin (engine.getNumTracks(), kMaxTracks);
@@ -476,6 +558,10 @@ private:
         for (int i = 0; i < n; ++i)
             if (netMeters[i].update (NetworkTrackMeters::consume (i)))
                 repaint (getRowBounds (i));
+
+        // Keyzone-played highlight: every tick (~30 Hz) so short notes still flash.
+        if (updateZoneGlow (n))
+            needsRepaint = true;
 
         // MIDI-activity proxy meter: kept at its original ~10 Hz cadence.
         if (++midiTickDivider < kMidiTickDivisor)
@@ -507,6 +593,10 @@ private:
     static constexpr int kMaxTracks = SequencerEngine::kActivityFlagCount;
     static constexpr int kHoldTicks = 3;
     int midiHoldCounters[kMaxTracks] = {};
+
+    // Keyzone-played highlight level per track, 0..1 (see updateZoneGlow()).
+    static constexpr float kGlowFallPerTick = 1.0f / (0.6f * (float) HorizontalLevelMeter::kUpdateHz);
+    float zoneGlow[kMaxTracks] = {};
 
     // The timer now runs at the meter rate; the MIDI proxy still updates every 3rd tick.
     static constexpr int kMidiTickDivisor = HorizontalLevelMeter::kUpdateHz / 10;

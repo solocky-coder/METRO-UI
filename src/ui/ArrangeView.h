@@ -377,6 +377,24 @@ public:
             selectTrack (idx);
             repaint();
         };
+        // A keyzone was just played in the Multisampler: scroll its (or its collapsed parent's)
+        // track row into view if it is off-screen, so it can be found and picked straight away.
+        trackStrip.onZoneTrackLit = [this] (int idx)
+        {
+            const int row = trackStrip.rowOfTrack (idx);
+            if (row < 0) return;
+            const int rowTop = row * trackH, rowBot = rowTop + trackH;
+            const int viewH  = clipGridBounds.getHeight();
+            int target = scrollY;
+            if (rowTop < scrollY)              target = rowTop;
+            else if (rowBot > scrollY + viewH) target = rowBot - viewH;
+            if (target != scrollY)
+            {
+                scrollY = target;
+                updateScrollRanges();   // clamps, syncs strip + scroll bar
+                repaint();
+            }
+        };
         trackStrip.onTrackMuted = [this] (int idx, bool newEnabled)
         {
             // TrackHeaderStrip::onTrackMuted's bool is the track's *new*

@@ -2989,6 +2989,8 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
                 const int w = note < 64 ? 0 : 1;
                 const int b = note < 64 ? note : note - 64;
                 sfz2ActiveNotes[w].fetch_or ((uint64_t) 1 << b, std::memory_order_relaxed);
+                // Arranger keyzone highlight: tell the sequencer which key just sounded.
+                sequencer.notifySfzNoteOn (note);
                 // See PluginProcessor.h doc comment — lets MULTISAMPLER's
                 // ZoneMapView resolve the correct velocity-layer zone for
                 // this note instead of every key-range match.
@@ -3051,6 +3053,7 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
                 const int w = note < 64 ? 0 : 1;
                 const int b = note < 64 ? note : note - 64;
                 sfz2ActiveNotes[w].fetch_and (~((uint64_t) 1 << b), std::memory_order_relaxed);
+                sequencer.notifySfzNoteOff (note);
             }
             int prev = sfz2MidiActivity.load (std::memory_order_relaxed);
             while (prev > 0 &&
@@ -3064,6 +3067,7 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
             std::fill (std::begin (heldNotes2), std::end (heldNotes2), false);
             sfz2ActiveNotes[0].store (0, std::memory_order_relaxed);
             sfz2ActiveNotes[1].store (0, std::memory_order_relaxed);
+            sequencer.notifySfzAllNotesOff();
         }
         else if (msg.isAllSoundOff())
         {
@@ -3071,6 +3075,7 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
             std::fill (std::begin (heldNotes2), std::end (heldNotes2), false);
             sfz2ActiveNotes[0].store (0, std::memory_order_relaxed);
             sfz2ActiveNotes[1].store (0, std::memory_order_relaxed);
+            sequencer.notifySfzAllNotesOff();
         }
     }
 }

@@ -162,6 +162,15 @@ public:
     void setRecordingTrack(int trackIndex) noexcept; int getRecordingTrackIndex() const noexcept; void drainRecordedEvents();
     static constexpr int kActivityFlagCount = 64; bool getMidiActivityAndClear(int trackIndex) noexcept;
 
+    /** Zone-highlight feed. The SFZ-PLAYER / MULTISAMPLER note path (DysektProcessor::processMidi2)
+        reports every note it receives so the Arranger can light up the SFZ layer (keyzone) child
+        track whose note range contains the played key. Audio thread safe (lock-free atomics). */
+    void notifySfzNoteOn (int note) noexcept; void notifySfzNoteOff (int note) noexcept; void notifySfzAllNotesOff() noexcept;
+    /** Message thread. `played` = notes struck since the previous call (latched, so a note shorter
+        than a UI frame still registers; cleared by this call); `held` = notes currently down.
+        Bit n of word 0 = note n (0..63), of word 1 = note n+64. */
+    void pollSfzNotes (uint64_t (&played)[2], uint64_t (&held)[2]) noexcept;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;
