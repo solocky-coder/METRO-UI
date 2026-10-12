@@ -6,6 +6,7 @@ static constexpr int kMaxMeterSlices = DysektProcessor::kMaxMeterSlices;
 #include "../network/NetworkTrackMeters.h"
 #include "IconManager.h"
 #include "../audio/Slice.h"
+#include "../audio/SfzZoneLabel.h"
 #include "../params/ParamIds.h"
 #include <cmath>
 
@@ -1493,10 +1494,7 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
     g.setFont (DysektLookAndFeel::makeFont (11.0f));
     g.setColour (theme.foreground.withAlpha (0.55f));
     const juce::String nameStr = sl.zoneLoKey >= 0
-        ? (sl.zoneLoKey == sl.zoneHiKey
-               ? juce::MidiMessage::getMidiNoteName (sl.zoneLoKey, true, true, 3)
-               : juce::MidiMessage::getMidiNoteName (sl.zoneLoKey, true, true, 3) + "-"
-                 + juce::MidiMessage::getMidiNoteName (sl.zoneHiKey, true, true, 3))
+        ? SfzZoneLabel::range (sl.zoneLoKey, sl.zoneHiKey)
         : (sl.name.isNotEmpty() ? sl.name.substring (0, 14)
                                  : ("Zone " + juce::String (zoneIdx + 1)));
     g.drawText (nameStr, 6, ry, kNameColW - 8, kSf2ChRowH, juce::Justification::centredLeft);
