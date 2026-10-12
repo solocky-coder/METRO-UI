@@ -97,7 +97,23 @@ public:
      *  of the given .sfz file). Call after addSfzInstrumentTrack(). */
     void syncSfzLayerTracks (const juce::File& sfzFile)
     {
-        engine.syncSfzLayerTracks (SfzPlayer::scanLayers (sfzFile));
+        int scannerDropped = 0;
+        const auto layers = SfzPlayer::scanLayers (sfzFile, &scannerDropped);
+        int budgetDropped = 0;
+        engine.syncSfzLayerTracks (layers, &budgetDropped);
+        const int totalDropped = scannerDropped + budgetDropped;
+
+        static bool layerLimitWarningShown = false;
+        if (totalDropped > 0 && ! layerLimitWarningShown)
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::MessageBoxIconType::WarningIcon,
+                "SFZ Arranger Layer Limit",
+                juce::String (totalDropped) + " SFZ layer(s) could not get Arranger tracks because of the layer or 64-track project limit. Existing layers with MIDI clips were preserved. Reduce the number of distinct note ranges or remove unused tracks to show more layers.");
+            layerLimitWarningShown = true;
+        }
+        else if (totalDropped == 0)
+            layerLimitWarningShown = false;
     }
 
     SequencerTrackInfo getTrackInfo (int i) const { return engine.getTrackInfo (i); }
