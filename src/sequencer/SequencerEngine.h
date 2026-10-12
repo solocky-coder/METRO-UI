@@ -16,7 +16,7 @@ struct SequencerTrackInfo
     juce::String name; juce::Colour colour = juce::Colour (0xFF3A6080);
     int sliceIdx = -1; int midiChannel = 0; Sf2PresetInfo preset; int numClips = 0;
     bool isSfzInstrument = false;
-    bool isSfzLayer = false; int layerLoKey = 0; int layerHiKey = 127;
+    bool isSfzLayer = false; int layerLoKey = 0; int layerHiKey = 127; bool layerShown = false;
     int64_t networkRouteId = 0; int32_t networkSourceId = 0; int networkSourceChannel = 0;
     int linkedMidiDeviceId=0; int networkMidiDeviceId=0; bool networkMidiIsChild=false; juce::String networkMidiPeer;
 };
@@ -52,6 +52,8 @@ public:
     enum class RecordMode { Overdub, Add }; void setRecordMode (RecordMode m) noexcept; RecordMode getRecordMode() const noexcept;
     void setSyncToHost(bool v); void setBpm(float b); void setHostBpm(float b); void seekToTick(int64_t tick); void setLoopRange(int64_t startTick, int64_t endTick); void resetLoopRangeToDefault(); void setLengthTicks(int64_t ticks);
 
+    /** Show/hide an SFZ layer child track's Arranger row. No-op for any other track. Message thread. */
+    void setSfzLayerShown(int trackIndex, bool shown);
     int getNumTracks() const; SequencerTrackInfo getTrackInfo(int i) const; void setTrackEnabled(int i, bool enabled); void setTrackSolo(int i, bool solo);
     // Audio record arm: per track, multi-arm. setAll* touches Audio tracks only.
     void setAudioRecordArm(int i, bool armed); void setAllAudioRecordArm(bool armed);
@@ -122,7 +124,9 @@ public:
         parentIndex = that audio track's index, deviceId = the shared device id. For an
         audio parent: deviceId = its linked device id, childCount = number of children.
         Everything else is parentIndex -1, deviceId 0, childCount 0. */
-    struct TrackNest { int parentIndex = -1; int deviceId = 0; int childCount = 0; };
+    /** hidden = an SFZ layer child track the user hasn't opted into showing (and that holds no clips):
+        it gets no Arranger row. childCount counts only the children that are not hidden. */
+    struct TrackNest { int parentIndex = -1; int deviceId = 0; int childCount = 0; bool hidden = false; };
     std::vector<TrackNest> getTrackNesting() const;
     void setNetworkMidiLinkState(int,int) const noexcept;
     int getNetworkMidiLinkState(int) const noexcept;

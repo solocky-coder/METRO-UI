@@ -35,9 +35,17 @@ public:
         if (i >= 0)
         {
             const auto nest = engine.getTrackNesting();
-            if (i < (int) nest.size() && nest[(size_t) i].parentIndex >= 0
-                && collapsed.erase (nest[(size_t) i].deviceId) > 0 && onLayoutChanged)
-                onLayoutChanged();
+            if (i < (int) nest.size() && nest[(size_t) i].parentIndex >= 0)
+            {
+                bool layoutChanged = collapsed.erase (nest[(size_t) i].deviceId) > 0;
+                if (nest[(size_t) i].hidden)   // a selected hidden SFZ layer gets its row back
+                {
+                    engine.setSfzLayerShown (i, true);
+                    layoutChanged = true;
+                }
+                if (layoutChanged && onLayoutChanged)
+                    onLayoutChanged();
+            }
         }
         repaint();
     }
@@ -430,7 +438,7 @@ private:
         // only look like it worked. Multitimbral SF2 preset tracks
         // (isSfzInstrument == false) are the real, multi-instance use case
         // this menu exists for; leave it live for those.
-        if (info.isSfzInstrument) return;
+        if (info.isSfzInstrument) { showSfzLayerMenu (idx, info, pos); return; }
 
         juce::PopupMenu menu;
         menu.addSectionHeader ("MIDI Channel – " + info.name);
@@ -446,6 +454,69 @@ private:
             {
                 if (result >= 1 && result <= 16 && info.type == TrackType::SfPlayer)
                     if (onSfTrackChannelChanged) onSfTrackChannelChanged (ti, result);
+            });
+    }
+
+    /** Right-click menu on an SFZ parent (or one of its shown layer rows): choose which layer
+     *  (keyzone) child tracks get a row in the Arranger. Layers default to hidden. A layer that
+     *  holds clips or is the recording target is locked shown. Hiding a layer never deletes it, so
+     *  the keyzone glow still lights the parent row for notes in a hidden layer's range. */
+    void showSfzLayerMenu (int idx, const SequencerTrackInfo& info, juce::Point<int> pos)
+    {
+        const auto nest = engine.getTrackNesting();
+        const int parent = info.isSfzLayer
+                               ? (idx < (int) nest.size() ? nest[(size_t) idx].parentIndex : -1)
+                               : idx;
+        if (parent < 0) return;
+
+        struct LayerItem { int track; bool shown; bool locked; juce::String label; };
+        std::vector<LayerItem> layers;
+        for (int j = 0; j < (int) nest.size(); ++j)
+        {
+            if (nest[(size_t) j].parentIndex != parent) continue;
+            const auto li = engine.getTrackInfo (j);
+            if (! li.isSfzLayer) continue;
+            const bool locked = li.numClips > 0 || j == engine.getRecordingTrackIndex();
+            const auto label = li.name + "   ("
+                             + juce::MidiMessage::getMidiNoteName (li.layerLoKey, true, true, 4) + " - "
+                             + juce::MidiMessage::getMidiNoteName (li.layerHiKey, true, true, 4) + ")";
+            layers.push_back ({ j, ! nest[(size_t) j].hidden, locked, label });
+        }
+        if (layers.empty()) return;
+
+        juce::PopupMenu menu;
+        menu.addSectionHeader ("Layer tracks");
+        menu.addItem (1, "Show all");
+        menu.addItem (2, "Hide all (empty layers)");
+        menu.addSeparator();
+        for (const auto& l : layers)
+            menu.addItem (100 + l.track, l.label, ! l.locked, l.shown);
+
+        menu.showMenuAsync (
+            juce::PopupMenu::Options()
+                .withTargetComponent (this)
+                .withTargetScreenArea ({ pos.x, pos.y, 1, 1 }),
+            [this, parent, layers] (int result)
+            {
+                if (result <= 0) return;
+
+                for (const auto& l : layers)
+                {
+                    if (result == 1)                     engine.setSfzLayerShown (l.track, true);
+                    else if (result == 2 && ! l.locked)  engine.setSfzLayerShown (l.track, false);
+                    else if (result == 100 + l.track)    engine.setSfzLayerShown (l.track, ! l.shown);
+                }
+
+                // Selection must not stay on a row that just disappeared: move it to the parent.
+                const auto nestNow = engine.getTrackNesting();
+                if (selectedTrack >= 0 && selectedTrack < (int) nestNow.size()
+                    && nestNow[(size_t) selectedTrack].hidden)
+                {
+                    selectedTrack = parent;
+                    if (onTrackSelected) onTrackSelected (parent);
+                }
+                repaint();
+                if (onLayoutChanged) onLayoutChanged();
             });
     }
 
@@ -469,7 +540,8 @@ private:
         std::vector<int> v;
         v.reserve (nest.size());
         for (int i = 0; i < (int) nest.size(); ++i)
-            if (! (nest[(size_t) i].parentIndex >= 0 && collapsed.count (nest[(size_t) i].deviceId) > 0))
+            if (! nest[(size_t) i].hidden
+                && ! (nest[(size_t) i].parentIndex >= 0 && collapsed.count (nest[(size_t) i].deviceId) > 0))
                 v.push_back (i);
         return v;
     }
@@ -531,7 +603,8 @@ private:
                     continue;
 
                 const int parent = nest[(size_t) i].parentIndex;
-                const bool hidden = parent >= 0 && collapsed.count (nest[(size_t) i].deviceId) > 0;
+                const bool hidden = nest[(size_t) i].hidden
+                                    || (parent >= 0 && collapsed.count (nest[(size_t) i].deviceId) > 0);
                 lit[(hidden && parent < kMaxTracks) ? parent : i] = true;
             }
         }

@@ -59,6 +59,12 @@ struct SequencerTrack
     bool isSfzLayer   = false;
     std::atomic<int> layerLoKey { 0 };   // atomic: a resized zone updates it in place
     std::atomic<int> layerHiKey { 127 };
+    // SFZ layer child track: whether its row is shown in the Arranger. Layer tracks default to
+    // HIDDEN so a multi-zone instrument doesn't flood the Arranger; the user opts layers in from
+    // the SFZ parent track's right-click menu. A layer that holds clips is always shown (see
+    // SequencerEngine::getTrackNesting), so recorded data can never vanish from view. Runtime
+    // only, not saved (stream format unchanged).
+    std::atomic<bool> layerShown { false };
 
     int64_t networkRouteId = 0;
     int32_t networkSourceId = 0;

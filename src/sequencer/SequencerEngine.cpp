@@ -652,6 +652,7 @@ SequencerTrackInfo SequencerEngine::getTrackInfo (int i) const
     info.numClips    = t.getNumClips();
     info.isSfzInstrument = t.isSfzInstrument;
     info.isSfzLayer = t.isSfzLayer; info.layerLoKey = t.layerLoKey.load(); info.layerHiKey = t.layerHiKey.load();
+    info.layerShown = t.layerShown.load (std::memory_order_relaxed);
     info.linkedMidiDeviceId=t.linkedMidiDeviceId; info.networkMidiDeviceId=t.networkMidiDeviceId; info.networkMidiIsChild=t.networkMidiIsChild; info.networkMidiPeer=t.networkMidiPeer;
     return info;
 }
@@ -661,6 +662,13 @@ void SequencerEngine::setTrackEnabled (int i, bool enabled)
     auto snap = impl->getTracks();
     if (juce::isPositiveAndBelow (i, (int) snap->size()))
         (*snap)[(size_t) i]->enabled.store (enabled, std::memory_order_relaxed);
+}
+
+void SequencerEngine::setSfzLayerShown (int i, bool shown)
+{
+    auto snap = impl->getTracks();
+    if (juce::isPositiveAndBelow (i, (int) snap->size()) && (*snap)[(size_t) i]->isSfzLayer)
+        (*snap)[(size_t) i]->layerShown.store (shown, std::memory_order_relaxed);
 }
 
 int SequencerEngine::findSfTrackForChannel (int midiChannel0Based) const
@@ -1933,7 +1941,11 @@ std::vector<SequencerEngine::TrackNest> SequencerEngine::getTrackNesting() const
                 out[j].parentIndex = sfzParent;
                 out[j].deviceId    = kSfzLayerNestId;
                 out[(size_t) sfzParent].deviceId = kSfzLayerNestId;
-                ++out[(size_t) sfzParent].childCount;
+                // Hidden unless opted in; a layer that holds clips is always shown.
+                out[j].hidden = ! (*cur)[j]->layerShown.load (std::memory_order_relaxed)
+                                && (*cur)[j]->getNumClips() == 0;
+                if (! out[j].hidden)
+                    ++out[(size_t) sfzParent].childCount;
             }
     return out;
 }
