@@ -68,7 +68,7 @@ public:
         present keep their clips; new ones are added; the rest are removed. With fewer than 2
         layers there are no children. Does nothing if there is no SFZ instrument track.
         Message thread. Returns the number of layer tracks afterwards. */
-    int syncSfzLayerTracks(const std::vector<SfzLayer>& layers);
+    int syncSfzLayerTracks(const std::vector<SfzLayer>& layers, int* droppedCount = nullptr);
 
     int addNetworkAudioTrack(int64_t routeId, int32_t sourceId, int sourceChannel, const juce::String& sourceName, const juce::String& userName = {});
     bool setNetworkAudioTrackRoute(int trackIndex, int64_t routeId, int32_t sourceId, int sourceChannel);
