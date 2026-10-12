@@ -1084,7 +1084,7 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& inputLayer
 
     if (changed)
         impl->publishTracks (std::move (next));
-    return numLayerTracks;
+    return numLayerTracks + (int) orphanClipTracks.size();
 }
 
 //==============================================================================
