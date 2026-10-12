@@ -193,7 +193,26 @@ DysektEditor::DysektEditor (DysektProcessor& p)
          std::vector<SfzZone> zonesForLayers;
          for (const auto& kz : keyzones)
              zonesForLayers.push_back ({ kz.name.toStdString(), kz.loKey, kz.hiKey });
-         processor.sequencer.syncSfzLayerTracks (SfzLayerScanner::buildLayers (zonesForLayers));
+
+         int scannerDropped = 0;
+         const auto layers = SfzLayerScanner::buildLayers (zonesForLayers, &scannerDropped);
+         int budgetDropped = 0;
+         processor.sequencer.syncSfzLayerTracks (layers, &budgetDropped);
+         const int totalDropped = scannerDropped + budgetDropped;
+
+         // This callback can fire repeatedly while editing zones. Warn once
+         // while truncation persists, then re-arm after the instrument fits.
+         static bool layerLimitWarningShown = false;
+         if (totalDropped > 0 && ! layerLimitWarningShown)
+         {
+             juce::AlertWindow::showMessageBoxAsync (
+                 juce::MessageBoxIconType::WarningIcon,
+                 "SFZ Arranger Layer Limit",
+                 juce::String (totalDropped) + " SFZ layer(s) could not get Arranger tracks because of the layer or 64-track project limit. Existing layers with MIDI clips were preserved. Reduce the number of distinct note ranges or remove unused tracks to show more layers.");
+             layerLimitWarningShown = true;
+         }
+         else if (totalDropped == 0)
+             layerLimitWarningShown = false;
      }
 #endif
 

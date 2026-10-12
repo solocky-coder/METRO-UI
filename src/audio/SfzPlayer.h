@@ -76,7 +76,7 @@ public:
     /** Reads an .sfz file and returns its layers (one per distinct note range).
      *  Pure text parsing, no sfizz needed. UI/message thread; returns an empty
      *  list if the file can't be read or has no regions. See SfzLayerScanner.h. */
-    static std::vector<SfzLayer> scanLayers (const juce::File& sfzFile);
+    static std::vector<SfzLayer> scanLayers (const juce::File& sfzFile, int* droppedCount = nullptr);
 
     /** Unload current instrument (silent output). */
     void unload();

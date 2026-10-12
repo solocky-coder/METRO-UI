@@ -946,8 +946,9 @@ void SequencerEngine::removeSfzTrack()
         impl->publishTracks (std::move (next));
 }
 
-int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
+int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& inputLayers, int* droppedCount)
 {
+    if (droppedCount != nullptr) *droppedCount = 0;
     auto current = impl->getTracks();
 
     int parentIdx = -1;
@@ -955,6 +956,42 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
         if ((*current)[i]->type == TrackType::SfPlayer && (*current)[i]->isSfzInstrument && ! (*current)[i]->isSfzLayer)
             { parentIdx = (int) i; break; }
     if (parentIdx < 0) return 0;
+
+    // Enforce the project-wide 64-track budget without evicting clip-bearing
+    // layer tracks. Existing clip-bearing layers are admitted first, then new
+    // layers are admitted in note order. Non-layer tracks always retain priority.
+    constexpr int kMaxProjectTracks = 64;
+    int nonLayerTracks = 0;
+    for (const auto& t : *current)
+        if (! t->isSfzLayer) ++nonLayerTracks;
+
+    std::vector<bool> keep (inputLayers.size(), false);
+    int kept = 0;
+    auto layerMatchesTrack = [] (const SfzLayer& layer, const std::shared_ptr<SequencerTrack>& track)
+    {
+        return (track->layerLoKey.load() == layer.loKey && track->layerHiKey.load() == layer.hiKey)
+            || track->name == juce::String (layer.name);
+    };
+    for (size_t i = 0; i < inputLayers.size(); ++i)
+        for (const auto& t : *current)
+            if (t->isSfzLayer && t->getNumClips() > 0 && layerMatchesTrack (inputLayers[i], t))
+            {
+                if (! keep[i]) { keep[i] = true; ++kept; }
+                break;
+            }
+
+    const int layerCapacity = juce::jmax (0, kMaxProjectTracks - nonLayerTracks);
+    const int targetCount = juce::jmax (layerCapacity, kept);
+    for (size_t i = 0; i < inputLayers.size() && kept < targetCount; ++i)
+        if (! keep[i]) { keep[i] = true; ++kept; }
+
+    std::vector<SfzLayer> budgetedLayers;
+    budgetedLayers.reserve ((size_t) kept);
+    for (size_t i = 0; i < inputLayers.size(); ++i)
+        if (keep[i]) budgetedLayers.push_back (inputLayers[i]);
+    if (droppedCount != nullptr)
+        *droppedCount = (int) inputLayers.size() - (int) budgetedLayers.size();
+    const auto& layers = budgetedLayers;
 
     const auto& parent = (*current)[(size_t) parentIdx];
     const int ch = parent->midiChannel.load (std::memory_order_relaxed);
@@ -988,13 +1025,20 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
     next->reserve (current->size() + layers.size());
     int numLayerTracks = 0;
     bool changed = false;
+    std::vector<std::shared_ptr<SequencerTrack>> orphanClipTracks;
 
     for (auto& t : *current)
     {
         if (t->isSfzLayer)
         {
-            if (! isUsed (t)) changed = true;   // stale layer track: dropped
-            continue;                            // used ones are re-inserted in order below
+            if (! isUsed (t))
+            {
+                if (t->getNumClips() > 0)
+                    orphanClipTracks.push_back (t); // never discard user MIDI
+                else
+                    changed = true; // stale empty layer can be removed
+            }
+            continue; // layer tracks are reinserted below in note order
         }
 
         next->push_back (t);
@@ -1021,6 +1065,14 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
             }
     }
 
+    // Retain stale layer tracks that still contain clips, even if their source zone
+    // disappeared or changed identity. They remain nested under the SFZ parent.
+    for (const auto& orphan : orphanClipTracks)
+    {
+        next->push_back (orphan);
+        changed = true;
+    }
+
     // Order of existing children may also have changed (layers are sorted by note range).
     if (! changed)
     {
@@ -1032,7 +1084,7 @@ int SequencerEngine::syncSfzLayerTracks (const std::vector<SfzLayer>& layers)
 
     if (changed)
         impl->publishTracks (std::move (next));
-    return numLayerTracks;
+    return numLayerTracks + (int) orphanClipTracks.size();
 }
 
 //==============================================================================

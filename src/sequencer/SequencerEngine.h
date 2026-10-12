@@ -64,11 +64,12 @@ public:
     void addOrUpdateSfTrackOnChannel(const Sf2PresetInfo& preset, int midiChannel0Based, juce::Colour colour);
     void addSfzTrack(const juce::String& name, int midiChannel0Based, juce::Colour colour); void removeSfzTrack();
     /** Makes the SFZ instrument track's child tracks match the given layers (one child per
-        layer, in note order, nested under the SFZ track). Children whose note range is still
-        present keep their clips; new ones are added; the rest are removed. With fewer than 2
-        layers there are no children. Does nothing if there is no SFZ instrument track.
-        Message thread. Returns the number of layer tracks afterwards. */
-    int syncSfzLayerTracks(const std::vector<SfzLayer>& layers);
+        layer, in note order, nested under the SFZ track), within the 64-track project budget.
+        Non-layer tracks and clip-bearing layers take priority; stale clip-bearing layers are
+        retained rather than losing MIDI. droppedCount reports incoming layers omitted by the
+        project budget. Does nothing if there is no SFZ instrument track. Message thread.
+        Returns the number of current layer tracks. */
+    int syncSfzLayerTracks(const std::vector<SfzLayer>& layers, int* droppedCount = nullptr);
 
     int addNetworkAudioTrack(int64_t routeId, int32_t sourceId, int sourceChannel, const juce::String& sourceName, const juce::String& userName = {});
     bool setNetworkAudioTrackRoute(int trackIndex, int64_t routeId, int32_t sourceId, int sourceChannel);

@@ -31,7 +31,7 @@
 
 struct SfzLayer
 {
-    static constexpr int kMaxLayers = 32;
+    static constexpr int kMaxLayers = 128;
     std::string name;
     int  loKey       = 0;
     int  hiKey       = 127;
@@ -152,8 +152,9 @@ namespace detail
 
 /** Turns a zone list into layers: identical ranges merge, sorted by range, capped at
     SfzLayer::kMaxLayers. */
-inline std::vector<SfzLayer> buildLayers (const std::vector<SfzZone>& zones)
+inline std::vector<SfzLayer> buildLayers (const std::vector<SfzZone>& zones, int* droppedCount = nullptr)
 {
+    if (droppedCount != nullptr) *droppedCount = 0;
     // Merge regions with the identical range into one layer.
     std::vector<SfzLayer> layers;
     for (const auto& z : zones)
@@ -176,7 +177,10 @@ inline std::vector<SfzLayer> buildLayers (const std::vector<SfzZone>& zones)
     std::sort (layers.begin(), layers.end(), [] (const SfzLayer& a, const SfzLayer& b)
                { return a.loKey != b.loKey ? a.loKey < b.loKey : a.hiKey < b.hiKey; });
     if ((int) layers.size() > SfzLayer::kMaxLayers)
+    {
+        if (droppedCount != nullptr) *droppedCount = (int) layers.size() - SfzLayer::kMaxLayers;
         layers.resize ((size_t) SfzLayer::kMaxLayers);
+    }
 
     for (size_t i = 0; i < layers.size(); ++i)
     {
@@ -189,7 +193,7 @@ inline std::vector<SfzLayer> buildLayers (const std::vector<SfzZone>& zones)
 }
 
 /** Scans SFZ text and returns the instrument's layers (empty if it has no regions). */
-inline std::vector<SfzLayer> scan (const std::string& sfzText)
+inline std::vector<SfzLayer> scan (const std::string& sfzText, int* droppedCount = nullptr)
 {
     using namespace detail;
 
@@ -250,6 +254,6 @@ inline std::vector<SfzLayer> scan (const std::string& sfzText)
         }
     }
 
-    return buildLayers (zones);
+    return buildLayers (zones, droppedCount);
 }
 } // namespace SfzLayerScanner

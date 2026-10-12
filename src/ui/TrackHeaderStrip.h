@@ -4,6 +4,7 @@
 #include <vector>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
+#include "../audio/SfzZoneLabel.h"
 #include "DysektLookAndFeel.h"
 #include "HorizontalLevelMeter.h"
 #include "../network/NetworkTrackMeters.h"
@@ -274,6 +275,8 @@ public:
 
             // Children drop the repeated audio-track name; a collapsed parent shows how many it hides.
             juce::String shownName = arrangerTrackName (info);
+            if (info.isSfzLayer)
+                shownName = SfzZoneLabel::withRange (shownName, info.layerLoKey, info.layerHiKey);
             if (isChildRow)
             {
                 // Nested under its audio track: show just "MIDI n" (drops the device label,
