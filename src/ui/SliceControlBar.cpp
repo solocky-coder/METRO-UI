@@ -43,7 +43,7 @@ static juce::Colour adsrTintForField (int fieldId)
 
 // ── Flat badge fill — single flat colour, square corners. Was a vertical
 // gradient + soft top glow; now matches the rest of the flat shape language.
-static void fillGlassBadge (juce::Graphics& g, juce::Rectangle<float> bounds,
+static void fillBadge (juce::Graphics& g, juce::Rectangle<float> bounds,
                              juce::Colour fillColour, float /*radius*/)
 {
     g.setColour (fillColour);
@@ -760,7 +760,7 @@ void SliceControlBar::drawMarkerSliderCell (juce::Graphics& g, int x, int y,
         const int by = cell.getY() + juce::roundToInt (2.0f * paintSf);
         markerFineModeToggleArea = juce::Rectangle<int> (bx, by, bw, bh);
 
-        // Flat, square-cornered fill — was fillGlassBadge's gradient + top glow,
+        // Flat, square-cornered fill — was fillBadge's gradient + top glow,
         // which is the same rounded/glossy language the rest of the file dropped.
         g.setColour (fineOn ? T.accent.withAlpha (0.85f) : T.foreground.withAlpha (0.18f));
         g.fillRect (markerFineModeToggleArea.toFloat());
@@ -2501,7 +2501,7 @@ void SliceControlBar::drawChroBadgeCell (juce::Graphics& g, int x, int y,
     // Badge — stops 2px short of the cell bottom so it doesn't run flush to
     // the row divider below.
     const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (13.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (13.0f * paintSf);
-    fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
+    fillBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
                     active ? (locked ? theme.lockActive.withAlpha (0.15f)
                                      : theme.accent.withAlpha (0.15f))
                            : theme.separator.withAlpha (0.25f), 0.0f);
@@ -2548,7 +2548,7 @@ void SliceControlBar::drawMixerToggleCell (juce::Graphics& g, int x, int y,
     const juce::Colour col = on ? (locked ? theme.lockActive : theme.accent)
                                : (locked ? theme.lockActive.withAlpha (0.4f)
                                          : theme.foreground.withAlpha (0.18f));
-    fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
+    fillBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
                     col.withAlpha (on ? 0.15f : 0.08f), 0.0f);
     g.setColour (col);
     g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
@@ -2593,7 +2593,7 @@ void SliceControlBar::drawLegatoToggleCell (juce::Graphics& g, int x, int y,
     const juce::Colour col = on ? (locked ? theme.lockActive : theme.accent)
                                : (locked ? theme.lockActive.withAlpha (0.4f)
                                          : theme.foreground.withAlpha (0.18f));
-    fillGlassBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
+    fillBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
                     col.withAlpha (on ? 0.15f : 0.08f), 0.0f);
     g.setColour (col);
     g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);

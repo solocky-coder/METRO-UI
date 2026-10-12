@@ -5,7 +5,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
 #include "DysektLookAndFeel.h"
-#include "GlassStyle.h"
 #include "HorizontalLevelMeter.h"
 #include "../network/NetworkTrackMeters.h"
 
@@ -96,21 +95,6 @@ public:
             const juce::Rectangle<int> rowR (0, row * trackH, getWidth(), trackH);
             const bool sel   = (i == selectedTrack);
 
-            if (GlassStyle::on())
-            {
-                const auto card = rowR.toFloat().reduced (3.0f, 2.0f);
-                const float cr = GlassStyle::radius();
-                g.setColour (theme.darkBar.withAlpha (0.92f));
-                g.fillRoundedRectangle (card, cr);
-                g.setColour (info.colour.withAlpha (sel ? 0.30f : 0.08f));
-                g.fillRoundedRectangle (card, cr);
-                if (sel)
-                {
-                    g.setColour (theme.accent.withAlpha (0.9f));
-                    g.drawRoundedRectangle (card.reduced (0.5f), cr, 1.4f);
-                }
-            }
-            else
             {
             g.setColour (theme.header.withAlpha (0.92f));
             g.fillRect (rowR);
@@ -137,7 +121,7 @@ public:
             g.setColour (info.colour.withAlpha (sel ? 0.62f : 0.14f));
             g.fillRect (rowR);
 
-            } // non-glass row background
+            }
 
             // Keyzone-played highlight (SFZ layer child tracks, or the parent row while its
             // children are collapsed): accent wash + a wider accent bar on the left edge, faded

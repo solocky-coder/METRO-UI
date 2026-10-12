@@ -1,5 +1,4 @@
 #include "PluginEditor.h"
-#include "ui/GlassStyle.h"
 #include "ui/DysektLookAndFeel.h"
 #include "ui/PluginEditorConstants.h"
 #include "ui/LogoIcon.h"
@@ -1297,7 +1296,6 @@ static juce::Rectangle<float> waveformFrameRect (const DysektEditor& ed,
 void DysektEditor::paint (juce::Graphics& g)
 {
  g.fillAll (getTheme().background);
- GlassStyle::paintAmbient (g, getLocalBounds());
 
  // Draw the CRT frame in waveform mode, or whenever trim mode forces the waveform visible
  const bool wvVisible  = waveformView.isVisible() && waveformView.getHeight() > 0;
@@ -1308,7 +1306,7 @@ void DysektEditor::paint (juce::Graphics& g)
  const auto& frameSrc = wvVisible ? waveformView.getBounds() : padGridView.getBounds();
  const auto outerF = waveformFrameRect (*this, frameSrc, trimDialog != nullptr);
 
- if (getTheme().name == "metro" || getTheme().glass)
+ if (getTheme().name == "metro")
  {
      g.setColour (getTheme().waveformBg);
      g.fillRoundedRectangle (outerF, 0.0f);
@@ -1356,7 +1354,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  const auto outerF = waveformFrameRect (*this, frameSrc, trimDialog != nullptr);
  const auto ac = getTheme().accent;
 
- if (getTheme().name == "metro" || getTheme().glass)
+ if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
      g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
@@ -1394,7 +1392,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  const auto outerF = waveformFrameRect (*this, sfzActiveBounds, false);
  const auto ac = getTheme().accent;
 
- if (getTheme().name == "metro" || getTheme().glass)
+ if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
      g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
@@ -1441,7 +1439,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  const auto outerF = waveformFrameRect (*this, slotBounds, false);
  const auto ac = getTheme().accent;
 
- if (getTheme().name == "metro" || getTheme().glass)
+ if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
      g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
@@ -1471,7 +1469,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  const auto ac = getTheme().accent;
  const juce::Rectangle<float> logoF (logoBar.getBounds().toFloat()
  .withTrimmedTop (4.0f * sf));
- if (getTheme().name == "metro" || getTheme().glass)
+ if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
      g.drawRoundedRectangle (logoF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
@@ -1491,7 +1489,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  {
  const auto ac = getTheme().accent;
  const juce::Rectangle<float> win (getLocalBounds().toFloat());
- if (getTheme().name == "metro" || getTheme().glass)
+ if (getTheme().name == "metro")
  {
      g.setColour (getTheme().separator);
      g.drawRoundedRectangle (win.reduced (2.0f * sf), 0.0f, 1.0f * sf);
@@ -2484,11 +2482,10 @@ void DysektEditor::ensureDefaultThemes()
  // files left over from a previous version are removed below so they
  // don't linger in the picker after an update.
  write ("metro", ThemeData::metroTheme());
- write ("glass", ThemeData::glassTheme());
 
  static const char* kRetiredBuiltIns[] = {
      "dark", "shell", "lazy", "snow", "ghost", "hack",
-     "midnight", "pigments", "cr8", "dysekt", "serum", "opendaw"
+     "midnight", "pigments", "cr8", "dysekt", "serum", "opendaw", "glass"
  };
  for (auto* name : kRetiredBuiltIns)
  {
@@ -2548,7 +2545,7 @@ void DysektEditor::saveUserSettings (const juce::String& themeName)
 
 void DysektEditor::loadUserSettings()
 {
- juce::String themeName = "glass";
+ juce::String themeName = "metro";
  auto file = getUserSettingsFile();
  if (file.existsAsFile())
  {
@@ -2558,7 +2555,7 @@ void DysektEditor::loadUserSettings()
  if (line.startsWith ("theme:"))
  {
  themeName = line.fromFirstOccurrenceOf (":", false, false).trim();
-  if (themeName == "metro") themeName = "glass"; // migrate the previous default so Glass is visible after update
+  if (themeName == "glass") themeName = "metro"; // Glass theme was removed — fall back to Metro
  }
  else if (line.startsWith ("waveStyle:"))
  {

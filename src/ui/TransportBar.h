@@ -8,7 +8,6 @@
 #include "../metro/MetroColours.h"
 #include "../metro/MetroTypography.h"
 #include "DysektLookAndFeel.h"
-#include "GlassStyle.h"
 #include "UIHelpers.h"
 #include "ContextMenuButton.h"
 #include "TransportIconButton.h"
@@ -291,9 +290,6 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        if (GlassStyle::on())
-            GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));
-        else
         {
             g.fillAll (Base::SurfaceAlt);
             g.setColour (Base::Border);
