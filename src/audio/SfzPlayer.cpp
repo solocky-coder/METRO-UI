@@ -1543,10 +1543,11 @@ namespace
     }
 }
 
-std::vector<SfzLayer> SfzPlayer::scanLayers (const juce::File& sfzFile)
+std::vector<SfzLayer> SfzPlayer::scanLayers (const juce::File& sfzFile, int* droppedCount)
 {
+    if (droppedCount != nullptr) *droppedCount = 0;
     if (! sfzFile.existsAsFile()) return {};
-    return SfzLayerScanner::scan (sfzFile.loadFileAsString().toStdString());
+    return SfzLayerScanner::scan (sfzFile.loadFileAsString().toStdString(), droppedCount);
 }
 
 // ── applyFluidAdsrFromUi ──────────────────────────────────────────────────────
