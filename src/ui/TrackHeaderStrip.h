@@ -205,7 +205,8 @@ public:
             const int btnW  = juce::jlimit (18, 24, trackH - 10);
             const int btnH  = juce::jlimit (12, 18, trackH - 8);
             const int btnGap = 3;
-            const auto recR  = rowR.withTrimmedLeft (rowR.getWidth() - btnW - 4)
+            const auto recR  = (GlassStyle::on() ? rowR.withTrimmedRight (6) : rowR)
+                                   .withTrimmedLeft ((GlassStyle::on() ? rowR.getWidth() - 6 : rowR.getWidth()) - btnW - 4)
                                    .withSizeKeepingCentre (btnW, btnH);
             const auto soloR = recR.translated (-(btnW + btnGap), 0);
             const auto muteR = soloR.translated (-(btnW + btnGap), 0);
@@ -400,7 +401,8 @@ public:
         const int btnW   = juce::jlimit (18, 24, trackH - 10);
         const int btnH   = juce::jlimit (12, 18, trackH - 8);
         const int btnGap = 3;
-        const auto recR  = rowR.withTrimmedLeft (rowR.getWidth() - btnW - 4)
+        const auto recR  = (GlassStyle::on() ? rowR.withTrimmedRight (6) : rowR)
+                               .withTrimmedLeft ((GlassStyle::on() ? rowR.getWidth() - 6 : rowR.getWidth()) - btnW - 4)
                                .withSizeKeepingCentre (btnW, btnH);
         const auto soloR = recR.translated (-(btnW + btnGap), 0);
         const auto muteR = soloR.translated (-(btnW + btnGap), 0);

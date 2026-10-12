@@ -71,6 +71,8 @@ public:
      */
     enum class Tool { Select, Draw, Erase, Split, Glue };
 
+    static constexpr int kTransportHGlass = 52;   // Glass: content row only (no empty docked title strip / gap)
+    int transportH() const { return GlassStyle::on() ? kTransportHGlass : kTransportH; }
     static constexpr int kTransportH   = 88;   // title strip (24) + gap (16) +
                                                 // content row (40) + bottom gutter (8).
                                                 // The gutter keeps child controls and
@@ -223,7 +225,7 @@ public:
                 b.setRadioGroupId (kQuantizeButtonRadioGroup, juce::dontSendNotification);
                 b.setClickingTogglesState (true);
                 b.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff1c2028));
-                b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
+                b.getProperties().set ("onUsesAccent", true);   // lit colour = CURRENT theme accent (see DysektLookAndFeel)
                 b.setColour (juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha (0.55f));
                 b.setColour (juce::TextButton::textColourOnId,   juce::Colours::black.withAlpha (0.85f));
                 b.getProperties().set ("flatFill", true);
@@ -245,7 +247,7 @@ public:
                 b.setButtonText (labels[i]);
                 b.setTooltip (labels[i]);
                 b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff11171c));
-                b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
+                b.getProperties().set ("onUsesAccent", true);   // lit colour = CURRENT theme accent (see DysektLookAndFeel)
                 b.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.72f));
                 b.setColour (juce::TextButton::textColourOnId, juce::Colours::black.withAlpha (0.9f));
                 b.getProperties().set ("flatFill", true);
@@ -424,7 +426,7 @@ public:
     {
         auto r = getLocalBounds().reduced (3);
         if (! transport.isFloating())
-            transport.setBounds (r.removeFromTop (kTransportH));
+            transport.setBounds (r.removeFromTop (transportH()));
 
         // Quantize buttons fill the header to the right of the "QUANTIZE"
         // label — see paintArrangeHeader(). Laid out here (rather than
@@ -505,7 +507,8 @@ public:
         auto b = getLocalBounds();
 
         // ── LCD-style frame — flat, square-cornered, no gradient, no glow ────
-        g.setColour (theme.waveformBg);
+        // Glass: slightly translucent so the window's ambient glow tints the toolbar/gutters.
+        g.setColour (GlassStyle::on() ? theme.waveformBg.withAlpha (0.80f) : theme.waveformBg);
         g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
         g.setColour (theme.separator);
         g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
@@ -523,7 +526,7 @@ public:
         paintDrawClipPreview (g);
 
         // Corner fill between scrollbars
-        if (getWidth() > leftPanelW() + 8 && getHeight() > kTransportH + kScrollH + 8)
+        if (getWidth() > leftPanelW() + 8 && getHeight() > transportH() + kScrollH + 8)
         {
             g.setColour (theme.waveformBg);
             g.fillRect (getWidth() - kScrollW - 4,
@@ -2331,7 +2334,7 @@ private:
 
     juce::Rectangle<int> arrangeHeaderBounds() const noexcept
     {
-        const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
+        const int topY = (transport.isFloating() ? 0 : transportH()) + 3;
         return { 3, topY, juce::jmax (340, getWidth() - 6), kToolbarH };
     }
 

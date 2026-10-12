@@ -431,7 +431,8 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
  auto area = getLocalBounds();
 
 
-    L.titleStrip = area.removeFromTop (MetroMetrics::grid * 3);
+    const bool glassDocked = GlassStyle::on() && docked;
+    L.titleStrip = area.removeFromTop (glassDocked ? 0 : MetroMetrics::grid * 3);
 
     // ── Title strip: view switcher on the left, pin+dock (floating) or
     // float (docked) grouped on the right. While docked, none of this
@@ -453,7 +454,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     }
 
     area.reduce (MetroMetrics::grid, 0);
-    area.removeFromTop (MetroMetrics::grid * 2);
+    area.removeFromTop (glassDocked ? 4 : MetroMetrics::grid * 2);
 
 
  const int rowH = MetroMetrics::largeControlHeight;
@@ -692,7 +693,8 @@ void FloatingTransportBar::paint (juce::Graphics& g)
         // rounded card and give the tab strip its own slightly darker rounded track.
         GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));
         g.setColour (getTheme().darkBar.withAlpha (0.55f));
-        g.fillRoundedRectangle (L.titleStrip.toFloat().reduced (6.0f, 4.0f), GlassStyle::radius());
+        if (! L.titleStrip.isEmpty())
+            g.fillRoundedRectangle (L.titleStrip.toFloat().reduced (6.0f, 4.0f), GlassStyle::radius());
     }
     else
     {

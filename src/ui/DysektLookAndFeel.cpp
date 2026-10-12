@@ -144,7 +144,25 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
     // brightening — the colour itself carries the state.
     if (button.getProperties().getWithDefault ("flatFill", false))
     {
-        auto roleFill = toggled ? button.findColour (juce::TextButton::buttonOnColourId)
+        // "onUsesAccent": the lit colour is the theme accent read NOW, not a colour copied into
+        // buttonOnColourId when the button was built (which went stale whenever the theme was
+        // applied after construction — buttons stayed the old theme's cyan).
+        const bool onUsesAccent = button.getProperties().getWithDefault ("onUsesAccent", false);
+        if (getTheme().glass && onUsesAccent)
+        {
+            // Glass: tinted translucent fill + accent outline when active (the concept's look).
+            g.setColour (button.findColour (juce::TextButton::buttonColourId));
+            g.fillRoundedRectangle (bounds, r);
+            if (toggled)
+            {
+                g.setColour (getTheme().accent.withAlpha (0.24f));
+                g.fillRoundedRectangle (bounds, r);
+                g.setColour (getTheme().accent.withAlpha (0.90f));
+                g.drawRoundedRectangle (bounds.reduced (0.5f), r, 1.3f);
+            }
+            return;
+        }
+        auto roleFill = toggled ? (onUsesAccent ? getTheme().accent : button.findColour (juce::TextButton::buttonOnColourId))
                                  : button.findColour (juce::TextButton::buttonColourId);
         g.setColour (roleFill);
         g.fillRoundedRectangle (bounds, r);   // r is 0 outside the glass theme, so identical to fillRect there
@@ -192,6 +210,9 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
         textCol = button.findColour (button.getToggleState()
                                        ? juce::TextButton::textColourOnId
                                        : juce::TextButton::textColourOffId);
+        // Glass active state is a tinted outline, so its text must be light, not the black-on-solid-accent used elsewhere.
+        if (getTheme().glass && button.getToggleState() && button.getProperties().getWithDefault ("onUsesAccent", false))
+            textCol = getTheme().foreground;
         if (textCol.isTransparent())
             textCol = button.getToggleState()
                     ? getTheme().accent

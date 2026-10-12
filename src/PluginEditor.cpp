@@ -2517,10 +2517,10 @@ void DysektEditor::applyTheme (const juce::String& themeName)
  // Metro is the only built-in theme now; any other name should already
  // have matched a .dsk file above (a user-created theme). If not found,
  // fall back to Metro rather than a retired built-in preset.
- setTheme (ThemeData::metroTheme());
- setLookAndFeel ((juce::LookAndFeel*) &metroLnf);
+ setTheme (ThemeData::glassTheme());
+ setLookAndFeel ((juce::LookAndFeel*) &lnf);
  processor.sliceManager.setSlicePalette (getTheme().slicePalette);
- saveUserSettings ("metro");
+ saveUserSettings ("glass");
  applyWindowIcon (this);
  repaint();
 }
@@ -2533,19 +2533,28 @@ void DysektEditor::saveUserSettings (const juce::String& themeName)
 
  file.replaceWithText ("theme: " + themeName
  + "\nwaveStyle: " + juce::String (waveformMode)
- + "\nuiMode: " + juce::String (uiMode) + "\n");
+ + "\nuiMode: " + juce::String (uiMode)
+ + "\nthemeRev: 1\n");
 }
 
 void DysektEditor::loadUserSettings()
 {
- juce::String themeName = "metro";
+ // Glass is now the app's default look. Settings files written before that (no "themeRev:"
+ // line) are switched to Glass once; saveUserSettings() then records themeRev, so a later
+ // manual choice of Metro (or any other theme) sticks.
+ juce::String themeName = "glass";
+ bool hasThemeRev = false;
  auto file = getUserSettingsFile();
  if (file.existsAsFile())
  {
  for (auto line : juce::StringArray::fromLines (file.loadFileAsString()))
  {
  line = line.trim();
- if (line.startsWith ("theme:"))
+ if (line.startsWith ("themeRev:"))
+ {
+ hasThemeRev = true;
+ }
+ else if (line.startsWith ("theme:"))
  {
  themeName = line.fromFirstOccurrenceOf (":", false, false).trim();
  }
@@ -2563,6 +2572,8 @@ void DysektEditor::loadUserSettings()
  }
  }
  }
+ if (file.existsAsFile() && ! hasThemeRev)
+ themeName = "glass";   // one-time move to the new default (see above)
  applyTheme (themeName);
 
  waveformView.setWaveformMode (waveformMode);

@@ -26,31 +26,38 @@ namespace GlassStyle
         ig.fillRect (area);
     }
 
-    /** Soft purple/blue ambient glow behind the whole window (cached image). */
+    /** Soft purple/blue ambient glow behind the whole window (cached image).
+        A few sizes are cached at once because several top-level surfaces paint it (the editor and
+        the Arrange/Mixer/EQ window), and one shared cache would be rebuilt on every alternate paint. */
     inline void paintAmbient (juce::Graphics& g, juce::Rectangle<int> area)
     {
         const auto& t = getTheme();
         if (! t.glass || area.isEmpty()) return;
 
-        static juce::Image cache;
-        static juce::Rectangle<int> cachedArea;
-        static juce::uint32 cachedA = 0, cachedB = 0, cachedBg = 0;
+        struct Entry { int w = 0, h = 0; juce::uint32 a = 0, b = 0, bg = 0; juce::Image img; };
+        static Entry cache[4];
+        static int   nextSlot = 0;
 
-        if (! cache.isValid() || cachedArea != area
-            || cachedA != t.glowA.getARGB() || cachedB != t.glowB.getARGB() || cachedBg != t.background.getARGB())
+        Entry* hit = nullptr;
+        for (auto& e : cache)
+            if (e.img.isValid() && e.w == area.getWidth() && e.h == area.getHeight()
+                && e.a == t.glowA.getARGB() && e.b == t.glowB.getARGB() && e.bg == t.background.getARGB())
+            { hit = &e; break; }
+
+        if (hit == nullptr)
         {
-            cache = juce::Image (juce::Image::ARGB, area.getWidth(), area.getHeight(), true);
-            juce::Graphics ig (cache);
-            const float w = (float) area.getWidth(), h = (float) area.getHeight();
+            hit = &cache[nextSlot]; nextSlot = (nextSlot + 1) % 4;
+            hit->w = area.getWidth(); hit->h = area.getHeight();
+            hit->a = t.glowA.getARGB(); hit->b = t.glowB.getARGB(); hit->bg = t.background.getARGB();
+            hit->img = juce::Image (juce::Image::ARGB, hit->w, hit->h, true);
+            juce::Graphics ig (hit->img);
+            const float w = (float) hit->w, h = (float) hit->h;
             ig.fillAll (t.background);
-
-            glowBlob (ig, cache.getBounds(), t.glowA, w * 0.92f, h * 0.05f, juce::jmax (w, h) * 0.55f, 0.20f);   // top-right
-            glowBlob (ig, cache.getBounds(), t.glowB, w * 0.00f, h * 0.55f, juce::jmax (w, h) * 0.45f, 0.18f);   // left edge
-            glowBlob (ig, cache.getBounds(), t.glowB, w * 0.35f, h * 1.05f, juce::jmax (w, h) * 0.50f, 0.10f);   // bottom
-
-            cachedArea = area; cachedA = t.glowA.getARGB(); cachedB = t.glowB.getARGB(); cachedBg = t.background.getARGB();
+            glowBlob (ig, hit->img.getBounds(), t.glowA, w * 0.92f, h * 0.05f, juce::jmax (w, h) * 0.55f, 0.36f);   // top-right
+            glowBlob (ig, hit->img.getBounds(), t.glowB, w * 0.00f, h * 0.55f, juce::jmax (w, h) * 0.45f, 0.30f);   // left edge
+            glowBlob (ig, hit->img.getBounds(), t.glowB, w * 0.35f, h * 1.05f, juce::jmax (w, h) * 0.50f, 0.18f);   // bottom
         }
-        g.drawImageAt (cache, area.getX(), area.getY());
+        g.drawImageAt (hit->img, area.getX(), area.getY());
     }
 
     /** Clip drawing to a rect — softly rounded in Glass so content never squares off a rounded frame. */
@@ -61,7 +68,7 @@ namespace GlassStyle
     }
 
     /** Rounded translucent card with a 1px hairline — panels, toolbars, transport. */
-    inline void fillCard (juce::Graphics& g, juce::Rectangle<float> r, float alpha = 0.92f)
+    inline void fillCard (juce::Graphics& g, juce::Rectangle<float> r, float alpha = 0.66f)
     {
         const auto& t = getTheme();
         g.setColour (t.header.withAlpha (alpha));
