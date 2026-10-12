@@ -104,46 +104,8 @@ void HeaderBar::paint (juce::Graphics& g)
         btn->setColour (juce::TextButton::textColourOffId, getTheme().foreground);
     }
 
-    const auto accent = getTheme().accent;
-    auto b = getLocalBounds();
-
-    // Dark rounded background — metallic gradient for serum, flat for all others
-    const auto& theme = getTheme();
-
-    if (theme.name == "metro")
-    {
-        g.setColour (theme.waveformBg);
-        g.fillRoundedRectangle (b.toFloat(), 0.0f);
-        g.setColour (theme.separator);
-        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
-
-        sampleInfoBounds = {};
-        slicesInfoArea   = {};
-        (void) processor;
-        return;
-    }
-
-    juce::ColourGradient bgGrad;
-    if (theme.name == "serum")
-    {
-        // Three-stop metallic: bright steel top → dark mid → slight lift bottom
-        auto base = theme.darkBar;
-        bgGrad = juce::ColourGradient (base.brighter (0.22f), 0, 0,
-                                       base.darker   (0.12f), 0, (float) b.getHeight(), false);
-        bgGrad.addColour (0.65, base.brighter (0.08f));
-    }
-    else
-    {
-        bgGrad = juce::ColourGradient (juce::Colour (0xFF131313), 0, 0,
-                                       juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
-    }
-    g.setGradientFill (bgGrad);
-    g.fillRoundedRectangle(b.toFloat(), 0.0f);
-
-    // Bright accent border — matches DualLcdControlFrame / LCD panels
-    g.setColour (accent.withAlpha (0.60f));
-    g.drawRoundedRectangle(b.toFloat().reduced (0.5f), 0.0f, 1.0f);
-
+    // No background of its own: the buttons sit inside the bottom of the
+    // DualLcdControlFrame, which already paints the panel + border behind them.
     sampleInfoBounds = {};
     slicesInfoArea   = {};
     (void) processor;

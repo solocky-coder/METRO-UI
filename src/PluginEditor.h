@@ -7,6 +7,7 @@
 #include "metro/MetroLookAndFeel.h"
 #include "ui/LogoBar.h"
 #include "ui/HeaderBar.h"
+#include "ui/MiniTransportBar.h"
 #include "params/ParamIds.h"
 #include "ui/SliceLane.h"
 #include "ui/SliceControlBar.h"
@@ -268,6 +269,7 @@ private:
 
     LogoBar         logoBar;
     HeaderBar       headerBar;
+    MiniTransportBar transportBar { processor.sequencer };   // STOP/PLAY/REC/LOOP — where the UNDO/REDO row used to be
 
     SliceLcdDisplay  sliceLcd;
     SliceWaveformLcd sliceWaveformLcd;

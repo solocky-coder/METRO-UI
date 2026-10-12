@@ -86,6 +86,11 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  };
  if (auto* cf = headerBar.getControlFrame())
  addAndMakeVisible (*cf);
+ // UNDO/REDO/PANIC/cog now live inside the bottom of the control frame, so
+ // headerBar must stack above it (the frame was added after headerBar).
+ headerBar.toFront (false);
+ addAndMakeVisible (transportBar);
+ transportBar.getProperties().set ("dysektThemeKey", "header");
 
  addAndMakeVisible (sliceLane);
  sliceLane.getProperties().set ("dysektThemeKey", "darkBar");
@@ -1606,17 +1611,22 @@ void DysektEditor::resized()
  // logoBar placed after cfY is known — centred vertically between plugin top and CF top
  {
  const int btnBarY = centreCol.getBottom() - si (kBtnBarH) - si (4);
- headerBar.setBounds (centreCol.getX(), btnBarY, centreCol.getWidth(), si (kBtnBarH));
+ // Transport (STOP/PLAY/REC/LOOP) takes the old UNDO/REDO/PANIC slot beneath the frame.
+ transportBar.setBounds (centreCol.getX(), btnBarY, centreCol.getWidth(), si (kBtnBarH));
  if (auto* cf = headerBar.getControlFrame())
  {
  const int cfY = centreCol.getY() + (btnBarY - centreCol.getY() - ctrlFrmH) / 2;
  cf->setBounds (centreCol.getX(), cfY, centreCol.getWidth(), ctrlFrmH);
+ // UNDO/REDO/PANIC/cog sit in the strip at the bottom of the control frame,
+ // just under the GLOBAL PITCH / EQ / VOL knobs.
+ headerBar.setBounds (cf->getX(), cf->getBottom() - si (kBtnBarH) - si (2), cf->getWidth(), si (kBtnBarH));
  // Centre logo: equal margin above and below between plugin top (y=0) and CF top
  const int logoY = (cfY - si (kLogoH)) / 2;
  logoBar.setBounds (logoRow.getX(), logoY, logoRow.getWidth(), si (kLogoH));
  }
  else
  {
+ headerBar.setBounds (centreCol.getX(), btnBarY, centreCol.getWidth(), si (kBtnBarH));
  logoBar.setBounds (logoRow); // fallback: top-aligned
  }
  }
