@@ -53,9 +53,9 @@ namespace GlassStyle
             juce::Graphics ig (hit->img);
             const float w = (float) hit->w, h = (float) hit->h;
             ig.fillAll (t.background);
-            glowBlob (ig, hit->img.getBounds(), t.glowA, w * 0.92f, h * 0.05f, juce::jmax (w, h) * 0.55f, 0.36f);   // top-right
-            glowBlob (ig, hit->img.getBounds(), t.glowB, w * 0.00f, h * 0.55f, juce::jmax (w, h) * 0.45f, 0.30f);   // left edge
-            glowBlob (ig, hit->img.getBounds(), t.glowB, w * 0.35f, h * 1.05f, juce::jmax (w, h) * 0.50f, 0.18f);   // bottom
+            glowBlob (ig, hit->img.getBounds(), t.glowA, w * 0.92f, h * 0.05f, juce::jmax (w, h) * 0.45f, 0.42f);   // top-right
+            glowBlob (ig, hit->img.getBounds(), t.glowB, w * 0.00f, h * 0.55f, juce::jmax (w, h) * 0.38f, 0.36f);   // left edge
+            glowBlob (ig, hit->img.getBounds(), t.glowB, w * 0.35f, h * 1.05f, juce::jmax (w, h) * 0.42f, 0.22f);   // bottom
         }
         g.drawImageAt (hit->img, area.getX(), area.getY());
     }

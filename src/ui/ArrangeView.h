@@ -507,8 +507,10 @@ public:
         auto b = getLocalBounds();
 
         // ── LCD-style frame — flat, square-cornered, no gradient, no glow ────
-        // Glass: slightly translucent so the window's ambient glow tints the toolbar/gutters.
-        g.setColour (GlassStyle::on() ? theme.waveformBg.withAlpha (0.80f) : theme.waveformBg);
+        // Glass: paint the ambient glow here (this view covers the whole window, so the parent's
+        // glow was never visible) and keep the frame translucent so it tints toolbar, ruler and gutters.
+        if (GlassStyle::on()) GlassStyle::paintAmbient (g, b);
+        g.setColour (GlassStyle::on() ? theme.waveformBg.withAlpha (0.62f) : theme.waveformBg);
         g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
         g.setColour (theme.separator);
         g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
@@ -2432,7 +2434,7 @@ private:
         {
             const float lx = tickToX (loopStart);
             const float rx = tickToX (loopEnd);
-            g.setColour (theme.accent.withAlpha (0.22f));
+            g.setColour (theme.accent.withAlpha (theme.glass ? 0.09f : 0.22f));
             g.fillRect (lx, (float)rulerBounds.getY(), rx - lx,
                         (float)rulerBounds.getHeight());
         }

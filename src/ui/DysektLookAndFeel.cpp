@@ -153,6 +153,11 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
             // Glass: tinted translucent fill + accent outline when active (the concept's look).
             g.setColour (button.findColour (juce::TextButton::buttonColourId));
             g.fillRoundedRectangle (bounds, r);
+            if (! toggled)
+            {
+                g.setColour (getTheme().separator.withAlpha (0.65f));
+                g.drawRoundedRectangle (bounds.reduced (0.5f), r, 1.0f);
+            }
             if (toggled)
             {
                 g.setColour (getTheme().accent.withAlpha (0.24f));

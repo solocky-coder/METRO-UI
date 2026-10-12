@@ -492,11 +492,11 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         // 10 grid units for LINK (11 while floating, where there's no
         // Float button eating into the block) — enough for "LINK 3" once
         // there are peers, not just the bare "LINK" label.
-        const int rightW = MetroMetrics::grid * (docked ? 19 : 11);
+        const int rightW = MetroMetrics::grid * (docked ? 22 : 11);
         auto right = row.removeFromRight (rightW);
         if (docked)
         {
-            L.floatField = right.removeFromLeft (MetroMetrics::grid * 7);
+            L.floatField = right.removeFromLeft (MetroMetrics::grid * 10);
             right.removeFromLeft (fieldGap);
         }
         L.linkField    = right;
@@ -549,7 +549,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         // needs more than the old 48px afforded and was getting
         // ellipsized ("120…") instead of showing the actual value.
         const int tempoFieldW = MetroMetrics::grid * 9;
-        L.tempoCaption = row.removeFromLeft (MetroMetrics::grid * 4);
+        L.tempoCaption = row.removeFromLeft (MetroMetrics::grid * (docked ? 7 : 4));
         L.tempoField   = row.removeFromLeft (tempoFieldW);
         row.removeFromLeft (fieldGap);
     }
