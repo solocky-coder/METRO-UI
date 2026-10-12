@@ -1,5 +1,4 @@
 #include "HeaderBar.h"
-#include "GlassStyle.h"
 #include "UIHelpers.h"
 #include "DysektLookAndFeel.h"
 #include "../PluginProcessor.h"
@@ -111,12 +110,12 @@ void HeaderBar::paint (juce::Graphics& g)
     // Dark rounded background — metallic gradient for serum, flat for all others
     const auto& theme = getTheme();
 
-    if ((theme.name == "metro" || theme.glass))
+    if (theme.name == "metro")
     {
         g.setColour (theme.waveformBg);
-        g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
+        g.fillRoundedRectangle (b.toFloat(), 0.0f);
         g.setColour (theme.separator);
-        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
         sampleInfoBounds = {};
         slicesInfoArea   = {};
@@ -139,11 +138,11 @@ void HeaderBar::paint (juce::Graphics& g)
                                        juce::Colour (0xFF0E0E0E), 0, (float) b.getHeight(), false);
     }
     g.setGradientFill (bgGrad);
-    g.fillRoundedRectangle(b.toFloat(), GlassStyle::radius());
+    g.fillRoundedRectangle(b.toFloat(), 0.0f);
 
     // Bright accent border — matches DualLcdControlFrame / LCD panels
     g.setColour (accent.withAlpha (0.60f));
-    g.drawRoundedRectangle(b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
+    g.drawRoundedRectangle(b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
     sampleInfoBounds = {};
     slicesInfoArea   = {};

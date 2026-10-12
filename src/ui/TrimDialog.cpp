@@ -1,6 +1,5 @@
 ﻿#include "TrimDialog.h"
 #include "DysektLookAndFeel.h"
-#include "GlassStyle.h"
 #include "UIHelpers.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
@@ -42,9 +41,9 @@ void TrimDialog::drawTrimKnob (juce::Graphics& g,
     // on T.accent but softened, since these cells are draggable controls, not
     // a static frame).
     g.setColour (T.darkBar);
-    g.fillRoundedRectangle (cell.toFloat(), GlassStyle::radius());
+    g.fillRoundedRectangle (cell.toFloat(), 0.0f);
     g.setColour (T.accent.withAlpha (0.55f));
-    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
+    g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
     // Grip motif — same two-bar tab language as AddZoneTrimOverlay::drawTrimHandleTab,
     // scaled down into the cell's existing top-right corner so it reads as "this
@@ -135,9 +134,9 @@ void TrimDialog::paint (juce::Graphics& g)
         // Background + accent border — square corners, flat 1px hairline border,
         // matching AddZoneTrimOverlay's popup-box hairline weight.
         g.setColour (T.darkBar);
-        g.fillRoundedRectangle (r, GlassStyle::radius());
+        g.fillRoundedRectangle (r, 0.0f);
         g.setColour (T.accent.withAlpha (0.55f));
-        g.drawRoundedRectangle (r.reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle (r.reduced (0.5f), 0.0f, 1.0f);
 
         // Title text — single line: "TRIM SAMPLE" centred. Bold, matching the
         // weight of AddZoneTrimOverlay's "TRIM — <filename>" title.

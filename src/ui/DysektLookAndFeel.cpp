@@ -132,7 +132,7 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
         auto outline = toggled ? getTheme().accent
                                 : getTheme().accent.withAlpha (isHighlighted ? 0.85f : 0.55f);
         g.setColour (outline);
-        g.drawRoundedRectangle (bounds, r, 1.0f);
+        g.drawRect (bounds, 1.0f);
         return;
     }
 
@@ -144,49 +144,10 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
     // brightening — the colour itself carries the state.
     if (button.getProperties().getWithDefault ("flatFill", false))
     {
-        // "onUsesAccent": the lit colour is the theme accent read NOW, not a colour copied into
-        // buttonOnColourId when the button was built (which went stale whenever the theme was
-        // applied after construction — buttons stayed the old theme's cyan).
-        const bool onUsesAccent = button.getProperties().getWithDefault ("onUsesAccent", false);
-        if (getTheme().glass && onUsesAccent)
-        {
-            // Glass: tinted translucent fill + accent outline when active (the concept's look).
-            g.setColour (button.findColour (juce::TextButton::buttonColourId));
-            g.fillRoundedRectangle (bounds, r);
-            if (! toggled)
-            {
-                g.setColour (getTheme().separator.withAlpha (0.65f));
-                g.drawRoundedRectangle (bounds.reduced (0.5f), r, 1.0f);
-            }
-            if (toggled)
-            {
-                g.setColour (getTheme().accent.withAlpha (0.24f));
-                g.fillRoundedRectangle (bounds, r);
-                g.setColour (getTheme().accent.withAlpha (0.90f));
-                g.drawRoundedRectangle (bounds.reduced (0.5f), r, 1.3f);
-            }
-            return;
-        }
-        auto roleFill = toggled ? (onUsesAccent ? getTheme().accent : button.findColour (juce::TextButton::buttonOnColourId))
+        auto roleFill = toggled ? button.findColour (juce::TextButton::buttonOnColourId)
                                  : button.findColour (juce::TextButton::buttonColourId);
         g.setColour (roleFill);
-        g.fillRoundedRectangle (bounds, r);   // r is 0 outside the glass theme, so identical to fillRect there
-        return;
-    }
-
-    if (getTheme().glass)
-    {
-        // Glass: toggled/pressed buttons are a tinted translucent fill with an accent outline
-        // (the concept's active tool look), not a solid accent block.
-        const bool lit = toggled || isDown;
-        g.setColour (lit ? getTheme().accent.withAlpha (isDown ? 0.34f : 0.22f)
-                         : (isHighlighted ? getTheme().buttonHover : getTheme().button));
-        g.fillRoundedRectangle (bounds, r);
-        if (lit)
-        {
-            g.setColour (getTheme().accent.withAlpha (0.85f));
-            g.drawRoundedRectangle (bounds, r, 1.2f);
-        }
+        g.fillRect (bounds);
         return;
     }
 
@@ -215,9 +176,6 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
         textCol = button.findColour (button.getToggleState()
                                        ? juce::TextButton::textColourOnId
                                        : juce::TextButton::textColourOffId);
-        // Glass active state is a tinted outline, so its text must be light, not the black-on-solid-accent used elsewhere.
-        if (getTheme().glass && button.getToggleState() && button.getProperties().getWithDefault ("onUsesAccent", false))
-            textCol = getTheme().foreground;
         if (textCol.isTransparent())
             textCol = button.getToggleState()
                     ? getTheme().accent
@@ -447,7 +405,7 @@ void DysektLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text
 {
     // Flattened — was a fixed 2.0f radius regardless of theme; now square
     // corners everywhere, in line with the rest of the shape language.
-    const float r = 0.0f;
+    const float r = getTheme().glass ? getTheme().cornerRadius : 0.0f;
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
 
     g.setColour (getTheme().darkBar.brighter (0.10f));
@@ -542,15 +500,14 @@ void DysektLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w
     const float trackH = 3.0f;   // thin flat track — was Metro-only, now universal
     auto track = bounds.withSizeKeepingCentre (bounds.getWidth(), trackH);
     g.setColour (t.gridLine);
-    if (t.glass) g.fillRoundedRectangle (track, trackH * 0.5f); else g.fillRect (track);
+    g.fillRect (track);
 
     const float fillLeft  = track.getX();
     const float fillRight = juce::jlimit (fillLeft, track.getRight(), sliderPos);
     if (fillRight > fillLeft)
     {
         g.setColour (t.accent);
-        const juce::Rectangle<float> fillR (fillLeft, track.getY(), fillRight - fillLeft, track.getHeight());
-        if (t.glass) g.fillRoundedRectangle (fillR, trackH * 0.5f); else g.fillRect (fillR);
+        g.fillRect (juce::Rectangle<float> (fillLeft, track.getY(), fillRight - fillLeft, track.getHeight()));
     }
 
     const float thumbD = juce::jmin (bounds.getHeight(), 14.0f);
@@ -617,7 +574,7 @@ void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int
     const bool focused = te.hasKeyboardFocus (true);
     g.setColour (focused ? getTheme().accent
                           : getTheme().separator.withAlpha (0.60f));
-    g.drawRoundedRectangle (bounds, 0.0f, focused ? 1.4f : 1.0f);
+    g.drawRoundedRectangle (bounds, getTheme().glass ? getTheme().cornerRadius : 0.0f, focused ? 1.4f : 1.0f);
 }
 
 //==============================================================================

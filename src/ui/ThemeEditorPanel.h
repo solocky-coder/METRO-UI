@@ -1,6 +1,5 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "GlassStyle.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <cmath>
 #include "DysektLookAndFeel.h"
@@ -427,11 +426,11 @@ private:
         {
             const auto& T = getTheme();
             g.setColour (T.button.withAlpha (selected ? 0.7f : 0.4f));
-            g.fillRoundedRectangle (getLocalBounds().toFloat(), GlassStyle::radius());
+            g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
             if (selected)
             {
                 g.setColour (T.accent);
-                g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), GlassStyle::radius(), 1.5f);
+                g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (0.5f), 0.0f, 1.5f);
             }
         }
 

@@ -2,7 +2,6 @@
 //  SfzModulePanel.cpp
 // =============================================================================
 #include "SfzModulePanel.h"
-#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
@@ -149,7 +148,7 @@ void SfzModulePanel::paint (juce::Graphics& g)
     // as the waveform / pad-grid panels) so we only fill the background here.
     auto bounds = getLocalBounds().toFloat();
     g.setColour (theme.darkBar.darker (0.25f));
-    g.fillRoundedRectangle (bounds, GlassStyle::radius());
+    g.fillRoundedRectangle (bounds, 0.0f);
 
     // ── Header label ─────────────────────────────────────────────────────────
     {
@@ -181,9 +180,9 @@ void SfzModulePanel::paint (juce::Graphics& g)
         const bool hover = loadBtnZone.contains (getMouseXYRelative());
         g.setColour (hover ? theme.accent.withAlpha (0.25f)
                            : theme.darkBar.brighter (0.05f));
-        g.fillRoundedRectangle (btn, GlassStyle::radius());
+        g.fillRoundedRectangle (btn, 0.0f);
         g.setColour (theme.accent.withAlpha (hover ? 0.85f : 0.55f));
-        g.drawRoundedRectangle (btn.reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle (btn.reduced (0.5f), 0.0f, 1.0f);
 
         g.setFont (DysektLookAndFeel::makeFont (11.0f));
         g.setColour (theme.accent);
@@ -197,9 +196,9 @@ void SfzModulePanel::paint (juce::Graphics& g)
         const bool hover = saveAsBtnZone.contains (getMouseXYRelative());
         g.setColour (hover ? theme.accent.withAlpha (0.18f)
                            : theme.darkBar.brighter (0.03f));
-        g.fillRoundedRectangle (btn, GlassStyle::radius());
+        g.fillRoundedRectangle (btn, 0.0f);
         g.setColour (theme.accent.withAlpha (hover ? 0.70f : 0.38f));
-        g.drawRoundedRectangle (btn.reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle (btn.reduced (0.5f), 0.0f, 1.0f);
 
         g.setFont (DysektLookAndFeel::makeFont (9.5f));
         g.setColour (theme.accent.withAlpha (hover ? 0.95f : 0.65f));
@@ -230,9 +229,9 @@ void SfzModulePanel::paint (juce::Graphics& g)
         auto pill = statusZone.withSizeKeepingCentre (52, 18).toFloat();
         g.setColour (loaded ? theme.accent.withAlpha (0.20f)
                             : theme.foreground.withAlpha (0.08f));
-        g.fillRoundedRectangle (pill, GlassStyle::radius());
+        g.fillRoundedRectangle (pill, 0.0f);
         g.setColour (loaded ? theme.accent : theme.foreground.withAlpha (0.30f));
-        g.drawRoundedRectangle (pill.reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle (pill.reduced (0.5f), 0.0f, 1.0f);
         g.setFont (DysektLookAndFeel::makeFont (10.0f));
         g.drawText (loaded ? "READY" : "EMPTY", pill.toNearestInt(), juce::Justification::centred, false);
     }
@@ -268,9 +267,9 @@ void SfzModulePanel::paint (juce::Graphics& g)
         // Span all four knob zones
         auto rowBounds = atkZone.getUnion (relZone).expanded (kPad / 2, 2).toFloat();
         g.setColour (theme.darkBar.brighter (0.04f));
-        g.fillRoundedRectangle (rowBounds, GlassStyle::radius());
+        g.fillRoundedRectangle (rowBounds, 0.0f);
         g.setColour (theme.foreground.withAlpha (0.07f));
-        g.drawRoundedRectangle (rowBounds.reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle (rowBounds.reduced (0.5f), 0.0f, 1.0f);
     }
 
     // ── ADSR knobs ───────────────────────────────────────────────────────────
@@ -307,7 +306,7 @@ void SfzModulePanel::paint (juce::Graphics& g)
                 const auto& th = getTheme();
                 const auto  rc = zone.toFloat().reduced (2.0f);
                 g.setColour ((armed ? th.accent.brighter (0.4f) : th.accent).withAlpha (0.55f));
-                g.drawRoundedRectangle (rc, GlassStyle::radius(), 1.5f);
+                g.drawRoundedRectangle (rc, 0.0f, 1.5f);
             }
         };
 
@@ -321,9 +320,9 @@ void SfzModulePanel::paint (juce::Graphics& g)
     {
         auto rowBounds = rvSizeZone.getUnion (rvFreezeZone).expanded (kPad / 2, 2).toFloat();
         g.setColour (theme.darkBar.brighter (0.04f));
-        g.fillRoundedRectangle (rowBounds, GlassStyle::radius());
+        g.fillRoundedRectangle (rowBounds, 0.0f);
         g.setColour (theme.foreground.withAlpha (0.07f));
-        g.drawRoundedRectangle (rowBounds.reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle (rowBounds.reduced (0.5f), 0.0f, 1.0f);
 
         const float alpha = processor.sfzPlayer.isLoaded() ? 1.0f : 0.35f;
 
@@ -342,7 +341,7 @@ void SfzModulePanel::paint (juce::Graphics& g)
                 const auto& th = getTheme();
                 const auto  rc = zone.toFloat().reduced (2.0f);
                 g.setColour ((armed ? th.accent.brighter (0.4f) : th.accent).withAlpha (0.55f));
-                g.drawRoundedRectangle (rc, GlassStyle::radius(), 1.5f);
+                g.drawRoundedRectangle (rc, 0.0f, 1.5f);
             }
         };
 
@@ -364,7 +363,7 @@ void SfzModulePanel::paint (juce::Graphics& g)
     if (isCurrentlyBlockedByAnotherModalComponent())
     {
         g.setColour (theme.accent.withAlpha (0.12f));
-        g.fillRoundedRectangle (bounds, GlassStyle::radius());
+        g.fillRoundedRectangle (bounds, 0.0f);
     }
 }
 
@@ -432,8 +431,8 @@ void SfzModulePanel::drawMeter (juce::Graphics& g) const
 
     // Background tracks
     g.setColour (theme.darkBar.darker (0.2f));
-    g.fillRoundedRectangle (leftBar.toFloat(), GlassStyle::radius());
-    g.fillRoundedRectangle (rightBar.toFloat(), GlassStyle::radius());
+    g.fillRoundedRectangle (leftBar.toFloat(), 0.0f);
+    g.fillRoundedRectangle (rightBar.toFloat(), 0.0f);
 
     auto drawBar = [&] (juce::Rectangle<int> bar, float peak, float hold)
     {
@@ -441,7 +440,7 @@ void SfzModulePanel::drawMeter (juce::Graphics& g) const
         if (fillH > 0)
         {
             g.setColour (theme.accent);
-            g.fillRoundedRectangle (bar.withTrimmedTop (bar.getHeight() - fillH).toFloat(), GlassStyle::radius());
+            g.fillRoundedRectangle (bar.withTrimmedTop (bar.getHeight() - fillH).toFloat(), 0.0f);
         }
         // Hold line
         const int holdY = bar.getBottom() - juce::roundToInt ((float) bar.getHeight() * juce::jlimit (0.0f, 1.0f, hold));

@@ -1,5 +1,4 @@
 #include "Sf2LcdDisplay.h"
-#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "LcdColours.h"
 #include "../PluginProcessor.h"
@@ -208,12 +207,11 @@ void Sf2LcdDisplay::drawNoInstrument (juce::Graphics& g)
 
 void Sf2LcdDisplay::paint (juce::Graphics& g)
 {
-    if (! GlassStyle::on()) g.fillAll (getTheme().background);   // glass: let the rounded frame + window glow show at the corners
+    g.fillAll (getTheme().background);
 
     {
         juce::Path clipPath;
-        const float clipRadius = getTheme().glass ? getTheme().cornerRadius
-                                               : (getTheme().name == "metro" ? 0.0f : 4.0f);   // glass frame is rounded, so clip to match
+        const float clipRadius = getTheme().name == "metro" ? 0.0f : 4.0f;
         clipPath.addRoundedRectangle (getLocalBounds().toFloat(), clipRadius);
         g.reduceClipRegion (clipPath);
     }
@@ -233,7 +231,7 @@ void Sf2LcdDisplay::paint (juce::Graphics& g)
     const auto  screen = getLocalBounds().reduced (4);
 
     g.saveState();
-    GlassStyle::reduceClip (g, screen);
+    g.reduceClipRegion (screen);
 
     // ── Row 0: header — "SF2 PLAYER" label + instrument filename ─────────────
     {

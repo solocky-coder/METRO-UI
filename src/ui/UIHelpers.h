@@ -290,12 +290,10 @@ inline void drawPopupBackdrop (juce::Graphics& g, juce::Rectangle<int> bounds)
 
 inline void drawPopupBox (juce::Graphics& g, juce::Rectangle<int> box, const ThemeData& T)
 {
-    // Glass theme: larger corner radius and an accent-tinted hairline so dialogs read as floating cards.
-    const float rad = T.glass ? T.cornerRadius + 2.0f : (float) kPopupCornerRadius;
     g.setColour (T.header);
-    g.fillRoundedRectangle (box.toFloat(), rad);
-    g.setColour (T.glass ? T.accent.withAlpha (0.35f) : T.separator);
-    g.drawRoundedRectangle (box.toFloat().reduced (0.5f), rad, 1.0f);
+    g.fillRoundedRectangle (box.toFloat(), kPopupCornerRadius);
+    g.setColour (T.separator);
+    g.drawRoundedRectangle (box.toFloat().reduced (0.5f), kPopupCornerRadius, 1.0f);
 }
 
 // Computes a new parameter value from a vertical drag gesture.

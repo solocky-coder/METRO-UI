@@ -6,7 +6,6 @@
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
 #include "DysektLookAndFeel.h"
-#include "GlassStyle.h"
 
 
 using namespace dysekt::metro; // MetroColours' Base/Text/Accent/Transport + MetroMetrics/MetroTypography —
@@ -431,8 +430,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
  auto area = getLocalBounds();
 
 
-    const bool glassDocked = GlassStyle::on() && docked;
-    L.titleStrip = area.removeFromTop (glassDocked ? 0 : MetroMetrics::grid * 3);
+    L.titleStrip = area.removeFromTop (MetroMetrics::grid * 3);
 
     // ── Title strip: view switcher on the left, pin+dock (floating) or
     // float (docked) grouped on the right. While docked, none of this
@@ -454,7 +452,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     }
 
     area.reduce (MetroMetrics::grid, 0);
-    area.removeFromTop (glassDocked ? 4 : MetroMetrics::grid * 2);
+    area.removeFromTop (MetroMetrics::grid * 2);
 
 
  const int rowH = MetroMetrics::largeControlHeight;
@@ -492,11 +490,11 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         // 10 grid units for LINK (11 while floating, where there's no
         // Float button eating into the block) — enough for "LINK 3" once
         // there are peers, not just the bare "LINK" label.
-        const int rightW = MetroMetrics::grid * (docked ? 22 : 11);
+        const int rightW = MetroMetrics::grid * (docked ? 19 : 11);
         auto right = row.removeFromRight (rightW);
         if (docked)
         {
-            L.floatField = right.removeFromLeft (MetroMetrics::grid * 10);
+            L.floatField = right.removeFromLeft (MetroMetrics::grid * 7);
             right.removeFromLeft (fieldGap);
         }
         L.linkField    = right;
@@ -549,7 +547,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
         // needs more than the old 48px afforded and was getting
         // ellipsized ("120…") instead of showing the actual value.
         const int tempoFieldW = MetroMetrics::grid * 9;
-        L.tempoCaption = row.removeFromLeft (MetroMetrics::grid * (docked ? 7 : 4));
+        L.tempoCaption = row.removeFromLeft (MetroMetrics::grid * 4);
         L.tempoField   = row.removeFromLeft (tempoFieldW);
         row.removeFromLeft (fieldGap);
     }
@@ -687,17 +685,6 @@ void FloatingTransportBar::paint (juce::Graphics& g)
  const auto L = computeLayout();
 
 
-    if (GlassStyle::on())
-    {
-        // Glass theme: leave the window's ambient glow showing through, put the whole bar on a
-        // rounded card and give the tab strip its own slightly darker rounded track.
-        GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));
-        g.setColour (getTheme().darkBar.withAlpha (0.55f));
-        if (! L.titleStrip.isEmpty())
-            g.fillRoundedRectangle (L.titleStrip.toFloat().reduced (6.0f, 4.0f), GlassStyle::radius());
-    }
-    else
-    {
     g.fillAll (Base::Background);
 
 
@@ -705,7 +692,6 @@ void FloatingTransportBar::paint (juce::Graphics& g)
     g.fillRect (L.titleStrip);
     g.setColour (Base::Border);
     g.drawHorizontalLine (L.titleStrip.getBottom(), 0.0f, (float) getWidth());
-    }
 
 
  // Drag grip — two short bars centred in the strip, matching the mockup.

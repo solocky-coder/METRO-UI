@@ -96,13 +96,10 @@ public:
             const juce::Rectangle<int> rowR (0, row * trackH, getWidth(), trackH);
             const bool sel   = (i == selectedTrack);
 
-            const float glow = (i < kMaxTracks) ? zoneGlow[i] : 0.0f;   // keyzone-played highlight level
             if (GlassStyle::on())
             {
-                // Glass theme: each track is a rounded card; the selected one gets a
-                // track-colour tint and an accent outline instead of the full-row wash.
                 const auto card = rowR.toFloat().reduced (3.0f, 2.0f);
-                const float cr  = GlassStyle::radius();
+                const float cr = GlassStyle::radius();
                 g.setColour (theme.darkBar.withAlpha (0.92f));
                 g.fillRoundedRectangle (card, cr);
                 g.setColour (info.colour.withAlpha (sel ? 0.30f : 0.08f));
@@ -111,11 +108,6 @@ public:
                 {
                     g.setColour (theme.accent.withAlpha (0.9f));
                     g.drawRoundedRectangle (card.reduced (0.5f), cr, 1.4f);
-                }
-                if (glow > 0.01f)
-                {
-                    g.setColour (theme.accent.withAlpha (0.38f * glow));
-                    g.fillRoundedRectangle (card, cr);
                 }
             }
             else
@@ -145,9 +137,12 @@ public:
             g.setColour (info.colour.withAlpha (sel ? 0.62f : 0.14f));
             g.fillRect (rowR);
 
+            } // non-glass row background
+
             // Keyzone-played highlight (SFZ layer child tracks, or the parent row while its
             // children are collapsed): accent wash + a wider accent bar on the left edge, faded
             // by zoneGlow. Outline is drawn at the end of the row (see below).
+            const float glow = (i < kMaxTracks) ? zoneGlow[i] : 0.0f;
             if (glow > 0.01f)
             {
                 g.setColour (theme.accent.withAlpha (0.38f * glow));
@@ -163,7 +158,6 @@ public:
                 g.setColour (info.colour);
                 g.fillRect (rowR.getX(), rowR.getY(), 3, rowR.getHeight());
             }
-            }   // end non-glass row background
 
             g.setColour (info.colour);
             g.fillRect (rowR.withTrimmedLeft (3).withTrimmedRight (rowR.getWidth() - 7).toFloat());
@@ -205,8 +199,7 @@ public:
             const int btnW  = juce::jlimit (18, 24, trackH - 10);
             const int btnH  = juce::jlimit (12, 18, trackH - 8);
             const int btnGap = 3;
-            const auto recR  = (GlassStyle::on() ? rowR.withTrimmedRight (6) : rowR)
-                                   .withTrimmedLeft ((GlassStyle::on() ? rowR.getWidth() - 6 : rowR.getWidth()) - btnW - 4)
+            const auto recR  = rowR.withTrimmedLeft (rowR.getWidth() - btnW - 4)
                                    .withSizeKeepingCentre (btnW, btnH);
             const auto soloR = recR.translated (-(btnW + btnGap), 0);
             const auto muteR = soloR.translated (-(btnW + btnGap), 0);
@@ -223,11 +216,11 @@ public:
             // colour language most of the time. Now all three literally
             // share on/off colours with the inspector's copy.
             g.setColour (info.enabled  ? kMuteAccent.darker (0.55f)   : kMuteAccent);
-            g.fillRoundedRectangle (muteR.toFloat(), GlassStyle::radius() * 0.6f);
+            g.fillRoundedRectangle (muteR.toFloat(), 0.0f);
             g.setColour (info.solo     ? kSoloAccent                  : kSoloAccent.darker (0.55f));
-            g.fillRoundedRectangle (soloR.toFloat(), GlassStyle::radius() * 0.6f);
+            g.fillRoundedRectangle (soloR.toFloat(), 0.0f);
             g.setColour (recordArmed   ? kRecordAccent                : kRecordAccent.darker (0.55f));
-            g.fillRoundedRectangle (recR.toFloat(), GlassStyle::radius() * 0.6f);
+            g.fillRoundedRectangle (recR.toFloat(), 0.0f);
 
             g.setColour (juce::Colours::white.withAlpha (0.7f));
             g.setFont (juce::Font (juce::jlimit (10.5f, 16.5f, (float)trackH * 0.22f), juce::Font::bold));
@@ -401,8 +394,7 @@ public:
         const int btnW   = juce::jlimit (18, 24, trackH - 10);
         const int btnH   = juce::jlimit (12, 18, trackH - 8);
         const int btnGap = 3;
-        const auto recR  = (GlassStyle::on() ? rowR.withTrimmedRight (6) : rowR)
-                               .withTrimmedLeft ((GlassStyle::on() ? rowR.getWidth() - 6 : rowR.getWidth()) - btnW - 4)
+        const auto recR  = rowR.withTrimmedLeft (rowR.getWidth() - btnW - 4)
                                .withSizeKeepingCentre (btnW, btnH);
         const auto soloR = recR.translated (-(btnW + btnGap), 0);
         const auto muteR = soloR.translated (-(btnW + btnGap), 0);

@@ -21,10 +21,7 @@ struct ThemeData
     juce::Colour buttonHover;
     juce::Colour separator;
 
-    // ── Glass look (opt-in; every other theme leaves these at their defaults) ──
-    //  glass        : turns on the rounded/translucent painting paths (see ui/GlassStyle.h)
-    //  cornerRadius : px radius for buttons, cards, clips and track rows when glass is on
-    //  glowA/glowB  : two soft ambient colours painted behind the whole window
+    // Optional Glass theme styling. Defaults keep all existing themes unchanged.
     bool         glass        = false;
     float        cornerRadius = 0.0f;
     juce::Colour glowA, glowB;
@@ -539,10 +536,9 @@ struct ThemeData
         return t;
     }
 
-    // ── GLASS ─────────────────────────────────────────────────────────────────
-    // Modern flat-glass DAW look: near-black blue-grey chassis, rounded cards,
-    // translucent clips, soft purple/blue ambient glow, periwinkle accent.
-    // Reuses the dark theme's slice palette.
+    // ── GLASS ────────────────────────────────────────────────────────────────
+    // Rounded translucent surfaces, soft violet/blue ambient light and a cool
+    // periwinkle accent. The existing Metro and custom themes remain untouched.
     static ThemeData glassTheme()
     {
         ThemeData t = darkTheme();
@@ -563,8 +559,8 @@ struct ThemeData
         t.button           = juce::Colour (0xFF262833);
         t.buttonHover      = juce::Colour (0xFF30323F);
         t.separator        = juce::Colour (0xFF2C2E3B);
-        t.glowA            = juce::Colour (0xFF5A3FB8);   // purple, top-right
-        t.glowB            = juce::Colour (0xFF1F4FA8);   // blue, left / bottom-left
+        t.glowA            = juce::Colour (0xFF5A3FB8);
+        t.glowB            = juce::Colour (0xFF1F4FA8);
         return t;
     }
 

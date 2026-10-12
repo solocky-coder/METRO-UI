@@ -1,6 +1,5 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "GlassStyle.h"
 #include "../sequencer/SequencerEngine.h"
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
@@ -1392,9 +1391,9 @@ private:
                 g.fillRect (getLocalBounds());
                 const auto box = dialogBox();
                 g.setColour (juce::Colour (0xFF1A2030));
-                g.fillRoundedRectangle (box.toFloat(), GlassStyle::radius());
+                g.fillRoundedRectangle (box.toFloat(), 0.0f);
                 g.setColour (juce::Colour (0xFF3A8FCC).withAlpha (0.7f));
-                g.drawRoundedRectangle (box.toFloat().reduced (0.5f), GlassStyle::radius(), 1.5f);
+                g.drawRoundedRectangle (box.toFloat().reduced (0.5f), 0.0f, 1.5f);
                 g.setFont (14.0f);
                 g.setColour (juce::Colours::white);
                 g.drawText ("Set Velocity", box.getX() + 16, box.getY() + 12,
@@ -1718,16 +1717,16 @@ private:
 
             // Note body
             g.setColour (baseCol);
-            g.fillRoundedRectangle (x, y, w, h, GlassStyle::radius());
+            g.fillRoundedRectangle (x, y, w, h, 0.0f);
 
             // Velocity shading overlay
             const float velAlpha = (1.f - n.velocity / 127.f) * 0.38f;
             g.setColour (juce::Colour::fromFloatRGBA (0.f, 0.f, 0.f, velAlpha));
-            g.fillRoundedRectangle (x, y, w, h, GlassStyle::radius());
+            g.fillRoundedRectangle (x, y, w, h, 0.0f);
 
             // Border
             g.setColour (sel ? baseCol.brighter (0.4f) : baseCol.brighter (0.2f).withAlpha (0.7f));
-            g.drawRoundedRectangle (x + 0.5f, y + 0.5f, w - 1.f, h - 1.f, GlassStyle::radius(), 0.75f);
+            g.drawRoundedRectangle (x + 0.5f, y + 0.5f, w - 1.f, h - 1.f, 0.0f, 0.75f);
 
             // Resize handle on right edge
             const float handleW = juce::jmin (4.f, w * 0.2f);

@@ -292,22 +292,19 @@ public:
     void paint (juce::Graphics& g) override
     {
         if (GlassStyle::on())
-        {
-            GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));   // floating rounded transport card
-        }
+            GlassStyle::fillCard (g, getLocalBounds().toFloat().reduced (3.0f, 2.0f));
         else
         {
-        g.fillAll (Base::SurfaceAlt);
-        g.setColour (Base::Border);
-        g.fillRect (getLocalBounds().removeFromBottom (1));
+            g.fillAll (Base::SurfaceAlt);
+            g.setColour (Base::Border);
+            g.fillRect (getLocalBounds().removeFromBottom (1));
         }
 
         // Locator captions, painted the same way FloatingTransportBar's
         // paint() draws its own "L"/"R" — outside the editable field so the
         // numeric value inside stays centred.
         g.setColour (Text::Muted);
-        // Glass uses the app's Barlow Condensed (via makeFont) instead of Metro's Segoe UI caption.
-        g.setFont (GlassStyle::on() ? DysektLookAndFeel::makeFont (11.0f) : MetroTypography::caption());
+        g.setFont (MetroTypography::caption());
         g.drawText ("L", leftLocatorLabel.getBounds().translated (-14, 0).withWidth (14),
                     juce::Justification::centred);
         g.drawText ("R", rightLocatorLabel.getBounds().translated (-14, 0).withWidth (14),

@@ -1,5 +1,4 @@
 #include "PadGridView.h"
-#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
@@ -45,10 +44,10 @@ void PadGridView::drawBankBar (juce::Graphics& g) const
         const bool active = (currentBank == bankIndex);
 
         g.setColour (active ? th.accent : th.button);
-        g.fillRoundedRectangle(r.toFloat(), GlassStyle::radius());
+        g.fillRoundedRectangle(r.toFloat(), 0.0f);
 
         g.setColour (active ? th.background : th.separator);
-        g.drawRoundedRectangle(r.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle(r.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
         g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
         g.setColour (active ? th.background : th.foreground.withAlpha (0.70f));
@@ -129,9 +128,9 @@ void PadGridView::drawPad (juce::Graphics& g,
         if (th.name == "metro")
         {
             g.setColour (th.button);
-            g.fillRoundedRectangle (bounds.toFloat(), GlassStyle::radius());
+            g.fillRoundedRectangle (bounds.toFloat(), 0.0f);
             g.setColour (th.separator);
-            g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
+            g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 0.0f, 1.0f);
             return;
         }
         {
@@ -140,12 +139,12 @@ void PadGridView::drawPad (juce::Graphics& g,
             juce::ColourGradient grad (bgTop, 0, (float) bounds.getY(),
                                        bgBot, 0, (float) bounds.getBottom(), false);
             g.setGradientFill (grad);
-            g.fillRoundedRectangle(bounds.toFloat(), GlassStyle::radius());
+            g.fillRoundedRectangle(bounds.toFloat(), 0.0f);
         }
         g.setColour (th.accent.withAlpha (0.08f));
-        g.drawRoundedRectangle(bounds.toFloat().expanded (1.0f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle(bounds.toFloat().expanded (1.0f), 0.0f, 1.0f);
         g.setColour (th.accent.withAlpha (0.20f));
-        g.drawRoundedRectangle(bounds.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle(bounds.toFloat().reduced (0.5f), 0.0f, 1.0f);
         return;
     }
 
@@ -159,7 +158,7 @@ void PadGridView::drawPad (juce::Graphics& g,
     {
         // Flat single-colour tile, no gradient — Metro tile language.
         g.setColour (padBg);
-        g.fillRoundedRectangle (bounds.toFloat(), GlassStyle::radius());
+        g.fillRoundedRectangle (bounds.toFloat(), 0.0f);
         g.setColour (sel ? th.accent : th.separator);
         g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 0.0f, sel ? 1.5f : 1.0f);
     }
@@ -169,11 +168,11 @@ void PadGridView::drawPad (juce::Graphics& g,
             juce::ColourGradient grad (padBg.brighter (0.08f), 0, (float) bounds.getY(),
                                        padBg.darker  (0.12f), 0, (float) bounds.getBottom(), false);
             g.setGradientFill (grad);
-            g.fillRoundedRectangle(bounds.toFloat(), GlassStyle::radius());
+            g.fillRoundedRectangle(bounds.toFloat(), 0.0f);
         }
 
         g.setColour (th.accent.withAlpha (sel ? 0.28f : 0.14f));
-        g.drawRoundedRectangle(bounds.toFloat().expanded (1.0f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle(bounds.toFloat().expanded (1.0f), 0.0f, 1.0f);
 
         g.setColour (th.accent.withAlpha (sel ? 0.90f : (hov ? 0.55f : 0.35f)));
         g.drawRoundedRectangle(bounds.toFloat().reduced (0.5f), 0.0f, sel ? 1.5f : 1.0f);
@@ -596,7 +595,7 @@ public:
         const float norm = (value - minVal) / (maxVal - minVal);
 
         g.setColour (th.darkBar.darker (0.2f));
-        g.fillRoundedRectangle(b, GlassStyle::radius());
+        g.fillRoundedRectangle(b, 0.0f);
 
         const bool bipolar = (minVal < 0.f && maxVal > 0.f);
         const float cx = b.getX() + b.getWidth() * (bipolar ? (-minVal / (maxVal - minVal)) : 0.f);
@@ -609,7 +608,7 @@ public:
             fill = { b.getX(), b.getY(), fx - b.getX(), b.getHeight() };
 
         g.setColour (th.accent.withAlpha (isItemHighlighted() ? 0.55f : 0.38f));
-        g.fillRoundedRectangle(fill, GlassStyle::radius());
+        g.fillRoundedRectangle(fill, 0.0f);
 
         if (bipolar)
         {
@@ -618,7 +617,7 @@ public:
         }
 
         g.setColour (th.separator.withAlpha (0.5f));
-        g.drawRoundedRectangle(b, GlassStyle::radius(), 0.8f);
+        g.drawRoundedRectangle(b, 0.0f, 0.8f);
 
         g.setFont (DysektLookAndFeel::makeFont (10.5f, true));
         g.setColour (th.foreground.withAlpha (0.80f));

@@ -1,5 +1,4 @@
 #include "KeysPanel.h"
-#include "GlassStyle.h"
 #include "DysektLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
@@ -135,9 +134,9 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
             const juce::Rectangle<int> btnRect (bx, by, kBtnW, kBtnH);
 
             g.setColour (theme.accent.withAlpha (0.22f));
-            g.fillRoundedRectangle (btnRect.toFloat(), GlassStyle::radius());
+            g.fillRoundedRectangle (btnRect.toFloat(), 0.0f);
             g.setColour (theme.accent);
-            g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), GlassStyle::radius(), 0.8f);
+            g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), 0.0f, 0.8f);
             g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
             g.setColour (theme.accent);
             g.drawText ("+ ZONE", btnRect, juce::Justification::centred, false);
@@ -306,10 +305,10 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
         const juce::Rectangle<int> btnRect (bx, by, kBtnW, kBtnH);
 
         g.setColour (theme.accent.withAlpha (0.20f));
-        g.fillRoundedRectangle (btnRect.toFloat(), GlassStyle::radius());
+        g.fillRoundedRectangle (btnRect.toFloat(), 0.0f);
 
         g.setColour (theme.accent.withAlpha (0.65f));
-        g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), GlassStyle::radius(), 0.75f);
+        g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), 0.0f, 0.75f);
 
         g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
         g.setColour (theme.accent.brighter (0.5f));
@@ -1095,7 +1094,7 @@ void KeysPanel::paint (juce::Graphics& g)
     const auto  accent = theme.accent;
 
     g.setColour (theme.darkBar.darker (0.35f));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), GlassStyle::radius());
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), 0.0f);
 
     // ── LCD-style frame around zone viewport ─────────────────────────────────
     if (kZoneViewH > 0)
@@ -1103,14 +1102,14 @@ void KeysPanel::paint (juce::Graphics& g)
         const juce::Rectangle<float> frameRect (0.f, 0.f, (float) getWidth(), (float) kZoneViewH);
 
         g.setColour (juce::Colour (0xFF0F0F0F));
-        g.fillRoundedRectangle (frameRect, GlassStyle::radius());
+        g.fillRoundedRectangle (frameRect, 0.0f);
 
         g.setColour (accent.withAlpha (0.35f));
-        g.drawRoundedRectangle (frameRect.reduced (0.5f), GlassStyle::radius(), 1.0f);
+        g.drawRoundedRectangle (frameRect.reduced (0.5f), 0.0f, 1.0f);
 
         const auto screen = frameRect.reduced (2.f);
         g.setColour (theme.darkBar.darker (0.55f));
-        g.fillRoundedRectangle (screen, GlassStyle::radius());
+        g.fillRoundedRectangle (screen, 0.0f);
 
         g.setColour (juce::Colours::black.withAlpha (0.10f));
         for (int y = (int) screen.getY(); y < (int) screen.getBottom(); y += 2)
@@ -1214,7 +1213,7 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
             fillCol = fillCol.interpolatedWith (markColour, 0.22f);
 
         g.setColour (fillCol);
-        g.fillRoundedRectangle (b.reduced (0.5f, 0.f).withTrimmedBottom (-4.f), GlassStyle::radius());
+        g.fillRoundedRectangle (b.reduced (0.5f, 0.f).withTrimmedBottom (-4.f), 0.0f);
 
         g.setColour (juce::Colour (0xFF707070).withAlpha (0.40f));
         g.fillRect  (b.getRight() - 1.0f, b.getY() + 2.0f, 1.0f, b.getHeight() - 4.0f);
@@ -1236,7 +1235,7 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
         if (hasMark)
         {
             g.setColour (markColour.withAlpha (0.85f));
-            g.drawRoundedRectangle (b.reduced (0.8f, 0.5f), GlassStyle::radius(), 1.2f);
+            g.drawRoundedRectangle (b.reduced (0.8f, 0.5f), 0.0f, 1.2f);
         }
     }
     else
@@ -1249,7 +1248,7 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
             fillCol = fillCol.interpolatedWith (markColour, 0.35f);
 
         g.setColour (fillCol);
-        g.fillRoundedRectangle (b, GlassStyle::radius());
+        g.fillRoundedRectangle (b, 0.0f);
 
         g.setColour (juce::Colours::white.withAlpha (active ? 0.22f : 0.09f));
         g.fillRoundedRectangle (b.getX() + 1.0f, b.getY() + 1.0f,
@@ -1258,11 +1257,11 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
         if (hasMark)
         {
             g.setColour (markColour.withAlpha (0.90f));
-            g.drawRoundedRectangle (b.reduced (0.6f), GlassStyle::radius(), 1.0f);
+            g.drawRoundedRectangle (b.reduced (0.6f), 0.0f, 1.0f);
         }
 
         g.setColour (juce::Colours::black.withAlpha (0.60f));
-        g.drawRoundedRectangle (b.expanded (0.4f), GlassStyle::radius(), 0.7f);
+        g.drawRoundedRectangle (b.expanded (0.4f), 0.0f, 0.7f);
     }
 }
 

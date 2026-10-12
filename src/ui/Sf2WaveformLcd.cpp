@@ -1,5 +1,4 @@
 #include "Sf2WaveformLcd.h"
-#include "GlassStyle.h"
 #include "ZoneEnvelopeRanges.h"
 #include "UIHelpers.h"
 #include "DysektLookAndFeel.h"
@@ -558,7 +557,7 @@ void Sf2WaveformLcd::drawWaveformBackdrop (juce::Graphics& g,
         const float barW  = W * windowFrac;
         const float barX  = cx;
         g.setColour (sf2Lcd2Phosphor().withAlpha (0.25f));
-        g.fillRoundedRectangle(barX, barY, barW, 2.0f, GlassStyle::radius());
+        g.fillRoundedRectangle(barX, barY, barW, 2.0f, 0.0f);
     }
 }
 
@@ -652,13 +651,13 @@ void Sf2WaveformLcd::drawBackground (juce::Graphics& g)
     const auto b  = getLocalBounds();
 
     g.setColour (getTheme().waveformBg);
-    g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
+    g.fillRoundedRectangle (b.toFloat(), 0.0f);
     g.setColour (getTheme().separator);
-    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
+    g.drawRoundedRectangle (b.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
     const auto screen = b.reduced (4);
     g.setColour (sf2Lcd2Bg());
-    g.fillRoundedRectangle (screen.toFloat(), GlassStyle::radius());
+    g.fillRoundedRectangle (screen.toFloat(), 0.0f);
 
     g.setColour (juce::Colour (0xFF000000).withAlpha ((uint8_t) kScanlineAlpha));
     for (int y = screen.getY(); y < screen.getBottom(); y += 2)
@@ -872,7 +871,7 @@ void Sf2WaveformLcd::paint (juce::Graphics& g)
 {
     {
         juce::Path clipPath;
-        clipPath.addRoundedRectangle (getLocalBounds().toFloat(), GlassStyle::on() ? GlassStyle::radius() : 4.0f);
+        clipPath.addRoundedRectangle (getLocalBounds().toFloat(), 4.0f);
         g.reduceClipRegion (clipPath);
     }
 

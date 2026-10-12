@@ -2,7 +2,6 @@
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "MixerPanel.h"
-#include "GlassStyle.h"
 #include "GlobalEqPanel.h"
 #include "ArrangeView.h"
 #include "ThemePickOverlay.h"
@@ -182,7 +181,6 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xFF060608));
-        GlassStyle::paintAmbient (g, getLocalBounds());   // Glass theme only
         if (current == Content::Mixer)
         {
             g.setColour (juce::Colour (0xFF2A2A35));

@@ -71,8 +71,6 @@ public:
      */
     enum class Tool { Select, Draw, Erase, Split, Glue };
 
-    static constexpr int kTransportHGlass = 52;   // Glass: content row only (no empty docked title strip / gap)
-    int transportH() const { return GlassStyle::on() ? kTransportHGlass : kTransportH; }
     static constexpr int kTransportH   = 88;   // title strip (24) + gap (16) +
                                                 // content row (40) + bottom gutter (8).
                                                 // The gutter keeps child controls and
@@ -225,7 +223,7 @@ public:
                 b.setRadioGroupId (kQuantizeButtonRadioGroup, juce::dontSendNotification);
                 b.setClickingTogglesState (true);
                 b.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff1c2028));
-                b.getProperties().set ("onUsesAccent", true);   // lit colour = CURRENT theme accent (see DysektLookAndFeel)
+                b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
                 b.setColour (juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha (0.55f));
                 b.setColour (juce::TextButton::textColourOnId,   juce::Colours::black.withAlpha (0.85f));
                 b.getProperties().set ("flatFill", true);
@@ -247,7 +245,7 @@ public:
                 b.setButtonText (labels[i]);
                 b.setTooltip (labels[i]);
                 b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff11171c));
-                b.getProperties().set ("onUsesAccent", true);   // lit colour = CURRENT theme accent (see DysektLookAndFeel)
+                b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
                 b.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.72f));
                 b.setColour (juce::TextButton::textColourOnId, juce::Colours::black.withAlpha (0.9f));
                 b.getProperties().set ("flatFill", true);
@@ -426,7 +424,7 @@ public:
     {
         auto r = getLocalBounds().reduced (3);
         if (! transport.isFloating())
-            transport.setBounds (r.removeFromTop (transportH()));
+            transport.setBounds (r.removeFromTop (kTransportH));
 
         // Quantize buttons fill the header to the right of the "QUANTIZE"
         // label — see paintArrangeHeader(). Laid out here (rather than
@@ -507,10 +505,7 @@ public:
         auto b = getLocalBounds();
 
         // ── LCD-style frame — flat, square-cornered, no gradient, no glow ────
-        // Glass: paint the ambient glow here (this view covers the whole window, so the parent's
-        // glow was never visible) and keep the frame translucent so it tints toolbar, ruler and gutters.
-        if (GlassStyle::on()) GlassStyle::paintAmbient (g, b);
-        g.setColour (GlassStyle::on() ? theme.waveformBg.withAlpha (0.62f) : theme.waveformBg);
+        g.setColour (theme.waveformBg);
         g.fillRoundedRectangle (b.toFloat(), GlassStyle::radius());
         g.setColour (theme.separator);
         g.drawRoundedRectangle (b.toFloat().reduced (0.5f), GlassStyle::radius(), 1.0f);
@@ -528,7 +523,7 @@ public:
         paintDrawClipPreview (g);
 
         // Corner fill between scrollbars
-        if (getWidth() > leftPanelW() + 8 && getHeight() > transportH() + kScrollH + 8)
+        if (getWidth() > leftPanelW() + 8 && getHeight() > kTransportH + kScrollH + 8)
         {
             g.setColour (theme.waveformBg);
             g.fillRect (getWidth() - kScrollW - 4,
@@ -2336,7 +2331,7 @@ private:
 
     juce::Rectangle<int> arrangeHeaderBounds() const noexcept
     {
-        const int topY = (transport.isFloating() ? 0 : transportH()) + 3;
+        const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
         return { 3, topY, juce::jmax (340, getWidth() - 6), kToolbarH };
     }
 
@@ -2344,17 +2339,10 @@ private:
     {
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
-        if (GlassStyle::on())
-        {
-            GlassStyle::fillCard (g, header.toFloat().reduced (4.0f, 3.0f));
-        }
-        else
-        {
         g.setColour (theme.header);
         g.fillRect (header);
         g.setColour (theme.accent.withAlpha (0.8f));
         g.fillRect (header.getX(), header.getY(), 3, header.getHeight());
-        }
         // "QUANTIZE" labels the button row that follows it — replaces the
         // old "ARRANGE" caption (redundant with the window title bar, which
         // already reads "ARRANGE ⋮ TRACKS") now that this row hosts an
@@ -2403,7 +2391,6 @@ private:
     {
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
-        if (GlassStyle::on()) return;   // glass: the header is a floating card, no seam line
         g.setColour (theme.separator);
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
     }
@@ -2434,7 +2421,7 @@ private:
         {
             const float lx = tickToX (loopStart);
             const float rx = tickToX (loopEnd);
-            g.setColour (theme.accent.withAlpha (theme.glass ? 0.09f : 0.22f));
+            g.setColour (theme.accent.withAlpha (0.22f));
             g.fillRect (lx, (float)rulerBounds.getY(), rx - lx,
                         (float)rulerBounds.getHeight());
         }
@@ -2785,24 +2772,16 @@ private:
             : info.colour;
 
         if (GlassStyle::on())
-        {
-            // Glass theme: translucent rounded clip, soft top sheen, 1px edge in the
-            // track colour (accent + thicker edge when selected).
             GlassStyle::paintClip (g, clipR.toFloat().reduced (1.0f, 1.5f), info.colour, isSel, muted);
-        }
         else
         {
-        g.setColour (tile);
-        g.fillRect (clipR.reduced (1, 1));
-
-        // Selection reads as a single accent-colour edge line rather than a
-        // brightened outline — an outline implies "this shape has a
-        // border", which doesn't fit tiles that otherwise have none.
-        if (isSel)
-        {
-            g.setColour (getTheme().accent);
-            g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
-        }
+            g.setColour (tile);
+            g.fillRect (clipR.reduced (1, 1));
+            if (isSel)
+            {
+                g.setColour (getTheme().accent);
+                g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
+            }
         }
 
         // Track name
@@ -2882,8 +2861,13 @@ private:
             ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
             : info.colour;
 
-        g.setColour (tile);
-        g.fillRect (clipR.reduced (1, 1));
+        if (GlassStyle::on())
+            GlassStyle::paintClip (g, clipR.toFloat().reduced (1.0f, 1.5f), info.colour, isSel, muted);
+        else
+        {
+            g.setColour (tile);
+            g.fillRect (clipR.reduced (1, 1));
+        }
 
         // Waveform, decoded from the recording itself — see
         // getAudioClipWaveform()/paintAudioClipWaveform() below. Peaks are
@@ -2891,7 +2875,7 @@ private:
         // re-decode on every repaint.
         paintAudioClipWaveform (g, clipR, clip.filePath, muted);
 
-        if (isSel)
+        if (isSel && ! GlassStyle::on())
         {
             g.setColour (getTheme().accent);
             g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
@@ -3110,7 +3094,7 @@ private:
                 const float nh = juce::jmax (1.5f, (float)previewH / (float)range);
                 const float va = muted ? 0.22f : (0.4f + 0.5f * n.velocity / 127.f);
                 g.setColour (base.brighter (0.2f).withAlpha (va));
-                g.fillRoundedRectangle(nx, ny, nw, nh, GlassStyle::radius());
+                g.fillRoundedRectangle(nx, ny, nw, nh, 0.0f);
             }
         }
 
