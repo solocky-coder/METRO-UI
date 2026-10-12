@@ -1471,12 +1471,15 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
     const int rgIns = ry + 1;
     const int rgH   = kSf2ChRowH - 2;
     const bool even = (zoneIdx % 2 == 0);
-    g.setColour (even ? theme.darkBar.brighter (0.04f)
-                      : theme.darkBar.brighter (0.02f));
+    const bool selectedZone = sl.zoneLoKey >= 0
+        && sl.zoneLoKey == selectedSfzZoneLo && sl.zoneHiKey == selectedSfzZoneHi;
+    g.setColour (selectedZone ? theme.accent.withAlpha (0.20f)
+                              : (even ? theme.darkBar.brighter (0.04f)
+                                      : theme.darkBar.brighter (0.02f)));
     g.fillRect (0, rgIns, getWidth(), rgH);
 
-    g.setColour (theme.accent.withAlpha (0.6f));
-    g.fillRect (0, rgIns, 3, rgH);
+    g.setColour (theme.accent.withAlpha (selectedZone ? 1.0f : 0.6f));
+    g.fillRect (0, rgIns, selectedZone ? 4 : 3, rgH);
 
     g.setColour (theme.separator.withAlpha (0.4f));
     g.drawHorizontalLine (ry, 0.f, (float) getWidth());
@@ -1898,6 +1901,15 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
     // targetEngine2 branch of CmdSelectSlice).
     if (c.isSfz2Ch)
     {
+        const auto& zoneSnap = processor.getUiSliceSnapshot2();
+        if (c.sfz2ZoneIdx >= 0 && c.sfz2ZoneIdx < zoneSnap.numSlices)
+        {
+            const auto& zone = zoneSnap.slices[(size_t) c.sfz2ZoneIdx];
+            if (onSfzZoneSelected && zone.zoneLoKey >= 0)
+                onSfzZoneSelected (zone.zoneLoKey, zone.zoneHiKey);
+        }
+        processor.releaseUiSliceSnapshot2();
+
         DysektProcessor::Command sel;
         sel.type          = DysektProcessor::CmdSelectSlice;
         sel.intParam1     = c.sfz2ZoneIdx;

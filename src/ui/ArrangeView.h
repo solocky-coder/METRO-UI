@@ -127,6 +127,9 @@ public:
     std::function<void(TrackType type, bool hasSelection, bool isSfzInstrument,
                         int midiChannel1Based, int presetBank, int presetProgram)> onTrackTypeSelected;
 
+    /** Fired on every arranger selection change; negative keys clear the SFZ mixer highlight. */
+    std::function<void(int loKey, int hiKey)> onSfzLayerSelected;
+
     /** Fired whenever a track's mute (enabled) state changes via the
      *  track-header strip's M button, so the owner can mirror it onto
      *  whatever else tracks mute state for that track — e.g. the SF2
@@ -146,6 +149,23 @@ public:
         selectTrack (idx);
         trackStrip.setSelectedTrack (idx);
         repaint();
+    }
+
+    /** Select the SFZ arranger layer matching a clicked mixer zone's inclusive key range. */
+    void selectTrackForSfzZone (int loKey, int hiKey)
+    {
+        if (loKey < 0 || hiKey < loKey) return;
+        for (int i = 0; i < engine.getNumTracks(); ++i)
+        {
+            const auto info = engine.getTrackInfo (i);
+            if (info.isSfzLayer && info.layerLoKey == loKey && info.layerHiKey == hiKey)
+            {
+                selectTrack (i);
+                trackStrip.setSelectedTrack (i);
+                repaint();
+                return;
+            }
+        }
     }
 
     /** Re-fires onTrackTypeSelected for the currently selected track.
@@ -1704,12 +1724,18 @@ private:
         int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
         int assignedChannel1Based = -1;
         int assignedPresetBank = -1, assignedPresetProgram = -1;
+        int selectedLayerLo = -1, selectedLayerHi = -1;
 
         if (hasSelection)
         {
             const auto info = engine.getTrackInfo (idx);
             type = info.type;
             isSfzInstrument = info.isSfzInstrument;
+            if (info.isSfzLayer)
+            {
+                selectedLayerLo = info.layerLoKey;
+                selectedLayerHi = info.layerHiKey;
+            }
             switch (info.type)
             {
                 case TrackType::MainSlice:
@@ -1755,6 +1781,9 @@ private:
         // channel-1 live notes are never re-stamped to the selected track's
         // engine/channel no matter what's highlighted in the Arranger.
         engine.setSelectedTrack (hasSelection ? idx : -1);
+
+        if (onSfzLayerSelected)
+            onSfzLayerSelected (selectedLayerLo, selectedLayerHi);
 
         if (onTrackTypeSelected)
             onTrackTypeSelected (type, hasSelection, isSfzInstrument, assignedChannel1Based,
