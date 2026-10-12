@@ -91,6 +91,18 @@ public:
      *  to the overall output. */
     std::function<void(int uiMode)> onTrackSelected;
 
+    /** Fired when an SFZ-PLAYER mixer zone row is clicked; range is MIDI key inclusive. */
+    std::function<void(int loKey, int hiKey)> onSfzZoneSelected;
+
+    /** Highlight the matching SFZ zone row; pass a negative range to clear. */
+    void setSelectedSfzZoneRange (int loKey, int hiKey)
+    {
+        if (selectedSfzZoneLo == loKey && selectedSfzZoneHi == hiKey) return;
+        selectedSfzZoneLo = loKey;
+        selectedSfzZoneHi = hiKey;
+        repaint();
+    }
+
     /** Fired on any click within an SF2 per-channel sub-row, in addition to
      *  onTrackSelected(2) above — lets the owner also select the matching
      *  arranger track (see ArrangeView::selectTrackForSfChannel). Channel is
@@ -135,6 +147,9 @@ public:
     juce::String themeKeyAt (juce::Point<int> p) const;
 
 private:
+    int selectedSfzZoneLo = -1;
+    int selectedSfzZoneHi = -1;
+
     enum Col { ColGain=0, ColPan, ColFcut, ColPres, ColMute, ColChro, ColLegato, ColOut };
 
     // ── Hit-test cell ─────────────────────────────────────────────────────
