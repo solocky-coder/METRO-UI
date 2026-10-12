@@ -433,14 +433,14 @@ void SfzPlayer::applyFluidLfoFromUi()
     const float cut   = sf2TweakValue (TweakLfoCutoff, sf2Tweak[TweakLfoCutoff].load (std::memory_order_relaxed));
     const bool  on    = (pitch > 0.0f || vol > 0.0f || cut > 0.0f);
     const float hz    = sf2TweakValue (TweakLfoRate,   sf2Tweak[TweakLfoRate]  .load (std::memory_order_relaxed));
-    const float rateOffsetCents = on ? 1200.0f * std::log2 (hz / 8.176f) : 0.0f;   // FREQMODLFO: 0 cents = 8.176 Hz
+    const float rateOffsetCents = on ? 1200.0f * std::log2 (hz / 8.176f) : 0.0f;   // MODLFOFREQ: 0 cents = 8.176 Hz
 
     for (int ch = 2; ch < 16; ++ch)
     {
-        fluid_synth_set_gen (synth, ch, GEN_FREQMODLFO,    rateOffsetCents);
+        fluid_synth_set_gen (synth, ch, GEN_MODLFOFREQ,     rateOffsetCents);
         fluid_synth_set_gen (synth, ch, GEN_MODLFOTOPITCH, pitch);
         fluid_synth_set_gen (synth, ch, GEN_MODLFOTOVOL,   vol);
-        fluid_synth_set_gen (synth, ch, GEN_MODLFOTOFC,    cut);
+        fluid_synth_set_gen (synth, ch, GEN_MODLFOTOFILTERFC, cut);
     }
 #endif
 }
