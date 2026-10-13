@@ -2436,7 +2436,9 @@ if (activeSlot == SlotContent::Seq)   pianoRollPanel.syncSnap();
             const auto& sl = snap.slices[(size_t) i];
             if (sl.chromaticChannel > 0)
             {
-                const juce::String sliceName = "Slice " + juce::String (i + 1);
+                // Use the model's actual slice name so Mixer renames
+                // flow through to an existing chromatic Arranger track.
+                const juce::String sliceName = sl.name;
 #if DYSEKT_STANDALONE
                 pianoRollPanel.onSliceChromaticToggled (
                     i, true, sl.chromaticChannel, sliceName, sl.colour);

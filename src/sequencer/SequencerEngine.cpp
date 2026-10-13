@@ -746,7 +746,20 @@ void SequencerEngine::addChromaticTrack (int sliceIdx, int chromaticChannel,
 {
     auto current = impl->getTracks();
     for (auto& t : *current)
-        if (t->type == TrackType::ChromaticSlice && t->sliceIdx == sliceIdx) return;
+    {
+        if (t->type == TrackType::ChromaticSlice && t->sliceIdx == sliceIdx)
+        {
+            // The slice is the source of truth for this track's name and
+            // colour. This method is also called by the UI snapshot sync
+            // after a slice is renamed, so update the existing track rather
+            // than treating an already-created chromatic track as a no-op.
+            t->midiChannel.store (juce::jlimit (1, 16, chromaticChannel) - 1,
+                                  std::memory_order_relaxed);
+            t->name = name.isEmpty() ? ("CHROM " + juce::String (sliceIdx + 1)) : name;
+            t->colour = colour;
+            return;
+        }
+    }
 
     auto next = std::make_shared<Impl::TrackList> (*current);
     next->push_back (SequencerTrack::makeChromatic (sliceIdx, chromaticChannel, name, colour));
