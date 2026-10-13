@@ -471,9 +471,9 @@ DysektEditor::DysektEditor (DysektProcessor& p)
     // mirroring the Arranger behaviour above.
     mixerPanel.onTrackSelected = [this] (int mode) { setUiMode (mode); };
 
-    // Keep SFZ zone selection synchronized in both directions: clicking a mixer
-    // zone selects its matching arranger layer, and selecting an arranger layer
-    // highlights the corresponding mixer zone row.
+#if DYSEKT_STANDALONE
+    // Keep SFZ zone selection synchronized in both directions. ArrangeView is
+    // only part of the standalone build, so these callbacks must be guarded too.
     mixerPanel.onSfzZoneSelected = [this] (int loKey, int hiKey)
     {
         arrangeView.selectTrackForSfzZone (loKey, hiKey);
@@ -482,6 +482,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
     {
         mixerPanel.setSelectedSfzZoneRange (loKey, hiKey);
     };
+#endif
 
 #if DYSEKT_STANDALONE
     // Clicking an SF2 channel strip also focuses the matching arranger
