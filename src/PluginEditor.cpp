@@ -392,6 +392,33 @@ DysektEditor::DysektEditor (DysektProcessor& p)
         pianoRollPanel.openFor (trackIndex, clipIndex);
     };
 
+    // Arranger renames for chromatic slice tracks update the same slice model
+    // used by the Mixer and other slice-name controls.
+    arrangeView.onTrackRenameRequested = [this] (int trackIndex)
+    {
+        const auto info = processor.sequencer.getTrackInfo (trackIndex);
+        if (info.type != TrackType::ChromaticSlice || info.sliceIdx < 0)
+            return;
+
+        renameOverlay = std::make_unique<RenameOverlay> (info.sliceIdx + 1, info.name);
+        addAndMakeVisible (*renameOverlay);
+        renameOverlay->setBounds (getLocalBounds());
+        renameOverlay->toFront (true);
+        renameOverlay->onResult = [this, sliceIdx = info.sliceIdx] (const juce::String& newName,
+                                                                    bool cancelled)
+        {
+            renameOverlay.reset();
+            if (! cancelled)
+            {
+                DysektProcessor::Command cmd;
+                cmd.type = DysektProcessor::CmdSetSliceName;
+                cmd.intParam1 = sliceIdx;
+                cmd.stringParam = newName;
+                processor.pushCommand (cmd);
+            }
+        };
+    };
+
     slotWindow.onCloseRequested = [this]
     {
         activeSlot = SlotContent::None;

@@ -78,6 +78,7 @@ public:
     std::function<void(int)>            onTrackSelected;
     std::function<void(int, bool)>      onTrackMuted;
     std::function<void(int, int)>       onSfTrackChannelChanged;  // trackIdx, ch 1-based
+    std::function<void(int)>            onTrackRenameRequested;
 
     int getRequiredHeight() const { return getVisibleTrackCount() * trackH; }
 
@@ -426,6 +427,26 @@ public:
 private:
     void showContextMenu (int idx, const SequencerTrackInfo& info, juce::Point<int> pos)
     {
+        // Chromatic Arranger rows represent real slices, so expose the same
+        // slice-name editor used by the pad/waveform views. The owner routes
+        // the accepted name back through CmdSetSliceName (the source model).
+        if (info.type == TrackType::ChromaticSlice)
+        {
+            juce::PopupMenu menu;
+            menu.addSectionHeader ("Slice");
+            menu.addItem (50, "Rename slice…");
+            menu.showMenuAsync (
+                juce::PopupMenu::Options()
+                    .withTargetComponent (this)
+                    .withTargetScreenArea ({ pos.x, pos.y, 1, 1 }),
+                [this, idx] (int result)
+                {
+                    if (result == 50 && onTrackRenameRequested)
+                        onTrackRenameRequested (idx);
+                });
+            return;
+        }
+
         if (info.type != TrackType::SfPlayer) return;
 
         // The real .sfz-instrument track (isSfzInstrument) is a singleton —
