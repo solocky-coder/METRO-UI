@@ -93,6 +93,9 @@ public:
     /** Owner wires this to open the piano roll for the given track + clip. */
     std::function<void(int trackIndex, int clipIndex)> onClipDoubleClicked;
 
+    /** Fired when the user asks to rename a slice-backed chromatic track. */
+    std::function<void(int trackIndex)> onTrackRenameRequested;
+
 #if DYSEKT_STANDALONE
     /** Owner (DysektEditor, standalone build only) wires this to the single
      *  NetworkAudioProcessor instance MainWindow already owns, so completed
@@ -214,6 +217,11 @@ public:
             trackStrip.repaint();
         };
         addAndMakeVisible (trackStrip);
+        trackStrip.onTrackRenameRequested = [this] (int trackIndex)
+        {
+            if (onTrackRenameRequested)
+                onTrackRenameRequested (trackIndex);
+        };
 
         transport.onFloatRequested = [this] { showFloatingTransport(); };
         transport.onDockRequested  = [this] { dockTransport(); };
@@ -2056,6 +2064,12 @@ private:
                 m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
             }
 
+            if (info.type == TrackType::ChromaticSlice)
+            {
+                m.addSeparator();
+                m.addItem (42, "Rename slice…");
+            }
+
             if (info.type == TrackType::NetworkMidi)
             {
                 m.addSeparator();
@@ -2115,6 +2129,10 @@ private:
                             selectedClip = 0;
                             trackStrip.setSelectedTrack (-1);
                         }
+                        break;
+                    case 42:
+                        if (info.type == TrackType::ChromaticSlice && onTrackRenameRequested)
+                            onTrackRenameRequested (trackIdx);
                         break;
                     case 8:  // Repeat clip
                     {
