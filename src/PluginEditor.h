@@ -108,6 +108,8 @@ public:
 
 private:
     void timerCallback() override;
+    void showSliceRenameOverlay (int sliceIdx, const juce::String& currentName,
+                                 bool targetEngine2 = false);
     void ensureDefaultThemes();
     void saveUserSettings (const juce::String& themeName);
     void loadUserSettings();
