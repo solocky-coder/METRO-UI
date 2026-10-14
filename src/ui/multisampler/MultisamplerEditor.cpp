@@ -769,8 +769,20 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
                 // per-slice customisation that belonged to whatever was loaded before.
                 // See zoneBuilderReloadPending's declaration in PluginProcessor.h and
                 // writeSfzZoneChange's identical distinction for the ZONES editor.
-                if (! isFreshLoad)
+                if (isFreshLoad)
+                {
+                    // A fresh instrument replacement must start from a clean
+                    // slice state. An earlier in-place edit may already have
+                    // set this flag while its async load was still pending;
+                    // if that load is superseded, the flag would otherwise be
+                    // consumed by this fresh load and incorrectly preserve
+                    // per-slice settings from the instrument being replaced.
+                    safeThis->processor.zoneBuilderReloadPending.store (false, std::memory_order_release);
+                }
+                else
+                {
                     safeThis->processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
+                }
                 safeThis->processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
             });
         });
