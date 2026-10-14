@@ -123,22 +123,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  addChildComponent (padGridView);
  padGridView.onRenameRequest = [this] (int sliceIdx, const juce::String& currentName)
  {
-     renameOverlay = std::make_unique<RenameOverlay> (sliceIdx + 1, currentName);
-     addAndMakeVisible (*renameOverlay);
-     renameOverlay->setBounds (getLocalBounds());
-     renameOverlay->toFront (true);
-     renameOverlay->onResult = [this, sliceIdx] (const juce::String& newName, bool cancelled)
-     {
-         renameOverlay.reset();
-         if (! cancelled)
-         {
-             DysektProcessor::Command cmd;
-             cmd.type = DysektProcessor::CmdSetSliceName;
-             cmd.intParam1 = sliceIdx;
-             cmd.stringParam = newName;
-             processor.pushCommand (cmd);
-         }
-     };
+     showSliceRenameOverlay (sliceIdx, currentName);
  };
  sliceControlBar.onPadViewToggle = [this] (bool on)
  {
@@ -392,31 +377,14 @@ DysektEditor::DysektEditor (DysektProcessor& p)
         pianoRollPanel.openFor (trackIndex, clipIndex);
     };
 
-    // Arranger renames for chromatic slice tracks update the same slice model
-    // used by the Mixer and other slice-name controls.
+    // Chromatic Arranger rows rename the same source slice as other views.
     arrangeView.onTrackRenameRequested = [this] (int trackIndex)
     {
         const auto info = processor.sequencer.getTrackInfo (trackIndex);
         if (info.type != TrackType::ChromaticSlice || info.sliceIdx < 0)
             return;
 
-        renameOverlay = std::make_unique<RenameOverlay> (info.sliceIdx + 1, info.name);
-        addAndMakeVisible (*renameOverlay);
-        renameOverlay->setBounds (getLocalBounds());
-        renameOverlay->toFront (true);
-        renameOverlay->onResult = [this, sliceIdx = info.sliceIdx] (const juce::String& newName,
-                                                                    bool cancelled)
-        {
-            renameOverlay.reset();
-            if (! cancelled)
-            {
-                DysektProcessor::Command cmd;
-                cmd.type = DysektProcessor::CmdSetSliceName;
-                cmd.intParam1 = sliceIdx;
-                cmd.stringParam = newName;
-                processor.pushCommand (cmd);
-            }
-        };
+        showSliceRenameOverlay (info.sliceIdx, info.name);
     };
 
     slotWindow.onCloseRequested = [this]
@@ -618,22 +586,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  waveformView.onShortcutsToggle = [this] { toggleShortcutsPanel(); };
  waveformView.onRenameRequest = [this] (int sliceIdx, const juce::String& currentName)
  {
- renameOverlay = std::make_unique<RenameOverlay> (sliceIdx + 1, currentName);
- addAndMakeVisible (*renameOverlay);
- renameOverlay->setBounds (getLocalBounds());
- renameOverlay->toFront (true);
- renameOverlay->onResult = [this, sliceIdx] (const juce::String& newName, bool cancelled)
- {
- renameOverlay.reset();
- if (! cancelled)
- {
- DysektProcessor::Command cmd;
- cmd.type = DysektProcessor::CmdSetSliceName;
- cmd.intParam1 = sliceIdx;
- cmd.stringParam = newName;
- processor.pushCommand (cmd);
- }
- };
+     showSliceRenameOverlay (sliceIdx, currentName);
  };
  waveformView.onTrimApplied = [this] (int s, int e)
  {
@@ -2528,6 +2481,32 @@ if (activeSlot == SlotContent::Seq)   pianoRollPanel.syncSnap();
         }
     }
 #endif
+}
+
+void DysektEditor::showSliceRenameOverlay (int sliceIdx, const juce::String& currentName,
+                                           bool targetEngine2)
+{
+    if (sliceIdx < 0)
+        return;
+
+    renameOverlay = std::make_unique<RenameOverlay> (sliceIdx + 1, currentName);
+    addAndMakeVisible (*renameOverlay);
+    renameOverlay->setBounds (getLocalBounds());
+    renameOverlay->toFront (true);
+    renameOverlay->onResult = [this, sliceIdx, targetEngine2] (const juce::String& newName,
+                                                               bool cancelled)
+    {
+        renameOverlay.reset();
+        if (cancelled)
+            return;
+
+        DysektProcessor::Command cmd;
+        cmd.type = DysektProcessor::CmdSetSliceName;
+        cmd.intParam1 = sliceIdx;
+        cmd.stringParam = newName;
+        cmd.targetEngine2 = targetEngine2;
+        processor.pushCommand (cmd);
+    };
 }
 
 void DysektEditor::ensureDefaultThemes()
