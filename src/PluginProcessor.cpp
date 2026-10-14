@@ -1776,9 +1776,19 @@ void DysektProcessor::handleCommand (const Command& cmd)
             break;
 
         case CmdPanic:
+            // Engine 1 (slicer) -- same as MIDI All Sound Off in processMidi().
             voicePool.killAll();
             lazyChop.stop (voicePool, sliceManager);
             std::fill (std::begin (heldNotes), std::end (heldNotes), false);
+
+            // Engine 2 (SFZ-PLAYER / multisampler) -- same as MIDI All Sound
+            // Off in processMidi2(). Previously missing, so panic left this
+            // engine sounding and its held-note state stuck.
+            voicePool2.killAll();
+            std::fill (std::begin (heldNotes2), std::end (heldNotes2), false);
+            sfz2ActiveNotes[0].store (0, std::memory_order_relaxed);
+            sfz2ActiveNotes[1].store (0, std::memory_order_relaxed);
+            sequencer.notifySfzAllNotesOff();
             break;
 
         case CmdClearSfzPlayer2Sample:
