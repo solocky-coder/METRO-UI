@@ -28,7 +28,8 @@ public:
         auto& session = getSession();
         if (session.isRunning())
         {
-            values.peer = session.getPeerAddress();
+            if (! session.isHostMode())
+                values.peer = session.getPeerAddress();
             values.port = session.getPeerPort();
             values.channelMask = session.getChannelMask();
             values.forwardRealtime = session.getForwardRealtime();
