@@ -536,6 +536,16 @@ private:
 
         posLabel.setText (formatMusicalPosition (engine.getPlayheadBeats()), juce::dontSendNotification);
 
+        // Re-read the engine's loop range every tick so changes made outside
+        // this bar (arranger ruler drags, Alt-drag, right-click reset, "set
+        // loop to clip length") show up here, and so the nudge/edit handlers
+        // never write a stale cached value back to the engine. A field that
+        // is being typed into keeps its cached value until the edit finishes.
+        if (! leftLocatorLabel.isBeingEdited())
+            leftLocatorTick = engine.getLoopStartTick();
+        if (! rightLocatorLabel.isBeingEdited())
+            rightLocatorTick = engine.getLoopEndTick();
+
         if (! leftLocatorLabel.isBeingEdited())
             leftLocatorLabel.setText ("L " + formatMusicalPosition ((double) leftLocatorTick / (double) MidiClip::kPPQ),
                                       juce::dontSendNotification);

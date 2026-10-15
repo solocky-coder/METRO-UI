@@ -761,6 +761,7 @@ public:
                 loopStart = tick;
                 loopEnd   = loopDragAnchor;
             }
+            pushLoopDragToEngine();
             repaint(); return;
         }
 
@@ -769,6 +770,7 @@ public:
             const int64_t tick = snapTick (xToTick (e.x));
             const int64_t maxStart = juce::jmax<int64_t> (0, loopEnd - MidiClip::kPPQ);
             loopStart = juce::jlimit<int64_t> (0, maxStart, tick);
+            pushLoopDragToEngine();
             repaint(); return;
         }
 
@@ -776,6 +778,7 @@ public:
         {
             const int64_t tick = snapTick (xToTick (e.x));
             loopEnd = juce::jmax (loopStart + MidiClip::kPPQ, tick);
+            pushLoopDragToEngine();
             repaint(); return;
         }
 
@@ -1371,10 +1374,16 @@ private:
         // loop range — e.g. locators set from the docked or floating
         // transport's SET LEFT/SET RIGHT buttons or editable L/R fields,
         // which previously never reached this view at all. Skipped while
-        // the user is actively dragging out a new region on the ruler
-        // (mouseUp below commits that drag to the engine instead), so the
-        // live drag preview isn't fought over every timer tick.
-        if (rulerDrag != RulerDrag::LoopSet)
+        // the user is actively dragging on the ruler -- either drawing out
+        // a new region (LoopSet) or pulling an existing L/R marker
+        // (DragLoopStart / DragLoopEnd). mouseUp commits those drags to the
+        // engine instead, so the live drag preview isn't fought over every
+        // timer tick. (Previously only LoopSet was exempt, so at 30 Hz this
+        // overwrote the dragged marker with the engine's old range and the
+        // left/right loop boundaries snapped back or jittered mid-drag.)
+        if (rulerDrag != RulerDrag::LoopSet
+            && rulerDrag != RulerDrag::DragLoopStart
+            && rulerDrag != RulerDrag::DragLoopEnd)
         {
             loopStart = engine.getLoopStartTick();
             loopEnd   = engine.getLoopEndTick();
@@ -1446,6 +1455,17 @@ private:
     /** Grab tolerance (screen pixels) for clicking directly on an existing
      *  loop-marker line to drag it, both here and in updateCursor(). */
     static constexpr int kLoopMarkerGrabPx = 5;
+
+    /** Mirrors the in-progress ruler loop drag onto the engine on every
+     *  drag step (setLoopRange just stores two atomics), so the transport
+     *  row's L/R readouts -- which read the engine -- follow the marker
+     *  live instead of only jumping to the new value on mouse-up. mouseUp
+     *  still commits the final range. */
+    void pushLoopDragToEngine()
+    {
+        if (loopEnd > loopStart)
+            engine.setLoopRange (loopStart, loopEnd);
+    }
 
     bool isNearLoopMarker (int x, int64_t markerTick) const noexcept
     {

@@ -826,6 +826,16 @@ void FloatingTransportBar::timerCallback()
     positionLabel.setText (formatMusicalPosition (engine.getPlayheadBeats()), juce::dontSendNotification);
 
 
+ // Re-read the engine's loop range every tick so changes made outside
+    // this bar (arranger ruler drags, Alt-drag, right-click reset, "set loop
+    // to clip length") show up here, and so the nudge/edit handlers below
+    // never write a stale cached value back to the engine. A field that is
+    // being typed into keeps its cached value until the edit finishes.
+    if (! leftLocatorLabel.isBeingEdited())
+        leftLocatorTick = engine.getLoopStartTick();
+    if (! rightLocatorLabel.isBeingEdited())
+        rightLocatorTick = engine.getLoopEndTick();
+
  if (! leftLocatorLabel.isBeingEdited())
         // No "L " prefix here - the separate muted caption in paint() supplies
         // that, so the field shows a pure numeric value at the same
