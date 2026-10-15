@@ -365,7 +365,7 @@ void RtpMidiSession::run()
     sequence     = (uint16_t) juce::Random::getSystemRandom().nextInt (65536);
     role         = Role::None;
 
-    if (! isValidIPv4 (peerIp))
+    if (! hostMode.load() && ! isValidIPv4 (peerIp))
         setStatus (State::WaitingForLink, "Enter a valid IPv4 address for the device (e.g. 192.168.99.2)");
 
     uint32_t lastBindTry = 0;
