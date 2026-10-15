@@ -60,6 +60,10 @@ public:
         peerIPv4 must be a dotted IPv4 address, e.g. "192.168.99.2". */
     void start (const juce::String& peerIPv4, int peerControlPort = 5004);
 
+    /** Advertise a host session over local-network mDNS and accept one incoming peer. */
+    void startAsHost (int localControlPort = 5004);
+    bool isHostMode() const noexcept { return hostMode.load(); }
+
     /** Stops the session. If connected, sends All Notes Off to the peer and a clean BY first. */
     void stop();
 
@@ -126,7 +130,7 @@ private:
     void handlePacket (bool onDataSocket, const uint8_t* p, int n,
                        const juce::String& senderIp, int senderPort);
 
-    void handleInvitation (bool onDataSocket, const uint8_t* p, int n, int senderPort);
+    void handleInvitation (bool onDataSocket, const uint8_t* p, int n, const juce::String& senderIp, int senderPort);
     void handleOk         (bool onDataSocket, const uint8_t* p, int n);
     void handleClock      (const uint8_t* p, int n);
     void becomeConnected  (Role newRole);
@@ -143,6 +147,7 @@ private:
 
     // shared with other threads -----------------------------------------------
     std::atomic<bool>     running { false };
+    std::atomic<bool>     hostMode { false };
     std::atomic<int>      state { (int) State::Off };
     std::atomic<bool>     connectedFlag { false };
     std::atomic<uint32_t> channelMask { 0xFFFFu };
@@ -161,6 +166,7 @@ private:
 
     // session thread state ----------------------------------------------------
     std::unique_ptr<juce::DatagramSocket> ctrl, data;
+    std::unique_ptr<class WifiMidiAdvertiser> advertiser;
     juce::String peerIp;
     int          baseCtrlPort = 5004;   // port configured by start()
     int          peerCtrlPort = 5004;   // current control port (may follow the peer when it invites us)
