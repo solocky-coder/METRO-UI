@@ -32,6 +32,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
     /** Horizontal zoom multiplier applied to the base beat width. Clamped to a sane range. */
@@ -54,6 +55,7 @@ private:
     void timerCallback() override;
 
     static constexpr int kToolbarHeight = 40;
+    static constexpr int kOverviewHeight = 32;
     static constexpr int kRulerHeight = 48;
     static constexpr int kTrackHeaderWidth = 168;
     static constexpr int kTrackRowHeight = 72;
@@ -69,6 +71,8 @@ private:
 
     void setSelection (MetroSelection newSelection);
     void drawToolbar (juce::Graphics& graphics, juce::Rectangle<int> area) const;
+    void drawOverview (juce::Graphics& graphics, juce::Rectangle<int> area) const;
+    void updateOverviewScroll (int x);
     void drawRuler (juce::Graphics& graphics, juce::Rectangle<int> area) const;
     void drawTrackHeader (juce::Graphics& graphics, juce::Rectangle<int> area,
                           int trackIndex, const SequencerTrackInfo& track) const;
@@ -85,6 +89,7 @@ private:
     bool gridVisible = true;
     bool magnetEnabled = true;
     bool locked = false;
+    bool overviewDragging = false;
     int64_t snapTicks = MidiClip::kPPQ / 4; // 1/16 note
 
     int64_t tickAtX (int x) const noexcept;
