@@ -80,6 +80,7 @@ public:
     static constexpr int kStripW       = 196;
     static constexpr int kLeftW        = kInspectorW + kStripW;
     static constexpr int kToolbarH     = 42;
+    static constexpr int kOverviewH    = 30;
     static constexpr int kEditLabelW   = 40;
     static constexpr int kRulerH       = 36;
     static constexpr int kScrollH      = 10;
@@ -502,24 +503,25 @@ public:
         hScroll.setBounds (hScrollR.withTrimmedLeft (leftPanelW()));
         // Match the inspector/track strip: the vertical scrollbar starts below
         // the toolbar and timeline ruler instead of covering those rows.
-        vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + kRulerH));
+        vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + kOverviewH + kRulerH));
 
         if (inspectorVisible)
         {
             auto inspectorCol = r.removeFromLeft (kInspectorW);
-            inspectorCol.removeFromTop (kToolbarH + kRulerH);
+            inspectorCol.removeFromTop (kToolbarH + kOverviewH + kRulerH);
             inspector.setBounds (inspectorCol);
         }
         else
             inspector.setBounds ({});
 
         auto leftCol = r.removeFromLeft (kStripW);
-        leftCol.removeFromTop (kToolbarH + kRulerH);
+        leftCol.removeFromTop (kToolbarH + kOverviewH + kRulerH);
         trackStrip.setBounds (leftCol);
         trackStrip.setTrackHeight (trackH);
 
         gridArea      = r;
         gridArea.removeFromTop (kToolbarH);
+        overviewBounds = gridArea.removeFromTop (kOverviewH);
         rulerBounds   = gridArea.removeFromTop (kRulerH);
         clipGridBounds = gridArea;
 
@@ -542,6 +544,7 @@ public:
         g.reduceClipRegion (b.reduced (3));
 
         paintArrangeHeader (g);
+        paintOverview (g);
         paintRuler (g);
         paintTrackRows (g);
         paintLoopOverlay (g);
@@ -578,6 +581,14 @@ public:
     void mouseDown (const juce::MouseEvent& e) override
     {
         grabKeyboardFocus();
+
+        // ── Arrangement overview minimap ───────────────────────────────────────
+        if (overviewBounds.contains (e.getPosition()))
+        {
+            overviewDragging = true;
+            scrollFromOverviewX (e.x);
+            return;
+        }
 
         // ── Ruler ─────────────────────────────────────────────────────────────
         if (rulerBounds.contains (e.getPosition()))
@@ -741,6 +752,12 @@ public:
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
+        if (overviewDragging)
+        {
+            scrollFromOverviewX (e.x);
+            return;
+        }
+
         // ── Ruler scrub / loop drag ────────────────────────────────────────────
         if (rulerDrag == RulerDrag::Scrub)
         {
@@ -848,6 +865,8 @@ public:
 
     void mouseUp (const juce::MouseEvent&) override
     {
+        overviewDragging = false;
+
         // Commit a drawn clip — length is whatever drawLenTicks grew to
         // while dragging (floored to 1 bar in handleDrawClipDown/mouseDrag
         // above), so a plain click-with-no-drag still yields a usable
@@ -1206,7 +1225,8 @@ private:
     bool editingLocked = false;
     bool inspectorVisible = false;
 
-    juce::Rectangle<int>  gridArea, rulerBounds, clipGridBounds;
+    juce::Rectangle<int>  gridArea, overviewBounds, rulerBounds, clipGridBounds;
+    bool overviewDragging = false;
     
     int      selectedTrack  = -1;
     int      trackH         = kDefaultTrackH;
@@ -2459,6 +2479,69 @@ private:
         const auto header = arrangeHeaderBounds();
         g.setColour (theme.separator);
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
+    }
+
+
+    // Compact whole-arrangement map between the command toolbar and ruler.
+    // The cyan viewport rectangle tracks the main timeline's visible range.
+    void paintOverview (juce::Graphics& g) const
+    {
+        if (overviewBounds.isEmpty()) return;
+        const auto& theme = getTheme();
+        g.saveState();
+        g.reduceClipRegion (overviewBounds);
+        g.setColour (theme.header.darker (0.35f));
+        g.fillRect (overviewBounds);
+        g.setColour (theme.separator);
+        g.fillRect (overviewBounds.getX(), overviewBounds.getBottom() - 1,
+                    overviewBounds.getWidth(), 1);
+
+        const int mapLeft = overviewBounds.getX() + 8;
+        const int mapWidth = juce::jmax (1, overviewBounds.getRight() - mapLeft - 8);
+        const int64_t totalTicks = juce::jmax<int64_t> (MidiClip::kPPQ * 4, totalVisibleTicks());
+        const int trackCount = juce::jmax (1, engine.getNumTracks());
+        const float laneHeight = juce::jmax (1.0f, (float) (overviewBounds.getHeight() - 6)
+                                                    / (float) trackCount);
+
+        for (int ti = 0; ti < engine.getNumTracks(); ++ti)
+        {
+            const auto track = engine.getTrackInfo (ti);
+            const float y = (float) overviewBounds.getY() + 3.0f + (float) ti * laneHeight;
+            for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
+            {
+                const auto clip = engine.getClipInfo (ti, ci);
+                const float x1 = (float) mapLeft + (float) clip.startTick / (float) totalTicks * (float) mapWidth;
+                const float x2 = (float) mapLeft + (float) clip.endTick() / (float) totalTicks * (float) mapWidth;
+                g.setColour (track.colour.withAlpha (0.95f));
+                g.fillRoundedRectangle (juce::Rectangle<float> (x1, y,
+                    juce::jmax (2.0f, x2 - x1), juce::jmax (1.5f, laneHeight - 1.0f)), 1.0f);
+            }
+        }
+
+        const float viewportX = (float) mapLeft + (float) (scrollX / ((double) totalTicks * pixelsPerTick))
+                               * (float) mapWidth;
+        const float viewportW = juce::jlimit (3.0f, (float) mapWidth,
+            (float) ((double) clipGridBounds.getWidth() / ((double) totalTicks * pixelsPerTick)
+                     * (double) mapWidth));
+        const juce::Rectangle<float> viewport (viewportX, (float) overviewBounds.getY() + 1.5f,
+                                                viewportW, (float) overviewBounds.getHeight() - 3.0f);
+        g.setColour (theme.accent.withAlpha (0.16f));
+        g.fillRoundedRectangle (viewport, 2.0f);
+        g.setColour (theme.accent);
+        g.drawRoundedRectangle (viewport, 2.0f, 1.2f);
+        g.restoreState();
+    }
+
+    void scrollFromOverviewX (int x)
+    {
+        const int mapLeft = overviewBounds.getX() + 8;
+        const int mapWidth = juce::jmax (1, overviewBounds.getRight() - mapLeft - 8);
+        const double fraction = juce::jlimit (0.0, 1.0, (double) (x - mapLeft) / (double) mapWidth);
+        const double totalW = (double) totalVisibleTicks() * pixelsPerTick;
+        scrollX = juce::jlimit (0.0, juce::jmax (0.0, totalW - clipGridBounds.getWidth()),
+                                fraction * totalW - (double) clipGridBounds.getWidth() * 0.5);
+        updateScrollRanges();
+        repaint();
     }
 
     void paintRuler (juce::Graphics& g) const
