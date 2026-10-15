@@ -168,9 +168,23 @@ private:
                 socket.write ("224.0.0.251", 5353, packet.data(), (int) packet.size());
             }
 
-            // Refresh before the 120-second DNS-SD TTL expires.
+            // Refresh before the DNS-SD TTL expires, and answer browse queries
+            // promptly instead of making clients wait for the next announcement.
             for (int i = 0; i < 150 && ! threadShouldExit(); ++i)
-                wait (100);
+            {
+                if (socket.waitUntilReady (true, 100) != 1)
+                    continue;
+
+                uint8_t query[1500];
+                juce::String senderIp;
+                int senderPort = 0;
+                const int n = socket.read (query, (int) sizeof (query), false, senderIp, senderPort);
+
+                // DNS responses have QR=1; ignore our own multicast announcement
+                // and any other responses to avoid an announcement loop.
+                if (n >= 12 && (query[2] & 0x80) == 0)
+                    break; // rebuild and send the service announcement immediately
+            }
         }
     }
 
