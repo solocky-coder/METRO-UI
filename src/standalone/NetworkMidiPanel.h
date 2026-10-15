@@ -106,11 +106,9 @@ public:
         realtimeToggle.setTooltip ("Off by default: a hardware clock can flood the link. Turn on to let iPad apps follow it.");
         realtimeToggle.onClick = [this] { onFilterEdited(); };
 
-        helpText.setText ("1.  Plug the iPad in and start Apple USB Share (the link shows 192.168.99.1 -> 192.168.99.2).\n"
-                          "2.  In the iPad app, turn on a network MIDI session and allow connections (\"Anyone\" if it asks).\n"
-                          "3.  Switch \"Send live MIDI to device\" on. DYSEKT connects to the device at the address above.\n\n"
-                          "Everything arriving on DYSEKT's enabled MIDI inputs is forwarded, filtered by the channels you pick. "
-                          "SysEx is not forwarded. Turn the iPad's Wi-Fi off while testing so the cable is the only path.",
+        helpText.setText ("USB peer mode: plug in the iPad, start Apple USB Share, enable a Network MIDI session in the iPad app, then switch live MIDI on.\n\n"
+                          "Wi-Fi/LAN host mode: enable \"Advertise on Wi-Fi/LAN\". DYSEKT advertises an AppleMIDI Bonjour service on the local network; select DYSEKT-SF in a compatible RTP-MIDI client and connect. Both devices must be on the same LAN, and firewall rules must allow UDP 5004/5005 and mDNS UDP 5353.\n\n"
+                          "Only one network peer can connect at a time. Incoming MIDI is filtered by the selected channels; SysEx is not forwarded.",
                           juce::dontSendNotification);
         helpText.setJustificationType (juce::Justification::topLeft);
         helpText.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
