@@ -536,6 +536,7 @@ void MetroArrangementView::glueSelectedClip ()
 
 void MetroArrangementView::mouseDown (const juce::MouseEvent& event)
 {
+    overviewDragging = false;
     if (event.y >= kToolbarHeight && event.y < kToolbarHeight + kOverviewHeight)
     {
         overviewDragging = true;
@@ -649,6 +650,11 @@ void MetroArrangementView::mouseDrag (const juce::MouseEvent& event)
 {
     if (overviewDragging)
         updateOverviewScroll (event.x);
+}
+
+void MetroArrangementView::mouseUp (const juce::MouseEvent&)
+{
+    overviewDragging = false;
 }
 
 void MetroArrangementView::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
