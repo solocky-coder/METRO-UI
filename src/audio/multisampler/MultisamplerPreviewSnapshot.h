@@ -75,4 +75,55 @@ namespace MultisamplerPreviewSnapshot
 
         return snapshot;
     }
+
+    /** Returns a copy of `source` in which every zone with showInMixer set
+        has that pin carried over to whichever zone actually WINS each of its
+        keys at playback-load time.
+
+        Why this exists: the loader builds one playback slice per MIDI note,
+        not one per zone. When several enabled zones cover the same note
+        (velocity layers, round-robins, stacked zones), it keeps only the
+        LAST <region> in file order for that note and stamps only that
+        region's dysekt_show_in_mixer flag on the slice. SfzExporter writes
+        enabled zones in list order, so the winner for a note is the last
+        enabled zone whose [lowKey, highKey] covers it. A zone with MIX
+        shown that is shadowed by a later overlapping zone therefore never
+        reaches any slice and no mixer channel is created for it.
+
+        The fix is export-side only: for each key of each pinned zone, the
+        winning zone in the exported copy is pinned too. The live model
+        (`source`, what the zone LCD shows) is never modified, so the MIX
+        cell keeps showing what the user actually set. A pinned zone that
+        wins all of its own keys is unchanged, and disabled zones are
+        ignored because SfzExporter skips them. Pure function of `source`. */
+    inline MultisamplerInstrument withMixerPinsOnWinningZones (const MultisamplerInstrument& source)
+    {
+        MultisamplerInstrument snapshot = source;
+        auto& zones = snapshot.zones;
+
+        for (const auto& pinned : source.zones)
+        {
+            if (! pinned.enabled || ! pinned.showInMixer)
+                continue;
+
+            const int lo = juce::jlimit (0, 127, pinned.lowKey);
+            const int hi = juce::jlimit (0, 127, pinned.highKey);
+
+            for (int note = lo; note <= hi; ++note)
+            {
+                // Last enabled zone covering this note wins (file order).
+                for (int i = (int) zones.size() - 1; i >= 0; --i)
+                {
+                    const auto& z = zones[(size_t) i];
+                    if (z.enabled && note >= z.lowKey && note <= z.highKey)
+                    {
+                        zones[(size_t) i].showInMixer = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return snapshot;
+    }
 }

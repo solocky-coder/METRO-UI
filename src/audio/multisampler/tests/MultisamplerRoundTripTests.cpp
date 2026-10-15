@@ -14,6 +14,7 @@
 #include "../SfzImporter.h"
 #include "../SfzExporter.h"
 #include "../InstrumentSerializer.h"
+#include "../MultisamplerPreviewSnapshot.h"
 #include <juce_core/juce_core.h>
 #include <algorithm>
 
@@ -426,6 +427,70 @@ private:
 
         const auto issues = instrument.validate();
         expect (issues.size() >= 2);
+
+        beginTest ("MIX pin is carried to the zone that wins each key (overlapping zones)");
+
+        auto makeZone = [] (int lo, int hi, bool mix, bool enabled = true)
+        {
+            SampleZone z;
+            z.lowKey = lo; z.highKey = hi;
+            z.showInMixer = mix;
+            z.enabled = enabled;
+            return z;
+        };
+
+        // Stacked zones, same keys: the later one wins every note, so the
+        // pin on the earlier one must land on it. Original pin is kept.
+        {
+            MultisamplerInstrument inst;
+            inst.addZone (makeZone (48, 59, true));
+            inst.addZone (makeZone (48, 59, false));
+            const auto out = MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones (inst);
+            expect (out.zones[0].showInMixer);
+            expect (out.zones[1].showInMixer);
+            expect (! inst.zones[1].showInMixer);   // live model untouched
+        }
+
+        // Partial overlap: A keeps keys 40-49 for itself, B wins 50-60.
+        {
+            MultisamplerInstrument inst;
+            inst.addZone (makeZone (40, 60, true));
+            inst.addZone (makeZone (50, 70, false));
+            const auto out = MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones (inst);
+            expect (out.zones[0].showInMixer);
+            expect (out.zones[1].showInMixer);
+        }
+
+        // Pinned zone that already wins everything: nothing else changes.
+        {
+            MultisamplerInstrument inst;
+            inst.addZone (makeZone (48, 59, false));
+            inst.addZone (makeZone (48, 59, true));
+            inst.addZone (makeZone (60, 72, false));
+            const auto out = MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones (inst);
+            expect (! out.zones[0].showInMixer);
+            expect (out.zones[1].showInMixer);
+            expect (! out.zones[2].showInMixer);
+        }
+
+        // A disabled later zone is not exported, so it never wins a key.
+        {
+            MultisamplerInstrument inst;
+            inst.addZone (makeZone (48, 59, true));
+            inst.addZone (makeZone (48, 59, false, /*enabled*/ false));
+            const auto out = MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones (inst);
+            expect (out.zones[0].showInMixer);
+            expect (! out.zones[1].showInMixer);
+        }
+
+        // Nothing pinned -> nothing changes.
+        {
+            MultisamplerInstrument inst;
+            inst.addZone (makeZone (48, 59, false));
+            inst.addZone (makeZone (48, 59, false));
+            const auto out = MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones (inst);
+            expect (! out.zones[0].showInMixer && ! out.zones[1].showInMixer);
+        }
     }
 };
 

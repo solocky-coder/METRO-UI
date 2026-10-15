@@ -6,6 +6,7 @@
 #include "../SliceControlBar.h"
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
+#include "../../audio/multisampler/MultisamplerPreviewSnapshot.h"
 #include "../../audio/SfzZoneColours.h"
 #include <algorithm>
 #include <cmath>
@@ -731,7 +732,11 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     juce::Component::SafePointer<MultisamplerEditor> safeThis (this);
 
     processor.fileLoadPool.addJob (
-        [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = instrument]
+        [safeThis, myGen, cacheFile, opts, isFreshLoad,
+         // Export copy, not the live model: pins MIX on whichever zone wins
+         // each key so a shadowed (overlapped) zone still gets a mixer
+         // channel. See MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones.
+         snapshot = MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones (instrument)]
         {
             if (! SfzExporter::exportToFile (snapshot, cacheFile, opts))
                 return;   // nothing to load — same as the old synchronous early-return
@@ -769,20 +774,8 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
                 // per-slice customisation that belonged to whatever was loaded before.
                 // See zoneBuilderReloadPending's declaration in PluginProcessor.h and
                 // writeSfzZoneChange's identical distinction for the ZONES editor.
-                if (isFreshLoad)
-                {
-                    // A fresh instrument replacement must start from a clean
-                    // slice state. An earlier in-place edit may already have
-                    // set this flag while its async load was still pending;
-                    // if that load is superseded, the flag would otherwise be
-                    // consumed by this fresh load and incorrectly preserve
-                    // per-slice settings from the instrument being replaced.
-                    safeThis->processor.zoneBuilderReloadPending.store (false, std::memory_order_release);
-                }
-                else
-                {
+                if (! isFreshLoad)
                     safeThis->processor.zoneBuilderReloadPending.store (true, std::memory_order_release);
-                }
                 safeThis->processor.loadSoundFontAsync (cacheFile, SoundFontLoadTarget::SfzPlayer2);
             });
         });
