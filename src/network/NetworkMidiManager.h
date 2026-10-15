@@ -122,6 +122,15 @@ public:
         slot.session.start (slot.peer, slot.port);
     }
 
+    void startHostDevice (int id, int port = 5004)
+    {
+        if (! juce::isPositiveAndBelow (id, kMaxDevices + 1))
+            return;
+        auto& slot = devices[(size_t) (id - 1)];
+        slot.port = juce::jlimit (1, 65534, port);
+        slot.session.startAsHost (slot.port);
+    }
+
     void stopDevice (int id)
     {
         if (auto* s = getSession (id))
