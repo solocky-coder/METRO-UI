@@ -33,12 +33,12 @@ public:
             values.channelMask = session.getChannelMask();
             values.forwardRealtime = session.getForwardRealtime();
             values.enabled = true;
+            values.wifiHost = session.isHostMode();
         }
 
-        title.setText ("USB Network MIDI", juce::dontSendNotification);
+        title.setText ("Network MIDI", juce::dontSendNotification);
         title.setFont (juce::Font (28.0f, juce::Font::bold));
-        subtitle.setText ("Send DYSEKT's live incoming MIDI to an iPhone / iPad over the direct USB link - "
-                          "wired network MIDI (RTP-MIDI), no Wi-Fi or router",
+        subtitle.setText ("Send DYSEKT's live incoming MIDI over USB or advertise a discoverable RTP-MIDI host on Wi-Fi/LAN",
                           juce::dontSendNotification);
         subtitle.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
 
@@ -53,7 +53,7 @@ public:
 
         enableButton.setClickingTogglesState (true);
         enableButton.setToggleState (values.enabled, juce::dontSendNotification);
-        enableButton.setTooltip ("Send every live MIDI message DYSEKT receives to the device over the USB link");
+        enableButton.setTooltip ("Enable the selected USB peer or Wi-Fi/LAN host session");
         enableButton.onClick = [this] { onEnableClicked(); };
         updateEnableButtonText();
 
@@ -76,6 +76,12 @@ public:
         portEditor.setTooltip ("Network MIDI control port of the iPad app's session (default 5004)");
         portEditor.onReturnKey = [this] { onTargetEdited(); };
         portEditor.onFocusLost = [this] { onTargetEdited(); };
+
+        wifiHostButton.setClickingTogglesState (true);
+        wifiHostButton.setToggleState (values.wifiHost, juce::dontSendNotification);
+        wifiHostButton.setTooltip ("Advertise DYSEKT-SF as an AppleMIDI Bonjour service and accept a peer on the local network");
+        wifiHostButton.onClick = [this] { onWifiHostClicked(); };
+        updateWifiHostButtonText();
 
         channelsCaption.setText ("Channels", juce::dontSendNotification);
 
@@ -116,7 +122,7 @@ public:
 
         for (auto* c : std::initializer_list<juce::Component*> {
                  &title, &subtitle, &connectionCaption, &filterCaption, &helpCaption, &enableButton,
-                 &deviceCaption, &deviceCombo, &portCaption, &portEditor, &statusLabel, &infoLabel,
+                 &deviceCaption, &deviceCombo, &portCaption, &portEditor, &wifiHostButton, &statusLabel, &infoLabel,
                  &channelsCaption, &allButton, &noneButton, &realtimeToggle, &helpText })
             addAndMakeVisible (c);
 
@@ -185,6 +191,8 @@ public:
             row2.removeFromLeft (20);
             portCaption.setBounds (row2.removeFromLeft (44));
             portEditor.setBounds (row2.removeFromLeft (84));
+            row2.removeFromLeft (10);
+            wifiHostButton.setBounds (row2.removeFromLeft (174));
 
             inner.removeFromTop (8);
             infoLabel.setBounds (inner.removeFromTop (26));
@@ -246,6 +254,7 @@ private:
         v.peer = deviceCombo.getText().trim();
         v.port = juce::jlimit (1, 65534, portEditor.getText().getIntValue() > 0 ? portEditor.getText().getIntValue() : 5004);
         v.enabled = enableButton.getToggleState();
+        v.wifiHost = wifiHostButton.getToggleState();
         v.forwardRealtime = realtimeToggle.getToggleState();
 
         uint32_t mask = 0;
@@ -278,6 +287,16 @@ private:
     {
         const auto v = currentValues();
 
+        if (v.wifiHost)
+        {
+            invalidAddressNote = false;
+            applyFiltersToManager (v);
+            getSession().startAsHost (v.port);
+            persist();
+            refresh();
+            return;
+        }
+
         if (! RtpMidiSession::isValidIPv4 (v.peer))
         {
             getSession().stop();
@@ -292,6 +311,31 @@ private:
         invalidAddressNote = false;
         applyFiltersToManager (v);
         getSession().start (v.peer, v.port);
+    }
+
+    void updateWifiHostButtonText()
+    {
+        wifiHostButton.setButtonText (wifiHostButton.getToggleState() ? "Advertise on Wi-Fi/LAN: ON"
+                                                                       : "Advertise on Wi-Fi/LAN: OFF");
+    }
+
+    void onWifiHostClicked()
+    {
+        updateWifiHostButtonText();
+        if (wifiHostButton.getToggleState())
+        {
+            enableButton.setToggleState (true, juce::dontSendNotification);
+            updateEnableButtonText();
+            startSessionFromFields();
+        }
+        else if (getSession().isHostMode())
+        {
+            getSession().stop();
+            enableButton.setToggleState (false, juce::dontSendNotification);
+            updateEnableButtonText();
+        }
+        persist();
+        refresh();
     }
 
     void onEnableClicked()
@@ -318,7 +362,14 @@ private:
         const auto v = currentValues();
         auto& session = getSession();
 
-        if (! session.isRunning() || session.getPeerAddress() != v.peer || session.getPeerPort() != v.port)
+        if (v.wifiHost)
+        {
+            if (! session.isRunning() || ! session.isHostMode() || session.getPeerPort() != v.port)
+                startSessionFromFields();
+            return;
+        }
+
+        if (! session.isRunning() || session.isHostMode() || session.getPeerAddress() != v.peer || session.getPeerPort() != v.port)
             startSessionFromFields();
     }
 
@@ -372,8 +423,10 @@ private:
 
             if (state == RtpMidiSession::State::Connected)
             {
-                info = "USB link " + session.getLocalAddress() + "  ->  " + session.getPeerAddress()
-                     + "      Messages sent: " + juce::String ((int) session.getMessagesSent());
+                info = session.isHostMode()
+                    ? "Wi-Fi/LAN host on " + session.getLocalAddress() + "      Messages sent: " + juce::String ((int) session.getMessagesSent())
+                    : "USB link " + session.getLocalAddress() + "  ->  " + session.getPeerAddress()
+                        + "      Messages sent: " + juce::String ((int) session.getMessagesSent());
             }
             else
             {
@@ -405,6 +458,7 @@ private:
     juce::Label deviceCaption, portCaption, statusLabel, infoLabel, channelsCaption;
     juce::ComboBox deviceCombo;
     juce::TextEditor portEditor;
+    juce::TextButton wifiHostButton;
     std::array<juce::TextButton, 16> channelButtons;
     juce::TextButton allButton, noneButton;
     juce::ToggleButton realtimeToggle;
