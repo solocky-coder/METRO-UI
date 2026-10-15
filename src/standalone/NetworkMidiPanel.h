@@ -314,8 +314,7 @@ private:
 
     void updateWifiHostButtonText()
     {
-        wifiHostButton.setButtonText (wifiHostButton.getToggleState() ? "Advertise on Wi-Fi/LAN: ON"
-                                                                       : "Advertise on Wi-Fi/LAN: OFF");
+        wifiHostButton.setButtonText (wifiHostButton.getToggleState() ? "Wi-Fi Host: ON" : "Wi-Fi Host: OFF");
     }
 
     void onWifiHostClicked()
@@ -344,7 +343,14 @@ private:
         if (enableButton.getToggleState())
             startSessionFromFields();
         else
+        {
             getSession().stop();
+            if (wifiHostButton.getToggleState())
+            {
+                wifiHostButton.setToggleState (false, juce::dontSendNotification);
+                updateWifiHostButtonText();
+            }
+        }
 
         persist();
         refresh();
