@@ -1,4 +1,5 @@
 #include "RtpMidiSession.h"
+#include "WifiMidiAdvertiser.h"
 
 #include <cstring>
 
@@ -145,6 +146,7 @@ juce::String RtpMidiSession::getLocalAddress() const { const juce::ScopedLock sl
 void RtpMidiSession::start (const juce::String& peerIPv4, int peerControlPort)
 {
     stop();
+    hostMode.store (false);
 
     {
         const juce::ScopedLock sl (textLock);
@@ -155,6 +157,22 @@ void RtpMidiSession::start (const juce::String& peerIPv4, int peerControlPort)
     }
 
     setStatus (State::WaitingForLink, "Starting...");
+    running.store (true);
+    startThread();
+}
+
+void RtpMidiSession::startAsHost (int localControlPort)
+{
+    stop();
+    hostMode.store (true);
+    {
+        const juce::ScopedLock sl (textLock);
+        cfgPeer.clear();
+        cfgPort = juce::jlimit (1, 65534, localControlPort);
+        peerName.clear();
+        localAddr.clear();
+    }
+    setStatus (State::WaitingForLink, "Starting Wi-Fi/LAN MIDI host...");
     running.store (true);
     startThread();
 }
@@ -233,6 +251,9 @@ juce::String RtpMidiSession::findLocalAddress() const
 
 bool RtpMidiSession::localAddressStillPresent() const
 {
+    if (hostMode.load())
+        return true;
+
     const auto current = getLocalAddress();
 
     for (const auto& address : juce::IPAddress::getAllAddresses (false))
@@ -260,6 +281,11 @@ void RtpMidiSession::resetLink()
 
 void RtpMidiSession::closeSockets()
 {
+    if (advertiser != nullptr)
+    {
+        advertiser->stop();
+        advertiser.reset();
+    }
     ctrl.reset();
     data.reset();
 
@@ -269,9 +295,10 @@ void RtpMidiSession::closeSockets()
 
 void RtpMidiSession::openSockets()
 {
-    const auto local = findLocalAddress();
+    const bool hosting = hostMode.load();
+    const auto local = hosting ? juce::String() : findLocalAddress();
 
-    if (local.isEmpty())
+    if (! hosting && local.isEmpty())
     {
         setStatus (State::WaitingForLink, "Waiting for USB link to " + peerIp);
         return;
@@ -280,11 +307,11 @@ void RtpMidiSession::openSockets()
     auto tryBind = [&] (int controlPort) -> bool
     {
         auto c = std::make_unique<juce::DatagramSocket> (false);
-        if (! c->bindToPort (controlPort, local))
+        if (hosting ? ! c->bindToPort (controlPort) : ! c->bindToPort (controlPort, local))
             return false;
 
         auto d = std::make_unique<juce::DatagramSocket> (false);
-        if (! d->bindToPort (c->getBoundPort() + 1, local))
+        if (hosting ? ! d->bindToPort (c->getBoundPort() + 1) : ! d->bindToPort (c->getBoundPort() + 1, local))
             return false;
 
         ctrl = std::move (c);
@@ -292,25 +319,35 @@ void RtpMidiSession::openSockets()
         return true;
     };
 
-    // Prefer the standard 5004/5005 pair (so a peer that initiates can find us),
-    // otherwise fall back to any free consecutive pair - still fine for initiating.
-    bool ok = tryBind (5004);
-    for (int attempt = 0; attempt < 25 && ! ok; ++attempt)
-        ok = tryBind (0);
+    bool ok = tryBind (baseCtrlPort);
+    if (! hosting)
+        for (int attempt = 0; attempt < 25 && ! ok; ++attempt)
+            ok = tryBind (0);
 
     if (! ok)
     {
-        setStatus (State::WaitingForLink, "Could not open UDP ports on " + local);
+        setStatus (State::WaitingForLink, hosting
+            ? "Could not open UDP ports 5004/5005 for Wi-Fi MIDI (check another MIDI service)"
+            : "Could not open UDP ports on " + local);
         return;
     }
 
     {
         const juce::ScopedLock sl (textLock);
-        localAddr = local;
+        localAddr = hosting ? "all local interfaces" : local;
     }
 
     resetLink();
-    setStatus (State::Inviting, "Connecting to " + peerIp + ":" + juce::String (baseCtrlPort) + " ...");
+    if (hosting)
+    {
+        advertiser = std::make_unique<WifiMidiAdvertiser>();
+        advertiser->start (ctrl->getBoundPort());
+        setStatus (State::Inviting, "Advertising DYSEKT-SF on the local network; waiting for a MIDI peer");
+    }
+    else
+    {
+        setStatus (State::Inviting, "Connecting to " + peerIp + ":" + juce::String (baseCtrlPort) + " ...");
+    }
 }
 
 void RtpMidiSession::run()
@@ -339,7 +376,7 @@ void RtpMidiSession::run()
     {
         const uint32_t now = juce::Time::getMillisecondCounter();
 
-        if (! isValidIPv4 (peerIp))
+        if (! hostMode.load() && ! isValidIPv4 (peerIp))
         {
             wait (250);
             continue;
@@ -385,6 +422,8 @@ void RtpMidiSession::serviceSession (uint32_t nowMs)
 {
     if (role == Role::None)
     {
+        if (hostMode.load())
+            return; // host waits for incoming invitations; it never initiates
         if (timeReached (nowMs, inviteDueMs))
         {
             // Restart the whole handshake now and then so a half-open attempt can't wedge.
@@ -416,7 +455,15 @@ void RtpMidiSession::serviceSession (uint32_t nowMs)
     if (nowMs - lastRxMs > kTimeoutMs)
     {
         resetLink();
-        setStatus (State::Inviting, "Peer stopped responding - reconnecting to " + peerIp + " ...");
+        if (hostMode.load())
+        {
+            peerIp.clear();
+            setStatus (State::Inviting, "Advertising DYSEKT-SF; waiting for a MIDI peer");
+        }
+        else
+        {
+            setStatus (State::Inviting, "Peer stopped responding - reconnecting to " + peerIp + " ...");
+        }
     }
 }
 
@@ -494,19 +541,33 @@ void RtpMidiSession::pumpIncoming()
 void RtpMidiSession::handlePacket (bool onDataSocket, const uint8_t* p, int n,
                                    const juce::String& senderIp, int senderPort)
 {
-    if (senderIp != peerIp)
-        return;                                       // only ever talk to the configured device
+    const bool isCommand = n >= 4 && p[0] == 0xFF && p[1] == 0xFF;
+    const uint16_t command = isCommand ? (uint16_t) ((p[2] << 8) | p[3]) : 0;
+
+    if (! hostMode.load())
+    {
+        if (senderIp != peerIp)
+            return;                                   // client mode only talks to configured peer
+    }
+    else
+    {
+        if (role != Role::None && senderIp != peerIp)
+            return;                                   // host accepts one peer at a time
+        if (role == Role::None && (! isCommand || command != kIN))
+            return;                                   // idle host only accepts AppleMIDI invitations
+        if (role == Role::None && onDataSocket && senderIp != peerIp)
+            return;                                   // data-port invite must match control peer
+    }
 
     lastRxMs = juce::Time::getMillisecondCounter();
 
-    if (n >= 4 && p[0] == 0xFF && p[1] == 0xFF)
+    if (isCommand)
     {
-        const uint16_t command = (uint16_t) ((p[2] << 8) | p[3]);
 
         switch (command)
         {
             case kIN:
-                handleInvitation (onDataSocket, p, n, senderPort);
+                handleInvitation (onDataSocket, p, n, senderIp, senderPort);
                 break;
 
             case kOK:
@@ -527,8 +588,16 @@ void RtpMidiSession::handlePacket (bool onDataSocket, const uint8_t* p, int n,
                 if (role != Role::None)
                 {
                     resetLink();
-                    inviteDueMs = lastRxMs + 1000;
-                    setStatus (State::Inviting, "The device ended the session - reconnecting ...");
+                    if (hostMode.load())
+                    {
+                        peerIp.clear();
+                        setStatus (State::Inviting, "Advertising DYSEKT-SF; waiting for a MIDI peer");
+                    }
+                    else
+                    {
+                        inviteDueMs = lastRxMs + 1000;
+                        setStatus (State::Inviting, "The device ended the session - reconnecting ...");
+                    }
                 }
                 break;
 
@@ -545,7 +614,7 @@ void RtpMidiSession::handlePacket (bool onDataSocket, const uint8_t* p, int n,
     // RTP data packets from the peer (it sending MIDI to us) are not used yet.
 }
 
-void RtpMidiSession::handleInvitation (bool onDataSocket, const uint8_t* p, int n, int senderPort)
+void RtpMidiSession::handleInvitation (bool onDataSocket, const uint8_t* p, int n, const juce::String& senderIp, int senderPort)
 {
     if (n < 16)
         return;
@@ -565,6 +634,8 @@ void RtpMidiSession::handleInvitation (bool onDataSocket, const uint8_t* p, int 
     if (! onDataSocket)
     {
         // The peer is initiating: follow its ports and drop any attempt of our own.
+        if (hostMode.load())
+            peerIp = senderIp;
         resetLink();
         sessionToken = token;
         peerCtrlPort = senderPort;
@@ -575,7 +646,7 @@ void RtpMidiSession::handleInvitation (bool onDataSocket, const uint8_t* p, int 
             peerName = name;
         }
 
-        ctrl->write (peerIp, senderPort, reply, 16 + nameLen);
+        ctrl->write (senderIp, senderPort, reply, 16 + nameLen);
         setStatus (State::Inviting, "Invitation from " + (name.isNotEmpty() ? name : peerIp) + " ...");
     }
     else
@@ -584,7 +655,7 @@ void RtpMidiSession::handleInvitation (bool onDataSocket, const uint8_t* p, int 
             return;
 
         peerDataPort = senderPort;
-        data->write (peerIp, senderPort, reply, 16 + nameLen);
+        data->write (senderIp, senderPort, reply, 16 + nameLen);
         becomeConnected (Role::Responder);
     }
 }
