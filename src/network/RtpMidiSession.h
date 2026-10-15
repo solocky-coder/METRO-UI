@@ -30,6 +30,8 @@
 #include <cstdint>
 #include <memory>
 
+class WifiMidiAdvertiser;
+
 class RtpMidiSession final : private juce::Thread
 {
 public:
@@ -166,7 +168,7 @@ private:
 
     // session thread state ----------------------------------------------------
     std::unique_ptr<juce::DatagramSocket> ctrl, data;
-    std::unique_ptr<class WifiMidiAdvertiser> advertiser;
+    std::unique_ptr<WifiMidiAdvertiser> advertiser;
     juce::String peerIp;
     int          baseCtrlPort = 5004;   // port configured by start()
     int          peerCtrlPort = 5004;   // current control port (may follow the peer when it invites us)
