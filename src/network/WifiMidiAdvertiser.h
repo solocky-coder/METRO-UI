@@ -50,7 +50,7 @@ private:
         for (const auto& label : labels)
         {
             const auto utf8 = label.toRawUTF8();
-            const auto length = (int) std::strlen (utf8.getAddress());
+            const auto length = (int) std::strlen (utf8);
             if (length <= 0 || length > 63)
                 continue;
             out.push_back ((uint8_t) length);
