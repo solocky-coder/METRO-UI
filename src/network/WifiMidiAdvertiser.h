@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -60,11 +61,11 @@ private:
     }
 
     static void recordHeader (std::vector<uint8_t>& out, const juce::String& owner,
-                              uint16_t type, uint32_t ttl, uint16_t dataLength)
+                              uint16_t type, uint32_t ttl, uint16_t dataLength, bool cacheFlush = true)
     {
         putName (out, owner);
         put16 (out, type);
-        put16 (out, 0x8001); // cache-flush, IN
+        put16 (out, (uint16_t) (0x0001 | (cacheFlush ? 0x8000 : 0))); // IN
         put32 (out, ttl);
         put16 (out, dataLength);
     }
@@ -73,7 +74,7 @@ private:
     {
         std::vector<uint8_t> rdata;
         putName (rdata, instance);
-        recordHeader (out, "_apple-midi._udp.local", 12, 120, (uint16_t) rdata.size());
+        recordHeader (out, "_apple-midi._udp.local", 12, 120, (uint16_t) rdata.size(), false);
         out.insert (out.end(), rdata.begin(), rdata.end());
     }
 
