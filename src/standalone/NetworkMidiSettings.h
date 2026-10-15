@@ -20,6 +20,7 @@ namespace NetworkMidiSettings
         uint32_t     channelMask = 0xFFFFu;   // bit n = MIDI channel n+1 forwarded
         bool         forwardRealtime = false; // clock / start / continue / stop
         bool         enabled = false;
+        bool         wifiHost = false;
     };
 
     inline juce::File file()
@@ -47,6 +48,7 @@ namespace NetworkMidiSettings
             v.channelMask     = (uint32_t) (int) object->getProperty ("channelMask") & 0xFFFFu;
             v.forwardRealtime = (bool) object->getProperty ("forwardRealtime");
             v.enabled         = (bool) object->getProperty ("enabled");
+            v.wifiHost        = (bool) object->getProperty ("wifiHost");
 
             if (! object->hasProperty ("port"))        v.port = 5004;
             if (! object->hasProperty ("channelMask")) v.channelMask = 0xFFFFu;
@@ -63,6 +65,7 @@ namespace NetworkMidiSettings
         object->setProperty ("channelMask", (int) v.channelMask);
         object->setProperty ("forwardRealtime", v.forwardRealtime);
         object->setProperty ("enabled", v.enabled);
+        object->setProperty ("wifiHost", v.wifiHost);
 
         const auto f = file();
         f.getParentDirectory().createDirectory();
@@ -83,7 +86,12 @@ namespace NetworkMidiSettings
     {
         const auto v = load();
         applyFilters (manager, deviceId, v);
-        if (v.enabled && RtpMidiSession::isValidIPv4 (v.peer))
-            manager.startDevice (deviceId, v.port);
+        if (v.enabled)
+        {
+            if (v.wifiHost)
+                manager.startHostDevice (deviceId, v.port);
+            else if (RtpMidiSession::isValidIPv4 (v.peer))
+                manager.startDevice (deviceId, v.port);
+        }
     }
 }
