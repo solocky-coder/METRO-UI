@@ -1,8 +1,10 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 // Minimal DNS-SD/mDNS advertiser for the AppleMIDI service type used by
@@ -47,7 +49,7 @@ private:
         for (const auto& label : labels)
         {
             const auto utf8 = label.toRawUTF8();
-            const auto length = (int) std::strlen (utf8);
+            const auto length = (int) std::strlen (utf8.getAddress());
             if (length <= 0 || length > 63)
                 continue;
             out.push_back ((uint8_t) length);
@@ -131,8 +133,14 @@ private:
             {
                 const auto text = address.toString();
                 std::array<uint8_t, 4> bytes {};
+                // Apple USB Share reserves these subnets; do not advertise its
+                // point-to-point addresses as LAN/Wi-Fi destinations.
+                const bool appleUsbAddress = text.startsWith ("192.168.99.")
+                                          || text.startsWith ("192.168.100.")
+                                          || text.startsWith ("192.168.101.")
+                                          || text.startsWith ("192.168.102.");
                 if (text.startsWith ("127.") || text == "0.0.0.0"
-                    || text.startsWith ("169.254.") || ! parseIPv4 (text, bytes))
+                    || text.startsWith ("169.254.") || appleUsbAddress || ! parseIPv4 (text, bytes))
                     continue;
                 if (std::find (addresses.begin(), addresses.end(), bytes) == addresses.end())
                     addresses.push_back (bytes);
