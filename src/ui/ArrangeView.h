@@ -483,7 +483,19 @@ public:
         // up to sit right under the title bar when the transport is
         // floating and no longer reserves kTransportH at the top — same
         // vertical shift the ruler/track rows already get from r above.
+        // With the inspector open, the controls dock into the otherwise empty
+        // top-left panel (above inspector + track strip, left of the mini
+        // arranger / ruler) as two compact rows, and the full-width header row
+        // is dropped. With the inspector closed that panel is only kStripW
+        // wide - too narrow for the controls - so the original header row is
+        // used instead.
+        if (toolbarDocked())
         {
+            layoutDockedToolbar();
+        }
+        else
+        {
+            applyToolbarFontSizes (false);
             const auto header = arrangeHeaderBounds();
             auto content = header.withWidth (340).reduced (8, 4);
             content.removeFromLeft (78);    // reserve room for "QUANTIZE"
@@ -527,24 +539,24 @@ public:
         hScroll.setVisible (! miniArrangerExpanded);
         hScroll.setBounds ({});
         auto vScrollR = r.removeFromRight (kScrollW);
-        vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + miniArrangerHeight() + kRulerH));
+        vScroll.setBounds (vScrollR.withTrimmedTop (headerRowH() + miniArrangerHeight() + kRulerH));
 
         if (inspectorVisible)
         {
             auto inspectorCol = r.removeFromLeft (kInspectorW);
-            inspectorCol.removeFromTop (kToolbarH + miniArrangerHeight() + kRulerH);
+            inspectorCol.removeFromTop (headerRowH() + miniArrangerHeight() + kRulerH);
             inspector.setBounds (inspectorCol);
         }
         else
             inspector.setBounds ({});
 
         auto leftCol = r.removeFromLeft (kStripW);
-        leftCol.removeFromTop (kToolbarH + miniArrangerHeight() + kRulerH);
+        leftCol.removeFromTop (headerRowH() + miniArrangerHeight() + kRulerH);
         trackStrip.setBounds (leftCol);
         trackStrip.setTrackHeight (trackH);
 
         gridArea = r;
-        gridArea.removeFromTop (kToolbarH);
+        gridArea.removeFromTop (headerRowH());
         miniArrangerBounds = gridArea.removeFromTop (miniArrangerHeight());
         // In collapsed mode the horizontal scrollbar uses the full overview
         // strip; the toggle is in the toolbar, beside INSPECTOR.
@@ -2473,6 +2485,100 @@ private:
         return inspectorVisible ? kLeftW : kStripW;
     }
 
+    /** True while the quantize/edit controls live in the docked top-left
+     *  panel instead of the full-width header row. */
+    bool toolbarDocked() const noexcept { return inspectorVisible; }
+
+    /** Height of the full-width header row; zero while the controls are docked. */
+    int headerRowH() const noexcept { return toolbarDocked() ? 0 : kToolbarH; }
+
+    /** Top-left panel above inspector + track strip, left of the mini
+     *  arranger / ruler. Grows with the mini arranger (expanded/collapsed). */
+    juce::Rectangle<int> dockedToolbarBounds() const noexcept
+    {
+        const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
+        return { 3, topY, kLeftW, miniArrangerHeight() + kRulerH };
+    }
+
+    static constexpr int kDockedLabelW = 52;
+    static constexpr int kDockedRowGap = 4;
+    static constexpr int kDockedBtnGap = 2;
+
+    /** The two control rows (label column included): QUANTIZE, then EDIT.
+     *  Shared by layout and painting so labels always sit on their rows. */
+    std::pair<juce::Rectangle<int>, juce::Rectangle<int>> dockedToolbarRows() const noexcept
+    {
+        const auto inner = dockedToolbarBounds().reduced (10, 5);
+        const int rowH   = juce::jlimit (20, 30, (inner.getHeight() - kDockedRowGap) / 2);
+        auto block = inner.withSizeKeepingCentre (inner.getWidth(), rowH * 2 + kDockedRowGap);
+        const auto quantRow = block.removeFromTop (rowH);
+        block.removeFromTop (kDockedRowGap);
+        return { quantRow, block };
+    }
+
+    /** Docked buttons use the LookAndFeel's height-based font; the original
+     *  header row keeps its larger fixed size for the command buttons. */
+    void applyToolbarFontSizes (bool docked)
+    {
+        for (auto& b : arrangerButtons)
+            b.getProperties().set ("transportFontSize", docked ? 10.5 : 15.0);
+        for (auto& b : quantizeButtons)
+            b.getProperties().set ("transportFontSize", docked ? 10.5 : 0.0);
+        miniArrangerToggleButton.getProperties().set ("transportFontSize", docked ? 10.5 : 0.0);
+    }
+
+    void layoutDockedToolbar()
+    {
+        applyToolbarFontSizes (true);
+        auto [quantRow, editRow] = dockedToolbarRows();
+
+        // QUANTIZE row — six equal buttons right of the label column
+        quantRow.removeFromLeft (kDockedLabelW);
+        quantizeButtonsBounds = quantRow;
+        const int qw = (quantRow.getWidth() - kDockedBtnGap * (kNumQuantizeOptions - 1)) / kNumQuantizeOptions;
+        for (int i = 0; i < kNumQuantizeOptions; ++i)
+        {
+            quantizeButtons[i].setBounds (quantRow.removeFromLeft (qw));
+            quantRow.removeFromLeft (kDockedBtnGap);
+        }
+
+        // EDIT row — + CLIP, SELECT, DRAW, ERASE, SPLIT, GLUE, LOCK, INSPECTOR,
+        // MINI +; relative weights, scaled to fill the row exactly.
+        editRow.removeFromLeft (kDockedLabelW);
+        static constexpr int weights[kNumArrangeTools + 1] = { 44, 46, 38, 40, 38, 34, 36, 62, 42 };
+        int totalWeight = 0;
+        for (int w : weights) totalWeight += w;
+        const int avail = editRow.getWidth() - kDockedBtnGap * kNumArrangeTools;
+        int x = editRow.getX();
+        for (int i = 0; i <= kNumArrangeTools; ++i)
+        {
+            const bool last = (i == kNumArrangeTools);
+            const int w = last ? juce::jmax (0, editRow.getRight() - x)
+                               : avail * weights[i] / totalWeight;
+            auto& b = last ? miniArrangerToggleButton : arrangerButtons[i];
+            b.setBounds (x, editRow.getY(), w, editRow.getHeight());
+            x += w + kDockedBtnGap;
+        }
+    }
+
+    void paintDockedToolbar (juce::Graphics& g) const
+    {
+        const auto& theme = getTheme();
+        const auto panel = dockedToolbarBounds();
+        g.setColour (theme.header);
+        g.fillRect (panel);
+        g.setColour (theme.accent.withAlpha (0.8f));
+        g.fillRect (panel.getX(), panel.getY(), 3, panel.getHeight());
+
+        const auto [quantRow, editRow] = dockedToolbarRows();
+        g.setColour (theme.foreground.withAlpha (0.92f));
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.drawText ("QUANTIZE", quantRow.withWidth (kDockedLabelW), juce::Justification::centredLeft, false);
+        g.setColour (theme.foreground.withAlpha (0.55f));
+        g.setFont (juce::Font (10.0f, juce::Font::bold));
+        g.drawText ("EDIT", editRow.withWidth (kDockedLabelW), juce::Justification::centredLeft, false);
+    }
+
     juce::Rectangle<int> arrangeHeaderBounds() const noexcept
     {
         const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
@@ -2481,6 +2587,12 @@ private:
 
     void paintArrangeHeader (juce::Graphics& g) const
     {
+        if (toolbarDocked())
+        {
+            paintDockedToolbar (g);
+            return;
+        }
+
         const auto& theme = getTheme();
         const auto header = arrangeHeaderBounds();
         g.setColour (theme.header);
@@ -2534,8 +2646,15 @@ private:
     void paintOverChildren (juce::Graphics& g) override
     {
         const auto& theme = getTheme();
-        const auto header = arrangeHeaderBounds();
         g.setColour (theme.separator);
+        if (toolbarDocked())
+        {
+            const auto panel = dockedToolbarBounds();
+            g.fillRect (panel.getX(), panel.getBottom() - 1, panel.getWidth(), 2);
+            g.fillRect (panel.getRight() - 1, panel.getY(), 1, panel.getHeight());
+            return;
+        }
+        const auto header = arrangeHeaderBounds();
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
     }
 
