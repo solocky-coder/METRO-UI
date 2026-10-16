@@ -788,7 +788,7 @@ public:
             else
             {
                 const double initialViewportW = juce::jmax (12.0, (double) miniDragStartViewport.getWidth());
-                const double sign = miniDragMode == MiniDragMode::leftEdge ? 1.0 : -1.0;
+                const double sign = miniDragMode == MiniDragMode::leftEdge ? -1.0 : 1.0;
                 const double newViewportW = juce::jlimit (12.0, timelineW,
                     initialViewportW + sign * dx);
                 const double newScale = miniDragStartZoom * initialViewportW / newViewportW;
