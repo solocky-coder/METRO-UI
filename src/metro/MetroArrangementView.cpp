@@ -51,7 +51,7 @@ int MetroArrangementView::beatWidthPx() const noexcept
 
 juce::Rectangle<int> MetroArrangementView::trackRowBounds (int trackIndex) const
 {
-    const auto y = kToolbarHeight + kOverviewHeight + kRulerHeight + trackIndex * kTrackRowHeight;
+    const auto y = kToolbarHeight + kRulerHeight + trackIndex * kTrackRowHeight;
     return { 0, y, getWidth(), kTrackRowHeight };
 }
 
@@ -103,85 +103,6 @@ void MetroArrangementView::drawToolbar (juce::Graphics& g, juce::Rectangle<int> 
     g.setFont (juce::Font (11.0f));
     g.drawText ("ARRANGER", area.getRight() - 92, area.getY() + 1, 82, 16,
                 juce::Justification::centredRight, false);
-}
-
-
-void MetroArrangementView::drawOverview (juce::Graphics& g, juce::Rectangle<int> area) const
-{
-    g.setColour (juce::Colour (0xFF080F13));
-    g.fillRect (area);
-    g.setColour (juce::Colour (0xFF243942));
-    g.drawHorizontalLine (area.getBottom() - 1, (float) area.getX(), (float) area.getRight());
-
-    g.setColour (juce::Colour (0xFF70848D));
-    g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText ("OVERVIEW", area.getX() + 10, area.getY(), 64, area.getHeight(),
-                juce::Justification::centredLeft, false);
-
-    const int mapLeft = area.getX() + 78;
-    const int mapRight = area.getRight() - 8;
-    const int mapWidth = juce::jmax (1, mapRight - mapLeft);
-    int64_t endTick = juce::jmax<int64_t> (engine.getLoopEndTick(), MidiClip::kPPQ * 16);
-    for (int t = 0; t < engine.getNumTracks(); ++t)
-        for (int c = 0; c < engine.getNumClips (t); ++c)
-        {
-            const auto clip = engine.getClipInfo (t, c);
-            endTick = juce::jmax (endTick, clip.startTick + clip.lengthTicks);
-        }
-    endTick = juce::jmax<int64_t> (endTick, MidiClip::kPPQ * 4);
-
-    const int trackCount = juce::jmax (1, engine.getNumTracks());
-    const float laneHeight = juce::jmax (1.0f, (float) (area.getHeight() - 8) / (float) trackCount);
-    for (int t = 0; t < engine.getNumTracks(); ++t)
-    {
-        const auto track = engine.getTrackInfo (t);
-        const float y = (float) area.getY() + 4.0f + (float) t * laneHeight;
-        for (int c = 0; c < engine.getNumClips (t); ++c)
-        {
-            const auto clip = engine.getClipInfo (t, c);
-            const float x1 = (float) mapLeft + (float) clip.startTick / (float) endTick * (float) mapWidth;
-            const float x2 = (float) mapLeft + (float) (clip.startTick + clip.lengthTicks)
-                           / (float) endTick * (float) mapWidth;
-            g.setColour (track.colour.withAlpha (0.92f));
-            g.fillRoundedRectangle (juce::Rectangle<float> (x1, y, juce::jmax (2.0f, x2 - x1),
-                                                              juce::jmax (1.5f, laneHeight - 1.0f)), 1.0f);
-        }
-    }
-
-    const double visibleTicks = (double) juce::jmax (1, getWidth() - kTrackHeaderWidth)
-                              / (double) beatWidthPx() * (double) MidiClip::kPPQ;
-    const double viewStart = (double) scrollPixels / (double) beatWidthPx() * (double) MidiClip::kPPQ;
-    const float vx = (float) mapLeft + (float) (viewStart / (double) endTick) * (float) mapWidth;
-    const float vw = juce::jlimit (3.0f, (float) mapWidth,
-                                   (float) (visibleTicks / (double) endTick) * (float) mapWidth);
-    g.setColour (juce::Colour (0xFF48D7FF).withAlpha (0.12f));
-    g.fillRoundedRectangle (juce::Rectangle<float> (vx, (float) area.getY() + 2.0f, vw,
-                                                     (float) area.getHeight() - 4.0f), 3.0f);
-    g.setColour (juce::Colour (0xFF48D7FF));
-    g.drawRoundedRectangle (juce::Rectangle<float> (vx, (float) area.getY() + 2.0f, vw,
-                                                     (float) area.getHeight() - 4.0f), 3.0f, 1.2f);
-}
-
-void MetroArrangementView::updateOverviewScroll (int x)
-{
-    const int mapLeft = 78;
-    const int mapWidth = juce::jmax (1, getWidth() - mapLeft - 8);
-    int64_t endTick = juce::jmax<int64_t> (engine.getLoopEndTick(), MidiClip::kPPQ * 16);
-    for (int t = 0; t < engine.getNumTracks(); ++t)
-        for (int c = 0; c < engine.getNumClips (t); ++c)
-        {
-            const auto clip = engine.getClipInfo (t, c);
-            endTick = juce::jmax (endTick, clip.startTick + clip.lengthTicks);
-        }
-    endTick = juce::jmax<int64_t> (endTick, MidiClip::kPPQ * 4);
-
-    const double fraction = juce::jlimit (0.0, 1.0, (double) (x - mapLeft) / (double) mapWidth);
-    const double totalBeats = (double) endTick / (double) MidiClip::kPPQ;
-    const double visibleBeats = (double) juce::jmax (1, getWidth() - kTrackHeaderWidth)
-                              / (double) beatWidthPx();
-    const double targetBeats = juce::jmax (0.0, fraction * totalBeats - visibleBeats * 0.5);
-    const double maxBeats = juce::jmax (0.0, totalBeats - visibleBeats);
-    setScrollPosition ((float) (juce::jmin (targetBeats, maxBeats) * (double) beatWidthPx()));
 }
 
 void MetroArrangementView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) const
@@ -327,12 +248,10 @@ void MetroArrangementView::paint (juce::Graphics& graphics)
     graphics.fillAll (juce::Colour (0xFF05080A));
 
     auto toolbar = bounds.removeFromTop (kToolbarHeight);
-    auto overview = bounds.removeFromTop (kOverviewHeight);
     auto ruler = bounds.removeFromTop (kRulerHeight);
     const auto grid = bounds;
 
     drawToolbar (graphics, toolbar);
-    drawOverview (graphics, overview);
     drawRuler (graphics, ruler);
 
     // Arrangement grid.
@@ -536,14 +455,6 @@ void MetroArrangementView::glueSelectedClip ()
 
 void MetroArrangementView::mouseDown (const juce::MouseEvent& event)
 {
-    overviewDragging = false;
-    if (event.y >= kToolbarHeight && event.y < kToolbarHeight + kOverviewHeight)
-    {
-        overviewDragging = true;
-        updateOverviewScroll (event.x);
-        return;
-    }
-
     // Toolbar commands are real editor commands now; they call the existing
     // SequencerEngine/MidiClip APIs rather than maintaining a second model.
     if (event.y < kToolbarHeight)
@@ -646,17 +557,6 @@ void MetroArrangementView::mouseDown (const juce::MouseEvent& event)
         setSelection (MetroSelection::forTrack (trackIndex, engine.getTrackInfo (trackIndex)));
     }
 }
-void MetroArrangementView::mouseDrag (const juce::MouseEvent& event)
-{
-    if (overviewDragging)
-        updateOverviewScroll (event.x);
-}
-
-void MetroArrangementView::mouseUp (const juce::MouseEvent&)
-{
-    overviewDragging = false;
-}
-
 void MetroArrangementView::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
 {
     if (wheel.deltaY == 0.0f)
