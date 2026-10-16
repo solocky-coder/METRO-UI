@@ -512,6 +512,13 @@ public:
                 arrangerButtons[i].setBounds (x, tools.getY(), juce::jmax (0, w), tools.getHeight());
                 x += w + toolGap;
             }
+
+            // The mini arranger toggle belongs in the toolbar immediately
+            // to the right of INSPECTOR, not inside the overview strip.
+            const int toggleW = 66;
+            const int toggleX = arrangerButtons[7].getRight() + toolGap;
+            miniArrangerToggleButton.setBounds (toggleX, tools.getY(),
+                juce::jmax (0, juce::jmin (toggleW, tools.getRight() - toggleX)), tools.getHeight());
         }
 
         // In expanded mode the mini arranger handles horizontal navigation.
@@ -539,14 +546,10 @@ public:
         gridArea = r;
         gridArea.removeFromTop (kToolbarH);
         miniArrangerBounds = gridArea.removeFromTop (miniArrangerHeight());
-        // Keep the toggle visible in the overview strip in both modes. When
-        // collapsed, the scrollbar occupies this same strip but stops before
-        // the toggle so its thumb remains fully usable.
-        miniArrangerToggleButton.setBounds (miniArrangerBounds.getRight() - 60,
-                                            miniArrangerBounds.getY() + 1, 58,
-                                            juce::jmin (18, miniArrangerBounds.getHeight() - 2));
+        // In collapsed mode the horizontal scrollbar uses the full overview
+        // strip; the toggle is in the toolbar, beside INSPECTOR.
         if (! miniArrangerExpanded)
-            hScroll.setBounds (miniArrangerBounds.withTrimmedRight (62).reduced (2, 3));
+            hScroll.setBounds (miniArrangerBounds.reduced (2, 3));
         rulerBounds = gridArea.removeFromTop (kRulerH);
         clipGridBounds = gridArea;
 
