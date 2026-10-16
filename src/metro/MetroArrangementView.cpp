@@ -2,7 +2,9 @@
 #include "MetroColours.h"
 #include "MetroMetrics.h"
 #include "MetroTypography.h"
-#include "../sequencer/SequencerEngine.h"\n#include "../sequencer/MidiClip.h"\n#include <cmath>
+#include "../sequencer/SequencerEngine.h"
+#include "../sequencer/MidiClip.h"
+#include <cmath>
 
 namespace dysekt::metro
 {
@@ -103,6 +105,59 @@ void MetroArrangementView::drawToolbar (juce::Graphics& g, juce::Rectangle<int> 
     g.setFont (juce::Font (11.0f));
     g.drawText ("ARRANGER", area.getRight() - 92, area.getY() + 1, 82, 16,
                 juce::Justification::centredRight, false);
+}
+
+juce::Rectangle<float> MetroArrangementView::miniViewportBounds() const
+{
+    const float left = (float) kTrackHeaderWidth + 6.0f;
+    const float width = (float) juce::jmax (1, getWidth() - kTrackHeaderWidth - 12);
+    // The overview represents a stable 64-bar song canvas; the viewport width
+    // is proportional to the amount of timeline visible at the current zoom.
+    const float totalTimeline = (float) MetroMetrics::timelineBeatWidth * zoom * 4.0f * 64.0f;
+    const float visibleTimeline = (float) juce::jmax (1, getWidth() - kTrackHeaderWidth);
+    const float viewportW = juce::jlimit (18.0f, width, width * visibleTimeline / juce::jmax (visibleTimeline, totalTimeline));
+    const float maxScroll = juce::jmax (1.0f, totalTimeline - visibleTimeline);
+    const float x = left + (width - viewportW) * juce::jlimit (0.0f, 1.0f, scrollPixels / maxScroll);
+    return { x, 3.0f, viewportW, (float) kMiniArrangerHeight - 6.0f };
+}
+
+void MetroArrangementView::drawMiniArranger (juce::Graphics& g, juce::Rectangle<int> area) const
+{
+    g.setColour (juce::Colour (0xFF070D10));
+    g.fillRect (area);
+    g.setColour (juce::Colour (0xFF20343B));
+    g.drawHorizontalLine (area.getBottom() - 1, (float) area.getX(), (float) area.getRight());
+
+    auto content = area.reduced (6, 4);
+    content.removeFromLeft (kTrackHeaderWidth - 6);
+    g.setColour (juce::Colour (0xFF0B2025));
+    g.fillRoundedRectangle (content.toFloat(), 2.0f);
+
+    // Tiny clip blocks provide context without duplicating the full track grid.
+    const int trackCount = engine.getNumTracks();
+    for (int t = 0; t < trackCount; ++t)
+    {
+        const auto info = engine.getTrackInfo (t);
+        for (int c = 0; c < engine.getNumClips (t); ++c)
+        {
+            const auto clip = engine.getClipInfo (t, c);
+            const float x = (float) content.getX() + (float) clip.startTick / (float) MidiClip::kPPQ / (4.0f * 64.0f) * (float) content.getWidth();
+            const float w = juce::jmax (2.0f, (float) clip.lengthTicks / (float) MidiClip::kPPQ / (4.0f * 64.0f) * (float) content.getWidth());
+            const float h = juce::jmax (2.0f, (float) content.getHeight() / (float) juce::jmax (1, trackCount) - 2.0f);
+            const float y = (float) content.getY() + (float) t * (float) content.getHeight() / (float) juce::jmax (1, trackCount) + 1.0f;
+            g.setColour (info.colour.withAlpha (0.85f));
+            g.fillRoundedRectangle (x, y, juce::jmin (w, (float) content.getRight() - x), h, 1.0f);
+        }
+    }
+
+    auto viewport = miniViewportBounds();
+    g.setColour (juce::Colour (0x3300E5F0));
+    g.fillRoundedRectangle (viewport, 2.0f);
+    g.setColour (juce::Colour (0xFF00DDEB));
+    g.drawRoundedRectangle (viewport, 2.0f, 1.2f);
+    // Bright, easy-to-grab zoom handles at both viewport edges.
+    g.fillRoundedRectangle (viewport.getX(), viewport.getY() + 2.0f, 4.0f, viewport.getHeight() - 4.0f, 1.5f);
+    g.fillRoundedRectangle (viewport.getRight() - 4.0f, viewport.getY() + 2.0f, 4.0f, viewport.getHeight() - 4.0f, 1.5f);
 }
 
 void MetroArrangementView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) const
@@ -248,10 +303,12 @@ void MetroArrangementView::paint (juce::Graphics& graphics)
     graphics.fillAll (juce::Colour (0xFF05080A));
 
     auto toolbar = bounds.removeFromTop (kToolbarHeight);
+    auto mini = bounds.removeFromTop (kMiniArrangerHeight);
     auto ruler = bounds.removeFromTop (kRulerHeight);
     const auto grid = bounds;
 
     drawToolbar (graphics, toolbar);
+    drawMiniArranger (graphics, mini);
     drawRuler (graphics, ruler);
 
     // Arrangement grid.
@@ -455,6 +512,34 @@ void MetroArrangementView::glueSelectedClip ()
 
 void MetroArrangementView::mouseDown (const juce::MouseEvent& event)
 {
+    const int miniTop = kToolbarHeight;
+    if (event.y >= miniTop && event.y < miniTop + kMiniArrangerHeight)
+    {
+        auto viewport = miniViewportBounds();
+        miniDragStartX = (float) event.x;
+        miniDragStartScroll = scrollPixels;
+        miniDragStartZoom = zoom;
+        miniDragStartViewport = viewport;
+        if (std::abs ((float) event.x - viewport.getX()) <= 8.0f)
+            miniDragMode = MiniDragMode::leftEdge;
+        else if (std::abs ((float) event.x - viewport.getRight()) <= 8.0f)
+            miniDragMode = MiniDragMode::rightEdge;
+        else if (viewport.contains ((float) event.x, (float) event.y))
+            miniDragMode = MiniDragMode::move;
+        else
+        {
+            const float trackStart = (float) kTrackHeaderWidth + 6.0f;
+            const float trackWidth = (float) juce::jmax (1, getWidth() - kTrackHeaderWidth - 12);
+            const float ratio = juce::jlimit (0.0f, 1.0f, ((float) event.x - trackStart) / trackWidth);
+            const float total = (float) MetroMetrics::timelineBeatWidth * zoom * 4.0f * 64.0f;
+            setScrollPosition (ratio * juce::jmax (0.0f, total - (float) (getWidth() - kTrackHeaderWidth)));
+            miniDragMode = MiniDragMode::move;
+            miniDragStartX = (float) event.x;
+            miniDragStartScroll = scrollPixels;
+            miniDragStartViewport = miniViewportBounds();
+        }
+        return;
+    }
     // Toolbar commands are real editor commands now; they call the existing
     // SequencerEngine/MidiClip APIs rather than maintaining a second model.
     if (event.y < kToolbarHeight)
@@ -557,6 +642,47 @@ void MetroArrangementView::mouseDown (const juce::MouseEvent& event)
         setSelection (MetroSelection::forTrack (trackIndex, engine.getTrackInfo (trackIndex)));
     }
 }
+void MetroArrangementView::mouseDrag (const juce::MouseEvent& event)
+{
+    if (miniDragMode == MiniDragMode::none)
+        return;
+
+    const float dx = (float) event.x - miniDragStartX;
+    const float width = (float) juce::jmax (1, getWidth() - kTrackHeaderWidth - 12);
+    const float visible = (float) juce::jmax (1, getWidth() - kTrackHeaderWidth);
+    const float totalAtStart = (float) MetroMetrics::timelineBeatWidth * miniDragStartZoom * 4.0f * 64.0f;
+
+    if (miniDragMode == MiniDragMode::move)
+    {
+        const float viewportTravel = juce::jmax (1.0f, width - miniDragStartViewport.getWidth());
+        const float maxScroll = juce::jmax (0.0f, totalAtStart - visible);
+        setScrollPosition (miniDragStartScroll + dx / viewportTravel * maxScroll);
+    }
+    else
+    {
+        const float startW = miniDragStartViewport.getWidth();
+        const float newW = miniDragMode == MiniDragMode::leftEdge ? startW - dx : startW + dx;
+        const float minW = 18.0f;
+        const float newZoom = juce::jlimit (0.25f, 4.0f, miniDragStartZoom * startW / juce::jlimit (minW, width, newW));
+        const float anchorTick = miniDragMode == MiniDragMode::leftEdge
+            ? miniDragStartScroll + visible
+            : miniDragStartScroll;
+        setZoom (newZoom);
+        const float newVisible = (float) juce::jmax (1, getWidth() - kTrackHeaderWidth);
+        const float newTotal = (float) MetroMetrics::timelineBeatWidth * zoom * 4.0f * 64.0f;
+        setScrollPosition (miniDragMode == MiniDragMode::leftEdge
+            ? juce::jmax (0.0f, anchorTick * newZoom / miniDragStartZoom - newVisible)
+            : miniDragStartScroll * newZoom / miniDragStartZoom);
+        juce::ignoreUnused (newTotal);
+    }
+    repaint();
+}
+
+void MetroArrangementView::mouseUp (const juce::MouseEvent&)
+{
+    miniDragMode = MiniDragMode::none;
+}
+
 void MetroArrangementView::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
 {
     if (wheel.deltaY == 0.0f)

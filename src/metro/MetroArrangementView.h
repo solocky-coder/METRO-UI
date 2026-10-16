@@ -32,6 +32,8 @@ public:
 
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
     /** Horizontal zoom multiplier applied to the base beat width. Clamped to a sane range. */
@@ -54,7 +56,8 @@ private:
     void timerCallback() override;
 
     static constexpr int kToolbarHeight = 40;
-    static constexpr int kRulerHeight = 48;
+    static constexpr int kMiniArrangerHeight = 28;
+    static constexpr int kRulerHeight = 28;
     static constexpr int kTrackHeaderWidth = 168;
     static constexpr int kTrackRowHeight = 72;
     static constexpr int kClipInset = 7;
@@ -70,6 +73,8 @@ private:
     void setSelection (MetroSelection newSelection);
     void drawToolbar (juce::Graphics& graphics, juce::Rectangle<int> area) const;
     void drawRuler (juce::Graphics& graphics, juce::Rectangle<int> area) const;
+    void drawMiniArranger (juce::Graphics& graphics, juce::Rectangle<int> area) const;
+    juce::Rectangle<float> miniViewportBounds() const;
     void drawTrackHeader (juce::Graphics& graphics, juce::Rectangle<int> area,
                           int trackIndex, const SequencerTrackInfo& track) const;
     void drawClip (juce::Graphics& graphics, juce::Rectangle<int> area,
@@ -79,6 +84,12 @@ private:
 
     float zoom = 1.0f;
     float scrollPixels = 0.0f;
+    enum class MiniDragMode { none, move, leftEdge, rightEdge };
+    MiniDragMode miniDragMode = MiniDragMode::none;
+    float miniDragStartX = 0.0f;
+    float miniDragStartScroll = 0.0f;
+    float miniDragStartZoom = 1.0f;
+    juce::Rectangle<float> miniDragStartViewport;
 
     MetroSelection selection;
     int activeTool = 0; // select, draw, erase, split, glue
