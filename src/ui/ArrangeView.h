@@ -79,8 +79,6 @@ public:
     static constexpr int kInspectorW   = 216;
     static constexpr int kStripW       = 196;
     static constexpr int kLeftW        = kInspectorW + kStripW;
-    static constexpr int kToolbarH     = 42;
-    static constexpr int kEditLabelW   = 40;
     static constexpr int kRulerH       = 36;
     static constexpr int kMiniArrangerH = 72;
     static constexpr int kMiniArrangerCollapsedH = 20;
@@ -279,7 +277,6 @@ public:
                 b.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.72f));
                 b.setColour (juce::TextButton::textColourOnId, juce::Colours::black.withAlpha (0.9f));
                 b.getProperties().set ("flatFill", true);
-                b.getProperties().set ("transportFontSize", 15.0);
                 addAndMakeVisible (b);
             }
 
@@ -475,63 +472,10 @@ public:
         if (! transport.isFloating())
             transport.setBounds (r.removeFromTop (kTransportH));
 
-        // Quantize buttons fill the header to the right of the "QUANTIZE"
-        // label — see paintArrangeHeader(). Laid out here (rather than
-        // computed fresh in paint()) so hit-testing and painting always
-        // agree on the same rectangle. Uses arrangeHeaderBounds() rather than
-        // a fixed kTransportH + 3 offset so the row (and its buttons) slide
-        // up to sit right under the title bar when the transport is
-        // floating and no longer reserves kTransportH at the top — same
-        // vertical shift the ruler/track rows already get from r above.
-        // With the inspector open, the controls dock into the otherwise empty
-        // top-left panel (above inspector + track strip, left of the mini
-        // arranger / ruler) as two compact rows, and the full-width header row
-        // is dropped. With the inspector closed that panel is only kStripW
-        // wide - too narrow for the controls - so the original header row is
-        // used instead.
-        if (toolbarDocked())
-        {
-            layoutDockedToolbar();
-        }
-        else
-        {
-            applyToolbarFontSizes (false);
-            const auto header = arrangeHeaderBounds();
-            auto content = header.withWidth (340).reduced (8, 4);
-            content.removeFromLeft (78);    // reserve room for "QUANTIZE"
-            quantizeButtonsBounds = content;
-
-            const int gap = 4;
-            const int bw  = (content.getWidth() - gap * (kNumQuantizeOptions - 1)) / kNumQuantizeOptions;
-            auto row = content;
-            for (int i = 0; i < kNumQuantizeOptions; ++i)
-            {
-                quantizeButtons[i].setBounds (row.removeFromLeft (bw));
-                row.removeFromLeft (gap);
-            }
-
-            // Command toolbar occupies the timeline side of the same header
-            // row, leaving QUANTIZE + its six resolution buttons untouched.
-            // Reserve a dedicated column for the "EDIT" caption, matching the
-            // "QUANTIZE" label, so the first tool button cannot cover it.
-            auto tools = arrangeHeaderBounds().withTrimmedLeft (350 + kEditLabelW).reduced (4, 3);
-            const int toolGap = 4;
-            const int widths[kNumArrangeTools] = { 66, 62, 52, 58, 56, 52, 52, 82 };
-            int x = tools.getX();
-            for (int i = 0; i < kNumArrangeTools; ++i)
-            {
-                const int w = juce::jmin (widths[i], tools.getRight() - x);
-                arrangerButtons[i].setBounds (x, tools.getY(), juce::jmax (0, w), tools.getHeight());
-                x += w + toolGap;
-            }
-
-            // The mini arranger toggle belongs in the toolbar immediately
-            // to the right of INSPECTOR, not inside the overview strip.
-            const int toggleW = 66;
-            const int toggleX = arrangerButtons[7].getRight() + toolGap;
-            miniArrangerToggleButton.setBounds (toggleX, tools.getY(),
-                juce::jmax (0, juce::jmin (toggleW, tools.getRight() - toggleX)), tools.getHeight());
-        }
+        // Quantize + edit controls live in the top-left panel (above the
+        // inspector / track strip, left of the mini arranger and ruler) -
+        // see dockedToolbarBounds(). There is no full-width header row.
+        layoutDockedToolbar();
 
         // In expanded mode the mini arranger handles horizontal navigation.
         // In collapsed mode, restore the horizontal scrollbar in the same
@@ -539,24 +483,23 @@ public:
         hScroll.setVisible (! miniArrangerExpanded);
         hScroll.setBounds ({});
         auto vScrollR = r.removeFromRight (kScrollW);
-        vScroll.setBounds (vScrollR.withTrimmedTop (headerRowH() + miniArrangerHeight() + kRulerH));
+        vScroll.setBounds (vScrollR.withTrimmedTop (miniArrangerHeight() + kRulerH));
 
         if (inspectorVisible)
         {
             auto inspectorCol = r.removeFromLeft (kInspectorW);
-            inspectorCol.removeFromTop (headerRowH() + miniArrangerHeight() + kRulerH);
+            inspectorCol.removeFromTop (miniArrangerHeight() + kRulerH);
             inspector.setBounds (inspectorCol);
         }
         else
             inspector.setBounds ({});
 
         auto leftCol = r.removeFromLeft (kStripW);
-        leftCol.removeFromTop (headerRowH() + miniArrangerHeight() + kRulerH);
+        leftCol.removeFromTop (miniArrangerHeight() + kRulerH);
         trackStrip.setBounds (leftCol);
         trackStrip.setTrackHeight (trackH);
 
         gridArea = r;
-        gridArea.removeFromTop (headerRowH());
         miniArrangerBounds = gridArea.removeFromTop (miniArrangerHeight());
         // In collapsed mode the horizontal scrollbar uses the full overview
         // strip; the toggle is in the toolbar, beside INSPECTOR.
@@ -2474,94 +2417,95 @@ private:
     //==========================================================================
     //  Painting
     //==========================================================================
-    /** Top-left rect of the ARRANGE/QUANTIZE header row, right under the
-     *  transport — kTransportH + 3 down while the transport is docked and
-     *  actually occupying that space, or just 3 (the panel's own margin)
-     *  while it's floating and has left no gap to sit below. resized() uses
-     *  this same rect to position the quantize buttons, so painting and
-     *  hit-testing never disagree about where this row is. */
     int leftPanelW() const noexcept
     {
         return inspectorVisible ? kLeftW : kStripW;
     }
 
-    /** True while the quantize/edit controls live in the docked top-left
-     *  panel instead of the full-width header row. */
-    bool toolbarDocked() const noexcept { return inspectorVisible; }
-
-    /** Height of the full-width header row; zero while the controls are docked. */
-    int headerRowH() const noexcept { return toolbarDocked() ? 0 : kToolbarH; }
-
-    /** Top-left panel above inspector + track strip, left of the mini
-     *  arranger / ruler. Grows with the mini arranger (expanded/collapsed). */
+    //==========================================================================
+    //  Docked toolbar (quantize + edit controls)
+    //
+    //  Occupies the top-left panel: the area above the inspector / track strip
+    //  and left of the mini arranger + ruler, so it is as tall as the mini
+    //  arranger plus the ruler (expanded or collapsed) and as wide as the left
+    //  columns. Two layouts:
+    //    wide   (inspector open,  412px): QUANTIZE row + EDIT row, with labels
+    //    narrow (inspector closed, 196px): three compact rows, no labels
+    //  Layout and painting share dockedRowBounds() so they never disagree.
+    //==========================================================================
     juce::Rectangle<int> dockedToolbarBounds() const noexcept
     {
         const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
-        return { 3, topY, kLeftW, miniArrangerHeight() + kRulerH };
+        return { 3, topY, leftPanelW(), miniArrangerHeight() + kRulerH };
     }
 
-    static constexpr int kDockedLabelW = 52;
-    static constexpr int kDockedRowGap = 4;
+    bool dockedToolbarNarrow() const noexcept { return ! inspectorVisible; }
+
+    static constexpr int kDockedLabelW = 52;   // wide layout only
     static constexpr int kDockedBtnGap = 2;
 
-    /** The two control rows (label column included): QUANTIZE, then EDIT.
-     *  Shared by layout and painting so labels always sit on their rows. */
-    std::pair<juce::Rectangle<int>, juce::Rectangle<int>> dockedToolbarRows() const noexcept
+    juce::Rectangle<int> dockedRowBounds (int row) const noexcept
     {
-        const auto inner = dockedToolbarBounds().reduced (10, 5);
-        const int rowH   = juce::jlimit (20, 30, (inner.getHeight() - kDockedRowGap) / 2);
-        auto block = inner.withSizeKeepingCentre (inner.getWidth(), rowH * 2 + kDockedRowGap);
-        const auto quantRow = block.removeFromTop (rowH);
-        block.removeFromTop (kDockedRowGap);
-        return { quantRow, block };
+        const bool narrow  = dockedToolbarNarrow();
+        const int numRows  = narrow ? 3 : 2;
+        const int gapY     = narrow ? 2 : 4;
+        const auto inner   = dockedToolbarBounds().reduced (narrow ? 5 : 10, narrow ? 3 : 5);
+        const int rowH     = juce::jlimit (14, narrow ? 26 : 30,
+                                           (inner.getHeight() - gapY * (numRows - 1)) / numRows);
+        auto block = inner.withSizeKeepingCentre (inner.getWidth(), rowH * numRows + gapY * (numRows - 1));
+        block.removeFromTop (row * (rowH + gapY));
+        return block.removeFromTop (rowH);
     }
 
-    /** Docked buttons use the LookAndFeel's height-based font; the original
-     *  header row keeps its larger fixed size for the command buttons. */
-    void applyToolbarFontSizes (bool docked)
+    /** Places `items` left-to-right across `row`, widths proportional to their
+     *  weights; the last item absorbs rounding so the row ends flush. */
+    static void layoutRow (juce::Rectangle<int> row,
+                           std::initializer_list<std::pair<juce::Component*, int>> items)
     {
-        for (auto& b : arrangerButtons)
-            b.getProperties().set ("transportFontSize", docked ? 10.5 : 15.0);
-        for (auto& b : quantizeButtons)
-            b.getProperties().set ("transportFontSize", docked ? 10.5 : 0.0);
-        miniArrangerToggleButton.getProperties().set ("transportFontSize", docked ? 10.5 : 0.0);
-    }
-
-    void layoutDockedToolbar()
-    {
-        applyToolbarFontSizes (true);
-        auto [quantRow, editRow] = dockedToolbarRows();
-
-        // QUANTIZE row — six equal buttons right of the label column
-        quantRow.removeFromLeft (kDockedLabelW);
-        quantizeButtonsBounds = quantRow;
-        const int qw = (quantRow.getWidth() - kDockedBtnGap * (kNumQuantizeOptions - 1)) / kNumQuantizeOptions;
-        for (int i = 0; i < kNumQuantizeOptions; ++i)
-        {
-            quantizeButtons[i].setBounds (quantRow.removeFromLeft (qw));
-            quantRow.removeFromLeft (kDockedBtnGap);
-        }
-
-        // EDIT row — + CLIP, SELECT, DRAW, ERASE, SPLIT, GLUE, LOCK, INSPECTOR,
-        // MINI +; relative weights, scaled to fill the row exactly.
-        editRow.removeFromLeft (kDockedLabelW);
-        static constexpr int weights[kNumArrangeTools + 1] = { 44, 46, 38, 40, 38, 34, 36, 62, 42 };
         int totalWeight = 0;
-        for (int w : weights) totalWeight += w;
-        const int avail = editRow.getWidth() - kDockedBtnGap * kNumArrangeTools;
-        int x = editRow.getX();
-        for (int i = 0; i <= kNumArrangeTools; ++i)
+        for (auto& it : items) totalWeight += it.second;
+        const int avail = row.getWidth() - kDockedBtnGap * ((int) items.size() - 1);
+        int x = row.getX(), n = 0;
+        for (auto& it : items)
         {
-            const bool last = (i == kNumArrangeTools);
-            const int w = last ? juce::jmax (0, editRow.getRight() - x)
-                               : avail * weights[i] / totalWeight;
-            auto& b = last ? miniArrangerToggleButton : arrangerButtons[i];
-            b.setBounds (x, editRow.getY(), w, editRow.getHeight());
+            const bool last = (++n == (int) items.size());
+            const int w = last ? juce::jmax (0, row.getRight() - x)
+                               : avail * it.second / totalWeight;
+            it.first->setBounds (x, row.getY(), w, row.getHeight());
             x += w + kDockedBtnGap;
         }
     }
 
-    void paintDockedToolbar (juce::Graphics& g) const
+    void layoutDockedToolbar()
+    {
+        auto& a = arrangerButtons;   // + CLIP, SELECT, DRAW, ERASE, SPLIT, GLUE, LOCK, INSPECTOR
+        auto& m = miniArrangerToggleButton;
+        auto& q = quantizeButtons;
+
+        auto quantRow = dockedRowBounds (0);
+        if (! dockedToolbarNarrow())
+            quantRow.removeFromLeft (kDockedLabelW);
+        quantizeButtonsBounds = quantRow;
+        layoutRow (quantRow, { { &q[0], 1 }, { &q[1], 1 }, { &q[2], 1 },
+                               { &q[3], 1 }, { &q[4], 1 }, { &q[5], 1 } });
+
+        if (! dockedToolbarNarrow())
+        {
+            auto editRow = dockedRowBounds (1);
+            editRow.removeFromLeft (kDockedLabelW);
+            layoutRow (editRow, { { &a[0], 44 }, { &a[1], 46 }, { &a[2], 38 }, { &a[3], 40 },
+                                  { &a[4], 38 }, { &a[5], 34 }, { &a[6], 36 }, { &a[7], 62 },
+                                  { &m,    42 } });
+        }
+        else
+        {
+            layoutRow (dockedRowBounds (1), { { &a[0], 36 }, { &a[1], 32 }, { &a[2], 26 },
+                                              { &a[3], 28 }, { &a[4], 26 }, { &a[5], 26 } });
+            layoutRow (dockedRowBounds (2), { { &a[6], 40 }, { &a[7], 70 }, { &m, 50 } });
+        }
+    }
+
+    void paintArrangeHeader (juce::Graphics& g) const
     {
         const auto& theme = getTheme();
         const auto panel = dockedToolbarBounds();
@@ -2570,92 +2514,30 @@ private:
         g.setColour (theme.accent.withAlpha (0.8f));
         g.fillRect (panel.getX(), panel.getY(), 3, panel.getHeight());
 
-        const auto [quantRow, editRow] = dockedToolbarRows();
+        if (dockedToolbarNarrow())
+            return;   // no room for captions; buttons carry their own labels/tooltips
+
         g.setColour (theme.foreground.withAlpha (0.92f));
         g.setFont (juce::Font (11.0f, juce::Font::bold));
-        g.drawText ("QUANTIZE", quantRow.withWidth (kDockedLabelW), juce::Justification::centredLeft, false);
+        g.drawText ("QUANTIZE", dockedRowBounds (0).withWidth (kDockedLabelW),
+                    juce::Justification::centredLeft, false);
         g.setColour (theme.foreground.withAlpha (0.55f));
         g.setFont (juce::Font (10.0f, juce::Font::bold));
-        g.drawText ("EDIT", editRow.withWidth (kDockedLabelW), juce::Justification::centredLeft, false);
+        g.drawText ("EDIT", dockedRowBounds (1).withWidth (kDockedLabelW),
+                    juce::Justification::centredLeft, false);
     }
 
-    juce::Rectangle<int> arrangeHeaderBounds() const noexcept
-    {
-        const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
-        return { 3, topY, juce::jmax (340, getWidth() - 6), kToolbarH };
-    }
-
-    void paintArrangeHeader (juce::Graphics& g) const
-    {
-        if (toolbarDocked())
-        {
-            paintDockedToolbar (g);
-            return;
-        }
-
-        const auto& theme = getTheme();
-        const auto header = arrangeHeaderBounds();
-        g.setColour (theme.header);
-        g.fillRect (header);
-        g.setColour (theme.accent.withAlpha (0.8f));
-        g.fillRect (header.getX(), header.getY(), 3, header.getHeight());
-        // "QUANTIZE" labels the button row that follows it — replaces the
-        // old "ARRANGE" caption (redundant with the window title bar, which
-        // already reads "ARRANGE ⋮ TRACKS") now that this row hosts an
-        // interactive control worth naming. Sized to match, not the small
-        // "TRACKS" caption this used to sit opposite — that caption is gone
-        // too, so the buttons now run the full width of the header instead
-        // of being squeezed between two labels.
-        g.setColour (theme.foreground.withAlpha (0.92f));
-        g.setFont (juce::Font (14.0f, juce::Font::bold));
-        g.drawText ("QUANTIZE", header.reduced (12, 0), juce::Justification::centredLeft, false);
-
-        // The actual command buttons are child components; this separator
-        // visually divides quantize controls from editing commands.
-        g.setColour (theme.separator.withAlpha (0.7f));
-        g.fillRect (header.getX() + 340, header.getY(), 1, header.getHeight());
-
-        g.setColour (theme.foreground.withAlpha (0.55f));
-        g.setFont (juce::Font (11.5f, juce::Font::bold));
-        g.drawText ("EDIT", header.getX() + 358, header.getY(),
-                    kEditLabelW - 8, header.getHeight(), juce::Justification::centredLeft, false);
-        // Quantize buttons (real child components, positioned in resized())
-        // fill the rest of this header — nothing else to paint there.
-        // The bottom border itself is NOT drawn here — see paintOverChildren()
-        // below: trackStrip sits directly under this header, and drawing the
-        // border in this paint() pass put it underneath trackStrip's own
-        // background fill whenever their bounds touched or overlapped by a
-        // rounding pixel, making the border invisible.
-    }
-
-    /** Draws the header/track-strip separator after every child (trackStrip,
-     *  inspector, quantize buttons) has painted. Component::paintOverChildren()
-     *  runs after every child paint (unlike the parent's own paint() pass, above),
-     *  so this line is guaranteed to sit on top and stay visible no matter how
-     *  trackStrip's bounds line up with the header's bottom edge.
-     *
-     *  Drawn 2px tall instead of 1px, straddling the boundary (1px inside the
-     *  header, 1px over trackStrip's first row) rather than sitting exactly on
-     *  it — a single 1px line landing precisely on the seam between two
-     *  similarly-dark fills (header's background above, the top track row's
-     *  background below) was imperceptible even once paint order guaranteed
-     *  it was actually being drawn. Painting a row's worth over trackStrip
-     *  visibly pushes the top track down under the line instead of letting it
-     *  sit flush against it, which is what actually makes the seam read as a
-     *  border rather than a rounding artifact. */
+    /** Draws the panel's bottom/right separators after every child has painted
+     *  (Component::paintOverChildren runs after child paints, unlike paint()),
+     *  so they stay visible on top of trackStrip / inspector. The bottom line
+     *  is 2px, straddling the seam, so it reads as a border rather than a
+     *  rounding artifact. */
     void paintOverChildren (juce::Graphics& g) override
     {
-        const auto& theme = getTheme();
-        g.setColour (theme.separator);
-        if (toolbarDocked())
-        {
-            const auto panel = dockedToolbarBounds();
-            g.fillRect (panel.getX(), panel.getBottom() - 1, panel.getWidth(), 2);
-            g.fillRect (panel.getRight() - 1, panel.getY(), 1, panel.getHeight());
-            return;
-        }
-        const auto header = arrangeHeaderBounds();
-        g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
+        const auto panel = dockedToolbarBounds();
+        g.setColour (getTheme().separator);
+        g.fillRect (panel.getX(), panel.getBottom() - 1, panel.getWidth(), 2);
+        g.fillRect (panel.getRight() - 1, panel.getY(), 1, panel.getHeight());
     }
 
     int miniArrangerHeight() const noexcept
