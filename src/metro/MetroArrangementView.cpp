@@ -109,8 +109,10 @@ void MetroArrangementView::drawToolbar (juce::Graphics& g, juce::Rectangle<int> 
 
 juce::Rectangle<float> MetroArrangementView::miniViewportBounds() const
 {
-    const float left = (float) kTrackHeaderWidth + 6.0f;
-    const float width = (float) juce::jmax (1, getWidth() - kTrackHeaderWidth - 12);
+    const float left = (float) kTrackHeaderWidth;
+    // Align the overview viewport exactly with bar 1 / the timeline origin.
+    // drawMiniArranger() uses the same left edge after its header inset is removed.
+    const float width = (float) juce::jmax (1, getWidth() - kTrackHeaderWidth);
     // The overview represents a stable 64-bar song canvas; the viewport width
     // is proportional to the amount of timeline visible at the current zoom.
     const float totalTimeline = (float) MetroMetrics::timelineBeatWidth * zoom * 4.0f * 64.0f;
