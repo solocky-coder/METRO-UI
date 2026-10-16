@@ -83,6 +83,7 @@ public:
     static constexpr int kEditLabelW   = 40;
     static constexpr int kRulerH       = 36;
     static constexpr int kMiniArrangerH = 72;
+    static constexpr int kMiniArrangerCollapsedH = 20;
     static constexpr int kScrollH      = 10;
     static constexpr int kScrollW      = 10;
         static constexpr int kMinClipPx    = 6;
@@ -322,6 +323,25 @@ public:
             arrangerButtons[7].setToggleState (false, juce::dontSendNotification);
         }
 
+        // ── Mini arranger expand/collapse toggle ─────────────────────────────
+        miniArrangerToggleButton.setButtonText ("MINI −");
+        miniArrangerToggleButton.setTooltip ("Collapse mini arranger overview");
+        miniArrangerToggleButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff11171c));
+        miniArrangerToggleButton.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
+        miniArrangerToggleButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.82f));
+        miniArrangerToggleButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black.withAlpha (0.9f));
+        miniArrangerToggleButton.getProperties().set ("flatFill", true);
+        miniArrangerToggleButton.onClick = [this]
+        {
+            miniArrangerExpanded = ! miniArrangerExpanded;
+            miniArrangerToggleButton.setButtonText (miniArrangerExpanded ? "MINI −" : "MINI +");
+            miniArrangerToggleButton.setTooltip (miniArrangerExpanded
+                ? "Collapse mini arranger overview" : "Expand mini arranger overview");
+            resized();
+            repaint();
+        };
+        addAndMakeVisible (miniArrangerToggleButton);
+
         // ── Horizontal scrollbar ──────────────────────────────────────────────
         hScroll.setRangeLimits (0.0, 1.0);
         hScroll.setCurrentRange (0.0, 0.5);
@@ -499,25 +519,29 @@ public:
         hScroll.setVisible (false);
         hScroll.setBounds ({});
         auto vScrollR = r.removeFromRight (kScrollW);
-        vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + kMiniArrangerH + kRulerH));
+        vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + miniArrangerHeight() + kRulerH));
 
         if (inspectorVisible)
         {
             auto inspectorCol = r.removeFromLeft (kInspectorW);
-            inspectorCol.removeFromTop (kToolbarH + kMiniArrangerH + kRulerH);
+            inspectorCol.removeFromTop (kToolbarH + miniArrangerHeight() + kRulerH);
             inspector.setBounds (inspectorCol);
         }
         else
             inspector.setBounds ({});
 
         auto leftCol = r.removeFromLeft (kStripW);
-        leftCol.removeFromTop (kToolbarH + kMiniArrangerH + kRulerH);
+        leftCol.removeFromTop (kToolbarH + miniArrangerHeight() + kRulerH);
         trackStrip.setBounds (leftCol);
         trackStrip.setTrackHeight (trackH);
 
         gridArea = r;
         gridArea.removeFromTop (kToolbarH);
-        miniArrangerBounds = gridArea.removeFromTop (kMiniArrangerH);
+        miniArrangerBounds = gridArea.removeFromTop (miniArrangerHeight());
+        // Keep the toggle visible even when the overview is collapsed.
+        miniArrangerToggleButton.setBounds (miniArrangerBounds.getRight() - 60,
+                                            miniArrangerBounds.getY() + 1, 58,
+                                            juce::jmin (18, miniArrangerBounds.getHeight() - 2));
         rulerBounds = gridArea.removeFromTop (kRulerH);
         clipGridBounds = gridArea;
 
@@ -1275,6 +1299,8 @@ private:
     // so the toolbar is a second control surface, not a second editor.
     static constexpr int kNumArrangeTools = 8;
     juce::TextButton arrangerButtons[kNumArrangeTools];
+    juce::TextButton miniArrangerToggleButton;
+    bool miniArrangerExpanded = true;
     bool editingLocked = false;
     bool inspectorVisible = false;
 
@@ -2503,6 +2529,11 @@ private:
         const auto header = arrangeHeaderBounds();
         g.setColour (theme.separator);
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
+    }
+
+    int miniArrangerHeight() const noexcept
+    {
+        return miniArrangerExpanded ? kMiniArrangerH : kMiniArrangerCollapsedH;
     }
 
     juce::Rectangle<int> miniTimelineBounds() const
