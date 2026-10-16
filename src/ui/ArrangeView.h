@@ -135,6 +135,12 @@ public:
      *  track was just disabled (i.e. the new enabled state is false). */
     std::function<void(int trackIndex, bool muted)> onTrackMutedForSync;
 
+    /** Fired when the user requests renaming a track (owner decides how to edit it). */
+    std::function<void(int trackIndex)> onTrackRenameRequested;
+
+    /** Fired when an SFZ layer track is selected, to synchronize its key range with other panels. */
+    std::function<void(int loKey, int hiKey)> onSfzLayerSelected;
+
     /** Selects the arranger track whose SfPlayer MIDI channel (0-based)
      *  matches, and scrolls/highlights it exactly as a direct click on the
      *  track header would. No-op if no such track exists. Called by the SF2
@@ -149,11 +155,34 @@ public:
         repaint();
     }
 
+    /** Select the SFZ layer track whose key range matches the requested zone. */
+    void selectTrackForSfzZone (int loKey, int hiKey)
+    {
+        for (int i = 0; i < engine.getNumTracks(); ++i)
+        {
+            const auto info = engine.getTrackInfo (i);
+            if (info.isSfzLayer && info.layerLoKey == loKey && info.layerHiKey == hiKey)
+            {
+                selectTrack (i);
+                trackStrip.setSelectedTrack (i);
+                repaint();
+                return;
+            }
+        }
+    }
+
     /** Re-fires onTrackTypeSelected for the currently selected track.
      *  Call this when opening the sequencer panel so the editor can
      *  apply the correct MIDI route mode for whatever track is already selected. */
     void notifyCurrentTrack()
     {
+        if (juce::isPositiveAndBelow (idx, engine.getNumTracks()))
+        {
+            const auto selectedInfo = engine.getTrackInfo (idx);
+            if (selectedInfo.isSfzLayer && onSfzLayerSelected)
+                onSfzLayerSelected (selectedInfo.layerLoKey, selectedInfo.layerHiKey);
+        }
+
         if (onTrackTypeSelected)
         {
             if (juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()))
@@ -571,7 +600,7 @@ public:
             else
             {
                 miniDragMode = MiniDragMode::Move;
-                const double totalW = juce::jmax (1.0, totalVisibleTicks() * pixelsPerTick);
+                const double totalW = juce::jmax (1.0, (double) totalVisibleTicks() * pixelsPerTick);
                 const double frac = juce::jlimit (0.0, 1.0,
                     (double) (x - miniTimelineBounds().getX()) / juce::jmax (1, miniTimelineBounds().getWidth()));
                 scrollX = juce::jmax (0.0, frac * totalW - clipGridBounds.getWidth() * 0.5);
@@ -747,7 +776,7 @@ public:
         if (miniDragMode != MiniDragMode::None)
         {
             const auto timeline = miniTimelineBounds();
-            const double totalTicks = juce::jmax (1.0, totalVisibleTicks());
+            const double totalTicks = juce::jmax (1.0, (double) totalVisibleTicks());
             const double timelineW = juce::jmax (1, timeline.getWidth());
             const double dx = (double) e.x - miniDragStartX;
             if (miniDragMode == MiniDragMode::Move)
@@ -2147,6 +2176,10 @@ private:
                         if (selectedTrack == trackIdx && selectedClip == clipIdx)
                             selectedClip = 0;
                         break;
+                    case 7:
+                        if (onTrackRenameRequested)
+                            onTrackRenameRequested (trackIdx);
+                        break;
                     case 40:
                     {
                         const int child = engine.addNetworkMidiChild (trackIdx);
@@ -2481,7 +2514,7 @@ private:
     juce::Rectangle<float> miniViewportBounds() const
     {
         const auto timeline = miniTimelineBounds();
-        const double totalW = juce::jmax (1.0, totalVisibleTicks() * pixelsPerTick);
+        const double totalW = juce::jmax (1.0, (double) totalVisibleTicks() * pixelsPerTick);
         const double viewW = juce::jmax (1, clipGridBounds.getWidth());
         const float w = (float) juce::jlimit (12.0, (double) timeline.getWidth(),
                                               timeline.getWidth() * viewW / totalW);
@@ -2509,7 +2542,7 @@ private:
         g.setColour (theme.header);
         g.fillRect (timeline);
         // Tiny clip blocks are mapped to the same tick/scale range as the grid.
-        const double totalTicks = juce::jmax (1.0, totalVisibleTicks());
+        const double totalTicks = juce::jmax (1.0, (double) totalVisibleTicks());
         for (int ti = 0; ti < engine.getNumTracks(); ++ti)
         {
             const auto track = engine.getTrackInfo (ti);
