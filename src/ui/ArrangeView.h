@@ -514,9 +514,10 @@ public:
             }
         }
 
-        // The mini arranger replaces the old bottom horizontal scrollbar.
-        // Horizontal navigation and edge-drag zoom are handled by the overview.
-        hScroll.setVisible (false);
+        // In expanded mode the mini arranger handles horizontal navigation.
+        // In collapsed mode, restore the horizontal scrollbar in the same
+        // strip location, leaving room at the right for the persistent toggle.
+        hScroll.setVisible (! miniArrangerExpanded);
         hScroll.setBounds ({});
         auto vScrollR = r.removeFromRight (kScrollW);
         vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + miniArrangerHeight() + kRulerH));
@@ -538,10 +539,14 @@ public:
         gridArea = r;
         gridArea.removeFromTop (kToolbarH);
         miniArrangerBounds = gridArea.removeFromTop (miniArrangerHeight());
-        // Keep the toggle visible even when the overview is collapsed.
+        // Keep the toggle visible in the overview strip in both modes. When
+        // collapsed, the scrollbar occupies this same strip but stops before
+        // the toggle so its thumb remains fully usable.
         miniArrangerToggleButton.setBounds (miniArrangerBounds.getRight() - 60,
                                             miniArrangerBounds.getY() + 1, 58,
                                             juce::jmin (18, miniArrangerBounds.getHeight() - 2));
+        if (! miniArrangerExpanded)
+            hScroll.setBounds (miniArrangerBounds.withTrimmedRight (62).reduced (2, 3));
         rulerBounds = gridArea.removeFromTop (kRulerH);
         clipGridBounds = gridArea;
 
@@ -2569,6 +2574,9 @@ private:
         g.setColour (theme.separator);
         g.fillRect (miniArrangerBounds.getX(), miniArrangerBounds.getBottom() - 1,
                     miniArrangerBounds.getWidth(), 1);
+        if (! miniArrangerExpanded)
+            return;
+
         const auto timeline = miniTimelineBounds().reduced (0, 3);
         g.setColour (theme.header);
         g.fillRect (timeline);
