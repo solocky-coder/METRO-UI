@@ -80,9 +80,9 @@ public:
     static constexpr int kStripW       = 196;
     static constexpr int kLeftW        = kInspectorW + kStripW;
     static constexpr int kToolbarH     = 42;
-    static constexpr int kOverviewH    = 30;
     static constexpr int kEditLabelW   = 40;
     static constexpr int kRulerH       = 36;
+    static constexpr int kMiniArrangerH = 28;
     static constexpr int kScrollH      = 10;
     static constexpr int kScrollW      = 10;
         static constexpr int kMinClipPx    = 6;
@@ -93,9 +93,6 @@ public:
 
     /** Owner wires this to open the piano roll for the given track + clip. */
     std::function<void(int trackIndex, int clipIndex)> onClipDoubleClicked;
-
-    /** Fired when the user asks to rename a slice-backed chromatic track. */
-    std::function<void(int trackIndex)> onTrackRenameRequested;
 
 #if DYSEKT_STANDALONE
     /** Owner (DysektEditor, standalone build only) wires this to the single
@@ -131,9 +128,6 @@ public:
     std::function<void(TrackType type, bool hasSelection, bool isSfzInstrument,
                         int midiChannel1Based, int presetBank, int presetProgram)> onTrackTypeSelected;
 
-    /** Fired on every arranger selection change; negative keys clear the SFZ mixer highlight. */
-    std::function<void(int loKey, int hiKey)> onSfzLayerSelected;
-
     /** Fired whenever a track's mute (enabled) state changes via the
      *  track-header strip's M button, so the owner can mirror it onto
      *  whatever else tracks mute state for that track — e.g. the SF2
@@ -153,23 +147,6 @@ public:
         selectTrack (idx);
         trackStrip.setSelectedTrack (idx);
         repaint();
-    }
-
-    /** Select the SFZ arranger layer matching a clicked mixer zone's inclusive key range. */
-    void selectTrackForSfzZone (int loKey, int hiKey)
-    {
-        if (loKey < 0 || hiKey < loKey) return;
-        for (int i = 0; i < engine.getNumTracks(); ++i)
-        {
-            const auto info = engine.getTrackInfo (i);
-            if (info.isSfzLayer && info.layerLoKey == loKey && info.layerHiKey == hiKey)
-            {
-                selectTrack (i);
-                trackStrip.setSelectedTrack (i);
-                repaint();
-                return;
-            }
-        }
     }
 
     /** Re-fires onTrackTypeSelected for the currently selected track.
@@ -218,11 +195,6 @@ public:
             trackStrip.repaint();
         };
         addAndMakeVisible (trackStrip);
-        trackStrip.onTrackRenameRequested = [this] (int trackIndex)
-        {
-            if (onTrackRenameRequested)
-                onTrackRenameRequested (trackIndex);
-        };
 
         transport.onFloatRequested = [this] { showFloatingTransport(); };
         transport.onDockRequested  = [this] { dockTransport(); };
@@ -493,36 +465,31 @@ public:
             }
         }
 
-        // Corner square between the two scrollbars
-        auto cornerR = r;
-        cornerR = cornerR.removeFromBottom (kScrollH).removeFromRight (kScrollW);
-
-        auto hScrollR = r.removeFromBottom (kScrollH).withTrimmedRight (kScrollW);
-        auto vScrollR = r.removeFromRight  (kScrollW);
-
-        hScroll.setBounds (hScrollR.withTrimmedLeft (leftPanelW()));
-        // Match the inspector/track strip: the vertical scrollbar starts below
-        // the toolbar and timeline ruler instead of covering those rows.
-        vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + kOverviewH + kRulerH));
+        // The mini arranger replaces the old bottom horizontal scrollbar.
+        // Horizontal navigation and edge-drag zoom are handled by the overview.
+        hScroll.setVisible (false);
+        hScroll.setBounds ({});
+        auto vScrollR = r.removeFromRight (kScrollW);
+        vScroll.setBounds (vScrollR.withTrimmedTop (kToolbarH + kMiniArrangerH + kRulerH));
 
         if (inspectorVisible)
         {
             auto inspectorCol = r.removeFromLeft (kInspectorW);
-            inspectorCol.removeFromTop (kToolbarH + kOverviewH + kRulerH);
+            inspectorCol.removeFromTop (kToolbarH + kMiniArrangerH + kRulerH);
             inspector.setBounds (inspectorCol);
         }
         else
             inspector.setBounds ({});
 
         auto leftCol = r.removeFromLeft (kStripW);
-        leftCol.removeFromTop (kToolbarH + kOverviewH + kRulerH);
+        leftCol.removeFromTop (kToolbarH + kMiniArrangerH + kRulerH);
         trackStrip.setBounds (leftCol);
         trackStrip.setTrackHeight (trackH);
 
-        gridArea      = r;
+        gridArea = r;
         gridArea.removeFromTop (kToolbarH);
-        overviewBounds = gridArea.removeFromTop (kOverviewH);
-        rulerBounds   = gridArea.removeFromTop (kRulerH);
+        miniArrangerBounds = gridArea.removeFromTop (kMiniArrangerH);
+        rulerBounds = gridArea.removeFromTop (kRulerH);
         clipGridBounds = gridArea;
 
         updateScrollRanges();
@@ -544,22 +511,13 @@ public:
         g.reduceClipRegion (b.reduced (3));
 
         paintArrangeHeader (g);
-        paintOverview (g);
+        paintMiniArranger (g);
         paintRuler (g);
         paintTrackRows (g);
         paintLoopOverlay (g);
         paintPlayhead (g);
         paintRubberBand (g);
         paintDrawClipPreview (g);
-
-        // Corner fill between scrollbars
-        if (getWidth() > leftPanelW() + 8 && getHeight() > kTransportH + kScrollH + 8)
-        {
-            g.setColour (theme.waveformBg);
-            g.fillRect (getWidth() - kScrollW - 4,
-                        getHeight() - kScrollH - 4,
-                        kScrollW, kScrollH);
-        }
 
         g.restoreState();
     }
@@ -571,6 +529,18 @@ public:
     {
         updateCursor (e);
         updateHoverHandle (e.getPosition());
+        if (miniArrangerBounds.contains (e.getPosition()))
+        {
+            const auto vp = miniViewportBounds();
+            const int edgeGrab = 7;
+            if (std::abs (e.x - (int) vp.getX()) <= edgeGrab
+                || std::abs (e.x - (int) vp.getRight()) <= edgeGrab)
+                setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+            else if (vp.contains ((float) e.x, (float) e.y))
+                setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+            else
+                setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
     }
 
     void mouseExit (const juce::MouseEvent&) override
@@ -582,11 +552,33 @@ public:
     {
         grabKeyboardFocus();
 
-        // ── Arrangement overview minimap ───────────────────────────────────────
-        if (overviewBounds.contains (e.getPosition()))
+        // ── Mini arranger: centre pans, either edge zooms ────────────────────
+        if (miniArrangerBounds.contains (e.getPosition()))
         {
-            overviewDragging = true;
-            scrollFromOverviewX (e.x);
+            const auto vp = miniViewportBounds();
+            const int x = e.x;
+            miniDragStartX = x;
+            miniDragStartScroll = scrollX;
+            miniDragStartZoom = pixelsPerTick;
+            miniDragStartViewport = vp;
+            const int edgeGrab = 7;
+            if (std::abs (x - (int) vp.getX()) <= edgeGrab)
+                miniDragMode = MiniDragMode::leftEdge;
+            else if (std::abs (x - (int) vp.getRight()) <= edgeGrab)
+                miniDragMode = MiniDragMode::rightEdge;
+            else if (vp.contains ((float) x, (float) e.y))
+                miniDragMode = MiniDragMode::Move;
+            else
+            {
+                miniDragMode = MiniDragMode::Move;
+                const double totalW = juce::jmax (1.0, totalVisibleTicks() * pixelsPerTick);
+                const double frac = juce::jlimit (0.0, 1.0,
+                    (double) (x - miniTimelineBounds().getX()) / juce::jmax (1, miniTimelineBounds().getWidth()));
+                scrollX = juce::jmax (0.0, frac * totalW - clipGridBounds.getWidth() * 0.5);
+                miniDragStartScroll = scrollX;
+            }
+            updateScrollRanges();
+            repaint();
             return;
         }
 
@@ -752,9 +744,40 @@ public:
 
     void mouseDrag (const juce::MouseEvent& e) override
     {
-        if (overviewDragging)
+        if (miniDragMode != MiniDragMode::None)
         {
-            scrollFromOverviewX (e.x);
+            const auto timeline = miniTimelineBounds();
+            const double totalTicks = juce::jmax (1.0, totalVisibleTicks());
+            const double timelineW = juce::jmax (1, timeline.getWidth());
+            const double dx = (double) e.x - miniDragStartX;
+            if (miniDragMode == MiniDragMode::Move)
+            {
+                const double totalW = totalTicks * pixelsPerTick;
+                const double pxPerMiniPixel = totalW / timelineW;
+                scrollX = juce::jmax (0.0, miniDragStartScroll + dx * pxPerMiniPixel);
+            }
+            else
+            {
+                const double initialViewportW = juce::jmax (12.0, (double) miniDragStartViewport.getWidth());
+                const double sign = miniDragMode == MiniDragMode::leftEdge ? 1.0 : -1.0;
+                const double newViewportW = juce::jlimit (12.0, timelineW,
+                    initialViewportW + sign * dx);
+                const double newScale = miniDragStartZoom * initialViewportW / newViewportW;
+                pixelsPerTick = juce::jlimit (0.003, 0.4, newScale);
+                const double viewW = (double) clipGridBounds.getWidth();
+                if (miniDragMode == MiniDragMode::leftEdge)
+                {
+                    const double rightAnchorTick = (miniDragStartScroll + viewW) / miniDragStartZoom;
+                    scrollX = juce::jmax (0.0, rightAnchorTick * pixelsPerTick - viewW);
+                }
+                else
+                {
+                    const double leftAnchorTick = miniDragStartScroll / miniDragStartZoom;
+                    scrollX = juce::jmax (0.0, leftAnchorTick * pixelsPerTick);
+                }
+            }
+            updateScrollRanges();
+            repaint();
             return;
         }
 
@@ -778,7 +801,6 @@ public:
                 loopStart = tick;
                 loopEnd   = loopDragAnchor;
             }
-            pushLoopDragToEngine();
             repaint(); return;
         }
 
@@ -787,7 +809,6 @@ public:
             const int64_t tick = snapTick (xToTick (e.x));
             const int64_t maxStart = juce::jmax<int64_t> (0, loopEnd - MidiClip::kPPQ);
             loopStart = juce::jlimit<int64_t> (0, maxStart, tick);
-            pushLoopDragToEngine();
             repaint(); return;
         }
 
@@ -795,7 +816,6 @@ public:
         {
             const int64_t tick = snapTick (xToTick (e.x));
             loopEnd = juce::jmax (loopStart + MidiClip::kPPQ, tick);
-            pushLoopDragToEngine();
             repaint(); return;
         }
 
@@ -865,7 +885,11 @@ public:
 
     void mouseUp (const juce::MouseEvent&) override
     {
-        overviewDragging = false;
+        if (miniDragMode != MiniDragMode::None)
+        {
+            miniDragMode = MiniDragMode::None;
+            return;
+        }
 
         // Commit a drawn clip — length is whatever drawLenTicks grew to
         // while dragging (floored to 1 bar in handleDrawClipDown/mouseDrag
@@ -1225,8 +1249,11 @@ private:
     bool editingLocked = false;
     bool inspectorVisible = false;
 
-    juce::Rectangle<int>  gridArea, overviewBounds, rulerBounds, clipGridBounds;
-    bool overviewDragging = false;
+    juce::Rectangle<int>  gridArea, miniArrangerBounds, rulerBounds, clipGridBounds;
+    enum class MiniDragMode { None, Move, leftEdge, rightEdge };
+    MiniDragMode miniDragMode = MiniDragMode::None;
+    double miniDragStartX = 0.0, miniDragStartScroll = 0.0, miniDragStartZoom = 1.0;
+    juce::Rectangle<float> miniDragStartViewport;
     
     int      selectedTrack  = -1;
     int      trackH         = kDefaultTrackH;
@@ -1394,16 +1421,10 @@ private:
         // loop range — e.g. locators set from the docked or floating
         // transport's SET LEFT/SET RIGHT buttons or editable L/R fields,
         // which previously never reached this view at all. Skipped while
-        // the user is actively dragging on the ruler -- either drawing out
-        // a new region (LoopSet) or pulling an existing L/R marker
-        // (DragLoopStart / DragLoopEnd). mouseUp commits those drags to the
-        // engine instead, so the live drag preview isn't fought over every
-        // timer tick. (Previously only LoopSet was exempt, so at 30 Hz this
-        // overwrote the dragged marker with the engine's old range and the
-        // left/right loop boundaries snapped back or jittered mid-drag.)
-        if (rulerDrag != RulerDrag::LoopSet
-            && rulerDrag != RulerDrag::DragLoopStart
-            && rulerDrag != RulerDrag::DragLoopEnd)
+        // the user is actively dragging out a new region on the ruler
+        // (mouseUp below commits that drag to the engine instead), so the
+        // live drag preview isn't fought over every timer tick.
+        if (rulerDrag != RulerDrag::LoopSet)
         {
             loopStart = engine.getLoopStartTick();
             loopEnd   = engine.getLoopEndTick();
@@ -1475,17 +1496,6 @@ private:
     /** Grab tolerance (screen pixels) for clicking directly on an existing
      *  loop-marker line to drag it, both here and in updateCursor(). */
     static constexpr int kLoopMarkerGrabPx = 5;
-
-    /** Mirrors the in-progress ruler loop drag onto the engine on every
-     *  drag step (setLoopRange just stores two atomics), so the transport
-     *  row's L/R readouts -- which read the engine -- follow the marker
-     *  live instead of only jumping to the new value on mouse-up. mouseUp
-     *  still commits the final range. */
-    void pushLoopDragToEngine()
-    {
-        if (loopEnd > loopStart)
-            engine.setLoopRange (loopStart, loopEnd);
-    }
 
     bool isNearLoopMarker (int x, int64_t markerTick) const noexcept
     {
@@ -1772,18 +1782,12 @@ private:
         int liveCh = 0;  // 0 = disabled (SfPlayer handles its own mask)
         int assignedChannel1Based = -1;
         int assignedPresetBank = -1, assignedPresetProgram = -1;
-        int selectedLayerLo = -1, selectedLayerHi = -1;
 
         if (hasSelection)
         {
             const auto info = engine.getTrackInfo (idx);
             type = info.type;
             isSfzInstrument = info.isSfzInstrument;
-            if (info.isSfzLayer)
-            {
-                selectedLayerLo = info.layerLoKey;
-                selectedLayerHi = info.layerHiKey;
-            }
             switch (info.type)
             {
                 case TrackType::MainSlice:
@@ -1829,9 +1833,6 @@ private:
         // channel-1 live notes are never re-stamped to the selected track's
         // engine/channel no matter what's highlighted in the Arranger.
         engine.setSelectedTrack (hasSelection ? idx : -1);
-
-        if (onSfzLayerSelected)
-            onSfzLayerSelected (selectedLayerLo, selectedLayerHi);
 
         if (onTrackTypeSelected)
             onTrackTypeSelected (type, hasSelection, isSfzInstrument, assignedChannel1Based,
@@ -2104,12 +2105,6 @@ private:
                 m.addItem (2, info.enabled ? "Mute track" : "Unmute track");
             }
 
-            if (info.type == TrackType::ChromaticSlice)
-            {
-                m.addSeparator();
-                m.addItem (42, "Rename slice…");
-            }
-
             if (info.type == TrackType::NetworkMidi)
             {
                 m.addSeparator();
@@ -2169,10 +2164,6 @@ private:
                             selectedClip = 0;
                             trackStrip.setSelectedTrack (-1);
                         }
-                        break;
-                    case 42:
-                        if (info.type == TrackType::ChromaticSlice && onTrackRenameRequested)
-                            onTrackRenameRequested (trackIdx);
                         break;
                     case 8:  // Repeat clip
                     {
@@ -2481,67 +2472,68 @@ private:
         g.fillRect (header.getX(), header.getBottom() - 1, header.getWidth(), 2);
     }
 
-
-    // Compact whole-arrangement map between the command toolbar and ruler.
-    // The cyan viewport rectangle tracks the main timeline's visible range.
-    void paintOverview (juce::Graphics& g) const
+    juce::Rectangle<int> miniTimelineBounds() const
     {
-        if (overviewBounds.isEmpty()) return;
+        return miniArrangerBounds.withX (clipGridBounds.getX())
+                                 .withWidth (juce::jmax (1, clipGridBounds.getWidth()));
+    }
+
+    juce::Rectangle<float> miniViewportBounds() const
+    {
+        const auto timeline = miniTimelineBounds();
+        const double totalW = juce::jmax (1.0, totalVisibleTicks() * pixelsPerTick);
+        const double viewW = juce::jmax (1, clipGridBounds.getWidth());
+        const float w = (float) juce::jlimit (12.0, (double) timeline.getWidth(),
+                                              timeline.getWidth() * viewW / totalW);
+        const double maxScroll = juce::jmax (1.0, totalW - viewW);
+        // Use the timeline grid's exact left edge as the bar-1 origin.
+        // Avoid fractional/proportional rounding when the arrangement is at
+        // its initial position so the viewport border sits exactly over bar 1.
+        const float x = scrollX <= 0.5
+                      ? (float) timeline.getX()
+                      : (float) timeline.getX() + (float) ((timeline.getWidth() - w)
+                          * juce::jlimit (0.0, 1.0, scrollX / maxScroll));
+        return { x, (float) miniArrangerBounds.getY() + 3.0f, w,
+                 (float) juce::jmax (1, miniArrangerBounds.getHeight() - 6) };
+    }
+
+    void paintMiniArranger (juce::Graphics& g) const
+    {
         const auto& theme = getTheme();
-        g.saveState();
-        g.reduceClipRegion (overviewBounds);
-        g.setColour (theme.header.darker (0.35f));
-        g.fillRect (overviewBounds);
+        g.setColour (theme.waveformBg);
+        g.fillRect (miniArrangerBounds);
         g.setColour (theme.separator);
-        g.fillRect (overviewBounds.getX(), overviewBounds.getBottom() - 1,
-                    overviewBounds.getWidth(), 1);
-
-        const int mapLeft = overviewBounds.getX() + 8;
-        const int mapWidth = juce::jmax (1, overviewBounds.getRight() - mapLeft - 8);
-        const int64_t totalTicks = juce::jmax<int64_t> (MidiClip::kPPQ * 4, totalVisibleTicks());
-        const int trackCount = juce::jmax (1, engine.getNumTracks());
-        const float laneHeight = juce::jmax (1.0f, (float) (overviewBounds.getHeight() - 6)
-                                                    / (float) trackCount);
-
+        g.fillRect (miniArrangerBounds.getX(), miniArrangerBounds.getBottom() - 1,
+                    miniArrangerBounds.getWidth(), 1);
+        const auto timeline = miniTimelineBounds().reduced (0, 3);
+        g.setColour (theme.header);
+        g.fillRect (timeline);
+        // Tiny clip blocks are mapped to the same tick/scale range as the grid.
+        const double totalTicks = juce::jmax (1.0, totalVisibleTicks());
         for (int ti = 0; ti < engine.getNumTracks(); ++ti)
         {
             const auto track = engine.getTrackInfo (ti);
-            const float y = (float) overviewBounds.getY() + 3.0f + (float) ti * laneHeight;
-            for (int ci = 0; ci < engine.getNumClips (ti); ++ci)
+            const int count = engine.getNumClips (ti);
+            for (int ci = 0; ci < count; ++ci)
             {
                 const auto clip = engine.getClipInfo (ti, ci);
-                const float x1 = (float) mapLeft + (float) clip.startTick / (float) totalTicks * (float) mapWidth;
-                const float x2 = (float) mapLeft + (float) clip.endTick() / (float) totalTicks * (float) mapWidth;
-                g.setColour (track.colour.withAlpha (0.95f));
-                g.fillRoundedRectangle (juce::Rectangle<float> (x1, y,
-                    juce::jmax (2.0f, x2 - x1), juce::jmax (1.5f, laneHeight - 1.0f)), 1.0f);
+                const double startTick = (double) clip.startTick;
+                const double lenTick = juce::jmax (1.0, (double) clip.lengthTicks);
+                const int x = timeline.getX() + (int) std::round (startTick / totalTicks * timeline.getWidth());
+                const int w = juce::jmax (2, (int) std::round (lenTick / totalTicks * timeline.getWidth()));
+                const int rowH = juce::jmax (2, timeline.getHeight() / juce::jmax (1, engine.getNumTracks()));
+                const int y = timeline.getY() + ti * rowH;
+                g.setColour (track.colour.withAlpha (0.8f));
+                g.fillRect (x, y, w, juce::jmax (2, rowH - 1));
             }
         }
-
-        const float viewportX = (float) mapLeft + (float) (scrollX / ((double) totalTicks * pixelsPerTick))
-                               * (float) mapWidth;
-        const float viewportW = juce::jlimit (3.0f, (float) mapWidth,
-            (float) ((double) clipGridBounds.getWidth() / ((double) totalTicks * pixelsPerTick)
-                     * (double) mapWidth));
-        const juce::Rectangle<float> viewport (viewportX, (float) overviewBounds.getY() + 1.5f,
-                                                viewportW, (float) overviewBounds.getHeight() - 3.0f);
+        const auto vp = miniViewportBounds();
         g.setColour (theme.accent.withAlpha (0.16f));
-        g.fillRoundedRectangle (viewport, 2.0f);
+        g.fillRoundedRectangle (vp, 2.0f);
         g.setColour (theme.accent);
-        g.drawRoundedRectangle (viewport, 2.0f, 1.2f);
-        g.restoreState();
-    }
-
-    void scrollFromOverviewX (int x)
-    {
-        const int mapLeft = overviewBounds.getX() + 8;
-        const int mapWidth = juce::jmax (1, overviewBounds.getRight() - mapLeft - 8);
-        const double fraction = juce::jlimit (0.0, 1.0, (double) (x - mapLeft) / (double) mapWidth);
-        const double totalW = (double) totalVisibleTicks() * pixelsPerTick;
-        scrollX = juce::jlimit (0.0, juce::jmax (0.0, totalW - clipGridBounds.getWidth()),
-                                fraction * totalW - (double) clipGridBounds.getWidth() * 0.5);
-        updateScrollRanges();
-        repaint();
+        g.drawRoundedRectangle (vp, 2.0f, 1.5f);
+        g.drawVerticalLine ((int) vp.getX() + 2, vp.getY() + 2, vp.getBottom() - 2);
+        g.drawVerticalLine ((int) vp.getRight() - 2, vp.getY() + 2, vp.getBottom() - 2);
     }
 
     void paintRuler (juce::Graphics& g) const
@@ -2920,14 +2912,16 @@ private:
             ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
             : info.colour;
 
+        g.setColour (tile);
+        g.fillRect (clipR.reduced (1, 1));
+
+        // Selection reads as a single accent-colour edge line rather than a
+        // brightened outline — an outline implies "this shape has a
+        // border", which doesn't fit tiles that otherwise have none.
+        if (isSel)
         {
-            g.setColour (tile);
-            g.fillRect (clipR.reduced (1, 1));
-            if (isSel)
-            {
-                g.setColour (getTheme().accent);
-                g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
-            }
+            g.setColour (getTheme().accent);
+            g.fillRect (clipR.getX() + 1, clipR.getY() + 1, clipR.getWidth() - 2, 3);
         }
 
         // Track name
@@ -3006,10 +3000,8 @@ private:
             ? info.colour.withSaturation (0.10f).withBrightness (0.30f)
             : info.colour;
 
-        {
-            g.setColour (tile);
-            g.fillRect (clipR.reduced (1, 1));
-        }
+        g.setColour (tile);
+        g.fillRect (clipR.reduced (1, 1));
 
         // Waveform, decoded from the recording itself — see
         // getAudioClipWaveform()/paintAudioClipWaveform() below. Peaks are
