@@ -176,9 +176,9 @@ public:
      *  apply the correct MIDI route mode for whatever track is already selected. */
     void notifyCurrentTrack()
     {
-        if (juce::isPositiveAndBelow (idx, engine.getNumTracks()))
+        if (juce::isPositiveAndBelow (selectedTrack, engine.getNumTracks()))
         {
-            const auto selectedInfo = engine.getTrackInfo (idx);
+            const auto selectedInfo = engine.getTrackInfo (selectedTrack);
             if (selectedInfo.isSfzLayer && onSfzLayerSelected)
                 onSfzLayerSelected (selectedInfo.layerLoKey, selectedInfo.layerHiKey);
         }
