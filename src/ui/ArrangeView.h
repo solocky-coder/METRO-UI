@@ -82,7 +82,7 @@ public:
     static constexpr int kToolbarH     = 42;
     static constexpr int kEditLabelW   = 40;
     static constexpr int kRulerH       = 36;
-    static constexpr int kMiniArrangerH = 28;
+    static constexpr int kMiniArrangerH = 72;
     static constexpr int kScrollH      = 10;
     static constexpr int kScrollW      = 10;
         static constexpr int kMinClipPx    = 6;
@@ -2541,12 +2541,19 @@ private:
         const auto timeline = miniTimelineBounds().reduced (0, 3);
         g.setColour (theme.header);
         g.fillRect (timeline);
-        // Tiny clip blocks are mapped to the same tick/scale range as the grid.
+        // One horizontal lane per track. The strip is deliberately taller than
+        // a simple scrollbar so multi-track arrangements remain distinguishable.
+        // Clip drawing is clipped to the overview area when there are many tracks.
         const double totalTicks = juce::jmax (1.0, (double) totalVisibleTicks());
+        const int trackCount = juce::jmax (1, engine.getNumTracks());
+        const int rowH = juce::jmax (1, timeline.getHeight() / trackCount);
+        g.saveState();
+        g.reduceClipRegion (timeline);
         for (int ti = 0; ti < engine.getNumTracks(); ++ti)
         {
             const auto track = engine.getTrackInfo (ti);
             const int count = engine.getNumClips (ti);
+            const int y = timeline.getY() + ti * rowH;
             for (int ci = 0; ci < count; ++ci)
             {
                 const auto clip = engine.getClipInfo (ti, ci);
@@ -2554,12 +2561,11 @@ private:
                 const double lenTick = juce::jmax (1.0, (double) clip.lengthTicks);
                 const int x = timeline.getX() + (int) std::round (startTick / totalTicks * timeline.getWidth());
                 const int w = juce::jmax (2, (int) std::round (lenTick / totalTicks * timeline.getWidth()));
-                const int rowH = juce::jmax (2, timeline.getHeight() / juce::jmax (1, engine.getNumTracks()));
-                const int y = timeline.getY() + ti * rowH;
                 g.setColour (track.colour.withAlpha (0.8f));
-                g.fillRect (x, y, w, juce::jmax (2, rowH - 1));
+                g.fillRect (x, y, w, juce::jmax (1, rowH - 1));
             }
         }
+        g.restoreState();
         const auto vp = miniViewportBounds();
         g.setColour (theme.accent.withAlpha (0.16f));
         g.fillRoundedRectangle (vp, 2.0f);
