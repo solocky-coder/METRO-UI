@@ -2448,8 +2448,8 @@ private:
     {
         const bool narrow  = dockedToolbarNarrow();
         const int numRows  = narrow ? 3 : 2;
-        const int gapY     = narrow ? 2 : 4;
-        const auto inner   = dockedToolbarBounds().reduced (narrow ? 5 : 10, narrow ? 3 : 5);
+        const int gapY     = narrow ? 2 : 3;
+        const auto inner   = dockedToolbarBounds().reduced (narrow ? 5 : 10, narrow ? 2 : 3);
         const int rowH     = juce::jlimit (14, narrow ? 26 : 30,
                                            (inner.getHeight() - gapY * (numRows - 1)) / numRows);
         auto block = inner.withSizeKeepingCentre (inner.getWidth(), rowH * numRows + gapY * (numRows - 1));
@@ -2476,8 +2476,21 @@ private:
         }
     }
 
+    /** One font size for every button in the docked toolbar. The LookAndFeel's
+     *  default is height-based and tops out at 10pt below 22px, which is too
+     *  small here (and differs from the 13pt the old header used), so size it
+     *  from the row height instead. */
+    void applyDockedFontSize (int rowH)
+    {
+        const double size = rowH >= 28 ? 13.0 : rowH >= 22 ? 12.0 : 11.0;
+        for (auto& b : quantizeButtons)  b.getProperties().set ("transportFontSize", size);
+        for (auto& b : arrangerButtons)  b.getProperties().set ("transportFontSize", size);
+        miniArrangerToggleButton.getProperties().set ("transportFontSize", size);
+    }
+
     void layoutDockedToolbar()
     {
+        applyDockedFontSize (dockedRowBounds (0).getHeight());
         auto& a = arrangerButtons;   // + CLIP, SELECT, DRAW, ERASE, SPLIT, GLUE, LOCK, INSPECTOR
         auto& m = miniArrangerToggleButton;
         auto& q = quantizeButtons;
