@@ -430,7 +430,10 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
  auto area = getLocalBounds();
 
 
-    L.titleStrip = area.removeFromTop (MetroMetrics::grid * 3);
+    // Docked: the title strip is empty (switcher + Float live in the content
+    // row), so drop it and centre the content row vertically in the panel
+    // instead of leaving a dead band above it.
+    L.titleStrip = docked ? juce::Rectangle<int>() : area.removeFromTop (MetroMetrics::grid * 3);
 
     // ── Title strip: view switcher on the left, pin+dock (floating) or
     // float (docked) grouped on the right. While docked, none of this
@@ -452,7 +455,8 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     }
 
     area.reduce (MetroMetrics::grid, 0);
-    area.removeFromTop (MetroMetrics::grid * 2);
+    area.removeFromTop (docked ? juce::jmax (0, (area.getHeight() - MetroMetrics::largeControlHeight) / 2)
+                               : MetroMetrics::grid * 2);
 
 
  const int rowH = MetroMetrics::largeControlHeight;
@@ -688,10 +692,13 @@ void FloatingTransportBar::paint (juce::Graphics& g)
     g.fillAll (Base::Background);
 
 
-    g.setColour (Base::SurfaceAlt);
-    g.fillRect (L.titleStrip);
-    g.setColour (Base::Border);
-    g.drawHorizontalLine (L.titleStrip.getBottom(), 0.0f, (float) getWidth());
+    if (! L.titleStrip.isEmpty())   // docked: no title strip
+    {
+        g.setColour (Base::SurfaceAlt);
+        g.fillRect (L.titleStrip);
+        g.setColour (Base::Border);
+        g.drawHorizontalLine (L.titleStrip.getBottom(), 0.0f, (float) getWidth());
+    }
 
 
  // Drag grip — two short bars centred in the strip, matching the mockup.
@@ -741,8 +748,10 @@ void FloatingTransportBar::paint (juce::Graphics& g)
 
     g.setColour (Base::Border);
  for (int x : { L.divider0, L.divider1, L.divider2 })
-        g.drawVerticalLine (x, (float) (L.titleStrip.getBottom() + MetroMetrics::grid),
-                           (float) (getHeight() - MetroMetrics::grid));
+        g.drawVerticalLine (x, docked ? (float) L.positionField.getY()
+                                      : (float) (L.titleStrip.getBottom() + MetroMetrics::grid),
+                           docked ? (float) L.positionField.getBottom()
+                                  : (float) (getHeight() - MetroMetrics::grid));
 
  // ── Per-element frames — every functional cluster on the content row
  // gets its own bordered box instead of relying on the thin dividers

@@ -71,12 +71,13 @@ public:
      */
     enum class Tool { Select, Draw, Erase, Split, Glue };
 
-    static constexpr int kTransportH   = 88;   // title strip (24) + gap (16) +
-                                                // content row (40) + bottom gutter (8).
-                                                // The gutter keeps child controls and
-                                                // their expanded frames inside the
-                                                // transport surface instead of sitting
-                                                // on the arranger boundary.
+    static constexpr int kTransportH   = 56;   // docked: no title strip any more, so just
+                                                // top gutter (8) + content row (40) +
+                                                // bottom gutter (8) - the row sits dead
+                                                // centre, and the gutters keep child
+                                                // controls and their expanded frames
+                                                // inside the transport surface instead
+                                                // of on the arranger boundary.
     static constexpr int kInspectorW   = 216;
     static constexpr int kStripW       = 196;
     static constexpr int kLeftW        = kInspectorW + kStripW;
