@@ -2461,7 +2461,7 @@ private:
 
     bool dockedToolbarNarrow() const noexcept { return ! inspectorVisible; }
 
-    static constexpr int kDockedLabelW = 52;   // wide layout only
+    static constexpr int kDockedLabelW = 64;   // wide layout only
 
     /** Mini arranger expanded -> the panel is ~108px tall, which leaves a lot of
      *  spare room; the layout spends it on taller rows and more air. */
@@ -2580,9 +2580,11 @@ private:
         frame (quantizeGroup);
         frame (editGroup);
 
-        // Both row captions share one font and colour.
-        g.setColour (theme.foreground.withAlpha (0.92f));
-        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        // Both row captions use the app font, bold, in the full foreground
+        // colour - the same face and colour as the track name ("MAIN") in the
+        // inspector (TrackInspector draws it with makeFont (.., true)).
+        g.setColour (theme.foreground);
+        g.setFont (DysektLookAndFeel::makeFont (13.0f, true));
         g.drawText ("QUANTIZE", dockedRowBounds (0).withWidth (kDockedLabelW),
                     juce::Justification::centredLeft, false);
         g.drawText ("EDIT", dockedRowBounds (1).withWidth (kDockedLabelW),
