@@ -2462,16 +2462,28 @@ private:
     bool dockedToolbarNarrow() const noexcept { return ! inspectorVisible; }
 
     static constexpr int kDockedLabelW = 52;   // wide layout only
-    static constexpr int kDockedBtnGap = 2;
+
+    /** Mini arranger expanded -> the panel is ~108px tall, which leaves a lot of
+     *  spare room; the layout spends it on taller rows and more air. */
+    bool dockedToolbarTall() const noexcept { return dockedToolbarBounds().getHeight() >= 90; }
+
+    int dockedBtnGap() const noexcept
+    {
+        return dockedToolbarTall() ? (dockedToolbarNarrow() ? 3 : 4) : 2;
+    }
 
     juce::Rectangle<int> dockedRowBounds (int row) const noexcept
     {
-        const bool narrow  = dockedToolbarNarrow();
-        const int numRows  = narrow ? 3 : 2;
-        const int gapY     = narrow ? 2 : 5;   // wide rows leave room for their frames
-        const auto inner   = dockedToolbarBounds().reduced (narrow ? 6 : 10, narrow ? 3 : 3);
-        const int rowH     = juce::jlimit (14, narrow ? 26 : 30,
-                                           (inner.getHeight() - gapY * (numRows - 1)) / numRows);
+        const bool narrow = dockedToolbarNarrow();
+        const bool tall   = dockedToolbarTall();
+        const int numRows = narrow ? 3 : 2;
+        const int gapY    = narrow ? (tall ? 6 : 2) : (tall ? 10 : 5);   // wide rows leave room for their frames
+        const int padX    = (narrow ? 6 : 10) + (tall ? 2 : 0);
+        const int padY    = tall ? 12 : 3;
+        const int maxH    = narrow ? (tall ? 30 : 26) : (tall ? 38 : 30);
+        const auto inner  = dockedToolbarBounds().reduced (padX, padY);
+        const int rowH    = juce::jlimit (14, maxH,
+                                          (inner.getHeight() - gapY * (numRows - 1)) / numRows);
         auto block = inner.withSizeKeepingCentre (inner.getWidth(), rowH * numRows + gapY * (numRows - 1));
         block.removeFromTop (row * (rowH + gapY));
         return block.removeFromTop (rowH);
@@ -2479,12 +2491,12 @@ private:
 
     /** Places `items` left-to-right across `row`, widths proportional to their
      *  weights; the last item absorbs rounding so the row ends flush. */
-    static void layoutRow (juce::Rectangle<int> row,
+    static void layoutRow (juce::Rectangle<int> row, int gap,
                            std::initializer_list<std::pair<juce::Component*, int>> items)
     {
         int totalWeight = 0;
         for (auto& it : items) totalWeight += it.second;
-        const int avail = row.getWidth() - kDockedBtnGap * ((int) items.size() - 1);
+        const int avail = row.getWidth() - gap * ((int) items.size() - 1);
         int x = row.getX(), n = 0;
         for (auto& it : items)
         {
@@ -2492,7 +2504,7 @@ private:
             const int w = last ? juce::jmax (0, row.getRight() - x)
                                : avail * it.second / totalWeight;
             it.first->setBounds (x, row.getY(), w, row.getHeight());
-            x += w + kDockedBtnGap;
+            x += w + gap;
         }
     }
 
@@ -2502,7 +2514,7 @@ private:
      *  from the row height instead. */
     void applyDockedFontSize (int rowH)
     {
-        const double size = rowH >= 28 ? 13.0 : rowH >= 22 ? 12.0 : 11.0;
+        const double size = rowH >= 34 ? 14.0 : rowH >= 28 ? 13.0 : rowH >= 22 ? 12.0 : 11.0;
         for (auto& b : quantizeButtons)  b.getProperties().set ("transportFontSize", size);
         for (auto& b : arrangerButtons)  b.getProperties().set ("transportFontSize", size);
         miniArrangerToggleButton.getProperties().set ("transportFontSize", size);
@@ -2511,6 +2523,7 @@ private:
     void layoutDockedToolbar()
     {
         applyDockedFontSize (dockedRowBounds (0).getHeight());
+        const int gap = dockedBtnGap();
         auto& a = arrangerButtons;   // + CLIP, SELECT, DRAW, ERASE, SPLIT, GLUE, LOCK, INSPECTOR
         auto& m = miniArrangerToggleButton;
         auto& q = quantizeButtons;
@@ -2519,22 +2532,22 @@ private:
         if (! dockedToolbarNarrow())
             quantRow.removeFromLeft (kDockedLabelW);
         quantizeButtonsBounds = quantRow;
-        layoutRow (quantRow, { { &q[0], 1 }, { &q[1], 1 }, { &q[2], 1 },
+        layoutRow (quantRow, gap, { { &q[0], 1 }, { &q[1], 1 }, { &q[2], 1 },
                                { &q[3], 1 }, { &q[4], 1 }, { &q[5], 1 } });
 
         if (! dockedToolbarNarrow())
         {
             auto editRow = dockedRowBounds (1);
             editRow.removeFromLeft (kDockedLabelW);
-            layoutRow (editRow, { { &a[0], 44 }, { &a[1], 46 }, { &a[2], 38 }, { &a[3], 40 },
+            layoutRow (editRow, gap, { { &a[0], 44 }, { &a[1], 46 }, { &a[2], 38 }, { &a[3], 40 },
                                   { &a[4], 38 }, { &a[5], 34 }, { &a[6], 36 }, { &a[7], 62 },
                                   { &m,    42 } });
         }
         else
         {
-            layoutRow (dockedRowBounds (1), { { &a[0], 36 }, { &a[1], 32 }, { &a[2], 26 },
+            layoutRow (dockedRowBounds (1), gap, { { &a[0], 36 }, { &a[1], 32 }, { &a[2], 26 },
                                               { &a[3], 28 }, { &a[4], 26 }, { &a[5], 26 } });
-            layoutRow (dockedRowBounds (2), { { &a[6], 40 }, { &a[7], 70 }, { &m, 50 } });
+            layoutRow (dockedRowBounds (2), gap, { { &a[6], 40 }, { &a[7], 70 }, { &m, 50 } });
         }
     }
 
@@ -2550,10 +2563,11 @@ private:
         // Frame the button clusters with the transport bar's own group border
         // (Base::Border, 1px, 4px radius, 2px clear of the buttons) - the same
         // treatment as the MIXER / ARRANGER / GLOBAL EQ switcher.
-        auto frame = [&g] (juce::Rectangle<int> r)
+        const int framePad = dockedToolbarTall() ? 3 : 2;
+        auto frame = [&g, framePad] (juce::Rectangle<int> r)
         {
             g.setColour (dysekt::metro::Base::Border);
-            g.drawRoundedRectangle (r.expanded (2).toFloat().reduced (0.5f), 4.0f, 1.0f);
+            g.drawRoundedRectangle (r.expanded (framePad).toFloat().reduced (0.5f), 4.0f, 1.0f);
         };
         auto quantizeGroup = quantizeButtons[0].getBounds().getUnion (quantizeButtons[kNumQuantizeOptions - 1].getBounds());
         auto editGroup     = arrangerButtons[0].getBounds().getUnion (miniArrangerToggleButton.getBounds());
