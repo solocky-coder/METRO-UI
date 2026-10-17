@@ -433,12 +433,13 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     // Docked: the title strip is empty (switcher + Float live in the content
     // row), so drop it and centre the content row vertically in the panel
     // instead of leaving a dead band above it.
-    L.titleStrip = docked ? juce::Rectangle<int>() : area.removeFromTop (MetroMetrics::grid * 4);
-    // ^ 24 -> 32 (floating): the 20px of button height left by the old 24px
-    // strip was too short for the MIXER / ARRANGER / GLOBAL EQ text (its
-    // glyph tops were clipped) and put the strip's frame partly outside the
-    // panel. The 104px window is unchanged - the content row below is
-    // centred in what remains (16px above and below).
+    L.titleStrip = docked ? juce::Rectangle<int>() : area.removeFromTop (MetroMetrics::grid * 5);
+    // ^ 24 -> 40 (floating): the old 24px strip left only 20px of button
+    // height - too short for the MIXER / ARRANGER / GLOBAL EQ text - and put
+    // the tab group's 3px frame right on the panel border and the strip's
+    // bottom line. At 40px the 24px buttons plus frame sit 5px clear of both.
+    // The 104px window is unchanged; the content row below is centred in
+    // what remains (12px above and below).
 
     // ── Title strip: view switcher on the left, pin+dock (floating) or
     // float (docked) grouped on the right. While docked, none of this
@@ -447,7 +448,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     // — so the docked title strip is left empty. ───────────────────────
     if (! docked)
     {
-        auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::halfGrid);   // 24px-tall, vertically centred buttons
+        auto strip = L.titleStrip.reduced (MetroMetrics::halfGrid, MetroMetrics::grid);   // 24px-tall, vertically centred buttons
         L.dockField = strip.removeFromRight (MetroMetrics::grid * 7);
         strip.removeFromRight (MetroMetrics::halfGrid);
         L.pinField  = strip.removeFromRight (MetroMetrics::grid * 6);
@@ -460,8 +461,7 @@ FloatingTransportBar::Layout FloatingTransportBar::computeLayout() const
     }
 
     area.reduce (MetroMetrics::grid, 0);
-    area.removeFromTop (docked ? juce::jmax (0, (area.getHeight() - MetroMetrics::largeControlHeight) / 2)
-                               : MetroMetrics::grid * 2);
+    area.removeFromTop (juce::jmax (0, (area.getHeight() - MetroMetrics::largeControlHeight) / 2));
 
 
  const int rowH = MetroMetrics::largeControlHeight;
