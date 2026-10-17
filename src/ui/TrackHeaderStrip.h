@@ -86,7 +86,9 @@ public:
     void paint (juce::Graphics& g) override
     {
         const auto& theme = getTheme();
-        g.fillAll (theme.waveformBg);
+        // One step lighter than the clip grid (see ArrangeView::gridBackground)
+        // so the header column and the grid read as separate surfaces.
+        g.fillAll (theme.waveformBg.interpolatedWith (juce::Colours::white, 0.035f));
         g.setOrigin (0, -scrollY);   // rows scroll with the arranger's vertical scroll bar
         const auto nest    = engine.getTrackNesting();
         const auto visible = visibleFrom (nest);

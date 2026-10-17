@@ -2442,6 +2442,14 @@ private:
                         : juce::String ("MINI +");
     }
 
+    /** Clip grid / empty lane colour: one step darker than the track header
+     *  column (TrackHeaderStrip lifts its own background), so the two read as
+     *  separate surfaces instead of running together. */
+    juce::Colour gridBackground() const
+    {
+        return getTheme().waveformBg.darker (0.35f);
+    }
+
     juce::Rectangle<int> dockedToolbarBounds() const noexcept
     {
         const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
@@ -2556,9 +2564,16 @@ private:
     void paintOverChildren (juce::Graphics& g) override
     {
         const auto panel = dockedToolbarBounds();
-        g.setColour (getTheme().separator);
+        const auto& theme = getTheme();
+        g.setColour (theme.separator);
         g.fillRect (panel.getX(), panel.getBottom() - 1, panel.getWidth(), 2);
-        g.fillRect (panel.getRight() - 1, panel.getY(), 1, panel.getHeight());
+
+        // Column divider: 2px, full height, on the seam between the left
+        // columns (toolbar panel / inspector / track header strip) and the
+        // grid side (mini arranger / ruler / clip grid). Lighter than the
+        // ordinary separator so the seam is visible at a glance.
+        g.setColour (theme.separator.interpolatedWith (theme.foreground, 0.22f));
+        g.fillRect (panel.getRight() - 2, panel.getY(), 2, getHeight() - 3 - panel.getY());
     }
 
     int miniArrangerHeight() const noexcept
@@ -2805,7 +2820,7 @@ private:
             g.reduceClipRegion (clipGridBounds);
 
             const auto& theme = getTheme();
-            g.setColour (theme.waveformBg);
+            g.setColour (gridBackground());
             g.fillRect (emptyR);
 
             paintGridLines (g, emptyR);
@@ -2917,7 +2932,7 @@ private:
         // only the clip itself should carry that signal. See paintClip's
         // accent-line treatment for the actual selection indicator.
         const auto& theme = getTheme();
-        g.setColour (theme.waveformBg);
+        g.setColour (gridBackground());
         g.fillRect (rowR.withTrimmedBottom (2));
         g.setColour (juce::Colour (0xFF000000));
         g.fillRect (rowR.withTop (rowR.getBottom() - 2));
