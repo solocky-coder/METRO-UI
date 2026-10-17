@@ -54,6 +54,28 @@ public:
         arrangeView.onMixerRequested    = [this] { selectView (Content::Mixer); };
         arrangeView.onArrangerRequested = [this] { selectView (Content::Arrange); };
         arrangeView.onGlobalEqRequested = [this] { selectView (Content::Eq); };
+        arrangeView.onTransportFloatingChanged = [this] (bool floating)
+        {
+            if (current != Content::Arrange)
+                return;
+
+            if (floating)
+            {
+                // Return the window switcher to this host before detaching it
+                // from the transport. The floating panel has its own switcher.
+                addChildComponent (mixerButton);
+                addChildComponent (arrangeButton);
+                addChildComponent (eqButton);
+                arrangeView.getTransportBar().setViewButtons (nullptr, nullptr, nullptr);
+                mixerButton.setVisible (false);
+                arrangeButton.setVisible (false);
+                eqButton.setVisible (false);
+            }
+            else
+            {
+                arrangeView.getTransportBar().setViewButtons (&mixerButton, &arrangeButton, &eqButton);
+            }
+        };
     }
 
     /** Show exactly one of Mixer / Eq / Arrange (or None to hide all three). */
@@ -72,7 +94,19 @@ public:
         // standalone row for those.
         if (c == Content::Arrange)
         {
-            arrangeView.getTransportBar().setViewButtons (&mixerButton, &arrangeButton, &eqButton);
+            if (arrangeView.getTransportBar().isFloating())
+            {
+                // The floating transport owns its own MIXER / ARRANGER / GLOBAL EQ
+                // buttons. Keep the host's copies hidden to avoid duplicate rows.
+                addChildComponent (mixerButton);
+                addChildComponent (arrangeButton);
+                addChildComponent (eqButton);
+                arrangeView.getTransportBar().setViewButtons (nullptr, nullptr, nullptr);
+            }
+            else
+            {
+                arrangeView.getTransportBar().setViewButtons (&mixerButton, &arrangeButton, &eqButton);
+            }
         }
         else
         {
@@ -82,9 +116,12 @@ public:
             addChildComponent (eqButton);
         }
 
-        mixerButton.setVisible (showSwitcher);
-        arrangeButton.setVisible (showSwitcher);
-        eqButton.setVisible (showSwitcher);
+        const bool showHostSwitcher = showSwitcher
+                                      && ! (c == Content::Arrange
+                                            && arrangeView.getTransportBar().isFloating());
+        mixerButton.setVisible (showHostSwitcher);
+        arrangeButton.setVisible (showHostSwitcher);
+        eqButton.setVisible (showHostSwitcher);
         updateViewButtonState();
         resized();
     }
