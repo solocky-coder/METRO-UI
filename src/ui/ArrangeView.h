@@ -4,6 +4,7 @@
 #include "TrackHeaderStrip.h"
 #include "TrackInspector.h"
 #include "DysektLookAndFeel.h"
+#include "../metro/MetroColours.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
 #include "ToolIcons.h"
@@ -250,10 +251,12 @@ public:
                 b.setTooltip ("Grid snap: " + juce::String (kQuantizeLabels[i]));
                 b.setRadioGroupId (kQuantizeButtonRadioGroup, juce::dontSendNotification);
                 b.setClickingTogglesState (true);
-                b.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff1c2028));
+                // Same palette as the MIXER / ARRANGER / GLOBAL EQ and FLOAT / LINK
+                // buttons (FloatingTransportBar::configureChrome).
+                b.setColour (juce::TextButton::buttonColourId,   dysekt::metro::Base::Elevated);
                 b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-                b.setColour (juce::TextButton::textColourOffId,  juce::Colours::white.withAlpha (0.55f));
-                b.setColour (juce::TextButton::textColourOnId,   juce::Colours::black.withAlpha (0.85f));
+                b.setColour (juce::TextButton::textColourOffId,  dysekt::metro::Text::Secondary);
+                b.setColour (juce::TextButton::textColourOnId,   dysekt::metro::Base::White);
                 b.getProperties().set ("flatFill", true);
                 b.onClick = [this, itemId] { transport.setSnapItemId (itemId); };
                 addAndMakeVisible (b);
@@ -272,10 +275,10 @@ public:
                 auto& b = arrangerButtons[i];
                 b.setButtonText (labels[i]);
                 b.setTooltip (labels[i]);
-                b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff11171c));
+                b.setColour (juce::TextButton::buttonColourId, dysekt::metro::Base::Elevated);
                 b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-                b.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.72f));
-                b.setColour (juce::TextButton::textColourOnId, juce::Colours::black.withAlpha (0.9f));
+                b.setColour (juce::TextButton::textColourOffId, dysekt::metro::Text::Secondary);
+                b.setColour (juce::TextButton::textColourOnId, dysekt::metro::Base::White);
                 b.getProperties().set ("flatFill", true);
                 addAndMakeVisible (b);
             }
@@ -323,10 +326,10 @@ public:
         // ── Mini arranger expand/collapse toggle ─────────────────────────────
         miniArrangerToggleButton.setButtonText (miniToggleLabel (true));
         miniArrangerToggleButton.setTooltip ("Collapse mini arranger overview");
-        miniArrangerToggleButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff11171c));
+        miniArrangerToggleButton.setColour (juce::TextButton::buttonColourId, dysekt::metro::Base::Elevated);
         miniArrangerToggleButton.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-        miniArrangerToggleButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.82f));
-        miniArrangerToggleButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black.withAlpha (0.9f));
+        miniArrangerToggleButton.setColour (juce::TextButton::textColourOffId, dysekt::metro::Text::Secondary);
+        miniArrangerToggleButton.setColour (juce::TextButton::textColourOnId, dysekt::metro::Base::White);
         miniArrangerToggleButton.getProperties().set ("flatFill", true);
         miniArrangerToggleButton.onClick = [this]
         {
@@ -2465,8 +2468,8 @@ private:
     {
         const bool narrow  = dockedToolbarNarrow();
         const int numRows  = narrow ? 3 : 2;
-        const int gapY     = narrow ? 2 : 3;
-        const auto inner   = dockedToolbarBounds().reduced (narrow ? 5 : 10, narrow ? 2 : 3);
+        const int gapY     = narrow ? 2 : 5;   // wide rows leave room for their frames
+        const auto inner   = dockedToolbarBounds().reduced (narrow ? 6 : 10, narrow ? 3 : 3);
         const int rowH     = juce::jlimit (14, narrow ? 26 : 30,
                                            (inner.getHeight() - gapY * (numRows - 1)) / numRows);
         auto block = inner.withSizeKeepingCentre (inner.getWidth(), rowH * numRows + gapY * (numRows - 1));
@@ -2544,8 +2547,24 @@ private:
         g.setColour (theme.accent.withAlpha (0.8f));
         g.fillRect (panel.getX(), panel.getY(), 3, panel.getHeight());
 
+        // Frame the button clusters with the transport bar's own group border
+        // (Base::Border, 1px, 4px radius, 2px clear of the buttons) - the same
+        // treatment as the MIXER / ARRANGER / GLOBAL EQ switcher.
+        auto frame = [&g] (juce::Rectangle<int> r)
+        {
+            g.setColour (dysekt::metro::Base::Border);
+            g.drawRoundedRectangle (r.expanded (2).toFloat().reduced (0.5f), 4.0f, 1.0f);
+        };
+        auto quantizeGroup = quantizeButtons[0].getBounds().getUnion (quantizeButtons[kNumQuantizeOptions - 1].getBounds());
+        auto editGroup     = arrangerButtons[0].getBounds().getUnion (miniArrangerToggleButton.getBounds());
         if (dockedToolbarNarrow())
+        {
+            // Three tight rows: one frame around the whole block
+            frame (quantizeGroup.getUnion (editGroup).getUnion (arrangerButtons[kNumArrangeTools - 1].getBounds()));
             return;   // no room for captions; buttons carry their own labels/tooltips
+        }
+        frame (quantizeGroup);
+        frame (editGroup);
 
         // Both row captions share one font and colour.
         g.setColour (theme.foreground.withAlpha (0.92f));
