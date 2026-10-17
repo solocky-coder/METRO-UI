@@ -24,6 +24,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "ZoneMapView.h"
+#include "DrumPadView.h"
 #include "MultisamplerZoneLcd.h"
 #include "MultisamplerZoneField.h"
 #include "../AddZoneOverlay.h"
@@ -55,6 +56,7 @@ public:
     {
         zoneMapView.setUiScale (newScale);
         zoneLcd.setUiScale (newScale);
+        drumPads.setUiScale (newScale);
     }
 
     /** PluginEditor calls this every layout pass with the x-centre of the
@@ -84,6 +86,10 @@ public:
     void setInstrument (MultisamplerInstrument newInstrument, bool syncEngine = true);
 
     const MultisamplerInstrument& getInstrument() const noexcept { return instrument; }
+
+    void setKitMode (bool enabled) { kitMode = enabled; if (enabled) showPads (true); else showPads (false); updateViewToggle(); }
+    void showPads (bool enabled) { padsShown = enabled && kitMode; zoneMapView.setVisible (! padsShown); drumPads.setVisible (padsShown); if (padsShown) drumPads.rebuild(); viewToggle.setButtonText (padsShown ? "ZONES" : "PADS"); resized(); }
+    bool isKitMode() const noexcept { return kitMode; }
 
     /** The same keyboard-highlight data SfzPlayerDropdownPanel::
         parseSfzZones() derives from raw SFZ text, derived instead from a
@@ -216,6 +222,7 @@ public:
         ZoneMapView's own onZoneEditing (live) vs. onZoneEditCommitted
         (commit) split. No-op if nothing is currently selected/editable. */
     void applyZoneFieldEdit (MultisamplerZoneField field, float value, bool isCommit);
+    void showDrumPadContextMenu (int note, juce::Point<int> screenPosition);
 
     /** Shows the right-click "Learn MIDI CC" / "Clear" popup for one
         zoneLcd field cell — hooked to zoneLcd.onFieldLearnMenuRequested in
@@ -458,6 +465,11 @@ private:
     juce::File lastSavedFile;   // last file imported from or exported/saved to; File() if none yet
 
     ZoneMapView zoneMapView;
+    DrumPadView drumPads { processor, instrument };
+    bool kitMode = false;
+    bool padsShown = false;
+    juce::TextButton viewToggle { "KIT MODE" };
+    void updateViewToggle() { viewToggle.setVisible (true); viewToggle.setButtonText (kitMode ? (padsShown ? "ZONES" : "PADS") : "TREAT AS KIT"); }
 
     // ── Header ───────────────────────────────────────────────────────────
     juce::Label  titleLabel;

@@ -6,7 +6,6 @@
 #include "../SliceControlBar.h"
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
-#include "../../audio/multisampler/MultisamplerPreviewSnapshot.h"
 #include "../../audio/SfzZoneColours.h"
 #include <algorithm>
 #include <cmath>
@@ -31,6 +30,25 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     instrument.name = "New Instrument";
 
     addAndMakeVisible (zoneMapView);
+    addAndMakeVisible (drumPads);
+    drumPads.setVisible (false);
+    drumPads.onPadSelected = [this] (int zoneIndex)
+    {
+        if (zoneIndex >= 0 && zoneIndex < (int) instrument.zones.size())
+            zoneMapView.setSelectedZoneIds ({ instrument.zones[(size_t) zoneIndex].id });
+    };
+    drumPads.onPadContextMenu = [this] (int note, juce::Point<int> screenPosition)
+    {
+        showDrumPadContextMenu (note, screenPosition);
+    };
+    addAndMakeVisible (viewToggle);
+    viewToggle.setVisible (true);
+    viewToggle.setButtonText ("TREAT AS KIT");
+    viewToggle.onClick = [this]
+    {
+        if (! kitMode) setKitMode (true);
+        else showPads (! padsShown);
+    };
     zoneMapView.setInstrument (&instrument);
     zoneMapView.onSelectionChanged = [this] { refreshInspectorFromSelection(); };
     zoneMapView.onZoneHovered = [this] (juce::Uuid hoveredId)
@@ -45,6 +63,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     zoneMapView.onZoneEditing      = [this]
     {
         dirty = true;
+        drumPads.rebuild();
         // Live-drag readout — matches ZONES' onZoneEdited pushing into SCB
         // on every drag frame, not just on commit, via the same
         // refreshInspectorFromSelection() -> onZoneSelectionOrEditChanged path.
@@ -54,6 +73,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     zoneMapView.onZoneEditCommitted = [this]
     {
         dirty = true;
+        drumPads.rebuild();
         refreshInspectorFromSelection();
         scheduleEngineSync();
         if (onInstrumentChanged) onInstrumentChanged();
@@ -64,6 +84,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         // debounced resync, chrome notification) — a deletion is just
         // another committed model edit, it just didn't come from a drag.
         dirty = true;
+        drumPads.rebuild();
         refreshInspectorFromSelection();
         scheduleEngineSync();
         if (onInstrumentChanged) onInstrumentChanged();
@@ -74,6 +95,7 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
         // effects as onZoneEditCommitted/onZoneDeleted above; adding a zone
         // is just another committed model edit.
         dirty = true;
+        drumPads.rebuild();
         refreshInspectorFromSelection();
         scheduleEngineSync();
         if (onInstrumentChanged) onInstrumentChanged();
@@ -213,6 +235,8 @@ void MultisamplerEditor::resized()
     addZoneButton.setBounds (header.removeFromRight (84));
     header.removeFromRight (4);
     editLayerCombo.setBounds (header.removeFromRight (150));
+    header.removeFromRight (4);
+    viewToggle.setBounds (header.removeFromRight (74));
 
     // zoneBadgeLabel (the PREVIEW/AUDITIONING badge) keeps a small fixed
     // slot right against the combo, since it's contextual to editing.
@@ -245,6 +269,8 @@ void MultisamplerEditor::resized()
 
     r.removeFromTop (6);
     zoneMapView.setBounds (r);
+    drumPads.setBounds (r);
+    drumPads.toFront (false);
 }
 
 // ── Instrument lifecycle ────────────────────────────────────────────────
@@ -311,6 +337,7 @@ void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bo
     instrument = std::move (newInstrument);
     dirty = false;
     zoneMapView.setInstrument (&instrument);
+    drumPads.rebuild();
     refreshInspectorFromSelection();
     if (syncEngine)
         performEngineSync (true);   // not debounced — a wholesale swap should reflect immediately
@@ -479,6 +506,7 @@ void MultisamplerEditor::commitAddedZone (const juce::File& sampleFile,
     dirty = true;
     zoneMapView.setSelectedZoneIds ({ added.id });
     zoneMapView.refresh();
+    drumPads.rebuild();
     refreshInspectorFromSelection();
     scheduleEngineSync();
     if (onInstrumentChanged) onInstrumentChanged();
@@ -539,6 +567,7 @@ void MultisamplerEditor::beginTrimExistingZone (const juce::Uuid& zoneId)
 
         dirty = true;
         zoneMapView.refresh();
+    drumPads.rebuild();
         refreshInspectorFromSelection();
         scheduleEngineSync();
         if (onInstrumentChanged) onInstrumentChanged();
@@ -732,11 +761,7 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     juce::Component::SafePointer<MultisamplerEditor> safeThis (this);
 
     processor.fileLoadPool.addJob (
-        [safeThis, myGen, cacheFile, opts, isFreshLoad,
-         // Export copy, not the live model: pins MIX on whichever zone wins
-         // each key so a shadowed (overlapped) zone still gets a mixer
-         // channel. See MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones.
-         snapshot = MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones (instrument)]
+        [safeThis, myGen, cacheFile, opts, isFreshLoad, snapshot = instrument]
         {
             if (! SfzExporter::exportToFile (snapshot, cacheFile, opts))
                 return;   // nothing to load — same as the old synchronous early-return
@@ -1049,6 +1074,7 @@ void MultisamplerEditor::applySliceControlBarFieldEdit (int zoneIndex, int field
 
     dirty = true;
     zoneMapView.refresh();
+    drumPads.rebuild();
     scheduleEngineSync();
     if (onInstrumentChanged) onInstrumentChanged();
     refreshInspectorFromSelection();   // pushes the just-applied value back into SCB's own readout
@@ -1208,6 +1234,7 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
     // onZoneEditing/onZoneEditCommitted pair already uses.
     dirty = true;
     zoneMapView.refresh();
+    drumPads.rebuild();
     if (isCommit)
     {
         scheduleEngineSync();
@@ -1216,6 +1243,50 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
 
     refreshZoneLcdDisplay();
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
+}
+
+void MultisamplerEditor::showDrumPadContextMenu (int note, juce::Point<int> screenPosition)
+{
+    if (note < 0 || note > 127) return;
+    const auto zonesForNote = [&]()
+    {
+        std::vector<int> indices;
+        for (int i = 0; i < (int) instrument.zones.size(); ++i)
+        {
+            const auto& z = instrument.zones[(size_t) i];
+            if (z.enabled && z.keyInRange (note)) indices.push_back (i);
+        }
+        return indices;
+    }();
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("PAD " + juce::String (note) + " · ");
+    if (zonesForNote.empty())
+    {
+        menu.addItem (1, "Open in ZONES");
+    }
+    else
+    {
+        juce::PopupMenu busMenu;
+        for (int bus = 0; bus <= 15; ++bus)
+            busMenu.addItem (100 + bus, bus == 0 ? "Main" : "Aux " + juce::String (bus));
+        menu.addSubMenu ("Output bus", busMenu);
+        menu.addItem (1, "Open in ZONES");
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ screenPosition.x, screenPosition.y, 1, 1 }),
+        [this, zonesForNote] (int result)
+        {
+            if (result == 0) return;
+            if (result == 1) { showPads (false); return; }
+            if (zonesForNote.empty()) return;
+            const int zi = zonesForNote.front();
+            if (zi < 0 || zi >= (int) instrument.zones.size()) return;
+            zoneMapView.setSelectedZoneIds ({ instrument.zones[(size_t) zi].id });
+            refreshInspectorFromSelection();
+            if (result >= 100 && result <= 115)
+                applyZoneFieldEdit (MultisamplerZoneField::outputBus, (float) (result - 100), true);
+        });
 }
 
 // =============================================================================
@@ -1452,6 +1523,7 @@ void MultisamplerEditor::autoAssignOutputBuses (int numZones)
 
     dirty = true;
     zoneMapView.refresh();
+    drumPads.rebuild();
     scheduleEngineSync();
     if (onInstrumentChanged) onInstrumentChanged();
     refreshZoneLcdDisplay();
