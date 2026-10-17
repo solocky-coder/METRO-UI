@@ -271,11 +271,24 @@ public:
             static const char* const labels[kNumArrangeTools] =
                 { "+ CLIP", "SELECT", "DRAW", "ERASE", "SPLIT", "GLUE", "LOCK", "INSPECTOR" };
 
+            // Hover tooltips: what the button does, plus its key where it has one.
+            static const char* const tips[kNumArrangeTools] =
+            {
+                "Add clip - new 4-beat clip at the playhead on the selected track",
+                "Select tool (S) - click or drag to select clips",
+                "Draw tool (D) - click empty space to create a clip",
+                "Erase tool (E) - click a clip to delete it",
+                "Split tool (K) - click a clip to cut it in two",
+                "Glue tool (G) - click a clip to merge it with the next clip on the track",
+                "Lock editing - blocks drawing, erasing, splitting and gluing; selecting still works",
+                "Show or hide the track inspector (volume, pan, colour)"
+            };
+
             for (int i = 0; i < kNumArrangeTools; ++i)
             {
                 auto& b = arrangerButtons[i];
                 b.setButtonText (labels[i]);
-                b.setTooltip (labels[i]);
+                b.setTooltip (tips[i]);
                 b.setColour (juce::TextButton::buttonColourId, dysekt::metro::Base::Elevated);
                 b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
                 b.setColour (juce::TextButton::textColourOffId, dysekt::metro::Text::Secondary);

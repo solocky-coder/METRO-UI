@@ -353,6 +353,12 @@ private:
 
     SlotWindowContent content;
 
+    // This window is a separate top-level window, and PluginEditor's
+    // TooltipWindow is parented to the editor, so hover tooltips on the
+    // arranger / mixer / EQ controls never appeared here. A desktop-level
+    // TooltipWindow (no parent) serves this window's components.
+    juce::TooltipWindow tooltipWindow { nullptr, 500 };
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SlotWindow)
 };
 
