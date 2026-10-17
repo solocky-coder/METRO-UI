@@ -1221,6 +1221,8 @@ public:
         transport.setDocked (false);
         transport.show();
         resized();   // reclaim the space the docked bar was occupying
+        if (onTransportFloatingChanged)
+            onTransportFloatingChanged (true);
     }
 
     /** Removes the transport from the desktop and re-docks it as a normal
@@ -1232,6 +1234,8 @@ public:
         transport.setDocked (true);
         addAndMakeVisible (transport);
         resized();
+        if (onTransportFloatingChanged)
+            onTransportFloatingChanged (false);
     }
 
     /** Lets an owner (e.g. SlotWindowContent) dock extra controls — such as the
@@ -1244,6 +1248,9 @@ public:
     std::function<void()> onMixerRequested;
     std::function<void()> onArrangerRequested;
     std::function<void()> onGlobalEqRequested;
+
+    /** Fired after the transport changes between docked and floating modes. */
+    std::function<void (bool)> onTransportFloatingChanged;
 
 private:
     //==========================================================================
