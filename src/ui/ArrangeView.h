@@ -321,7 +321,7 @@ public:
         }
 
         // ── Mini arranger expand/collapse toggle ─────────────────────────────
-        miniArrangerToggleButton.setButtonText ("MINI −");
+        miniArrangerToggleButton.setButtonText (miniToggleLabel (true));
         miniArrangerToggleButton.setTooltip ("Collapse mini arranger overview");
         miniArrangerToggleButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff11171c));
         miniArrangerToggleButton.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
@@ -331,7 +331,7 @@ public:
         miniArrangerToggleButton.onClick = [this]
         {
             miniArrangerExpanded = ! miniArrangerExpanded;
-            miniArrangerToggleButton.setButtonText (miniArrangerExpanded ? "MINI −" : "MINI +");
+            miniArrangerToggleButton.setButtonText (miniToggleLabel (miniArrangerExpanded));
             miniArrangerToggleButton.setTooltip (miniArrangerExpanded
                 ? "Collapse mini arranger overview" : "Expand mini arranger overview");
             resized();
@@ -2433,6 +2433,15 @@ private:
     //    narrow (inspector closed, 196px): three compact rows, no labels
     //  Layout and painting share dockedRowBounds() so they never disagree.
     //==========================================================================
+    /** Built from explicit UTF-8 bytes (U+2212 MINUS SIGN) so the label does not
+     *  depend on the compiler's source charset - a bare "−" in a string literal
+     *  shows up as mojibake ("â??") when MSVC reads the file as ANSI. */
+    static juce::String miniToggleLabel (bool expanded)
+    {
+        return expanded ? juce::String (juce::CharPointer_UTF8 ("MINI \xE2\x88\x92"))
+                        : juce::String ("MINI +");
+    }
+
     juce::Rectangle<int> dockedToolbarBounds() const noexcept
     {
         const int topY = (transport.isFloating() ? 0 : kTransportH) + 3;
@@ -2530,12 +2539,11 @@ private:
         if (dockedToolbarNarrow())
             return;   // no room for captions; buttons carry their own labels/tooltips
 
+        // Both row captions share one font and colour.
         g.setColour (theme.foreground.withAlpha (0.92f));
         g.setFont (juce::Font (11.0f, juce::Font::bold));
         g.drawText ("QUANTIZE", dockedRowBounds (0).withWidth (kDockedLabelW),
                     juce::Justification::centredLeft, false);
-        g.setColour (theme.foreground.withAlpha (0.55f));
-        g.setFont (juce::Font (10.0f, juce::Font::bold));
         g.drawText ("EDIT", dockedRowBounds (1).withWidth (kDockedLabelW),
                     juce::Justification::centredLeft, false);
     }
