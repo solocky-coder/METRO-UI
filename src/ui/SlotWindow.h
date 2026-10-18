@@ -238,9 +238,17 @@ private:
 
     void updateViewButtonState()
     {
-        mixerButton.setToggleState (current == Content::Mixer, juce::dontSendNotification);
-        arrangeButton.setToggleState (current == Content::Arrange, juce::dontSendNotification);
-        eqButton.setToggleState (current == Content::Eq, juce::dontSendNotification);
+        const bool mixerActive = current == Content::Mixer;
+        const bool arrangeActive = current == Content::Arrange;
+        const bool eqActive = current == Content::Eq;
+
+        mixerButton.setToggleState (mixerActive, juce::dontSendNotification);
+        arrangeButton.setToggleState (arrangeActive, juce::dontSendNotification);
+        eqButton.setToggleState (eqActive, juce::dontSendNotification);
+
+        // The floating transport owns separate buttons, so mirror the selected
+        // view to them whenever the host changes views.
+        arrangeView.getTransportBar().setActiveView (mixerActive, arrangeActive, eqActive);
     }
 
     void selectView (Content c)
