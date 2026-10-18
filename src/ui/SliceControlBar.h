@@ -196,7 +196,7 @@ private:
     float toNorm (int fieldId, float nativeVal) const;
     float fromNorm (int fieldId, float norm) const;
 
-    static constexpr int kKnobR = 9; // knob radius (px)
+    static constexpr int kKnobR = 11; // knob radius (px, at the 80-unit design height)
     float paintSf = 1.0f;
     int psCellW  { 74 };   // kParamCellWidth * paintSf
     int psCellH  { 32 };   // 32 * paintSf

@@ -9,7 +9,9 @@ constexpr int kLogoH      = 52;
 constexpr int kLcdRowH    = SliceLcdDisplay::kPreferredHeight + 12;
 constexpr int kSliceLaneH = 36;
 constexpr int kScrollbarH = 28;
-constexpr int kSliceCtrlH = 72;
+// 80 units (was 72): room for 26-unit cell rows with 5 units clear either side of the
+// row divider, now that the level meter no longer shares the row.
+constexpr int kSliceCtrlH = 80;
 constexpr int kActionH    = 22;
 constexpr int kTrimBarH   = 34;
 constexpr int kPanelSlotH = 200;
@@ -27,7 +29,7 @@ constexpr int kBtnRowH    = 50;
 constexpr int kBaseHCore  = kLogoH + kLcdRowH + kSliceLaneH + kScrollbarH
                            + kSliceCtrlH + kActionH + 120;
 constexpr int kTotalH     = kBaseHCore + kPanelSlotH + 16;
-constexpr int kInitH      = 1317;  // kTotalH * 1.5 — matches kInitW
+constexpr int kInitH      = 1329;  // kTotalH * 1.5 — matches kInitW (kSliceCtrlH grew 72 -> 80)
 constexpr int kMargin     = 8;
 
 // SFZ instrument strip — stacks below the waveform/pad frame when open.
