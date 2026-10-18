@@ -86,6 +86,8 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
         b->getProperties().set ("transportFontSize", transportTextSize);
         b->setColour (juce::TextButton::textColourOffId, Base::White);
         b->setColour (juce::TextButton::textColourOnId, Base::White);
+        b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xFF5B3C8A));
+        b->setClickingTogglesState (true);
     }
     mixerButton.onClick   = [this] { if (onMixerRequested)    onMixerRequested(); };
     arrangeButton.onClick = [this] { if (onArrangerRequested) onArrangerRequested(); };
