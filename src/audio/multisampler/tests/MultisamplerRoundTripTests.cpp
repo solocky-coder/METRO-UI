@@ -104,6 +104,7 @@ public:
         testDrumPadModel();
         testDrumPadBankAutoSelect();
         testDrumKitFlagRoundTrips();
+        testPreviewReverseOpcode();
     }
 
 private:
@@ -615,6 +616,28 @@ private:
             inst.drumKit = false;
             expect (! SfzExporter::render (inst, juce::File()).contains ("dysekt_drum_kit"));
         }
+    }
+
+    void testPreviewReverseOpcode()
+    {
+        beginTest ("REV: real export keeps direction=reverse; preview file uses private dysekt_reverse=1");
+        MultisamplerInstrument inst;
+        auto z = padZone (36, 36, 36);
+        z.reverse = true;
+        inst.addZone (z);
+
+        const auto real = SfzExporter::render (inst, juce::File());
+        expect (real.contains ("direction=reverse"));
+        expect (! real.contains ("dysekt_reverse"));
+
+        SfzExporter::Options preview;
+        preview.previewForSliceRender = true;
+        const auto prev = SfzExporter::render (inst, juce::File(), preview);
+        expect (prev.contains ("dysekt_reverse=1"));
+        expect (! prev.contains ("direction=reverse"));   // would double-reverse if sfizz honoured it too
+
+        inst.zones[0].reverse = false;
+        expect (! SfzExporter::render (inst, juce::File(), preview).contains ("dysekt_reverse"));
     }
 };
 

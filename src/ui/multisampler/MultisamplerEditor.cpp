@@ -787,6 +787,7 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     cacheFile.getParentDirectory().createDirectory();
 
     SfzExporter::Options opts;   // absolute sample paths — this file's location is an implementation detail
+    opts.previewForSliceRender = true;   // REV is applied by SoundFontLoader's render, not sfizz's direction=
 
     // SafePointer, not a raw `this` — the sfzPlayer2/loadSoundFontAsync
     // calls below only happen after a genuine thread hop (fileLoadPool ->

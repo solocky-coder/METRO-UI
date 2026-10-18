@@ -36,6 +36,15 @@ public:
             playback sync path writes, since that file's location is
             implementation detail and gains nothing from relative paths. */
         bool useRelativeSamplePaths = false;
+
+        /** True only for the transient playback-preview file (see
+            MultisamplerEditor::performEngineSync). Reverse is then written as
+            the private opcode dysekt_reverse=1 instead of the standard
+            direction=reverse: sfizz ignores unknown opcodes, and
+            SoundFontLoader reverses each rendered note itself, so REV no
+            longer depends on sfizz's direction handling. Real exports (EXPORT
+            SFZ, bundles) leave this false and keep the standard opcode. */
+        bool previewForSliceRender = false;
     };
 
     /** Renders `instrument` to SFZ text. `destinationFile` need not exist yet;

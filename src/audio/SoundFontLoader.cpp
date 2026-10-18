@@ -259,6 +259,11 @@ struct SfzRegionKeyRange
     // to clear a previous one-shot (see PluginProcessor's snapshot restore).
     int oneShot = -1;
 
+    // dysekt_reverse=1 (the MULTISAMPLER preview file's private REV flag --
+    // see SfzExporter::Options::previewForSliceRender). Raw user SFZs that use
+    // the standard direction=reverse are NOT touched here: sfizz plays those.
+    bool reverse = false;
+
     // dysekt_output_bus=N, if present (see SfzSliceDescriptor::outputBus's
     // doc comment for the -1-means-unset convention this carries through to).
     int outputBus = -1;
@@ -354,6 +359,7 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
         // dysekt_show_in_mixer — presence (not value) is what matters, same
         // as SfzImporter's read side; SfzExporter only ever writes "=1".
         rk.showInMixer = chunk.containsIgnoreCase ("dysekt_show_in_mixer=");
+        rk.reverse     = scanIntOpcode (chunk, "dysekt_reverse") == 1;
 
         {
             const int lm = chunk.indexOfIgnoreCase ("loop_mode=");
@@ -666,6 +672,21 @@ private:
 
         std::vector<float> blockL (kBlockSize), blockR (kBlockSize);
 
+        // Regions flagged dysekt_reverse=1 get their rendered note reversed
+        // below. Last matching region wins -- same rule as the zone-colour /
+        // output-bus stamping in finishAndPost().
+        const auto reverseRegions = parseSfzAllRegionKeyRanges (file);
+        auto noteIsReversed = [&reverseRegions] (int n)
+        {
+            for (int i = (int) reverseRegions.size() - 1; i >= 0; --i)
+            {
+                const auto& rk = reverseRegions[(size_t) i];
+                if (rk.loKey < 0 || n < rk.loKey || n > rk.hiKey) continue;
+                return rk.reverse;
+            }
+            return false;
+        };
+
         for (int note : activeNotes)
         {
             if (shouldExit()) break;
@@ -696,6 +717,14 @@ private:
                                                  std::abs (nr.R[i])));
             if (peak < kSilenceThreshold)
                 continue;  // note produced no audio — skip
+
+            // Silence-trimmed, so reversing the whole buffer reverses exactly
+            // the audible sample (no silent lead-in on the reversed note).
+            if (noteIsReversed (note))
+            {
+                std::reverse (nr.L.begin(), nr.L.end());
+                std::reverse (nr.R.begin(), nr.R.end());
+            }
 
             renders.push_back (std::move (nr));
         }

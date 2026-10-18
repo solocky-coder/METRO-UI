@@ -67,7 +67,7 @@ namespace
         // SampleZone::reverse's doc comment). Omitted for forward (the
         // default) so a plain zone doesn't clutter the file.
         if (z.reverse)
-            out << "direction=reverse\n";
+            out << (opts.previewForSliceRender ? "dysekt_reverse=1\n" : "direction=reverse\n");
 
         out << "loop_mode=" << loopModeToOpcodeValue (z.loopMode) << "\n";
         if (z.loopMode != LoopMode::noLoop && z.loopStart >= 0 && z.loopEnd >= 0)
