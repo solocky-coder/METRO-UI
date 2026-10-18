@@ -3425,11 +3425,42 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             std::vector<PendingZonePin> pendingZonePins;
             pendingZonePins.reserve (zonesOwner2->slices.size());
 
+            // Per-note one-shot state taken from each region's loop_mode= (-1 =
+            // the region didn't say). Applied after the snapshot restore below
+            // so a MULTISAMPLER 1SH toggle -- in either direction -- survives
+            // the zone-edit rebuild instead of being reverted to the pre-edit
+            // snapshot value.
+            std::array<int, 128> regionOneShot;
+            regionOneShot.fill (-1);
+            for (const auto& d : zonesOwner2->slices)
+                if (d.midiNote >= 0 && d.midiNote < 128)
+                    regionOneShot[(size_t) d.midiNote] = d.oneShot;
+
             for (auto& desc : zonesOwner2->slices)
             {
-                const bool hasLoop = (desc.loopStart >= 0 && desc.loopEnd > desc.loopStart
-                                      && desc.loopStart > desc.startSample
-                                      && desc.loopEnd <= desc.endSample);
+                const bool validLoopPoints = (desc.loopStart >= 0 && desc.loopEnd > desc.loopStart
+                                              && desc.loopEnd <= desc.endSample);
+
+                // The loader marks every looping region's loop as the whole
+                // sustain portion of its render -- loopStart == startSample --
+                // so `loopStart > startSample` (the head+tail split condition)
+                // was never true for MULTISAMPLER/SFZ zones and LOOP never
+                // sustained. That case has no attack head to split off: one
+                // slice [startSample, loopEnd) that loops in place, stopping
+                // short of the baked release tail.
+                if (validLoopPoints && desc.loopStart <= desc.startSample)
+                {
+                    const bool hasZoneColourWhole = (desc.zoneColourArgb != 0);
+                    const int idx = sliceManager2.createSlice (desc.startSample, desc.loopEnd);
+                    if (idx >= 0)
+                    {
+                        sliceManager2.getSlice (idx).loopMode = 1;   // forward loop, whole slice
+                        pendingZonePins.push_back ({ idx, desc.midiNote, hasZoneColourWhole, desc.zoneColourArgb, desc.zoneLoKey, desc.zoneHiKey, desc.zoneRegionIdx, desc.outputBus, desc.showInMixer });
+                    }
+                    continue;
+                }
+
+                const bool hasLoop = (validLoopPoints && desc.loopStart > desc.startSample);
 
                 // Zero means "no region matched" (see SoundFontLoader Step 3d) —
                 // leave Slice's own random default colour in that case rather
@@ -3525,6 +3556,8 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             for (auto& pin : pendingZonePins)
             {
                 sliceManager2.pinSliceMidiNote (pin.sliceIdx, pin.midiNote);
+                if (pin.midiNote >= 0 && pin.midiNote < 128 && regionOneShot[(size_t) pin.midiNote] >= 0)
+                    sliceManager2.getSlice (pin.sliceIdx).oneShot = regionOneShot[(size_t) pin.midiNote] > 0;
                 if (pin.hasColour)
                     sliceManager2.getSlice (pin.sliceIdx).colour = juce::Colour (pin.colourArgb);
                 sliceManager2.getSlice (pin.sliceIdx).zoneLoKey = pin.zoneLoKey;
@@ -3591,7 +3624,12 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     // the pre-edit snapshot here would silently revert
                     // whatever OUT/MIX edit just triggered this reload —
                     // exactly the bug this comment used to cause.
-                    s.oneShot          = snap.oneShot;
+                    // A region's own loop_mode= wins over the pre-edit snapshot
+                    // (it IS the edit); only regions that don't specify one
+                    // keep the snapshot value.
+                    s.oneShot          = (regionOneShot[(size_t) s.midiNote] >= 0)
+                                             ? (regionOneShot[(size_t) s.midiNote] > 0)
+                                             : snap.oneShot;
                     s.centsDetune      = snap.centsDetune;
                     s.filterCutoff     = snap.filterCutoff;
                     s.filterRes        = snap.filterRes;

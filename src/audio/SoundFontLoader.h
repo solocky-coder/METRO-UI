@@ -157,6 +157,10 @@ struct SfzSliceDescriptor
     // PendingZonePin handling, which ORs this with outputBus!=0 rather than
     // ever using it to clear the auto-pin).
     bool showInMixer = false;
+
+    // From the <region>'s loop_mode=: 1 = one_shot, 0 = another loop mode,
+    // -1 = the region had no loop_mode (see SfzRegionKeyRange::oneShot).
+    int oneShot = -1;
 };
 
 // Heap-allocated payload posted via pendingSfzSlices atomic.

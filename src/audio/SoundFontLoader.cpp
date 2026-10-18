@@ -251,6 +251,14 @@ struct SfzRegionKeyRange
 {
     int loKey = -1, hiKey = -1;   // inclusive MIDI key range this region covers
 
+    // Explicit one-shot state read from the region's loop_mode= opcode:
+    // 1 = loop_mode=one_shot, 0 = any other loop_mode value, -1 = the region
+    // has no loop_mode at all (leave the slice's own value alone). The
+    // MULTISAMPLER exporter always writes loop_mode, so its 1SH toggle always
+    // lands on 0 or 1 here -- including the OFF direction, which must be able
+    // to clear a previous one-shot (see PluginProcessor's snapshot restore).
+    int oneShot = -1;
+
     // dysekt_output_bus=N, if present (see SfzSliceDescriptor::outputBus's
     // doc comment for the -1-means-unset convention this carries through to).
     int outputBus = -1;
@@ -346,6 +354,17 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
         // dysekt_show_in_mixer — presence (not value) is what matters, same
         // as SfzImporter's read side; SfzExporter only ever writes "=1".
         rk.showInMixer = chunk.containsIgnoreCase ("dysekt_show_in_mixer=");
+
+        {
+            const int lm = chunk.indexOfIgnoreCase ("loop_mode=");
+            if (lm >= 0 && (lm == 0 || ! juce::CharacterFunctions::isLetter (chunk[lm - 1])))
+            {
+                int v = lm + (int) juce::String ("loop_mode=").length();
+                int e = v;
+                while (e < chunk.length() && ! juce::CharacterFunctions::isWhitespace (chunk[e])) ++e;
+                rk.oneShot = chunk.substring (v, e).trim().equalsIgnoreCase ("one_shot") ? 1 : 0;
+            }
+        }
 
         result.push_back (rk);
     }
@@ -1153,6 +1172,7 @@ private:
                     desc.zoneRegionIdx  = i;
                     desc.outputBus      = rk.outputBus;   // -1 if the region had no dysekt_output_bus opcode
                     desc.showInMixer    = rk.showInMixer;
+                    desc.oneShot        = rk.oneShot;
                     break;   // last matching region wins (see comment above)
                 }
             }

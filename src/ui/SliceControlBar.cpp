@@ -201,21 +201,21 @@ void SliceControlBar::drawParamCell (juce::Graphics& g, int x, int y,
 {
  const int cellH = psCellH;
  const int cellW = psCellW;
- const int textX = juce::roundToInt (4.0f * paintSf);
- const int textW = cellW - juce::roundToInt (8.0f * paintSf);
+ const int textX = juce::roundToInt (14.0f * paintSf);
+ const int textW = juce::roundToInt (60.0f * paintSf);
 
  // Label+value block is 24px tall (11 + 13) inside a 28px cell, giving an
  // even 2px margin top and bottom instead of running flush to the row
  // divider below.
- g.setFont (DysektLookAndFeel::makeFont (13.0f * paintSf));
+ g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf));
  g.setColour (locked ? getTheme().lockActive.withAlpha (0.8f)
  : getTheme().foreground.withAlpha (0.45f));
- g.drawText (label, x + textX, y, textW, juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText (label, x + textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
- g.setFont (DysektLookAndFeel::makeMonoFont (14.0f * paintSf));
+ g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * paintSf));
  g.setColour (locked ? getTheme().foreground
  : getTheme().foreground.withAlpha (0.4f));
- g.drawText (value, x + textX, y + juce::roundToInt (12.0f * paintSf), textW, juce::roundToInt (14.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText (value, x + textX, y + juce::roundToInt (13.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
 
  outWidth = cellW;
  cells.push_back ({ x, y, outWidth, cellH, lockBit, fieldId,
@@ -408,30 +408,27 @@ void SliceControlBar::drawKnobCell (juce::Graphics& g, int x, int y,
  }
 
  const int textX = knobCX + psKnobR + juce::roundToInt (4.0f * paintSf);
- // The padlock sits just right of the value text (not at the far edge of the cell),
- // so it stays next to its knob however wide the cell gets.
- const int kLockW = juce::roundToInt (12.0f * paintSf);
- const int lockX = juce::jmin (textX + juce::roundToInt (56.0f * paintSf), x + cellW - kLockW - 1);
- const int lockReserve = (lockBit != 0) ? (x + cellW - lockX) : 0;
- const int textW = juce::jmax (0, cellW - (textX - x) - 1 - lockReserve);
+ // Reserve scaled lock icon space on the right
+ const int lockReserve = (lockBit != 0) ? juce::roundToInt (12.0f * paintSf) : 0;
+ const int textW = cellW - (textX - x) - 1 - lockReserve;
  const juce::Colour adsr = adsrTintForField (fieldId);
  const bool hasAdsr = ! adsr.isTransparent();
 
  // Label+value block is 24px tall (11 + 13) inside a 28px cell, giving an
  // even 2px margin top and bottom instead of running flush to the row
  // divider below.
- g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf));
+ g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
  // ADSR label always uses the fixed ADSR colour — even when locked.
  // Non-ADSR locked params use lockActive; everything else uses foreground.
  g.setColour (locked && ! hasAdsr ? getTheme().lockActive.withAlpha (0.8f)
  : hasAdsr ? adsr.withAlpha (0.95f)
  : getTheme().foreground.withAlpha (0.42f));
- g.drawText (label, textX, y, textW, juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText (label, textX, y + juce::roundToInt (2.0f * paintSf), textW, juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
- g.setFont (DysektLookAndFeel::makeMonoFont (13.0f * paintSf));
+ g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
  g.setColour (locked ? getTheme().foreground
  : getTheme().foreground.withAlpha (hasAdsr ? 0.80f : 0.38f));
- g.drawText (valueText, textX, y + juce::roundToInt (12.0f * paintSf), textW, juce::roundToInt (14.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText (valueText, textX, y + juce::roundToInt (13.0f * paintSf), textW, juce::roundToInt (13.0f * paintSf), juce::Justification::centredLeft);
 
  outWidth = cellW;
 
@@ -449,11 +446,11 @@ void SliceControlBar::drawKnobCell (juce::Graphics& g, int x, int y,
  //    the field has no per-slice lock, e.g. FieldSliceStart).
  if (lockBit != 0)
  {
-     // kLockW / lockX are computed above, next to the value text
+     const int kLockW = juce::roundToInt (10.0f * paintSf);
      const int kLockH = kLockW;
      // Position: right-aligned inside the text area, top of the label row
-     const int lx = lockX;
-     const int ly = y;
+     const int lx = x + cellW - kLockW - juce::roundToInt (1.0f * paintSf);
+     const int ly = y + juce::roundToInt (2.0f * paintSf);
 
      // Padlock body — flat, square corners (was a 1.0f rounded rect regardless of theme)
      if (locked)
@@ -518,10 +515,10 @@ void SliceControlBar::drawPanSliderCell (juce::Graphics& g, int x, int y,
  }
 
  // ── Label ──────────────────────────────────────────────────────────────
- g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf));
+ g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
  g.setColour (locked ? theme.lockActive.withAlpha (0.8f)
  : theme.foreground.withAlpha (0.42f));
- g.drawText ("PAN", x, y, cellW, juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+ g.drawText ("PAN", x, y + juce::roundToInt (2.0f * paintSf), cellW, juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
 
  // MIDI-learn label
  if (armed || mapped)
@@ -533,7 +530,7 @@ void SliceControlBar::drawPanSliderCell (juce::Graphics& g, int x, int y,
  }
 
  // ── Slider track ───────────────────────────────────────────────────────
- const int trackY = y + juce::roundToInt (17.0f * paintSf);
+ const int trackY = y + juce::roundToInt (18.0f * paintSf);
  const int trackH = juce::roundToInt (6.0f * paintSf);
  const int trackX = x + juce::roundToInt (2.0f * paintSf);
  const int trackW = cellW - juce::roundToInt (4.0f * paintSf);
@@ -543,9 +540,9 @@ void SliceControlBar::drawPanSliderCell (juce::Graphics& g, int x, int y,
  juce::String panStr = (pct == 0) ? "C"
  : (pct < 0) ? ("L" + juce::String (-pct))
  : ("R" + juce::String ( pct));
- g.setFont (DysektLookAndFeel::makeMonoFont (12.0f * paintSf));
+ g.setFont (DysektLookAndFeel::makeMonoFont (10.0f * paintSf));
  g.setColour (locked ? theme.foreground : theme.foreground.withAlpha (0.75f));
- g.drawText (panStr, trackX, trackY - juce::roundToInt (14.0f * paintSf), trackW, juce::roundToInt (12.0f * paintSf), juce::Justification::centred);
+ g.drawText (panStr, trackX, trackY - juce::roundToInt (11.0f * paintSf), trackW, juce::roundToInt (10.0f * paintSf), juce::Justification::centred);
 
  // Track background — flat, square corners (was a 2.f radius regardless of theme)
  g.setColour (theme.darkBar.darker (0.3f));
@@ -599,7 +596,7 @@ void SliceControlBar::drawMarkerSliderCell (juce::Graphics& g, int x, int y,
     const int cellW = psCellW;
     // Stop 2px short of the separator line (which sits at row1y + psCellH)
     // so the frame bottom is visually above the separator, not on it.
-    const int cellH = psCellH;
+    const int cellH = psCellH - juce::roundToInt (2.0f * paintSf);
     const auto& T = getTheme();
     auto cell = juce::Rectangle<int> (x, y, cellW, cellH);
     const bool armed = (processor.midiLearn.getArmedSlot() == DysektProcessor::FieldSliceStart);
@@ -772,22 +769,22 @@ void SliceControlBar::drawMarkerSliderCell (juce::Graphics& g, int x, int y,
     }
 
     // Label — top half
- // (label sits in the top 11px, value below it — both clear of the 3px progress strip)
-    g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
+    const int midY = cell.getY() + cell.getHeight() / 2;
+    g.setFont (DysektLookAndFeel::makeFont (8.0f * paintSf));
     g.setColour (T.accent.withAlpha (0.65f));
     // Shrink label area if fine badge is shown
     const int labelW = showFineBadge ? (cell.getWidth() - juce::roundToInt (26.0f * paintSf)) : cell.getWidth();
     g.drawText ("MARKER",
-                cell.getX(), cell.getY() + juce::roundToInt (1.0f * paintSf),
-                labelW, juce::roundToInt (10.0f * paintSf),
+                cell.getX(), cell.getY() + 2,
+                labelW, midY - cell.getY() - 2,
                 juce::Justification::centred, false);
 
     // Value — bottom half
-    g.setFont (DysektLookAndFeel::makeMonoFont (12.0f * paintSf));
+    g.setFont (DysektLookAndFeel::makeMonoFont (10.0f * paintSf));
     g.setColour (T.foreground);
     g.drawText (juce::String (sampleVal),
-                cell.getX(), cell.getY() + juce::roundToInt (11.0f * paintSf),
-                cell.getWidth(), juce::roundToInt (10.0f * paintSf),
+                cell.getX(), midY,
+                cell.getWidth(), cell.getBottom() - midY - juce::roundToInt (3.0f * paintSf),
                 juce::Justification::centred, false);
 
     // Directional arrow — relative encoder only, fades 300ms after last tick
@@ -939,11 +936,10 @@ void SliceControlBar::paint (juce::Graphics& g)
  cells.clear();
  sfzZoneCells.clear();
 
- // Scale all fixed pixel constants proportionally with component height.
- // Design height is kSliceCtrlH (80): every size painted below is authored in those units.
- paintSf = (float) getHeight() / 80.0f;
- psCellW = juce::roundToInt ((float) kParamCellWidth * paintSf); // re-set from the column grid once the column count is known
- psCellH = juce::roundToInt (26.0f * paintSf);
+ // Scale all fixed pixel constants proportionally with component height
+ paintSf = (float) getHeight() / 72.0f;
+ psCellW = juce::roundToInt ((float) kParamCellWidth * paintSf);
+ psCellH = juce::roundToInt (28.0f * paintSf);
  psKnobR = juce::roundToInt ((float) kKnobR * paintSf);
  auto si  = [this](int v) { return juce::roundToInt ((float) v * paintSf); };
 
@@ -953,7 +949,8 @@ void SliceControlBar::paint (juce::Graphics& g)
  const auto& ui = sfzMode ? processor.getUiSliceSnapshot2() : processor.getUiSliceSnapshot();
  int idx = ui.selectedSlice;
  int numSlices = ui.numSlices;
- int row1y = si (9), row2y = si (46); // 26px content blocks; the divider at y=40 leaves 5px clear above and below
+ int rightEdge = getWidth() - si (8) - si (6); // PADS/WAVE buttons removed: full width
+ int row1y = si (7), row2y = si (38); // centred: (72-59)/2 = 6.5 -> 7px top padding
  if (sfzMode)
  {
      // MULTISAMPLER is now the permanent SFZ-PLAYER tab content, so
@@ -1030,82 +1027,65 @@ void SliceControlBar::paint (juce::Graphics& g)
  int cw;
  using F = DysektProcessor;
 
- // ── Column grid ────────────────────────────────────────────────────────────
- // Both rows share one grid: the bar's width is split evenly into as many columns
- // as the widest row needs (10 by default; more while STRETCH or chromatic mode adds
- // cells). The old METER used to eat the leftover width; now every cell gets it
- // instead. Group separators sit in the gutter between two columns rather than
- // consuming width of their own.
- const bool chromaticOn = ! sfzPlayerMode && s.chromaticChannel > 0;
- const int row1Cols = 2 + (stretchVal ? 3 : 0) + 1 + 1 + 4
-                    + (! sfzPlayerMode ? 2 : 0) + (chromaticOn ? 2 : 0);
- const int row2Cols = 10 + (chromaticOn ? 1 : 0);
- const int numCols  = juce::jmax (row1Cols, row2Cols);
- const float colPitch = (float) (getWidth() - si (16)) / (float) numCols;
- psCellW = juce::jmax (si (40), juce::roundToInt (colPitch) - si (8));
- auto colX = [&] (int i) { return si (8) + juce::roundToInt ((float) i * colPitch); };
- auto drawSep = [&] (int atCol, int rowY)
- {
-     g.setColour (getTheme().separator.withAlpha (0.5f));
-     g.fillRect (colX (atCol) - si (4), rowY, 1, psCellH);
- };
+
+
+ // Slice index label removed — shown in waveform and LCD panels already.
 
  // ── Row 1 params ──────────────────────────────────────────────────
- int col = 0;
- int x = colX (col);
+ int x = si (8);
 
  // PITCH — knob (no lock — always per-slice)
  {
  float pv = effPitch;
  int pvi = (int) std::round (pv);
- x = colX (col++);
  drawKnobCell (g, x, row1y, "PITCH",
  (pvi >= 0 ? "+" : "") + juce::String (pvi) + "st",
  toNorm (F::FieldPitch, pv),
  true, 0, F::FieldPitch, -48.f, 48.f, 0.1f, cw);
+ x += cw + si (4);
  }
 
  // TUNE — knob (no lock — always per-slice)
  {
  float cv = effCents;
  int cvi = juce::jlimit (-100, 100, (int) std::round (cv));
- x = colX (col++);
  drawKnobCell (g, x, row1y, "TUNE",
  (cvi >= 0 ? "+" : "") + juce::String (cvi) + "ct",
  toNorm (F::FieldCentsDetune, cv),
  true, 0, F::FieldCentsDetune, -100.f, 100.f, 0.1f, cw);
+ x += cw + si (4);
  }
 
  // ALGO selector removed — Repitch vs Stretch is now derived from the STCH toggle
  if (stretchVal)
  {
  float tv = effTonality;
- x = colX (col++);
  drawKnobCell (g, x, row1y, "ROOT",
  juce::String ((int) tv) + "Hz",
  toNorm (F::FieldTonality, tv),
  true, 0, F::FieldTonality, 0.f, 8000.f, 100.f, cw);
+ x += cw + si (4);
 
  float fv = effFormant;
- x = colX (col++);
  drawKnobCell (g, x, row1y, "BODY",
  (fv >= 0.f ? "+" : "") + juce::String (fv, 1),
  toNorm (F::FieldFormant, fv),
  true, 0, F::FieldFormant, -24.f, 24.f, 0.1f, cw);
+ x += cw + si (4);
 
  bool fmntCVal = effFComp;
- x = colX (col++);
  drawParamCell (g, x, row1y, "FMNT C", fmntCVal ? "ON" : "OFF",
  true, 0, F::FieldFormantComp,
  0.f, 1.f, 1.f, true, false, cw);
+ x += cw + si (4);
  }
  // STRETCH — boolean (no lock)
  {
  bool sv = effStretch;
- x = colX (col++);
  drawParamCell (g, x, row1y, "STRETCH", sv ? "ON" : "OFF",
  true, 0, F::FieldStretchEnabled,
  0.f, 1.f, 1.f, true, false, cw);
+ x += cw + si (4);
  }
 
  // MARKER — slice boundary knob in row 1. Hidden in SFZ-PLAYER mode: bounds
@@ -1113,45 +1093,49 @@ void SliceControlBar::paint (juce::Graphics& g)
  // doesn't accept targetEngine2) — see isSfzPlayer2Mode() doc comment.
  if (! sfzMode)
  {
- drawSep (col, row1y);
- x = colX (col++);
+ g.setColour (getTheme().separator.withAlpha (0.5f));
+ g.drawVerticalLine (x + 2, (float) row1y + 4, (float) row1y + 28);
+ x += 8;
 
  const int liveIdx = processor.liveDragSliceIdx.load (std::memory_order_acquire);
  const int markerSample = (liveIdx == idx)
  ? processor.liveDragBoundsStart.load (std::memory_order_relaxed)
  : s.startSample;
  drawMarkerSliderCell (g, x, row1y, markerSample, ui.sampleNumFrames, cw);
+ x += cw + si (4);
  }
 
- // GAIN, PAN, OUT, MIX — mix group in row 1
+ // GAIN, PAN, OUT — mix group in row 1
  {
- drawSep (col, row1y);
+ g.setColour (getTheme().separator.withAlpha (0.5f));
+ g.drawVerticalLine (x + 2, (float) row1y + 4, (float) row1y + 28);
+ x += 8;
 
  // GAIN (no lock — always per-slice)
  {
  float gv = effVolume;
- x = colX (col++);
  drawKnobCell (g, x, row1y, "GAIN",
  (gv >= 0.f ? "+" : "") + juce::String (gv, 1) + "dB",
  toNorm (F::FieldVolume, gv),
  true, 0, F::FieldVolume, -100.f, 24.f, 0.1f, cw);
+ x += cw + si (4);
  }
 
  // PAN (no lock — always per-slice)
  {
  float pv = effPan;
- x = colX (col++);
  drawPanSliderCell (g, x, row1y, pv, true, cw);
+ x += cw + si (4);
  }
 
  // OUT (no lock — always per-slice)
  {
  int ov = effOutputBus;
  const juce::String outLabel = (ov == 0) ? juce::String ("MAIN") : ("AUX " + juce::String (ov));
- x = colX (col++);
  drawParamCell (g, x, row1y, "OUT", outLabel,
  true, 0, F::FieldOutputBus, 0.f, 15.f, 1.f,
  false, true, cw);
+ x += cw + si (4);
  }
 
  // MIX — show-in-MixerPanel pin/hide toggle (per-slice, no lock).
@@ -1160,68 +1144,71 @@ void SliceControlBar::paint (juce::Graphics& g)
  // Main and need mixer visibility.
  {
  const bool showInMixer = s.showInMixer;  // always read from slice
- x = colX (col++);
  drawMixerToggleCell (g, x, row1y, showInMixer, true, cw);
+ x += cw + si (4);
  }
 
  // ── Chromatic group: hidden in SFZ-player mode ─────────────────────────
  if (! sfzPlayerMode)
  {
- drawSep (col, row1y);
+ // ── Separator before chromatic group ────────────────────────────────
+ g.setColour (getTheme().separator.withAlpha (0.5f));
+ g.drawVerticalLine (x + 2, (float) row1y + 4.f, (float) row1y + 28.f);
+ x += 8;
 
  // CHRO — chromatic channel badge (per-slice)
  {
      const int  chVal        = s.chromaticChannel;  // always read from slice
-     x = colX (col++);
      drawChroBadgeCell (g, x, row1y, chVal, true, cw);
+     x += cw + si (4);
  }
 
  // LEGATO — chromatic legato toggle (per-slice, no lock)
  {
      const bool legatoOn     = s.chromaticLegato;  // always read from slice
-     x = colX (col++);
      drawLegatoToggleCell (g, x, row1y, legatoOn, true, cw);
+     x += cw + si (4);
  }
 
  // ALGO -- Repitch / Stretch toggle (chromatic mode only, no lock)
  if (s.chromaticChannel > 0)
  {
      const int  algoVal    = s.algorithm;
-     x = colX (col++);
      drawParamCell (g, x, row1y,
                     "MODE",
                     algoVal == 0 ? "RPITCH" : "STRETCH",
                     true, 0, F::FieldAlgorithm,
                     0.f, 1.f, 1.f,
                     false, true, cw);
+     x += cw + si (4);
 
      // ROOT — chromatic reference MIDI note (only meaningful when chromaticChannel > 0)
      {
          const int liveRoot = processor.sliceManager.rootNote.load (std::memory_order_relaxed);
          const int rn = juce::jlimit (0, 127, liveRoot);
          juce::String rootStr = UIHelpers::midiNoteToName (rn);
-         x = colX (col++);
          drawKnobCell (g, x, row1y, "ROOT", rootStr,
                        toNorm (kFieldRootNote, (float) liveRoot),
                        false, 0, kFieldRootNote,
                        0.f, 127.f, 1.f, cw);
+         x += cw + si (4);
      }
  }
  }
- } // end mix group
+ } // end if (! sfzPlayerMode)
  g.setColour (getTheme().separator);
- g.drawHorizontalLine (si (40), (float) si (8), (float) getWidth() - (float) si (8));
+ g.drawHorizontalLine (si (36), (float) si (8), (float) getWidth() - (float) si (8));
 
  // ── Row 2 ─────────────────────────────────────────────────────────
- int col2 = 0;
- const float relMaxSec = kSlicerMaxReleaseSec;
+ x = si (8);
+ int adsrGroupX1 = x, adsrGroupX2 = x;
+const float relMaxSec = kSlicerMaxReleaseSec;
 
  // ── Live ADSR curve (compact thumbnail) — sits in front of the ATK/DEC/SUS/REL
  // knobs and mirrors them. Paint-only: not registered in cells[], so it never
  // intercepts a click. Brightens the segment whose knob is being dragged.
  {
- x = colX (col2++);
- const int curveW = psCellW;
+ const int curveW = si (76);
  int hlSeg = EnvDisplay::SegNone;
  if (activeDragCell >= 0)
  {
@@ -1236,18 +1223,21 @@ void SliceControlBar::paint (juce::Graphics& g)
  EnvDisplay::drawCurve (g, juce::Rectangle<float> ((float) x, (float) row2y, (float) curveW, (float) psCellH),
                         curveParams, hlSeg, false, paintSf,
                         getTheme().darkBar.darker (0.15f), getTheme().separator);
+ x += curveW + si (6);
  }
 
  // ATK — knob (stored seconds, display ms)
  {
+ adsrGroupX1 = x;
  bool locked = (s.lockMask & kLockAttack) != 0;
  float atk = effAttack;
- x = colX (col2++);
  drawKnobCell (g, x, row2y, "ATK",
  EnvDisplay::formatTime (atk),
  toNorm (F::FieldAttack, atk),
  locked, kLockAttack, F::FieldAttack, 0.f, ZoneEnv::kMaxAttackSec, 0.001f, cw);
+ x += cw + si (4);
  }
+
 
  // HLD removed
 
@@ -1255,101 +1245,173 @@ void SliceControlBar::paint (juce::Graphics& g)
  {
  bool locked = (s.lockMask & kLockDecay) != 0;
  float dec = effDecay;
- x = colX (col2++);
  drawKnobCell (g, x, row2y, "DEC",
  EnvDisplay::formatTime (dec),
  toNorm (F::FieldDecay, dec),
  locked, kLockDecay, F::FieldDecay, 0.f, ZoneEnv::kMaxDecaySec, 0.001f, cw);
+ x += cw + si (4);
  }
 
  // SUS — knob (stored 0-1, display %)
  {
  bool locked = (s.lockMask & kLockSustain) != 0;
  float sus = effSustain;
- x = colX (col2++);
  drawKnobCell (g, x, row2y, "SUS",
  juce::String ((int) (sus * 100.f)) + "%",
  toNorm (F::FieldSustain, sus),
  locked, kLockSustain, F::FieldSustain, 0.f, 1.f, 0.01f, cw);
+ x += cw + si (4);
  }
 
  // REL — knob
  {
  bool locked = (s.lockMask & kLockRelease) != 0;
  float rel = effRelease;
- // REL knob norm mirrors SliceWaveformLcd's inverted sqrt mapping:
- //   LCD:  rx = kMax - sqrt(releaseMs/kViewMs) * range   → node RIGHT when rel=0
- //   Knob: norm = 1 - sqrt(rel/relMaxSec)                → arc RIGHT when rel=0
- // This aligns the knob arc direction with the node position:
- //   rel=0ms  → norm=1.0 → knob hard RIGHT  (node at hard right)
- //   rel=max  → norm=0.0 → knob hard LEFT   (node at hard left)
- // Same cube taper as ATK/DEC (see ZoneEnv::timeToKnob) so short releases get real travel.
- const float relNorm = 1.0f - ZoneEnv::timeToKnob (rel, relMaxSec);
- x = colX (col2++);
+// REL knob norm mirrors SliceWaveformLcd's inverted sqrt mapping:
+//   LCD:  rx = kMax - sqrt(releaseMs/kViewMs) * range   → node RIGHT when rel=0
+//   Knob: norm = 1 - sqrt(rel/relMaxSec)                → arc RIGHT when rel=0
+// This aligns the knob arc direction with the node position:
+//   rel=0ms  → norm=1.0 → knob hard RIGHT  (node at hard right)
+//   rel=max  → norm=0.0 → knob hard LEFT   (node at hard left)
+// Same cube taper as ATK/DEC (see ZoneEnv::timeToKnob) so short releases get real travel.
+const float relNorm = 1.0f - ZoneEnv::timeToKnob (rel, relMaxSec);
  drawKnobCell (g, x, row2y, "REL",
  EnvDisplay::formatTime (rel),
  relNorm,
- locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
+locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
+ x += cw + si (4);
+ adsrGroupX2 = x - 4;
  }
 
- // GLIDE — shown only when this slice is in chromatic mode (not in SFZ-player mode)
- if (chromaticOn)
- {
-     const float glideMs = processor.voicePool.legatoGlideMs.load (std::memory_order_relaxed);
-     const juce::String glideStr = (glideMs < 1.0f) ? "0ms"
-                                                     : juce::String ((int) glideMs) + "ms";
-     x = colX (col2++);
-     drawKnobCell (g, x, row2y, "GLIDE", glideStr,
-                   juce::jlimit (0.f, 1.f, glideMs / 200.f),
-                   false, 0, kFieldGlide,
-                   0.f, 200.f, 1.f, cw);
- }
+    // GLIDE — shown only when this slice is in chromatic mode (not in SFZ-player mode)
+    if (! sfzPlayerMode && s.chromaticChannel > 0)
+    {
+        const float glideMs = processor.voicePool.legatoGlideMs.load (std::memory_order_relaxed);
+        const juce::String glideStr = (glideMs < 1.0f) ? "0ms"
+                                                        : juce::String ((int) glideMs) + "ms";
+        drawKnobCell (g, x, row2y, "GLIDE", glideStr,
+                      juce::jlimit (0.f, 1.f, glideMs / 200.f),
+                      false, 0, kFieldGlide,
+                      0.f, 200.f, 1.f, cw);
+        x += cw + si (4);
+    }
 
  // ── Separator before EQ group ───────────────────────────────────────────
- drawSep (col2, row2y);
+ g.setColour (getTheme().separator.withAlpha (0.5f));
+ g.drawVerticalLine (x + 2, (float) row2y + 4.f, (float) row2y + 28.f);
+ x += si (8);
 
- // ── EQ knobs: LOW | MID | HIGH | FREQ | Q ───────────────────────────────────
+ // ── EQ knobs: LOW | MID | FREQ | Q | HIGH ───────────────────────────────────
  {
      auto gainStr = [](float db) -> juce::String {
          return (db >= 0.f ? "+" : "") + juce::String (db, 1) + "dB";
      };
 
      int eqCw = 0;
-     x = colX (col2++);
      drawKnobCell (g, x, row2y, "LOW", gainStr (effEqLow),
                    toNorm (F::FieldEqLowGain, effEqLow),
                    false, 0, F::FieldEqLowGain,
                    -18.f, 18.f, 0.1f, eqCw);
+     x += eqCw + si (4);
 
-     x = colX (col2++);
      drawKnobCell (g, x, row2y, "MID", gainStr (effEqMidG),
                    toNorm (F::FieldEqMidGain, effEqMidG),
                    false, 0, F::FieldEqMidGain,
                    -18.f, 18.f, 0.1f, eqCw);
+     x += eqCw + si (4);
 
-     x = colX (col2++);
      drawKnobCell (g, x, row2y, "HIGH", gainStr (effEqHigh),
                    toNorm (F::FieldEqHighGain, effEqHigh),
                    false, 0, F::FieldEqHighGain,
                    -18.f, 18.f, 0.1f, eqCw);
+     x += eqCw + si (4);
 
-     x = colX (col2++);
      drawKnobCell (g, x, row2y, "FREQ",
                    juce::String ((int) effEqMidF) + "Hz",
                    toNorm (F::FieldEqMidFreq, effEqMidF),
                    false, 0, F::FieldEqMidFreq,
                    200.f, 8000.f, 10.f, eqCw);
+     x += eqCw + si (4);
 
-     x = colX (col2++);
      drawKnobCell (g, x, row2y, "Q",
                    juce::String (effEqMidQ, 1),
                    toNorm (F::FieldEqMidQ, effEqMidQ),
                    false, 0, F::FieldEqMidQ,
                    0.5f, 4.f, 0.01f, eqCw);
+     x += eqCw + si (4);
+
  }
 
- // The per-slice level METER that used to fill the rest of row 2 was removed:
- // its width now goes to the cells above (see "Column grid").
+ // ── Meter — takes remaining space after EQ ──────────────────────────────────
+ {
+     const int meterX = x + si (4);
+     const int meterW = juce::jmax (si (20), rightEdge - meterX - si (4));
+     const int meterY = row2y + si (4);
+     const int meterH = si (22);
+
+     // Background + border
+     g.setColour (getTheme().separator.withAlpha (0.20f));
+     g.fillRect (meterX, meterY, meterW, meterH);
+     g.setColour (getTheme().separator.withAlpha (0.50f));
+     g.drawRect (meterX, meterY, meterW, meterH);
+
+     if (idx >= 0 && idx < DysektProcessor::kMaxMeterSlices)
+     {
+         const float pkL = (sfzMode ? processor.slicePeak2L : processor.slicePeakL)[(size_t) idx].load (std::memory_order_relaxed);
+         const float pkR = (sfzMode ? processor.slicePeak2R : processor.slicePeakR)[(size_t) idx].load (std::memory_order_relaxed);
+         const int barH  = (meterH - 2) / 2;
+         const int inner = meterW - 4; // pixels available for signal fill
+
+         auto drawBar = [&] (int barY, float peak)
+         {
+             const int litW = juce::roundToInt (juce::jlimit (0.f, 1.f, peak) * (float) inner);
+             // Lit portion
+             if (litW > 0)
+             {
+                 // Green/accent section (0-75%)
+                 const int greenW = juce::jmin (litW, juce::roundToInt (0.75f * (float) inner));
+                 if (greenW > 0)
+                 {
+                     g.setColour (getTheme().accent.withAlpha (0.70f));
+                     g.fillRect (meterX + 2, barY, greenW, barH);
+                 }
+                 // Red section (75-100%)
+                 const int redStart = juce::roundToInt (0.75f * (float) inner);
+                 const int redW = litW - greenW;
+                 if (redW > 0)
+                 {
+                     g.setColour (juce::Colour (0xFFE05050).withAlpha (0.80f));
+                     g.fillRect (meterX + 2 + redStart, barY, redW, barH);
+                 }
+             }
+             // Unlit portion (dim)
+             const int unlitStart = litW;
+             const int unlitW     = inner - unlitStart;
+             if (unlitW > 0)
+             {
+                 g.setColour (getTheme().foreground.withAlpha (0.06f));
+                 g.fillRect (meterX + 2 + unlitStart, barY, unlitW, barH);
+             }
+         };
+
+         drawBar (meterY + 1,             pkL);
+         drawBar (meterY + 1 + barH + 1,  pkR);
+     }
+ }
+
+ {
+ g.setFont (DysektLookAndFeel::makeFont (7.5f * paintSf, true));
+ g.setColour (getTheme().foreground.withAlpha (0.40f));
+
+ auto drawGroupLabel = [&] (int x1, int x2, const char* label)
+ {
+ // Draw label centred over the group, sitting on the separator line
+ g.drawText (label, x1, 26, x2 - x1, 9,
+ juce::Justification::centred);
+ };
+
+ if (adsrGroupX2 > adsrGroupX1) drawGroupLabel (adsrGroupX1, adsrGroupX2, "");
+ }
 
 }
 
@@ -2321,14 +2383,14 @@ void SliceControlBar::drawChroBadgeCell (juce::Graphics& g, int x, int y,
     const bool active = (channel > 0);
 
     // Label
-    g.setFont (DysektLookAndFeel::makeFont (11.0f * paintSf));
+    g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
     g.setColour (locked ? theme.lockActive.withAlpha (0.8f)
                         : theme.foreground.withAlpha (0.42f));
-    g.drawText ("CHRO", x + juce::roundToInt (4.0f * paintSf), y, cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+    g.drawText ("CHRO", x + juce::roundToInt (4.0f * paintSf), y + juce::roundToInt (2.0f * paintSf), cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
     // Badge — stops 2px short of the cell bottom so it doesn't run flush to
     // the row divider below.
-    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (12.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (14.0f * paintSf);
+    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (13.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (13.0f * paintSf);
     fillBadge (g, juce::Rectangle<float> ((float) bx, (float) by, (float) bw, (float) bh),
                     active ? (locked ? theme.lockActive.withAlpha (0.15f)
                                      : theme.accent.withAlpha (0.15f))
@@ -2338,7 +2400,7 @@ void SliceControlBar::drawChroBadgeCell (juce::Graphics& g, int x, int y,
                                   : theme.foreground.withAlpha (0.22f)));
     g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
 
-    g.setFont (DysektLookAndFeel::makeMonoFont (12.0f * paintSf));
+    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : (locked ? theme.lockActive.withAlpha (0.5f)
                                   : theme.foreground.withAlpha (0.28f)));
@@ -2366,13 +2428,13 @@ void SliceControlBar::drawMixerToggleCell (juce::Graphics& g, int x, int y,
     const auto& theme = getTheme();
 
     // Label
-    g.setFont (DysektLookAndFeel::makeFont (11.0f * paintSf));
+    g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
     g.setColour (locked ? theme.lockActive.withAlpha (0.8f)
                         : theme.foreground.withAlpha (0.42f));
-    g.drawText ("MIX", x + juce::roundToInt (4.0f * paintSf), y, cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+    g.drawText ("MIX", x + juce::roundToInt (4.0f * paintSf), y + juce::roundToInt (2.0f * paintSf), cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
     // Toggle pill — same visual language as LGTO/other boolean toggles.
-    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (12.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (14.0f * paintSf);
+    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (13.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (13.0f * paintSf);
     const juce::Colour col = on ? (locked ? theme.lockActive : theme.accent)
                                : (locked ? theme.lockActive.withAlpha (0.4f)
                                          : theme.foreground.withAlpha (0.18f));
@@ -2381,7 +2443,7 @@ void SliceControlBar::drawMixerToggleCell (juce::Graphics& g, int x, int y,
     g.setColour (col);
     g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
 
-    g.setFont (DysektLookAndFeel::makeMonoFont (12.0f * paintSf));
+    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
     g.setColour (col);
     // "PINNED" reads clearer than ON here, since this isn't an audio param —
     // it's whether the slice has a row in MixerPanel at all. "AUTO" would be
@@ -2410,14 +2472,14 @@ void SliceControlBar::drawLegatoToggleCell (juce::Graphics& g, int x, int y,
     const auto& theme = getTheme();
 
     // Label
-    g.setFont (DysektLookAndFeel::makeFont (11.0f * paintSf));
+    g.setFont (DysektLookAndFeel::makeFont (10.0f * paintSf));
     g.setColour (locked ? theme.lockActive.withAlpha (0.8f)
                         : theme.foreground.withAlpha (0.42f));
-    g.drawText ("LGTO", x + juce::roundToInt (4.0f * paintSf), y, cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (12.0f * paintSf), juce::Justification::centredLeft);
+    g.drawText ("LGTO", x + juce::roundToInt (4.0f * paintSf), y + juce::roundToInt (2.0f * paintSf), cellW - juce::roundToInt (4.0f * paintSf), juce::roundToInt (11.0f * paintSf), juce::Justification::centredLeft);
 
     // Toggle pill — stops 2px short of the cell bottom so it doesn't run
     // flush to the row divider below.
-    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (12.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (14.0f * paintSf);
+    const int bx = x + juce::roundToInt (4.0f * paintSf), by = y + juce::roundToInt (13.0f * paintSf), bw = cellW - juce::roundToInt (8.0f * paintSf), bh = juce::roundToInt (13.0f * paintSf);
     const juce::Colour col = on ? (locked ? theme.lockActive : theme.accent)
                                : (locked ? theme.lockActive.withAlpha (0.4f)
                                          : theme.foreground.withAlpha (0.18f));
@@ -2426,7 +2488,7 @@ void SliceControlBar::drawLegatoToggleCell (juce::Graphics& g, int x, int y,
     g.setColour (col);
     g.drawRoundedRectangle ((float)bx, (float)by, (float)bw, (float)bh, 0.0f, 0.8f);
 
-    g.setFont (DysektLookAndFeel::makeMonoFont (12.0f * paintSf));
+    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * paintSf));
     g.setColour (col);
     g.drawText (on ? "ON" : "OFF", bx, by, bw, bh, juce::Justification::centred);
 
@@ -2480,7 +2542,7 @@ void SliceControlBar::showTextEditor (const ParamCell& cell, float currentValue)
 {
  textEditor = std::make_unique<juce::TextEditor>();
  addAndMakeVisible (*textEditor);
- textEditor->setBounds (cell.x + kParamCellTextX, cell.y + juce::jmax (0, (cell.h - 16) / 2),
+ textEditor->setBounds (cell.x + kParamCellTextX, cell.y + 14,
  cell.w - kParamCellTextX - 2, 16);
  textEditor->setFont (DysektLookAndFeel::makeFont (14.0f));
  textEditor->setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.brighter (0.15f));
