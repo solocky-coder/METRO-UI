@@ -104,10 +104,11 @@ void DrumPadView::paint (juce::Graphics& g)
         g.setColour (sel ? theme.accent.withAlpha (0.85f) : theme.button);
         g.fillRoundedRectangle (r, 4.0f * uiScale);
         g.setColour (sel ? theme.waveformBg : theme.foreground.withAlpha (0.85f));
-        g.setFont (juce::FontOptions (10.0f * uiScale, juce::Font::bold));
-        g.drawFittedText ("BANK " + juce::String (b + 1) + "  "
-                              + juce::String (b * kPadsPerBank) + "-" + juce::String (b * kPadsPerBank + kPadsPerBank - 1),
-                          r.toNearestInt().reduced ((int) (4 * uiScale), 0), juce::Justification::centred, 1);
+        // Label is just "BANK n" -- the note range is not shown. Font follows the
+        // button height so it stays large and readable.
+        g.setFont (juce::FontOptions (juce::jlimit (13.0f * uiScale, 24.0f * uiScale, r.getHeight() * 0.46f), juce::Font::bold));
+        g.drawFittedText ("BANK " + juce::String (b + 1),
+                          r.toNearestInt().reduced ((int) (4 * uiScale), 0), juce::Justification::centred, 1, 0.8f);
         if (DrumPadModel::bankHasZones (pads, b))
         {
             g.setColour (sel ? theme.waveformBg : theme.accent);
@@ -176,7 +177,7 @@ void DrumPadView::paint (juce::Graphics& g)
 void DrumPadView::resized()
 {
     auto r = getLocalBounds().reduced ((int) (8 * uiScale));
-    auto banks = r.removeFromTop ((int) (27 * uiScale));
+    auto banks = r.removeFromTop ((int) (36 * uiScale));
     const int gap = juce::jmax (2, (int) (4 * uiScale));
     const int bw  = (banks.getWidth() - (kNumBanks - 1) * gap) / kNumBanks;
     for (int b = 0; b < kNumBanks; ++b)
