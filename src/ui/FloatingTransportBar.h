@@ -108,6 +108,15 @@ public:
 
     bool isDockedMode() const noexcept { return docked; }
 
+    /** Mirrors the currently selected hosted view onto the floating transport's
+        own switcher buttons, which are separate from the host window's buttons. */
+    void setActiveView (bool mixerActive, bool arrangeActive, bool eqActive)
+    {
+        mixerButton.setToggleState (mixerActive, juce::dontSendNotification);
+        arrangeButton.setToggleState (arrangeActive, juce::dontSendNotification);
+        eqButton.setToggleState (eqActive, juce::dontSendNotification);
+    }
+
     /** Docks (or undocks, with nullptrs) external view-switcher buttons —
      *  e.g. ArrangeView's Mixer/Arranger/EQ toggle — into the title strip's
      *  left side in place of this panel's own internal mixer/arrange/eq
