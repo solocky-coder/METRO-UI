@@ -30,6 +30,12 @@ public:
         setUsingNativeTitleBar (true);
         setResizable (true, false);
 
+        // The window has to enforce the editor's minimum size itself: the editor's own
+        // setResizeLimits() only constrains the editor component, not this native window,
+        // so without this Windows is free to restore the window to any size at all.
+        windowConstrainer.setMinimumSize (kBaseW / 2, kTotalH / 2 + kMenuH);
+        setConstrainer (&windowConstrainer);
+
         // Restores the configuration saved from Audio Settings (if any); falls back to the
         // default device when nothing is saved or the saved state is missing/corrupt.
         AudioDeviceSettingsStore::initialiseDeviceManager (deviceManager, 0, 2);
@@ -101,6 +107,7 @@ public:
         setSize (editor->getWidth(), editor->getHeight() + kMenuH);
         setVisible (true);
         centreWithSize (getWidth(), getHeight());
+        lastNormalBounds = getBounds();   // the size to come back to when un-maximised
         setFullScreen (true);
         startTimerHz (5);
     }
@@ -114,6 +121,7 @@ public:
                 (menuBar != nullptr) ? kMenuH : 0);
             editor->setBounds (contentArea);
         }
+        trackWindowState();
     }
 
     ~MainWindow() override
@@ -125,6 +133,10 @@ public:
         //    un-maximise it, shrink it and re-grow it, which shows up as the window
         //    repeatedly flashing/resizing before it finally disappears.
         setVisible (false);
+
+        // The window peer keeps a pointer to windowConstrainer (a member, destroyed before
+        // the DocumentWindow base), so detach it while the member is still alive.
+        setConstrainer (nullptr);
 
         // 2) Detach the editor BEFORE removing the menu bar. The editor is set as
         //    non-owned content with resizeToFit = true, so while it is attached,
@@ -619,6 +631,75 @@ private:
         if (midiRouter != nullptr) midiRouter->refresh();
     }
 
+    // ── Restore guard ────────────────────────────────────────────────────────────
+    // The window starts maximised. Dragging a maximised window by its title bar (for
+    // example onto another monitor) makes Windows restore it, and the size it restores
+    // to can come out tiny, because the editor inside lays everything out from the
+    // window height. So: remember the last sensible un-maximised size, and the moment
+    // the window leaves the maximised state, put it back to that size (clamped to the
+    // monitor it is now on) if the OS gave us something clearly smaller.
+    void trackWindowState()
+    {
+        if (isFullScreen())
+        {
+            wasMaximised = true;
+            return;
+        }
+
+        if (wasMaximised)
+        {
+            // Just left the maximised state. Don't record this transitional size.
+            wasMaximised = false;
+            if (! restoreFixPending && ! lastNormalBounds.isEmpty())
+            {
+                restoreFixPending = true;
+                juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainWindow> (this)]
+                {
+                    if (safe != nullptr)
+                        safe->fitRestoredWindow();
+                });
+            }
+            return;
+        }
+
+        if (! restoreFixPending && getWidth() > 0 && getHeight() > 0)
+            lastNormalBounds = getBounds();   // an ordinary user resize or move
+    }
+
+    void fitRestoredWindow()
+    {
+        restoreFixPending = false;
+        if (isFullScreen() || lastNormalBounds.isEmpty())
+            return;
+
+        const auto& desktop = juce::Desktop::getInstance();
+        const auto mouse = desktop.getMousePosition();
+        const auto* display = desktop.getDisplays().getDisplayForPoint (mouse);
+        const auto area = (display != nullptr) ? display->userArea : getScreenBounds();
+
+        // Same rule as the first launch: never larger than 90% of the monitor it is on.
+        const int w = juce::jmin (lastNormalBounds.getWidth(),  juce::roundToInt (area.getWidth()  * 0.90));
+        const int h = juce::jmin (lastNormalBounds.getHeight(), juce::roundToInt (area.getHeight() * 0.90));
+
+        // The OS restored a sensible size: nothing to fix.
+        if (getWidth() >= juce::roundToInt (w * 0.9f) && getHeight() >= juce::roundToInt (h * 0.9f))
+        {
+            lastNormalBounds = getBounds();
+            return;
+        }
+
+        // Keep the grab point under the cursor so a drag in progress still feels right.
+        const auto old = getBounds();
+        const float grabX = old.getWidth() > 0
+                              ? juce::jlimit (0.1f, 0.9f, (float) (mouse.x - old.getX()) / (float) old.getWidth())
+                              : 0.5f;
+        auto fitted = juce::Rectangle<int> (w, h)
+                          .withPosition (mouse.x - juce::roundToInt (grabX * (float) w), old.getY())
+                          .constrainedWithin (area);
+        setBounds (fitted);
+        lastNormalBounds = getBounds();
+    }
+
     juce::AudioDeviceManager deviceManager;
     juce::AudioProcessorPlayer player;
     juce::StringArray registeredMidiInputIds;
@@ -631,6 +712,11 @@ private:
     std::unique_ptr<juce::MenuBarComponent> menuBar;
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::File currentProjectFile;
+
+    juce::ComponentBoundsConstrainer windowConstrainer;
+    juce::Rectangle<int> lastNormalBounds;   // last sensible un-maximised bounds (see trackWindowState)
+    bool wasMaximised = false;
+    bool restoreFixPending = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainWindow)
 };
