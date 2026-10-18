@@ -87,6 +87,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
         b->setColour (juce::TextButton::textColourOffId, Base::White);
         b->setColour (juce::TextButton::textColourOnId, Base::White);
         b->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xFF5B3C8A));
+        b->setRadioGroupId (9202);
         b->setClickingTogglesState (true);
     }
     mixerButton.onClick   = [this] { if (onMixerRequested)    onMixerRequested(); };
