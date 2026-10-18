@@ -158,32 +158,17 @@ void DrumPadView::paint (juce::Graphics& g)
             g.drawRoundedRectangle (r.reduced (1.5f), corner, 2.0f * uiScale);
         }
 
-        g.setColour (theme.foreground.withAlpha (populated ? 0.95f : 0.45f));
-        g.setFont (juce::FontOptions (10.0f * uiScale, juce::Font::bold));
-        g.drawText (noteName (n), r.removeFromTop (16.0f * uiScale).toNearestInt(), juce::Justification::centred);
-
+        // Only the sample name is drawn on a pad -- big and bold so it reads at a
+        // glance on stage. Size follows the pad (the grid stretches with the
+        // window), clamped so tiny windows stay legible and huge ones don't
+        // shout. Long names wrap to two lines, then shrink-to-fit.
         if (populated)
         {
-            auto bottom = r.removeFromBottom (13.0f * uiScale);
-            g.setFont (juce::FontOptions (9.0f * uiScale));
-            g.drawFittedText (p.name, r.reduced (3.0f * uiScale).toNearestInt(), juce::Justification::centred, 2);
-            g.setFont (juce::FontOptions (8.0f * uiScale, juce::Font::bold));
-            g.setColour (theme.foreground.withAlpha (0.75f));
-            g.drawText (p.bus == 0 ? juce::String ("OUT MAIN") : "OUT " + juce::String (p.bus),
-                        bottom.toNearestInt(), juce::Justification::centred);
-
-            if (p.layers > 1)
-            {
-                const auto badge = juce::Rectangle<float> (padBounds[(size_t) i].toFloat().getRight() - 22.0f * uiScale,
-                                                           padBounds[(size_t) i].toFloat().getY() + 2.0f * uiScale,
-                                                           20.0f * uiScale, 14.0f * uiScale);
-                g.setColour (theme.waveformBg.withAlpha (0.9f));
-                g.fillRoundedRectangle (badge, 7.0f * uiScale);
-                g.setColour (theme.foreground);
-                g.setFont (juce::FontOptions (8.0f * uiScale, juce::Font::bold));
-                g.drawText (juce::String::charToString ((juce::juce_wchar) 0x00D7) + juce::String (p.layers),
-                            badge.toNearestInt(), juce::Justification::centred);
-            }
+            const float fontSize = juce::jlimit (13.0f * uiScale, 34.0f * uiScale, r.getHeight() * 0.30f);
+            g.setColour (theme.foreground);
+            g.setFont (juce::FontOptions (fontSize, juce::Font::bold));
+            g.drawFittedText (p.name, r.reduced (8.0f * uiScale, 4.0f * uiScale).toNearestInt(),
+                              juce::Justification::centred, 2, 0.7f);
         }
     }
 }
