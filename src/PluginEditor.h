@@ -33,7 +33,6 @@
 #include "ui/Sf2InstrumentWorkspace.h"
 #include "ui/SfzPlayerDropdownPanel.h"
 #include "ui/GlobalEqPanel.h"
-#include "ui/PadGridView.h"
 #include "ui/multisampler/MultisamplerEditor.h"
 #if DYSEKT_STANDALONE
 #include "ui/PianoRollPanel.h"
@@ -152,7 +151,6 @@ private:
     /// 0 = Waveform View (original UI — never overwritten).
     /// 1 = MULTISAMPLER.
     int  uiMode = 0;
-    bool showPadGrid     = false;  ///< true = PadGridView, false = WaveformView (within uiMode 0)
 
     /// Sticky "last shown" zone for syncMultisamplerDisplay()'s fallback tier —
     /// tracked by id (not index) so it survives zone reordering/insertion, and
@@ -286,7 +284,6 @@ private:
 
     FileBrowserPanel browserPanel;
     MixerPanel       mixerPanel;
-    PadGridView      padGridView;
     MultisamplerEditor multisamplerEditor { processor }; // MULTISAMPLER tab — permanent content, sole zone editor
     Sf2InstrumentWorkspace sfzDropdown;   // name kept — see all call sites below
     SfzPlayerDropdownPanel sfzPlayerDropdown;

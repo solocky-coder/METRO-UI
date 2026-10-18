@@ -21,12 +21,6 @@ public:
     // Called by the parent editor's timer — starts/stops the pulse as needed
     void updateMidiLearnPulse();
 
-    // PAD/WAVE view toggle — set externally by the editor and reflected in the button.
-    void setPadViewActive (bool on) { padViewActive = on; repaint(); }
-    bool getPadViewActive() const noexcept { return padViewActive; }
-
-    /// Fired when the user clicks the PAD/WAVE toggle button.
-    std::function<void (bool padActive)> onPadViewToggle;
 
     // MULTISAMPLER is the permanent content of the SFZ-PLAYER/MULTISAMPLER
     // tab now (see METRO-UI Multisampler Implementation Plan §5.2/5.3) — no
@@ -88,9 +82,6 @@ private:
     float pulsePhase    = 0.0f;   // 0..1, advances each timer tick
     bool  wasArmed      = false;  // tracks arm state across updateMidiLearnPulse calls
     int   lastLiveDrag  = -1;      // last liveDragBoundsStart value seen, for repaint gating
-    bool  padViewActive = false;   // mirrors editor showPadGrid
-    juce::Rectangle<int> padToggleBtnArea;  // hit-tested in mouseDown — PADS button
-    juce::Rectangle<int> waveToggleBtnArea; // hit-tested in mouseDown — WAVE button
 
     // Selected-zone readout state — see setSfzZoneSummary() doc comment above.
     struct SfzZoneSummary
@@ -189,9 +180,6 @@ private:
 
     void drawLockIcon (juce::Graphics& g, int x, int y, bool locked);
     // PADS/WAVE (Slicer) or MULTI (SFZ-PLAYER) toggle button(s), top-right corner.
-    // Independent of per-slice state — must be drawn even when no slice is
-    // selected, so MULTI stays reachable on an empty/not-yet-populated kit.
-    void drawViewToggleButtons (juce::Graphics& g);
     // Compact per-zone readout drawn in place of the normal slice-param row
     // when the SFZ-PLAYER MULTISAMPLER view is active — see setSfzZoneSummary().
     void drawSfzZoneSummary (juce::Graphics& g, int x, int y, int width, int height) const;

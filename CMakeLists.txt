@@ -184,7 +184,6 @@ target_sources(Dysekt PRIVATE
     src/ui/MidiLearnDialog.cpp
     src/ui/MixerPanel.cpp
     src/ui/ShortcutsPanel.cpp
-    src/ui/PadGridView.cpp
     src/ui/SliceWaveformLcd.cpp
     src/ui/MultisamplerWaveformLcd.cpp
     src/ui/Sf2LcdDisplay.cpp
@@ -301,7 +300,6 @@ target_sources(DysektStandalone PRIVATE
     src/ui/MidiLearnDialog.cpp
     src/ui/MixerPanel.cpp
     src/ui/ShortcutsPanel.cpp
-    src/ui/PadGridView.cpp
     src/ui/SliceWaveformLcd.cpp
     src/ui/MultisamplerWaveformLcd.cpp
     src/ui/Sf2LcdDisplay.cpp

@@ -19,7 +19,8 @@ namespace
             "direction",
             "eq1_freq", "eq1_gain", "eq1_bw", "eq2_freq", "eq2_gain", "eq2_bw",
             "eq3_freq", "eq3_gain", "eq3_bw",
-            "dysekt_zone_color", "dysekt_output_bus", "dysekt_show_in_mixer"
+            "dysekt_zone_color", "dysekt_output_bus", "dysekt_show_in_mixer",
+            "dysekt_drum_kit"
         };
         return s;
     }
@@ -657,6 +658,16 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
         }
 
         // Token::Type::opcode
+        // dysekt_drum_kit is instrument-level (see MultisamplerInstrument::
+        // drumKit), so it's honoured wherever it appears -- <global>,
+        // <control>, or a bare top-of-file opcode -- and never reaches a
+        // zone's opcode maps.
+        if (t.opcodeKey == "dysekt_drum_kit")
+        {
+            result.instrument.drumKit = t.opcodeValue.getIntValue() != 0;
+            continue;
+        }
+
         if (skippingHeaderBody)
         {
             if (inControlHeader)

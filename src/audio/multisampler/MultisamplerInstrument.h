@@ -39,6 +39,13 @@ struct MultisamplerInstrument
         or edited by METRO-UI, only carried through unchanged. */
     std::vector<juce::String> rawExtraHeaders;
 
+    /** True when this instrument is a drum kit: the multisampler opens it in
+        the 128-pad DRUM PADS view instead of the zone map. Set automatically
+        by the kit classifier on load (PluginEditor::offerDrumKitAutoRouting),
+        or manually via "Treat as drum kit". Persisted by InstrumentSerializer
+        ("drumKit") and, for plain SFZ, by the dysekt_drum_kit opcode. */
+    bool drumKit = false;
+
     float masterGainDb        = 0.0f;
     int   transposeSemitones  = 0;
     float fineTuneCents       = 0.0f;

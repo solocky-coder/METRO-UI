@@ -160,6 +160,8 @@ juce::String InstrumentSerializer::toJson (const MultisamplerInstrument& instrum
     root->setProperty ("transposeSemitones", instrument.transposeSemitones);
     root->setProperty ("fineTuneCents", instrument.fineTuneCents);
     root->setProperty ("maxVoices", instrument.maxVoices);
+    if (instrument.drumKit)   // omitted when false so non-kit files stay byte-identical
+        root->setProperty ("drumKit", true);
 
     juce::Array<juce::var> zonesArr;
     for (const auto& z : instrument.zones)
@@ -210,6 +212,7 @@ InstrumentSerializer::LoadResult InstrumentSerializer::fromJson (const juce::Str
     instrument.transposeSemitones  = (int) root.getProperty ("transposeSemitones", 0);
     instrument.fineTuneCents       = (float) (double) root.getProperty ("fineTuneCents", 0.0);
     instrument.maxVoices           = (int) root.getProperty ("maxVoices", 64);
+    instrument.drumKit             = (bool) root.getProperty ("drumKit", false);
 
     if (auto* zonesArr = root.getProperty ("zones", {}).getArray())
     {

@@ -15,6 +15,7 @@
 #include "../SfzExporter.h"
 #include "../InstrumentSerializer.h"
 #include "../MultisamplerPreviewSnapshot.h"
+#include "../DrumPadModel.h"
 #include <juce_core/juce_core.h>
 #include <algorithm>
 
@@ -100,6 +101,9 @@ public:
         testDefaultPathResolution();
         testControlHeaderWarningOnlyWhenOpcodesDropped();
         testNoteNameKeyOpcodes();
+        testDrumPadModel();
+        testDrumPadBankAutoSelect();
+        testDrumKitFlagRoundTrips();
     }
 
 private:
@@ -490,6 +494,126 @@ private:
             inst.addZone (makeZone (48, 59, false));
             const auto out = MultisamplerPreviewSnapshot::withMixerPinsOnWinningZones (inst);
             expect (! out.zones[0].showInMixer && ! out.zones[1].showInMixer);
+        }
+    }
+
+    // ── Drum pads (DrumPadModel.h) ──────────────────────────────────────────
+    static SampleZone padZone (int lo, int hi, int root, const char* file = "k.wav", bool enabled = true)
+    {
+        SampleZone z;
+        z.lowKey = lo; z.highKey = hi; z.rootKey = root;
+        z.enabled = enabled;
+        z.sampleFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (file);
+        return z;
+    }
+
+    void testDrumPadModel()
+    {
+        using namespace DrumPadModel;
+
+        beginTest ("Pad model: empty instrument -> 128 empty pads");
+        {
+            const auto m = buildPadModel ({});
+            for (const auto& p : m) expect (p.layers == 0 && p.zoneIndex == -1);
+        }
+
+        beginTest ("Pad model: single-key zone, notes 0 and 127");
+        {
+            std::vector<SampleZone> z { padZone (0, 0, 0, "lo.wav"), padZone (127, 127, 127, "hi.wav") };
+            z[0].outputBus = 3;
+            const auto m = buildPadModel (z);
+            expect (m[0].layers == 1 && m[0].isRoot && m[0].bus == 3 && m[0].name == "lo");
+            expect (m[127].layers == 1 && m[127].name == "hi");
+            expect (m[1].layers == 0 && m[126].layers == 0);
+        }
+
+        beginTest ("Pad model: multi-key zone covers every key; only the root is flagged");
+        {
+            const auto m = buildPadModel ({ padZone (36, 38, 37) });
+            expect (m[36].layers == 1 && ! m[36].isRoot);
+            expect (m[37].layers == 1 && m[37].isRoot);
+            expect (m[38].layers == 1 && ! m[38].isRoot);
+            expect (m[35].layers == 0 && m[39].layers == 0);
+        }
+
+        beginTest ("Pad model: two velocity layers on one note -> layers == 2, root zone is primary");
+        {
+            const auto m = buildPadModel ({ padZone (36, 37, 37, "a.wav"), padZone (36, 36, 36, "b.wav") });
+            expect (m[36].layers == 2);
+            expect (m[36].zoneIndex == 1 && m[36].isRoot && m[36].name == "b");   // rooted here beats first-listed
+            expect (m[37].layers == 1 && m[37].zoneIndex == 0);
+        }
+
+        beginTest ("Pad model: disabled zone excluded, and does not consume a colour slot");
+        {
+            const auto m = buildPadModel ({ padZone (36, 36, 36, "a.wav"),
+                                            padZone (37, 37, 37, "off.wav", false),
+                                            padZone (38, 38, 38, "c.wav") });
+            expect (m[37].layers == 0);
+            expect (m[36].colourIndex == 0);
+            expect (m[38].colourIndex == 1);   // same indexing as ZoneMapView (enabled zones only)
+        }
+
+        beginTest ("Pad model: inverted range guarded, out-of-range keys clamped");
+        {
+            const auto bad = buildPadModel ({ padZone (50, 40, 45) });
+            for (const auto& p : bad) expect (p.layers == 0);
+            const auto clamped = buildPadModel ({ padZone (-5, 3, 0) });
+            expect (clamped[0].layers == 1 && clamped[3].layers == 1 && clamped[4].layers == 0);
+        }
+
+        beginTest ("Pad model: custom colour carried through");
+        {
+            auto z = padZone (60, 60, 60);
+            z.hasCustomColour = true; z.customColourArgb = 0xFF112233;
+            const auto m = buildPadModel ({ z });
+            expect (m[60].hasCustomColour && m[60].customColourArgb == 0xFF112233u);
+        }
+    }
+
+    void testDrumPadBankAutoSelect()
+    {
+        using namespace DrumPadModel;
+        beginTest ("Bank auto-select: GM kit 35-81 -> bank 3 (index 2, holds note 36)");
+        expect (selectInitialBank (buildPadModel ({ padZone (35, 81, 36) })) == 2);
+
+        beginTest ("Bank auto-select: kit only in bank 8 -> index 7");
+        expect (selectInitialBank (buildPadModel ({ padZone (120, 127, 124) })) == 7);
+
+        beginTest ("Bank auto-select: empty -> bank 1");
+        expect (selectInitialBank (buildPadModel ({})) == 0);
+
+        beginTest ("Bank auto-select: no zone at note 36 -> lowest populated bank");
+        expect (selectInitialBank (buildPadModel ({ padZone (64, 66, 64) })) == 4);
+    }
+
+    void testDrumKitFlagRoundTrips()
+    {
+        beginTest ("drumKit flag survives JSON round trip, and defaults to false");
+        {
+            MultisamplerInstrument inst;
+            inst.addZone (padZone (36, 36, 36));
+            expect (! InstrumentSerializer::fromJson (InstrumentSerializer::toJson (inst)).instrument.drumKit);
+            inst.drumKit = true;
+            const auto r = InstrumentSerializer::fromJson (InstrumentSerializer::toJson (inst));
+            expect (r.success && r.instrument.drumKit);
+        }
+
+        beginTest ("drumKit flag survives SFZ export -> import via dysekt_drum_kit, and leaks nowhere else");
+        {
+            MultisamplerInstrument inst;
+            inst.addZone (padZone (36, 36, 36));
+            inst.drumKit = true;
+            const auto text = SfzExporter::render (inst, juce::File());
+            expect (text.contains ("dysekt_drum_kit=1"));
+            const auto r = SfzImporter::importText (text, juce::File::getSpecialLocation (juce::File::tempDirectory));
+            expect (r.success && r.instrument.drumKit);
+            for (const auto& z : r.instrument.zones)
+                for (const auto& kv : z.extraOpcodes)
+                    expect (! kv.first.contains ("dysekt_drum_kit"));
+
+            inst.drumKit = false;
+            expect (! SfzExporter::render (inst, juce::File()).contains ("dysekt_drum_kit"));
         }
     }
 };

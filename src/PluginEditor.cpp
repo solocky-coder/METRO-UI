@@ -43,7 +43,6 @@ DysektEditor::DysektEditor (DysektProcessor& p)
       eqPanel (p),
  sfzDropdown (p),
  sfzPlayerDropdown (p),
- padGridView (p),
  shortcutsPanel (p)
 {
  juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
@@ -120,17 +119,6 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      sfzPlayer2PanelRestored = false;
  };
 
- addChildComponent (padGridView);
- padGridView.onRenameRequest = [this] (int sliceIdx, const juce::String& currentName)
- {
-     showSliceRenameOverlay (sliceIdx, currentName);
- };
- sliceControlBar.onPadViewToggle = [this] (bool on)
- {
-     showPadGrid = on;
-     resized();
-     repaint(); // clear waveform/overview areas vacated by the old view
- };
  // SliceControlBar::onSfzZoneParamEdited is intentionally left unwired —
 // the SCB has no MULTISAMPLER-facing role any more, now that
 // multisamplerEditor's own zoneLcd is both the display and edit surface
@@ -849,8 +837,6 @@ void DysektEditor::setUiMode (int mode)
  // midiRouteMode) because syncMidiRouteMode() below overwrites midiRouteMode
  // to Sequencer whenever the Arranger has focus.
  processor.activeUiTab.store (uiMode, std::memory_order_relaxed);
- // Leaving slicer mode — reset pad view to waveform
- if (uiMode != 0) { showPadGrid = false; sliceControlBar.setPadViewActive (false); }
  // Leaving Slicer while a trim session is still pending (file load hasn't
  // finished yet, so trimSession->active is still false) must cancel that
  // session outright. Otherwise the timerCallback poll at the bottom of this
@@ -901,7 +887,7 @@ void DysektEditor::setUiMode (int mode)
  // SFZ-player mode has no slice cap
 
  // Show waveform overview for slicer and sfz-player mode
- waveformOverview.setVisible (uiMode == 0 && !showPadGrid);
+ waveformOverview.setVisible (uiMode == 0);
 
  // Show/hide sfzDropdown based on mode. sfzPlayerDropdown is no longer
  // shown for any mode: SFZ-PLAYER is now a full second Slicer instance
@@ -1091,7 +1077,6 @@ void DysektEditor::toggleSoftWave()
  sf2WaveformLcd.setWaveformMode (waveformMode);
  sliceWaveformLcd.setWaveformMode (waveformMode);
  multisamplerWaveformLcd.setWaveformMode (waveformMode);
- padGridView.setWaveformMode (waveformMode);
  headerBar.setBrowserActive (activeSlot == SlotContent::Browser);
  headerBar.setWaveMode (waveformMode);
  saveUserSettings (getTheme().name);
@@ -1178,15 +1163,6 @@ juce::String DysektEditor::resolveThemeKeyAt (juce::Component* hit, juce::Point<
 {
     if (hit == nullptr || hit == this)
         return "background";
-
-    if (hit == &padGridView || padGridView.isParentOf (hit))
-    {
-        const auto localPt = padGridView.getLocalPoint (this, posInEditor);
-        const int idx = padGridView.slicePadIndexAt (localPt);
-        if (idx >= 0)
-            return "slice" + juce::String (idx + 1);
-        return "darkBar"; // clicked the grid's own background, not a pad
-    }
 
     if (hit == &mixerPanel || mixerPanel.isParentOf (hit))
     {
@@ -1311,11 +1287,10 @@ void DysektEditor::paint (juce::Graphics& g)
 
  // Draw the CRT frame in waveform mode, or whenever trim mode forces the waveform visible
  const bool wvVisible  = waveformView.isVisible() && waveformView.getHeight() > 0;
- const bool padVisible = padGridView.isVisible()  && padGridView.getHeight()  > 0;
 
- if (wvVisible || padVisible)
+ if (wvVisible)
  {
- const auto& frameSrc = wvVisible ? waveformView.getBounds() : padGridView.getBounds();
+ const auto& frameSrc = waveformView.getBounds();
  const auto outerF = waveformFrameRect (*this, frameSrc, trimDialog != nullptr);
 
  if (getTheme().name == "metro")
@@ -1354,15 +1329,14 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  if (modalActive) return;
 
  const bool wvVisible  = waveformView.isVisible() && waveformView.getHeight() > 0;
- const bool padVisible = padGridView.isVisible()  && padGridView.getHeight()  > 0;
 
  // Scale all border pixel amounts proportionally to avoid sub-pixel overlap
  // at non-integer UI scales (1.5×, 1.75× etc.)
  const float sf = (float) designArea.getHeight() / (float) kTotalH;
 
- if (wvVisible || padVisible)
+ if (wvVisible)
  {
- const auto& frameSrc = wvVisible ? waveformView.getBounds() : padGridView.getBounds();
+ const auto& frameSrc = waveformView.getBounds();
  const auto outerF = waveformFrameRect (*this, frameSrc, trimDialog != nullptr);
  const auto ac = getTheme().accent;
 
@@ -1813,7 +1787,7 @@ void DysektEditor::resized()
  // is never the content on screen in the MULTISAMPLER tab any more (that
  // tab's permanent content is zoneMapView, a 2D key/velocity grid with no
  // zoom concept of its own yet) — so it's Slicer-only now.
- if (uiMode == 0 && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample && !showPadGrid)
+ if (uiMode == 0 && ! inlineMixerOpen && !normalBrowserOpen && hasRealSample)
  {
      auto overviewRow = area.removeFromBottom (kOverviewRowH);
      const int overviewY = overviewRow.getY() + kInterGap;
@@ -1826,9 +1800,6 @@ void DysektEditor::resized()
      waveformOverview.setVisible (false);
      waveformOverview.setBounds ({});
  }
-
- if (showPadGrid)
-     overviewTopGuard = area.getBottom();
  }
 
  const int kFrameX = kFX;
@@ -1863,7 +1834,6 @@ void DysektEditor::resized()
      waveformView.setVisible (false);       waveformView.setBounds ({});
      sfzDropdown.setVisible  (false);       sfzDropdown.setBounds  ({});
      sfzPlayerDropdown.setVisible (false);  sfzPlayerDropdown.setBounds ({});
-     padGridView.setVisible  (false);       padGridView.setBounds  ({});
      multisamplerEditor.setVisible (false);  multisamplerEditor.setBounds ({});
  }
  else if (initBrowserOpen)
@@ -1873,21 +1843,13 @@ void DysektEditor::resized()
      waveformView.setVisible (false);       waveformView.setBounds ({});
      sfzDropdown.setVisible  (false);       sfzDropdown.setBounds  ({});
      sfzPlayerDropdown.setVisible (false);  sfzPlayerDropdown.setBounds ({});
-     padGridView.setVisible  (false);       padGridView.setBounds  ({});
      multisamplerEditor.setVisible (false);  multisamplerEditor.setBounds ({});
  }
  else if (uiMode == 0 || trimActive)
  {
-     // Slicer mode — WaveformView or PadGridView depending on toggle
-     const bool showPads = showPadGrid && ! trimActive;
-
-     waveformView.setVisible (! showPads);
-     waveformView.setBounds (showPads ? juce::Rectangle<int>()
-                                      : juce::Rectangle<int> (screenX, y, screenW, waveH));
-
-     padGridView.setVisible (showPads);
-     padGridView.setBounds (showPads ? juce::Rectangle<int> (screenX, y, screenW, waveH)
-                                     : juce::Rectangle<int>());
+     // Slicer mode — WaveformView
+     waveformView.setVisible (true);
+     waveformView.setBounds (juce::Rectangle<int> (screenX, y, screenW, waveH));
 
      sfzDropdown.setVisible (false);
      sfzDropdown.setBounds ({});
@@ -1908,8 +1870,6 @@ void DysektEditor::resized()
 
     waveformView.setVisible (false);
     waveformView.setBounds ({});
-    padGridView.setVisible (false);
-    padGridView.setBounds ({});
 
     // multisamplerEditor draws its own complete LCD-style frame internally,
     // unlike waveformView/padGridView which rely on PluginEditor's
@@ -1941,8 +1901,6 @@ void DysektEditor::resized()
      sfzPlayerDropdown.setBounds ({});
      waveformView.setVisible (false);
      waveformView.setBounds ({});
-     padGridView.setVisible (false);
-     padGridView.setBounds ({});
      multisamplerEditor.setVisible (false);
      multisamplerEditor.setBounds ({});
  }
@@ -2276,7 +2234,7 @@ void DysektEditor::timerCallback()
  const bool waveformAnimating = waveformInteracting || previewActive
  || playbackActive || (slicingActive && processor.lazyChop.isActive())
  || (slicingActive && processor.liveDragSliceIdx.load (std::memory_order_relaxed) >= 0);
- const bool waveformShowing = ((uiMode == 0 || uiMode == 1) && ! showPadGrid) || processor.trimModeActive.load (std::memory_order_relaxed);
+ const bool waveformShowing = (uiMode == 0 || uiMode == 1) || processor.trimModeActive.load (std::memory_order_relaxed);
  const bool waveformNeedsRepaint = waveformShowing && (uiChanged || viewportChanged || waveformAnimating || lastWaveformAnimating);
  const bool laneNeedsRepaint = slicingActive && waveformShowing && (uiChanged || viewportChanged || previewActive || lastPreviewActive);
 
@@ -2330,7 +2288,6 @@ void DysektEditor::timerCallback()
  if (laneNeedsRepaint) sliceLane.repaint();
 
  // SFZ player refresh
-    if (showPadGrid) padGridView.repaintGrid();
 
  // uiMode==1 (SFZ-PLAYER) uses waveformView — repainted above with uiMode==0 path.
  // uiMode==2 (SF2-PLAYER): repaint sfzDropdown (SF2 program grid)
@@ -2379,7 +2336,7 @@ void DysektEditor::timerCallback()
  resized(); repaint();
  }
 
- const bool overviewShouldShow = hasRealSampleNow && (uiMode == 0) && !showPadGrid;
+ const bool overviewShouldShow = hasRealSampleNow && (uiMode == 0);
  if (overviewShouldShow != waveformOverview.isVisible())
  {
  waveformOverview.setVisible (overviewShouldShow);
@@ -2618,7 +2575,6 @@ void DysektEditor::loadUserSettings()
  sf2WaveformLcd.setWaveformMode (waveformMode);
  sliceWaveformLcd.setWaveformMode (waveformMode);
  multisamplerWaveformLcd.setWaveformMode (waveformMode);
- padGridView.setWaveformMode (waveformMode);
  headerBar.dualFrame().setPadGridActive (false);
  headerBar.setWaveMode (waveformMode);
  headerBar.setMidiFollowActive (processor.midiSelectsSlice.load());
@@ -2693,7 +2649,13 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
     // Require a few zones before bothering the user -- a 2-zone "kit"
     // isn't worth a prompt even if the heuristic fires.
     if (! classification.isPercussive || classification.numZones < 3)
-        return;
+        return;   // not a kit: setInstrument() already opened the ZONES view (or the
+                  // file's own dysekt_drum_kit flag opened PADS)
+
+    // A detected kit opens in the DRUM PADS view as part of the load -- before
+    // the Assign/Skip prompt below, which then appears over the pads. Not
+    // user-initiated, so the instrument is not marked dirty.
+    multisamplerEditor.setKitMode (true);
 
     confirmOverlay = std::make_unique<ConfirmOverlay> (
         "Drum Kit Detected",

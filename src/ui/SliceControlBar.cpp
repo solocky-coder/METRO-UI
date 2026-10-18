@@ -74,11 +74,6 @@ bool SliceControlBar::isSfzPlayer2Mode() const noexcept
 
 juce::String SliceControlBar::themeKeyAt (juce::Point<int> p) const
 {
-    // PADS/WAVE toggle buttons — drawn from theme.button (see
-    // drawViewToggleButtons) — aren't part of the `cells` vector below.
-    if (padToggleBtnArea.contains (p) || waveToggleBtnArea.contains (p))
-        return "button";
-
     for (const auto& c : cells)
     {
         if (! juce::Rectangle<int> (c.x, c.y, c.w, c.h).contains (p))
@@ -954,8 +949,7 @@ void SliceControlBar::paint (juce::Graphics& g)
  const auto& ui = sfzMode ? processor.getUiSliceSnapshot2() : processor.getUiSliceSnapshot();
  int idx = ui.selectedSlice;
  int numSlices = ui.numSlices;
- const int kToggleBtnW = si (52);
- int rightEdge = getWidth() - si (8) - kToggleBtnW * 2 - si (4) - si (6); // two buttons + gap
+ int rightEdge = getWidth() - si (8) - si (6); // PADS/WAVE buttons removed: full width
  int row1y = si (7), row2y = si (38); // centred: (72-59)/2 = 6.5 -> 7px top padding
  if (sfzMode)
  {
@@ -976,7 +970,6 @@ void SliceControlBar::paint (juce::Graphics& g)
      // MULTISAMPLER-facing display role left. Skip straight to the
      // toggle/SAVE buttons instead of falling into the Slicer-slice
      // bailout below.
-     drawViewToggleButtons (g);
      return;
  }
  if (idx < 0 || idx >= numSlices)
@@ -984,9 +977,6 @@ void SliceControlBar::paint (juce::Graphics& g)
  g.setFont (DysektLookAndFeel::makeFont (15.0f * paintSf));
  g.setColour (getTheme().foreground.withAlpha (0.35f));
  g.drawText ("No slice selected", si (8), si (24), si (220), si (18), juce::Justification::centredLeft);
- // Toggle buttons (PADS/WAVE or MULTI) are independent of slice selection —
- // draw them even here, or MULTI becomes unreachable on an empty kit.
- drawViewToggleButtons (g);
  return;
  }
 
@@ -1423,10 +1413,6 @@ locked, kLockRelease, F::FieldRelease, 0.f, relMaxSec, 0.001f, cw);
  if (adsrGroupX2 > adsrGroupX1) drawGroupLabel (adsrGroupX1, adsrGroupX2, "");
  }
 
- // ── PAD / WAVE — two separate toggle buttons side by side ────────────────────────────────────
- // PAD MODE is a Slicer-only feature. The SFZ-PLAYER SCB has no pad grid, so
- // we skip drawing (and hit-testing, see mouseDown) the toggle entirely there.
- drawViewToggleButtons (g);
 }
 
 // =============================================================================
@@ -1562,106 +1548,10 @@ void SliceControlBar::applySfzZoneDrag (int field, float value, bool commit)
 }
 
 // =============================================================================
-// drawViewToggleButtons
-// =============================================================================
-// Extracted so it can be called both from paint()'s normal path AND from the
-// early "No slice selected" branch above — this button row must stay visible
-// regardless of slice selection, otherwise MULTI becomes unreachable on an
-// empty/not-yet-populated SFZ-PLAYER kit.
-void SliceControlBar::drawViewToggleButtons (juce::Graphics& g)
-{
- auto si = [this] (int v) { return juce::roundToInt ((float) v * paintSf); };
- const int kToggleBtnW = si (52);
-
- if (! isSfzPlayer2Mode())
- {
-     const int btnY   = si (9);  // centred in row1 (y=7..35): (7+35-24)/2 = 9
-     const int btnH   = si (24);
-     const int gap    = si (4);
-     const int rightX = getWidth() - si (8);
-
-     padToggleBtnArea  = juce::Rectangle<int> (rightX - kToggleBtnW * 2 - gap, btnY, kToggleBtnW, btnH);
-     waveToggleBtnArea = juce::Rectangle<int> (rightX - kToggleBtnW,            btnY, kToggleBtnW, btnH);
-
-     g.setFont (DysektLookAndFeel::makeFont (9.5f * paintSf, true));
-
-     auto drawBtn = [&] (const juce::Rectangle<int>& area, const juce::String& label, bool active)
-     {
-         // Same chrome formula as DysektLookAndFeel::drawButtonBackground / the
-         // DualLcdControlFrame SLICER-SFZ-PLAYER-SF2-PLAYER drawTab lambda, so
-         // PADS/WAVE reads as the same "button" everywhere else in the UI: sprite
-         // base layer first, flat tint only as a fallback if the sprite is missing.
-         juce::Rectangle<float> rf = area.toFloat().reduced (0.5f);
-         const float r = 0.0f;   // flat, square corners
-         const auto accent  = getTheme().accent;
-         auto baseBg  = getTheme().button;
-         auto fillCol = active ? baseBg.interpolatedWith (accent, 0.18f) : baseBg;
-
-         auto stateDrawable = active ? IconManager::getButtonActive()
-                                      : IconManager::getButtonIdle();
-
-         if (stateDrawable != nullptr)
-             stateDrawable->drawWithin (g, rf, juce::RectanglePlacement::stretchToFit, 1.0f);
-         else
-         {
-             g.setColour (fillCol);
-             g.fillRoundedRectangle (rf, r);
-         }
-
-         const auto border = active
-             ? accent.withAlpha (0.80f)
-             : getTheme().separator.withAlpha (0.35f);
-         g.setColour (border);
-         g.drawRoundedRectangle (rf, r, 1.0f);
-
-         g.setColour (active
-             ? accent
-             : getTheme().foreground.withAlpha (0.50f));
-         g.drawText (label, area, juce::Justification::centred);
-     };
-
-     drawBtn (padToggleBtnArea,  "PADS",  padViewActive);
-     drawBtn (waveToggleBtnArea, "WAVE", !padViewActive);
- }
- else
- {
-     // SFZ-PLAYER/MULTISAMPLER mode: the SCB is never given nonzero bounds
-     // while this tab is active (see PluginEditor::resized()'s SCB-strip
-     // gate, which is Slicer-only now), so this branch never actually
-     // paints — nothing left for it to draw. PADS/WAVE never applied here
-     // either (MultisamplerEditor is the tab's permanent content).
-     padToggleBtnArea  = {};
-     waveToggleBtnArea = {};
- }
-}
-
-// =============================================================================
 // mouseDown
 // =============================================================================
 void SliceControlBar::mouseDown (const juce::MouseEvent& e)
 {
-    // ── PAD / WAVE — two separate buttons, each sets its own active state ───
-    // Slicer-only — see paint(). The SFZ-PLAYER SCB never shows this toggle.
-    if (e.mods.isLeftButtonDown() && ! isSfzPlayer2Mode())
-    {
-        if (padToggleBtnArea.contains (e.getPosition()) && !padViewActive)
-        {
-            padViewActive = true;
-            repaint();
-            if (onPadViewToggle) onPadViewToggle (true);
-            return;
-        }
-        if (waveToggleBtnArea.contains (e.getPosition()) && padViewActive)
-        {
-            padViewActive = false;
-            repaint();
-            if (onPadViewToggle) onPadViewToggle (false);
-            return;
-        }
-        if (padToggleBtnArea.contains (e.getPosition()) || waveToggleBtnArea.contains (e.getPosition()))
-            return; // already active — swallow click, no-op
-    }
-
  // ── Lock guard: block all param changes if selected slice is fully locked ─
  const bool sfzMode = isSfzPlayer2Mode();
  {

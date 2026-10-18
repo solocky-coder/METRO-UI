@@ -919,6 +919,29 @@ public:
     std::atomic<int> sfz2UiNoteOnRequest  { -1 };
     std::atomic<int> sfz2UiNoteOffRequest { -1 };
 
+    // SFZ-Player (sfzPlayer2) UI note FIFO -- used by the MULTISAMPLER drum
+    // pads. The single-slot atomics above hold ONE note-on and ONE note-off
+    // per audio block at a fixed velocity, so a fast pad roll (several
+    // clicks inside one block) loses hits. This is a small single-producer
+    // (message thread) / single-consumer (audio thread) queue of
+    // {note, velocity, on/off}, drained in processBlock() right beside the
+    // atomic path. Full queue = oldest-first drop of the NEW event (UI
+    // events are best-effort; the audio thread never blocks).
+    struct UiNoteEvent { std::uint8_t note = 0; std::uint8_t velocity = 100; bool on = true; };
+    void pushSfz2UiNote (int note, int velocity, bool on) noexcept
+    {
+        if (note < 0 || note > 127) return;
+        int s1, n1, s2, n2;
+        sfz2UiNoteFifo.prepareToWrite (1, s1, n1, s2, n2);
+        if (n1 + n2 < 1) return;
+        const int slot = n1 > 0 ? s1 : s2;
+        sfz2UiNoteBuf[(size_t) slot] = { (std::uint8_t) note,
+                                         (std::uint8_t) juce::jlimit (1, 127, velocity), on };
+        sfz2UiNoteFifo.finishedWrite (1);
+    }
+    juce::AbstractFifo sfz2UiNoteFifo { 64 };
+    std::array<UiNoteEvent, 64> sfz2UiNoteBuf {};
+
     // 128-bit active-note bitmask for the SF2/SFZ player (updated on audio thread,
     // read on UI thread for KeysPanel highlighting — display-only, torn reads OK)
     std::atomic<uint64_t> sfzActiveNotes[2] {}; // [0]=notes 0-63, [1]=notes 64-127

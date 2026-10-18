@@ -3828,6 +3828,36 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         const int noteOn  = sfz2UiNoteOnRequest .exchange (-1, std::memory_order_relaxed);
         const int noteOff = sfz2UiNoteOffRequest.exchange (-1, std::memory_order_relaxed);
 
+        // Drain the drum-pad FIFO (see pushSfz2UiNote). Always drained, even
+        // when the player is disabled, so stale pad events can't fire later.
+        // Events keep their queue order by being spread one sample apart
+        // (clamped to the block) -- same-sample note-on/off pairs for one note
+        // would otherwise be order-ambiguous downstream.
+        {
+            const int ready = sfz2UiNoteFifo.getNumReady();
+            if (ready > 0)
+            {
+                int s1, n1, s2, n2;
+                sfz2UiNoteFifo.prepareToRead (ready, s1, n1, s2, n2);
+                int order = 0;
+                auto emit = [&] (int start, int count)
+                {
+                    for (int i = 0; i < count; ++i)
+                    {
+                        const auto& ev = sfz2UiNoteBuf[(size_t) (start + i)];
+                        const int pos = juce::jmin (order++, juce::jmax (0, buffer.getNumSamples() - 1));
+                        if (! sfz2Enabled) continue;
+                        midi.addEvent (ev.on ? juce::MidiMessage::noteOn  (injectCh2, (int) ev.note, (juce::uint8) ev.velocity)
+                                             : juce::MidiMessage::noteOff (injectCh2, (int) ev.note, (juce::uint8) 0),
+                                       pos);
+                    }
+                };
+                emit (s1, n1);
+                emit (s2, n2);
+                sfz2UiNoteFifo.finishedRead (n1 + n2);
+            }
+        }
+
         if (sfz2Enabled)
         {
             if (noteOn >= 0 && noteOn <= 127)

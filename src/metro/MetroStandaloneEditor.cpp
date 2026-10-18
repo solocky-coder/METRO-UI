@@ -4,7 +4,6 @@
 #include "../sequencer/SequencerEngine.h"
 #include "../ui/FileBrowserPanel.h"
 #include "../ui/MixerPanel.h"
-#include "../ui/PadGridView.h"
 
 namespace dysekt::metro
 {
@@ -16,7 +15,7 @@ MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
     arrangementView = std::make_unique<MetroArrangementView> (processor.sequencer);
     arrangementView->setSelectionChangedCallback ([this] (const MetroSelection& selection)
                                                   { onArrangementSelectionChanged (selection); });
-    padsView = std::make_unique<PadGridView> (processor);
+    padsView = std::make_unique<juce::Component>();
     browserView = std::make_unique<FileBrowserPanel> (processor);
     mixerView = std::make_unique<MixerPanel> (processor);
     sidebar.onSelectionChanged = [this] (MetroContent content) { showContent (content); };

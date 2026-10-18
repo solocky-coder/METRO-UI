@@ -87,9 +87,25 @@ public:
 
     const MultisamplerInstrument& getInstrument() const noexcept { return instrument; }
 
-    void setKitMode (bool enabled) { kitMode = enabled; if (enabled) showPads (true); else showPads (false); updateViewToggle(); }
-    void showPads (bool enabled) { padsShown = enabled && kitMode; zoneMapView.setVisible (! padsShown); drumPads.setVisible (padsShown); if (padsShown) drumPads.rebuild(); viewToggle.setButtonText (padsShown ? "ZONES" : "PADS"); resized(); }
-    bool isKitMode() const noexcept { return kitMode; }
+    // ── Drum-kit mode (DRUM PADS view) ───────────────────────────────────
+    /** Turns drum-kit mode on/off (MultisamplerInstrument::drumKit). Enabling
+        opens the 128-pad view immediately -- a kit's default view is PADS, not
+        the zone map -- and auto-selects the bank holding the kit (note 36's
+        bank if populated). Disabling returns to ZONES.
+        `userInitiated` (the AS KIT button / pad menu) additionally marks the
+        instrument dirty, since the flag is saved with it; the load-time
+        classifier passes false so merely opening a file never prompts "unsaved
+        changes". setInstrument() re-applies the view from the new instrument's
+        own flag, so a previous kit's PADS view can never stick to a new load. */
+    void setKitMode (bool enabled, bool userInitiated = false);
+
+    /** Switches between PADS and ZONES. No-op (stays on ZONES) when not in kit
+        mode. The choice lasts until the next instrument load, which re-opens
+        kits in PADS. */
+    void showPads (bool show);
+
+    bool isKitMode()   const noexcept { return instrument.drumKit; }
+    bool isPadsShown() const noexcept { return padsShown; }
 
     /** The same keyboard-highlight data SfzPlayerDropdownPanel::
         parseSfzZones() derives from raw SFZ text, derived instead from a
@@ -404,7 +420,10 @@ private:
     // `instrument`; the first two stages just juggle overlays and pass
     // trim/key data forward, so cancelling either one leaves the
     // instrument untouched.
-    void beginAddZoneTrim (const juce::File& sampleFile);
+    /** `forcedNote` >= 0 (a sample dropped on a drum pad): after trimming, the
+        zone is committed straight to that single key (lo = hi = root = note)
+        and the key-mapping overlay is skipped. */
+    void beginAddZoneTrim (const juce::File& sampleFile, int forcedNote = -1);
     void beginAddZoneKeyMapping (const juce::File& sampleFile,
                                   int64_t trimStart, int64_t trimEnd, int64_t totalFrames);
     void commitAddedZone (const juce::File& sampleFile,
@@ -466,10 +485,18 @@ private:
 
     ZoneMapView zoneMapView;
     DrumPadView drumPads { processor, instrument };
-    bool kitMode = false;
     bool padsShown = false;
-    juce::TextButton viewToggle { "KIT MODE" };
-    void updateViewToggle() { viewToggle.setVisible (true); viewToggle.setButtonText (kitMode ? (padsShown ? "ZONES" : "PADS") : "TREAT AS KIT"); }
+    juce::TextButton viewToggle { "AS KIT" };   // AS KIT (not a kit) | PADS / ZONES (kit)
+    void updateViewToggle();
+
+    /** Re-derives the PADS/ZONES view from instrument.drumKit. `selectBank`
+        = also auto-pick the pad bank (true on any load / kit change). */
+    void applyKitView (bool selectBank);
+
+    /** Shared tail of every pad-menu edit: same dirty / resync / notify path
+        a committed ZONES edit takes (so bus changes still hit performEngineSync
+        and the MixerPanel PendingZonePin handling). */
+    void commitPadEdit();
 
     // ── Header ───────────────────────────────────────────────────────────
     juce::Label  titleLabel;

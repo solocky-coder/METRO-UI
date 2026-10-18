@@ -11,7 +11,6 @@
 #include "MetroTransportBar.h"
 #include "FloatingTransportBar.h"
 
-class PadGridView;
 class FileBrowserPanel;
 class MixerPanel;
 
@@ -51,7 +50,7 @@ private:
     MetroSidebar sidebar;
     std::unique_ptr<MetroArrangementView> arrangementView;
     MetroInspector inspector;
-    std::unique_ptr<::PadGridView> padsView;
+    std::unique_ptr<juce::Component> padsView;   // placeholder: the slicer PadGridView was removed; drum pads live in MultisamplerEditor
     std::unique_ptr<::FileBrowserPanel> browserView;
     std::unique_ptr<::MixerPanel> mixerView;
     MetroContent activeContent = MetroContent::arrange;

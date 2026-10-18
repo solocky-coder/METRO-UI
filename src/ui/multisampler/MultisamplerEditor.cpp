@@ -43,12 +43,16 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     };
     addAndMakeVisible (viewToggle);
     viewToggle.setVisible (true);
-    viewToggle.setButtonText ("TREAT AS KIT");
+    drumPads.onSampleDropped = [this] (const juce::File& f, int note)
+    {
+        beginAddZoneTrim (f, note);   // trim, then straight onto this pad's key
+    };
     viewToggle.onClick = [this]
     {
-        if (! kitMode) setKitMode (true);
-        else showPads (! padsShown);
+        if (! instrument.drumKit) setKitMode (true, true);
+        else                      showPads (! padsShown);
     };
+    updateViewToggle();
     zoneMapView.setInstrument (&instrument);
     zoneMapView.onSelectionChanged = [this] { refreshInspectorFromSelection(); };
     zoneMapView.onZoneHovered = [this] (juce::Uuid hoveredId)
@@ -334,10 +338,15 @@ void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bo
     // method.)
     cancelPendingEngineSync();
 
+    drumPads.releaseHeldNote();   // never leave an audition note hanging across a swap
     instrument = std::move (newInstrument);
     dirty = false;
     zoneMapView.setInstrument (&instrument);
-    drumPads.rebuild();
+    // Kits (instrument.drumKit, restored from .metrokit JSON / the SFZ
+    // dysekt_drum_kit opcode, or set by the load-time classifier right after)
+    // open in PADS; everything else in ZONES. Done here, synchronously with the
+    // swap, so the zone map is never painted first.
+    applyKitView (true);
     refreshInspectorFromSelection();
     if (syncEngine)
         performEngineSync (true);   // not debounced — a wholesale swap should reflect immediately
@@ -381,11 +390,11 @@ void MultisamplerEditor::addZoneClicked()
         });
 }
 
-void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
+void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile, int forcedNote)
 {
     zoneTrimOverlay = std::make_unique<AddZoneTrimOverlay> (sampleFile, processor.fileLoadPool);
     wireZoneTrimOverlayAudition();
-    zoneTrimOverlay->onResult = [this, sampleFile] (AddZoneTrimOverlay::Result result, bool confirmed)
+    zoneTrimOverlay->onResult = [this, sampleFile, forcedNote] (AddZoneTrimOverlay::Result result, bool confirmed)
     {
         // Stop chromatic audition immediately — the overlay (and whatever
         // was auditioning through it) is closing either way. See
@@ -407,7 +416,11 @@ void MultisamplerEditor::beginAddZoneTrim (const juce::File& sampleFile)
 
         if (! confirmed) return;   // cancelled or decode failed — instrument untouched
 
-        beginAddZoneKeyMapping (sampleFile, result.start, result.end, result.totalFrames);
+        if (forcedNote >= 0)       // dropped on a drum pad: key range is already decided
+            commitAddedZone (sampleFile, result.start, result.end, result.totalFrames,
+                             forcedNote, forcedNote, forcedNote);
+        else
+            beginAddZoneKeyMapping (sampleFile, result.start, result.end, result.totalFrames);
     };
 
     addAndMakeVisible (*zoneTrimOverlay);
@@ -507,6 +520,8 @@ void MultisamplerEditor::commitAddedZone (const juce::File& sampleFile,
     zoneMapView.setSelectedZoneIds ({ added.id });
     zoneMapView.refresh();
     drumPads.rebuild();
+    if (padsShown && lo == hi)
+        drumPads.setSelectedNote (lo);
     refreshInspectorFromSelection();
     scheduleEngineSync();
     if (onInstrumentChanged) onInstrumentChanged();
@@ -1245,47 +1260,183 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
 }
 
-void MultisamplerEditor::showDrumPadContextMenu (int note, juce::Point<int> screenPosition)
-{
-    if (note < 0 || note > 127) return;
-    const auto zonesForNote = [&]()
-    {
-        std::vector<int> indices;
-        for (int i = 0; i < (int) instrument.zones.size(); ++i)
-        {
-            const auto& z = instrument.zones[(size_t) i];
-            if (z.enabled && z.keyInRange (note)) indices.push_back (i);
-        }
-        return indices;
-    }();
+// ── Drum-kit mode / DRUM PADS view ──────────────────────────────────────
 
-    juce::PopupMenu menu;
-    menu.addSectionHeader ("PAD " + juce::String (note) + " · ");
-    if (zonesForNote.empty())
+void MultisamplerEditor::updateViewToggle()
+{
+    viewToggle.setVisible (true);
+    viewToggle.setButtonText (! instrument.drumKit ? "AS KIT" : (padsShown ? "ZONES" : "PADS"));
+    viewToggle.setTooltip (! instrument.drumKit ? "Treat this instrument as a drum kit (128-pad view)"
+                                                 : "Switch between the pad view and the zone map");
+}
+
+void MultisamplerEditor::setKitMode (bool enabled, bool userInitiated)
+{
+    if (instrument.drumKit != enabled)
     {
-        menu.addItem (1, "Open in ZONES");
+        instrument.drumKit = enabled;
+        if (userInitiated)
+        {
+            dirty = true;                       // the flag is saved with the instrument
+            if (onInstrumentChanged) onInstrumentChanged();
+        }
+    }
+    applyKitView (true);
+}
+
+void MultisamplerEditor::applyKitView (bool selectBank)
+{
+    if (instrument.drumKit)
+    {
+        if (selectBank) drumPads.rebuildAndSelectBank();
+        else            drumPads.rebuild();
+        showPads (true);
     }
     else
     {
+        drumPads.rebuild();
+        showPads (false);
+    }
+}
+
+void MultisamplerEditor::showPads (bool show)
+{
+    padsShown = show && instrument.drumKit;
+    if (! padsShown)
+        drumPads.releaseHeldNote();
+    zoneMapView.setVisible (! padsShown);
+    drumPads.setVisible (padsShown);
+
+    if (padsShown)
+    {
+        drumPads.rebuild();
+        // Coming back from ZONES with one zone selected: show it on the pads.
+        const auto& ids = zoneMapView.getSelectedZoneIds();
+        if (ids.size() == 1)
+            if (auto* z = instrument.findZone (ids.front()))
+                if (! z->keyInRange (drumPads.getSelectedNote()))
+                    drumPads.setSelectedNote (z->rootKey);
+    }
+    updateViewToggle();
+    resized();
+}
+
+void MultisamplerEditor::commitPadEdit()
+{
+    dirty = true;
+    zoneMapView.refresh();
+    drumPads.rebuild();
+    refreshInspectorFromSelection();
+    scheduleEngineSync();
+    if (onInstrumentChanged) onInstrumentChanged();
+    refreshZoneLcdDisplay();
+    repaint();
+}
+
+void MultisamplerEditor::showDrumPadContextMenu (int note, juce::Point<int> screenPosition)
+{
+    if (note < 0 || note > 127) return;
+
+    // Every zone covering the note, enabled or not (a muted zone's pad is
+    // empty, so it has to stay reachable here to be un-muted).
+    std::vector<juce::Uuid> covering;
+    juce::Uuid primaryId;
+    const auto& pad = drumPads.getPad (note);
+    if (pad.zoneIndex >= 0 && pad.zoneIndex < (int) instrument.zones.size())
+        primaryId = instrument.zones[(size_t) pad.zoneIndex].id;
+    for (const auto& z : instrument.zones)
+        if (z.enabled && z.keyInRange (note))
+            covering.push_back (z.id);
+    if (primaryId == juce::Uuid::null())
+        for (const auto& z : instrument.zones)
+            if (! z.enabled && z.keyInRange (note)) { primaryId = z.id; break; }
+
+    const auto* primary = instrument.findZone (primaryId);
+
+    static const struct { const char* name; juce::uint32 argb; } kPal[] = {
+        { "Cyan", 0xFF00C8FF }, { "Green", 0xFF00FF87 }, { "Yellow", 0xFFFFE800 }, { "Orange", 0xFFFF6B00 },
+        { "Red", 0xFFFF2D55 }, { "Pink", 0xFFFF2D9A }, { "Violet", 0xFFB44FFF }, { "Blue", 0xFF4A80FF },
+        { "Sky", 0xFF00BFFF }, { "Mint", 0xFF00FFD0 }, { "Lime", 0xFFA8FF3E }, { "Gold", 0xFFFFD700 },
+        { "Coral", 0xFFFF7F50 }, { "Magenta", 0xFFFF00FF }, { "White", 0xFFE8E8E8 }, { "Silver", 0xFF888888 } };
+
+    juce::PopupMenu menu;
+    static const char* nn[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+    const juce::String noteLabel = juce::String (nn[note % 12]) + juce::String (note / 12 - 2);
+    const juce::String zoneName = primary != nullptr
+        ? (primary->sampleFile != juce::File() ? primary->sampleFile.getFileNameWithoutExtension() : juce::String ("(no sample)"))
+        : juce::String();
+    menu.addSectionHeader ("PAD " + noteLabel + " (" + juce::String (note) + ")" + (zoneName.isNotEmpty() ? "  -  " + zoneName : juce::String()));
+
+    if (primary != nullptr)
+    {
         juce::PopupMenu busMenu;
         for (int bus = 0; bus <= 15; ++bus)
-            busMenu.addItem (100 + bus, bus == 0 ? "Main" : "Aux " + juce::String (bus));
+            busMenu.addItem (100 + bus, bus == 0 ? "Main" : "Aux " + juce::String (bus), true, primary->outputBus == bus);
         menu.addSubMenu ("Output bus", busMenu);
-        menu.addItem (1, "Open in ZONES");
-    }
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ screenPosition.x, screenPosition.y, 1, 1 }),
-        [this, zonesForNote] (int result)
+        juce::PopupMenu colMenu;
+        colMenu.addItem (299, "Auto colour", true, ! primary->hasCustomColour);
+        for (int ci = 0; ci < 16; ++ci)
+            colMenu.addColouredItem (200 + ci, kPal[ci].name, juce::Colour (kPal[ci].argb), true,
+                                     primary->hasCustomColour && primary->customColourArgb == kPal[ci].argb);
+        menu.addSubMenu ("Colour", colMenu);
+
+        menu.addItem (2, primary->enabled ? "Mute zone" : "Unmute zone");
+        menu.addSeparator();
+        menu.addItem (3, "Delete zone \"" + zoneName + "\"");
+        if (covering.size() > 1)
+            menu.addItem (4, "Delete all " + juce::String ((int) covering.size()) + " layers on this pad");
+        menu.addSeparator();
+    }
+    menu.addItem (1, "Open in ZONES");
+    menu.addItem (5, "Treat as normal instrument (leave kit mode)");
+
+    auto* topLvl = getTopLevelComponent();
+    const float ms = DysektLookAndFeel::getMenuScale();
+    menu.showMenuAsync (juce::PopupMenu::Options()
+                            .withTargetScreenArea ({ screenPosition.x, screenPosition.y, 1, 1 })
+                            .withParentComponent (topLvl)
+                            .withStandardItemHeight ((int) (24 * ms)),
+        [this, primaryId, covering, note] (int result)
         {
             if (result == 0) return;
-            if (result == 1) { showPads (false); return; }
-            if (zonesForNote.empty()) return;
-            const int zi = zonesForNote.front();
-            if (zi < 0 || zi >= (int) instrument.zones.size()) return;
-            zoneMapView.setSelectedZoneIds ({ instrument.zones[(size_t) zi].id });
-            refreshInspectorFromSelection();
-            if (result >= 100 && result <= 115)
-                applyZoneFieldEdit (MultisamplerZoneField::outputBus, (float) (result - 100), true);
+            if (result == 1)
+            {
+                if (auto* z = instrument.findZone (primaryId))
+                    zoneMapView.setSelectedZoneIds ({ z->id });
+                showPads (false);
+                refreshInspectorFromSelection();
+                return;
+            }
+            if (result == 5) { setKitMode (false, true); return; }
+
+            auto* z = instrument.findZone (primaryId);
+            if (z == nullptr) return;
+
+            if (result >= 100 && result <= 115)       z->outputBus = result - 100;
+            else if (result == 299)                    z->hasCustomColour = false;
+            else if (result >= 200 && result < 216)
+            {
+                static const juce::uint32 argb[] = {
+                    0xFF00C8FF,0xFF00FF87,0xFFFFE800,0xFFFF6B00,0xFFFF2D55,0xFFFF2D9A,0xFFB44FFF,0xFF4A80FF,
+                    0xFF00BFFF,0xFF00FFD0,0xFFA8FF3E,0xFFFFD700,0xFFFF7F50,0xFFFF00FF,0xFFE8E8E8,0xFF888888 };
+                z->hasCustomColour = true;
+                z->customColourArgb = argb[result - 200];
+            }
+            else if (result == 2)                      z->enabled = ! z->enabled;
+            else if (result == 3 || result == 4)
+            {
+                const auto ids = (result == 4) ? covering : std::vector<juce::Uuid> { primaryId };
+                for (const auto& id : ids) instrument.removeZone (id);
+                zoneMapView.setSelectedZoneIds ({});
+                drumPads.setSelectedNote (note);
+            }
+            else return;
+
+            if (result < 3 || result >= 100)  // keep selection on the edited zone when it still exists
+                if (instrument.findZone (primaryId))
+                    zoneMapView.setSelectedZoneIds ({ primaryId });
+            commitPadEdit();
         });
 }
 
