@@ -281,6 +281,13 @@ public:
                          bool importSucceeded,
                          const std::vector<SfzImporter::Warning>& warnings)> onImportWarnings;
 
+    /** Fired after the IMPORT SFZ *button* loads a file successfully (the file
+        browser / drag-and-drop paths go through PluginEditor, which does its
+        own follow-up). PluginEditor uses it to offer the drum-kit "assign each
+        zone its own output bus?" prompt. The pad view itself does NOT depend on
+        this: importFromFile() classifies and opens kits in PADS on its own. */
+    std::function<void (const juce::File&)> onSfzImportedViaButton;
+
     /** Fired when the NEW or IMPORT SFZ button is clicked (a file already
         chosen, in IMPORT's case) while isDirty() is true — about to discard
         unsaved edits. MultisamplerEditor has no overlay/dialog machinery of
@@ -487,6 +494,11 @@ private:
     DrumPadView drumPads { processor, instrument };
     bool padsShown = false;
     juce::TextButton viewToggle { "AS KIT" };   // AS KIT (not a kit) | PADS / ZONES (kit)
+    /** Big, unmissable way back to the pad view: only visible while a drum kit
+        is being shown in ZONES (e.g. after the pad menu's "Open in ZONES").
+        Sits in the header's free left-hand space, next to the title, so it can
+        never be squeezed out by the right-hand button cluster. */
+    juce::TextButton backToPadsButton { "< BACK TO PADS" };
     void updateViewToggle();
 
     /** Re-derives the PADS/ZONES view from instrument.drumKit. `selectBank`

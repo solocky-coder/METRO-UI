@@ -132,6 +132,13 @@ DysektEditor::DysektEditor (DysektProcessor& p)
 
  addChildComponent (multisamplerEditor); // hidden until the MULTISAMPLER tab (uiMode == 1) is active
  multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
+ // IMPORT SFZ button: importFromFile() has already opened a detected kit in
+ // PADS; this just adds the Assign/Skip output-bus prompt, same as a load
+ // from the file browser gets.
+ multisamplerEditor.onSfzImportedViaButton = [this] (const juce::File& f)
+ {
+     offerDrumKitAutoRouting (f);
+ };
  multisamplerEditor.onInstrumentChanged = [this]
  {
      // Keep the normal SFZ-PLAYER view's live keyboard highlighting

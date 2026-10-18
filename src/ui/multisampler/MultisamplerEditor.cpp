@@ -7,6 +7,7 @@
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
 #include "../../audio/SfzZoneColours.h"
+#include "../../audio/SfzLayoutClassifier.h"
 #include <algorithm>
 #include <cmath>
 
@@ -43,6 +44,9 @@ MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
     };
     addAndMakeVisible (viewToggle);
     viewToggle.setVisible (true);
+    addChildComponent (backToPadsButton);   // hidden until a kit is shown in ZONES
+    backToPadsButton.setTooltip ("Return to the drum pads view");
+    backToPadsButton.onClick = [this] { showPads (true); };
     drumPads.onSampleDropped = [this] (const juce::File& f, int note)
     {
         beginAddZoneTrim (f, note);   // trim, then straight onto this pad's key
@@ -229,6 +233,8 @@ void MultisamplerEditor::resized()
     auto header = r.removeFromTop (kHeaderH - 6);
     const auto headerFull = header;   // full-width row, before left/right consumption below
     titleLabel.setBounds (header.removeFromLeft (140));
+    header.removeFromLeft (8);
+    backToPadsButton.setBounds (header.removeFromLeft (130));
     header.removeFromRight (4);
     newButton.setBounds    (header.removeFromRight (60));
     header.removeFromRight (4);
@@ -608,7 +614,11 @@ void MultisamplerEditor::importSfzClicked()
             // Plan §5.7: IMPORT SFZ replaces the whole instrument the same
             // way NEW does — same dirty guard, see newInstrumentClicked()
             // and onConfirmDiscardIfDirty's declaration comment.
-            auto doImport = [this, file] { importFromFile (file); };
+            auto doImport = [this, file]
+            {
+                if (importFromFile (file) && onSfzImportedViaButton)
+                    onSfzImportedViaButton (file);
+            };
             if (! dirty)
                 doImport();
             else if (onConfirmDiscardIfDirty)
@@ -634,6 +644,18 @@ bool MultisamplerEditor::importFromFile (const juce::File& file, bool syncEngine
 
     setInstrument (std::move (result.instrument), syncEngine);
     lastSavedFile = file;   // setInstrument() already cleared dirty — this is now the save target
+
+    // Every import route (IMPORT SFZ button, file browser, drag-and-drop,
+    // discard-revert) lands here, so this is the one place a kit is recognised
+    // and opened in PADS. A file that already carried dysekt_drum_kit=1 is a
+    // kit by definition; otherwise run the same heuristic the bus-assign prompt
+    // uses (percussive + at least 3 zones). Not user-initiated -> not dirty.
+    if (! instrument.drumKit)
+    {
+        const auto c = SfzLayoutClassifier::classify (toKeyzones (instrument));
+        if (c.isPercussive && c.numZones >= 3)
+            setKitMode (true);
+    }
     if (! result.warnings.empty() && onImportWarnings)
         onImportWarnings (file.getFileName(), true, result.warnings);
     return true;
@@ -1265,6 +1287,9 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
 void MultisamplerEditor::updateViewToggle()
 {
     viewToggle.setVisible (true);
+    backToPadsButton.setVisible (instrument.drumKit && ! padsShown);
+    if (backToPadsButton.isVisible())
+        backToPadsButton.toFront (false);
     viewToggle.setButtonText (! instrument.drumKit ? "AS KIT" : (padsShown ? "ZONES" : "PADS"));
     viewToggle.setTooltip (! instrument.drumKit ? "Treat this instrument as a drum kit (128-pad view)"
                                                  : "Switch between the pad view and the zone map");
