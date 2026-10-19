@@ -256,7 +256,7 @@ public:
                 // buttons (FloatingTransportBar::configureChrome).
                 b.setColour (juce::TextButton::buttonColourId,   dysekt::metro::Base::Elevated);
                 b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-                b.setColour (juce::TextButton::textColourOffId,  dysekt::metro::Text::Secondary);
+                b.setColour (juce::TextButton::textColourOffId,  dysekt::metro::Base::White);
                 b.setColour (juce::TextButton::textColourOnId,   dysekt::metro::Base::White);
                 b.getProperties().set ("flatFill", true);
                 b.onClick = [this, itemId] { transport.setSnapItemId (itemId); };
@@ -291,7 +291,7 @@ public:
                 b.setTooltip (tips[i]);
                 b.setColour (juce::TextButton::buttonColourId, dysekt::metro::Base::Elevated);
                 b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-                b.setColour (juce::TextButton::textColourOffId, dysekt::metro::Text::Secondary);
+                b.setColour (juce::TextButton::textColourOffId, dysekt::metro::Base::White);
                 b.setColour (juce::TextButton::textColourOnId, dysekt::metro::Base::White);
                 b.getProperties().set ("flatFill", true);
                 addAndMakeVisible (b);
@@ -342,7 +342,7 @@ public:
         miniArrangerToggleButton.setTooltip ("Collapse mini arranger overview");
         miniArrangerToggleButton.setColour (juce::TextButton::buttonColourId, dysekt::metro::Base::Elevated);
         miniArrangerToggleButton.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-        miniArrangerToggleButton.setColour (juce::TextButton::textColourOffId, dysekt::metro::Text::Secondary);
+        miniArrangerToggleButton.setColour (juce::TextButton::textColourOffId, dysekt::metro::Base::White);
         miniArrangerToggleButton.setColour (juce::TextButton::textColourOnId, dysekt::metro::Base::White);
         miniArrangerToggleButton.getProperties().set ("flatFill", true);
         miniArrangerToggleButton.onClick = [this]
