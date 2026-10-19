@@ -56,7 +56,7 @@ namespace
         return juce::String::fromUTF8 (reinterpret_cast<const char*> (p + offset), len);
     }
 
-    const char* const kSessionName = "DYSEKT";
+    const char* const kSessionName = "DYSEKT-SF";
 }
 
 //==============================================================================
