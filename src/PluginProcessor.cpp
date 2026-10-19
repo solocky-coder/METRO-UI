@@ -2967,13 +2967,16 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
 
     // A zone add/delete/edit is being rebuilt in the background right now
     // (see sfzPlayer2RebuildInFlight's declaration in PluginProcessor.h).
-    // sliceManager2/sampleData2 still hold the PREVIOUS layout until that
-    // rebuild lands, so resolve every note-on as unmapped for the duration
-    // rather than let it trigger against a zone that may have just been
-    // deleted (or hit stale bounds/colours for one that was just edited).
-    // Checked once per block, not per-message, so a rebuild landing
-    // mid-block can't cause some notes in the same buffer to see a
-    // different value than others.
+    // sliceManager2/sampleData2 still hold the PREVIOUS render until that
+    // rebuild lands. Notes used to be dropped outright for the whole
+    // rebuild -- and every edit (even a colour change) re-renders the full
+    // kit, which takes seconds -- so a key pressed while tweaking anything
+    // simply did nothing. Now a note keeps playing the previous render:
+    // that is memory-safe (the trigger and the layout swap both run on this
+    // audio thread, and the swap kills all voices first), and merely sounds
+    // like the old kit for the moment. What stays gated is the UI selection
+    // below, which must not be pointed at a zone the rebuild may have just
+    // removed. Checked once per block so every note in a buffer agrees.
     const bool rebuildInFlight = sfzPlayer2RebuildInFlight.load (std::memory_order_acquire);
 
     for (const auto metadata : midi)
@@ -3007,7 +3010,7 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
                 sfz2LastNoteOnVelocity[note].store ((uint8_t) msg.getVelocity(), std::memory_order_relaxed);
             }
 
-            const int sliceIdx = rebuildInFlight ? -1 : sliceManager2.midiNoteToSlice (note);
+            const int sliceIdx = sliceManager2.midiNoteToSlice (note);
             // DYSEKT-addzone-nomidi diagnostic: there was previously zero
             // runtime visibility into this path at all (the only MIDI debug
             // logging lived in SfzPlayer.cpp's process(), which is dead code
@@ -3018,8 +3021,8 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
             crashLogger.log ("processMidi2: NOTE-ON note=" + juce::String (note)
                 + " ch=" + juce::String (ch)
                 + "  sliceIdx=" + juce::String (sliceIdx)
-                + (rebuildInFlight ? "  -> REBUILD IN FLIGHT, gated as unmapped"
-                                   : (sliceIdx < 0 ? "  -> NO SLICE MAPPED, note will not sound" : "")));
+                + (sliceIdx < 0 ? "  -> NO SLICE MAPPED, note will not sound"
+                                : (rebuildInFlight ? "  (rebuild in flight: playing previous render)" : "")));
             if (sliceIdx >= 0)
             {
                 // Unconditional — matches WaveformView's mouse-click selection for
@@ -3027,8 +3030,11 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
                 // flag is an engine-1-only preference (auto-enabled by slicing
                 // actions); SFZ-PLAYER has no such workflow to protect, so a
                 // played note should always be reflected in the UI here.
-                sliceManager2.selectedSlice.store (sliceIdx, std::memory_order_relaxed);
-                uiSnapshotDirty.store (true, std::memory_order_release);
+                if (! rebuildInFlight)   // don't select a slice the rebuild may be about to replace
+                {
+                    sliceManager2.selectedSlice.store (sliceIdx, std::memory_order_relaxed);
+                    uiSnapshotDirty.store (true, std::memory_order_release);
+                }
 
                 VoiceStartParams p;   // defaults: no global knobs for SFZ-PLAYER —
                                       // every parameter is resolved per-slice from
