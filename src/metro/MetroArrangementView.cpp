@@ -92,7 +92,7 @@ void MetroArrangementView::drawToolbar (juce::Graphics& g, juce::Rectangle<int> 
     button ({ area.getX() + 290, area.getY() + 7, 58, 26 }, "GRID", gridVisible);
     button ({ area.getX() + 356, area.getY() + 7, 78, 26 }, "MAGNET", magnetEnabled);
 
-    const char* tools[] = { "↖", "✎", "⌫", "✂", "▣" };
+    const juce::String tools[] = { juce::String::fromUTF8 ("↖"), juce::String::fromUTF8 ("✎"), juce::String::fromUTF8 ("⌫"), juce::String::fromUTF8 ("✂"), juce::String::fromUTF8 ("▣") };
     int x = area.getX() + 446;
     for (int i = 0; i < 5; ++i)
     {
@@ -245,7 +245,7 @@ void MetroArrangementView::drawTrackHeader (juce::Graphics& g, juce::Rectangle<i
     smallButton (area.getX() + 82, area.getY() + 48, "S", juce::Colour (0xFFF1C84B));
     smallButton (area.getX() + 112, area.getY() + 48, "R", juce::Colour (0xFFEC6168));
     g.setColour (juce::Colour (0xFF7A8A91));
-    g.drawText ("⋮", area.getRight() - 22, area.getY() + 14, 14, 28,
+    g.drawText (juce::String::fromUTF8 ("⋮"), area.getRight() - 22, area.getY() + 14, 14, 28,
                 juce::Justification::centred, false);
 }
 

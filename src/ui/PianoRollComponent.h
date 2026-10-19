@@ -1270,9 +1270,9 @@ private:
         setupBtn (btnErase,   "",        "Erase tool (E)\nClick notes to delete.\nRight-click for tool + edit menu.");
         setupBtn (btnSplit,   "",        "Split tool (K)\nClick a note to split at cursor.\nRight-click for tool + edit menu.");
         setupBtn (btnGlue,    "",        "Glue tool (G)\nClick a note to merge with the next note on same pitch.\nRight-click for tool + edit menu.");
-        setupBtn (btnUndo,    "↩",        "Undo (Ctrl+Z)");
-        setupBtn (btnRedo,    "↪",        "Redo (Ctrl+Y)");
-        setupBtn (btnZoomFit, "⊡",        "Zoom to fit (Ctrl+0)");
+        setupBtn (btnUndo,    juce::String::fromUTF8 ("↩"),        "Undo (Ctrl+Z)");
+        setupBtn (btnRedo,    juce::String::fromUTF8 ("↪"),        "Redo (Ctrl+Y)");
+        setupBtn (btnZoomFit, juce::String::fromUTF8 ("⊡"),        "Zoom to fit (Ctrl+0)");
 
         btnSelect.tool = Tool::Select;
         btnDraw.tool   = Tool::Draw;

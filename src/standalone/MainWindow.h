@@ -259,7 +259,7 @@ private:
                 fis.read (block.getData(), (int) size);
                 processor->setStateInformation (block.getData(), (int) block.getSize());
                 currentProjectFile = result;
-                setName ("DYSEKT-SF  —  " + result.getFileNameWithoutExtension());
+                setName ("DYSEKT-SF  -  " + result.getFileNameWithoutExtension());
             });
     }
 
@@ -291,7 +291,7 @@ private:
                 if (result == juce::File()) return;
                 currentProjectFile = result.withFileExtension ("dysekt");
                 saveProject();
-                setName ("DYSEKT-SF  —  " + currentProjectFile.getFileNameWithoutExtension());
+                setName ("DYSEKT-SF  -  " + currentProjectFile.getFileNameWithoutExtension());
             });
     }
 

@@ -887,7 +887,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         if (! loggedEntryOnce)
         {
             loggedEntryOnce = true;
-            sf2DebugLog ("process() ENTRY — first call reached. numSamples=" + juce::String (numSamples)
+            sf2DebugLog ("process() ENTRY - first call reached. numSamples=" + juce::String (numSamples)
                 + " midiIn.getNumEvents()=" + juce::String (midiIn.getNumEvents()));
         }
     }
@@ -898,7 +898,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     // on an actual note-on. This logs every block that actually carries
     // MIDI, for as long as the session runs.
     if (! midiIn.isEmpty())
-        sf2DebugLog ("process(): non-empty block — " + juce::String (midiIn.getNumEvents())
+        sf2DebugLog ("process(): non-empty block - " + juce::String (midiIn.getNumEvents())
             + " event(s), loaded=" + juce::String ((int) loaded.load (std::memory_order_relaxed))
             + " isSfzFile=" + juce::String ((int) isSfzFile)
             + " sfizzSynth=" + juce::String (sfizzSynth != nullptr ? "non-null" : "NULL")
@@ -909,7 +909,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
     if (! loaded.load (std::memory_order_relaxed))
     {
         if (! midiIn.isEmpty())
-            sf2DebugLog ("process(): loaded==false — bailing out at the very top with "
+            sf2DebugLog ("process(): loaded==false - bailing out at the very top with "
                 + juce::String (midiIn.getNumEvents()) + " MIDI event(s) discarded this block.");
         return;
     }
@@ -1116,7 +1116,7 @@ void SfzPlayer::process (const juce::MidiBuffer& midiIn,
         if (! loggedNullSynthOnce)
         {
             loggedNullSynthOnce = true;
-            sf2DebugLog ("process(): synth == nullptr — bailing out before any FluidSynth "
+            sf2DebugLog ("process(): synth == nullptr - bailing out before any FluidSynth "
                          "call. isSfzFile=" + juce::String ((int) isSfzFile)
                          + " loaded=" + juce::String ((int) loaded.load (std::memory_order_relaxed)));
         }

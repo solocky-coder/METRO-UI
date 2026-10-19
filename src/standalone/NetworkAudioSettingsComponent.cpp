@@ -7,7 +7,7 @@ NetworkAudioSettingsComponent::NetworkAudioSettingsComponent (juce::AudioDeviceM
     networkTitle.setText ("NETWORK AUDIO", juce::dontSendNotification);
     networkTitle.setFont (juce::Font (17.0f, juce::Font::bold));
     addAndMakeVisible (networkTitle);
-    transportLabel.setText ("SonoBus / AOO • Wi-Fi LAN", juce::dontSendNotification);
+    transportLabel.setText ("SonoBus / AOO - Wi-Fi LAN", juce::dontSendNotification);
     addAndMakeVisible (transportLabel);
     serverLabel.setText ("Server", juce::dontSendNotification);
     portLabel.setText ("Port", juce::dontSendNotification);
@@ -66,7 +66,7 @@ void NetworkAudioSettingsComponent::connectClicked()
     if (host.isEmpty() || port <= 0 || port > 65535 || user.isEmpty() || group.isEmpty()) { updateStatus ("Enter valid connection fields"); return; }
     if (! networkAudio.connectToServer (host, port, user, password)) { updateStatus ("Server connection failed"); return; }
     if (! networkAudio.joinGroup (group, password, publicGroupButton.getToggleState())) { updateStatus ("Group join failed"); return; }
-    updateStatus ("Connected • listening for network sources");
+    updateStatus ("Connected - listening for network sources");
 }
 void NetworkAudioSettingsComponent::disconnectClicked() { networkAudio.disconnect(); updateStatus ("Disconnected"); refreshSources(); }
 void NetworkAudioSettingsComponent::timerCallback() { refreshSources(); }
@@ -94,8 +94,8 @@ void NetworkAudioSettingsComponent::SourceListModel::paintListBoxItem (int row, 
     const auto& s = *source;
     g.fillAll (selected ? juce::Colour (0xff29323a) : juce::Colour (0xff111116)); g.setColour (juce::Colours::white); g.setFont (14.0f);
     const auto name = (s.user.isEmpty() ? juce::String ("Source ") + juce::String (s.sourceId) : s.user)
-        + " • source #" + juce::String (s.sourceId);
-    const auto details = (s.group.isEmpty() ? juce::String() : s.group + " • ") + juce::String (s.sampleRate, 0) + " Hz • " + juce::String (s.channels) + " ch";
+        + " - source #" + juce::String (s.sourceId);
+    const auto details = (s.group.isEmpty() ? juce::String() : s.group + " - ") + juce::String (s.sampleRate, 0) + " Hz - " + juce::String (s.channels) + " ch";
     g.drawText (name, 10, 2, width / 2, height - 4, juce::Justification::centredLeft); g.setColour (juce::Colours::lightgrey);
     g.drawText (details, width / 2, 2, width / 2 - 10, height - 4, juce::Justification::centredRight);
 }

@@ -492,7 +492,7 @@ private:
         for (const auto& r : rows)
         {
             const bool armed = (learnTarget == r.target);
-            r.button->setButtonText (armed ? "PLAY NOTE\xe2\x80\xa6" : "LEARN");
+            r.button->setButtonText (armed ? "PLAY NOTE..." : "LEARN");
             r.button->setColour (juce::TextButton::buttonColourId,
                                   armed ? T.accent : T.darkBar);
             r.button->setColour (juce::TextButton::textColourOffId,

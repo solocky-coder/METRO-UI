@@ -87,7 +87,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
         g.setFont (DysektLookAndFeel::makeFont (14.0f * sf));
         g.setColour (canGoUp ? theme.accent.withAlpha (0.90f)
                              : theme.accent.withAlpha (0.30f));
-        g.drawText (u8"\u2190", upBtnZone, juce::Justification::centred, false);
+        g.drawText (juce::String::fromUTF8 ("←"), upBtnZone, juce::Justification::centred, false);
     }
 
     // Current path text — shows "Drives" label when in the virtual root view
@@ -112,7 +112,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
                 const auto segs = juce::StringArray::fromTokens (
                     zipCurrentPath.dropLastCharacters (1), "/", "");
                 for (auto& seg : segs)
-                    display << "  \u203a  " << seg;
+                    display << "  >  " << seg;
             }
         }
         else
@@ -122,7 +122,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
             const int n = parts.size();
             if      (n == 0) display = "/";
             else if (n <= 2) display = currentDir.getFullPathName();
-            else             display = u8"\u2026" + juce::File::getSeparatorString()
+            else             display = "..." + juce::File::getSeparatorString()
                                      + parts[n - 2] + juce::File::getSeparatorString()
                                      + parts[n - 1];
         }

@@ -68,8 +68,8 @@ public:
                     {
                         const bool usbReady = usbService.start ({});
                         button->setTooltip (usbReady
-                            ? "Network audio ON — Apple USB/NCM transport ready"
-                            : "Network audio ON — Apple USB/NCM setup failed: " + usbService.status());
+                            ? "Network audio ON - Apple USB/NCM transport ready"
+                            : "Network audio ON - Apple USB/NCM setup failed: " + usbService.status());
                     }
                     else
                     {
@@ -313,7 +313,7 @@ private:
                 trackIndex >= 0 ? juce::AlertWindow::InfoIcon : juce::AlertWindow::WarningIcon,
                 trackIndex >= 0 ? "Audio Track Created" : "Audio Track Not Created",
                 trackIndex >= 0
-                    ? userName + " | " + sourceName + " — " + (MetroNetworkAudio::isStereoRoute (sourceChannel) ? juce::String ("Stereo (Channel 1+2)") : "Channel " + juce::String (sourceChannel + 1)) + " is now a METRO audio track."
+                    ? userName + " | " + sourceName + " - " + (MetroNetworkAudio::isStereoRoute (sourceChannel) ? juce::String ("Stereo (Channel 1+2)") : "Channel " + juce::String (sourceChannel + 1)) + " is now a METRO audio track."
                     : "The standalone audio processor is not available.",
                 "OK");
         });

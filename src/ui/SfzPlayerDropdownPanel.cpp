@@ -447,7 +447,7 @@ void SfzPlayerDropdownPanel::drawPresetPicker (juce::Graphics& g) const
             // Browser is open — show a hint
             g.setFont (DysektLookAndFeel::makeFont (12.0f));
             g.setColour (theme.accent.withAlpha (0.70f));
-            g.drawText ("browsing files \u2014 double-click to load", lbl,
+            g.drawText ("browsing files - double-click to load", lbl,
                         juce::Justification::centred, true);
         }
         else if (! isLoaded)

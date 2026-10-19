@@ -436,7 +436,7 @@ private:
         {
             juce::PopupMenu menu;
             menu.addSectionHeader ("Slice");
-            menu.addItem (50, "Rename slice…");
+            menu.addItem (50, "Rename slice...");
             menu.showMenuAsync (
                 juce::PopupMenu::Options()
                     .withTargetComponent (this)
@@ -467,7 +467,7 @@ private:
         if (info.isSfzInstrument) { showSfzLayerMenu (idx, info, pos); return; }
 
         juce::PopupMenu menu;
-        menu.addSectionHeader ("MIDI Channel – " + info.name);
+        menu.addSectionHeader ("MIDI Channel - " + info.name);
         for (int ch = 1; ch <= 16; ++ch)
             menu.addItem (ch, "Channel " + juce::String (ch), true, ch == info.midiChannel + 1);
 

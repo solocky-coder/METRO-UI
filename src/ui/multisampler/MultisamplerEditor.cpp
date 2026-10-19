@@ -384,7 +384,7 @@ void MultisamplerEditor::addZoneClicked()
     // which hands off to beginAddZoneKeyMapping() (the original
     // AddZoneOverlay step), which hands off to commitAddedZone(). See the
     // three-stage split's declaration comment in MultisamplerEditor.h.
-    fileChooser = std::make_unique<juce::FileChooser> ("Add sample as new zone…", juce::File(),
+    fileChooser = std::make_unique<juce::FileChooser> ("Add sample as new zone...", juce::File(),
                                                          "*.wav;*.aif;*.aiff;*.flac;*.ogg");
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this] (const juce::FileChooser& fc)
@@ -604,7 +604,7 @@ void MultisamplerEditor::beginTrimExistingZone (const juce::Uuid& zoneId)
 
 void MultisamplerEditor::importSfzClicked()
 {
-    fileChooser = std::make_unique<juce::FileChooser> ("Import SFZ…", juce::File(), "*.sfz");
+    fileChooser = std::make_unique<juce::FileChooser> ("Import SFZ...", juce::File(), "*.sfz");
     fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this] (const juce::FileChooser& fc)
         {
@@ -663,7 +663,7 @@ bool MultisamplerEditor::importFromFile (const juce::File& file, bool syncEngine
 
 void MultisamplerEditor::exportSfzClicked()
 {
-    fileChooser = std::make_unique<juce::FileChooser> ("Export SFZ…", juce::File(), "*.sfz");
+    fileChooser = std::make_unique<juce::FileChooser> ("Export SFZ...", juce::File(), "*.sfz");
     fileChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
         [this] (const juce::FileChooser& fc)
         {

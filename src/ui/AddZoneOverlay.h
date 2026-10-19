@@ -40,7 +40,7 @@ public:
         : loKey  (juce::jlimit (0, 127, defaultLo)),
           hiKey  (juce::jlimit (0, 127, defaultLo)),   // single-key default
           rootKey(juce::jlimit (0, 127, defaultLo)),
-          title  ("ADD ZONE  —  " + sampleName.toUpperCase()),
+          title  ("ADD ZONE  -  " + sampleName.toUpperCase()),
           hasNameField (showNameField)
     {
         const auto& T = getTheme();

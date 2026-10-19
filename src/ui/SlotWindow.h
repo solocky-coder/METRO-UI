@@ -344,7 +344,7 @@ public:
 
     void showArrange()
     {
-        setName ("ARRANGE  •  TRACKS");
+        setName ("ARRANGE  -  TRACKS");
         content.show (SlotWindowContent::Content::Arrange);
         showWindow();
     }

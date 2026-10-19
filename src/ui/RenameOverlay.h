@@ -77,7 +77,7 @@ public:
         // Sub-label above text field
         g.setFont (DysektLookAndFeel::makeFont (11.0f));
         g.setColour (T.foreground.withAlpha (0.65f));
-        g.drawText ("Max 14 characters — leave blank to clear",
+        g.drawText ("Max 14 characters - leave blank to clear",
                     box.getX() + padX, box.getY() + 46,
                     box.getWidth() - padX * 2, 16,
                     juce::Justification::centredLeft, false);

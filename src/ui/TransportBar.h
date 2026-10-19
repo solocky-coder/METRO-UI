@@ -95,7 +95,7 @@ public:
         stopBtn.onClick = [this] { engine.stop(); };
         recBtn.onStateChange  = [this] { engine.setRecording (recBtn.getToggleState()); };
         loopBtn.onStateChange = [this] { engine.setLooping   (loopBtn.getToggleState()); };
-        recBtn.setTooltip ("Record — right-click to choose Overdub/Add");
+        recBtn.setTooltip ("Record - right-click to choose Overdub/Add");
         recBtn.addMouseListener (this, false);
 
         // ── Musical position — amber, zero-padded bar.beat.tick, same
@@ -104,7 +104,7 @@ public:
         posLabel.setFont (DysektLookAndFeel::makeMonoFont (14.0f, true));
         posLabel.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
         posLabel.setColour (juce::Label::textColourId, Accent::Orange);
-        posLabel.setTooltip ("Playhead position — scroll over a segment to nudge it");
+        posLabel.setTooltip ("Playhead position - scroll over a segment to nudge it");
         posLabel.onSegmentScroll = [this] (int segment, int direction) { adjustPlayhead (segment, direction); };
         addAndMakeVisible (posLabel);
 
@@ -121,7 +121,7 @@ public:
             field->setFont (DysektLookAndFeel::makeMonoFont (11.0f));
             field->setColour (juce::Label::backgroundColourId, Base::Surface);
             field->setColour (juce::Label::textColourId, Text::Primary);
-            field->setTooltip ("Cycle locator — click to type bars.beats.ticks, "
+            field->setTooltip ("Cycle locator - click to type bars.beats.ticks, "
                                "or scroll over a segment to nudge it");
             field->onTextChange = [this] { updateLocatorsFromEditors(); };
             addAndMakeVisible (*field);
@@ -315,8 +315,8 @@ public:
             const auto current = engine.getRecordMode();
 
             juce::PopupMenu m;
-            m.addItem (1, "Overdub — merge into existing clip", true, current == SequencerEngine::RecordMode::Overdub);
-            m.addItem (2, "Add — always start a new clip",      true, current == SequencerEngine::RecordMode::Add);
+            m.addItem (1, "Overdub - merge into existing clip", true, current == SequencerEngine::RecordMode::Overdub);
+            m.addItem (2, "Add - always start a new clip",      true, current == SequencerEngine::RecordMode::Add);
             m.addSeparator();
             const int countIn = engine.getCountInBars();
             m.addItem (3, "Count-in: 1 bar", true, countIn == 1);

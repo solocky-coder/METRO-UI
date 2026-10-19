@@ -100,7 +100,7 @@ void ShortcutsPanel::buildShortcutData()
         { "Ctrl+Shift+Z",        "Redo slicer edit" },
         { "F",                   "Toggle MIDI Follow" },
         { "M",                   "Open / close MIDI Learn" },
-        { "?  (QWERTZ: Shift+ß)", "Open / close Settings" },
+        { juce::String::fromUTF8 ("?  (QWERTZ: Shift+ß)"), "Open / close Settings" },
         { "Esc",                 "Close Settings or Piano Roll" },
     }});
 

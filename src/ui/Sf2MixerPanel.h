@@ -49,7 +49,7 @@ public:
         {
             g.setFont (DysektLookAndFeel::makeFont (12.0f));
             g.setColour (theme.foreground.withAlpha (0.40f));
-            g.drawText ("No presets assigned  —  right-click a preset in the grid to assign a MIDI channel",
+            g.drawText ("No presets assigned  -  right-click a preset in the grid to assign a MIDI channel",
                         getLocalBounds(), juce::Justification::centred, true);
             return;
         }

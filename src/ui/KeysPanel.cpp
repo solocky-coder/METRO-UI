@@ -158,7 +158,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
         g.fillRect (0, 0, w, kHeaderH);
         g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
         g.setColour (theme.foreground.withAlpha (0.30f));
-        g.drawText ("BANK / PRESET  \xe2\x80\x94  right-click row to assign MIDI channel",
+        g.drawText ("BANK / PRESET  -  right-click row to assign MIDI channel",
                     10, 0, w - 20, kHeaderH,
                     juce::Justification::centredLeft, false);
         g.setColour (theme.separator.withAlpha (0.45f));
@@ -273,7 +273,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
                         kPanX   + kPanW   - 10,
                         kVolX   + kVolW   - 10,
                         kRelX   + kRelW   - 10 })
-            g.drawText (u8"\u2195", cx, 0, 10, kHeaderH, juce::Justification::centred, false);
+            g.drawText (juce::String::fromUTF8 ("↕"), cx, 0, 10, kHeaderH, juce::Justification::centred, false);
     }
 
     g.setColour (theme.separator.withAlpha (0.45f));
@@ -320,7 +320,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
             const int lastHi = rows.back().zone.hiKey;
             const int nextLo = juce::jmin (lastHi + 1, 127);
             const int nextHi = juce::jmin (lastHi + 12, 127);
-            const juce::String hint = UIHelpers::midiNoteToName (nextLo) + " \u2013 "
+            const juce::String hint = UIHelpers::midiNoteToName (nextLo) + " - "
                                      + UIHelpers::midiNoteToName (nextHi);
             g.setFont (DysektLookAndFeel::makeFont (9.0f));
             g.setColour (theme.foreground.withAlpha (0.30f));

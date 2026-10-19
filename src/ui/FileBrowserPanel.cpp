@@ -231,7 +231,7 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
         else if (streamPreviewUrl.isNotEmpty())
         {
             // Re-stream the archive file
-            fileNameLabel.setText ("Buffering\u2026", juce::dontSendNotification);
+            fileNameLabel.setText ("Buffering...", juce::dontSendNotification);
             playStopBtn.setVisible  (false);
             volumeSlider.setVisible (false);
             repaint();
@@ -269,7 +269,7 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
                     }
                     else
                     {
-                        safeThis->fileNameLabel.setText (u8"Stream failed \u2014 check connection",
+                        safeThis->fileNameLabel.setText ("Stream failed - check connection",
                                                juce::dontSendNotification);
                         safeThis->streamPreviewUrl = {};
                     }
@@ -982,7 +982,7 @@ void FileBrowserPanel::detectCloudFolders()
                 auto display = readRegSz (HKEY_CURRENT_USER, sub.toWideCharPointer(),
                                           L"DisplayName");
                 juce::String label = display.isNotEmpty()
-                                     ? "OneDrive \u2013 " + display
+                                     ? "OneDrive - " + display
                                      : "OneDrive";
                 tryAdd (label, juce::File (path));
             }
@@ -1531,7 +1531,7 @@ void FileBrowserPanel::showArchiveItem (int bookmarkIndex)
     {
         archiveViewActive  = true;
         archiveRows.clear();
-        archiveListTitle   = "Loading collection\u2026";
+        archiveListTitle   = "Loading collection...";
         archiveList.updateContent();
         resized();
         repaint();
@@ -1570,7 +1570,7 @@ void FileBrowserPanel::showArchiveItem (int bookmarkIndex)
     {
         archiveViewActive  = true;
         archiveRows.clear();
-        archiveListTitle   = "Loading\u2026";
+        archiveListTitle   = "Loading...";
         archiveList.updateContent();
         resized();
         repaint();
@@ -1612,7 +1612,7 @@ void FileBrowserPanel::showCollectionItem (const juce::String& collectionId)
 {
     archiveViewActive  = true;
     archiveRows.clear();
-    archiveListTitle   = "Loading " + collectionId + "\u2026";
+    archiveListTitle   = "Loading " + collectionId + "...";
     archiveList.updateContent();
     resized();
     repaint();
@@ -1696,7 +1696,7 @@ void FileBrowserPanel::loadArchiveFile (const ArchiveRow& row)
             else
             {
                 safeThis->streamPreviewUrl = {};
-                safeThis->fileNameLabel.setText (u8"Stream failed \u2014 check connection",
+                safeThis->fileNameLabel.setText ("Stream failed - check connection",
                                        juce::dontSendNotification);
                 safeThis->playStopBtn.setVisible  (false);
                 safeThis->volumeSlider.setVisible (false);

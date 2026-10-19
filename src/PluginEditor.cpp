@@ -265,12 +265,12 @@ DysektEditor::DysektEditor (DysektProcessor& p)
          lines.add (line);
      }
      if ((int) warnings.size() > kMaxLines)
-         lines.add ("… and " + juce::String ((int) warnings.size() - kMaxLines) + " more");
+         lines.add ("... and " + juce::String ((int) warnings.size() - kMaxLines) + " more");
 
      messageOverlay = std::make_unique<MessageOverlay> (
          importSucceeded ? "Import Completed With Warnings" : "Import Failed",
          (importSucceeded ? juce::String ("Imported ") : juce::String ("Could not import "))
-             + sourceFileName + (importSucceeded ? juce::String (" — some data may not round-trip:") : juce::String())
+             + sourceFileName + (importSucceeded ? juce::String (" - some data may not round-trip:") : juce::String())
              + "\n\n" + lines.joinIntoString ("\n"),
          MessageOverlay::Kind::Warning);
      addAndMakeVisible (*messageOverlay);

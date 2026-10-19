@@ -1511,7 +1511,7 @@ void SliceControlBar::drawSfzZoneSummary (juce::Graphics& g, int x, int y, int w
     {
         g.setFont (DysektLookAndFeel::makeFont (12.0f * paintSf, true));
         g.setColour (getTheme().lockActive);
-        g.drawText ("\xe2\x80\xa2 AUDITIONING", cx, y, juce::roundToInt (86.0f * paintSf), height,
+        g.drawText ("- AUDITIONING", cx, y, juce::roundToInt (86.0f * paintSf), height,
                     juce::Justification::centredLeft);
     }
 }

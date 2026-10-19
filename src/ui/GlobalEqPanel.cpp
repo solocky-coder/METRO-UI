@@ -513,7 +513,7 @@ void GlobalEqPanel::drawHeader (juce::Graphics& g, juce::Rectangle<float> area) 
     // Subtitle — "N-BAND PARAMETRIC • STEREO"
     g.setColour (theme.foreground.withAlpha (0.38f));
     g.setFont (DysektLookAndFeel::makeFont (8.f));
-    juce::String subtitle = juce::String (kNumBands) + "-BAND PARAMETRIC   \xE2\x80\xA2   STEREO";
+    juce::String subtitle = juce::String (kNumBands) + "-BAND PARAMETRIC   -   STEREO";
     g.drawText (subtitle,
                 juce::Rectangle<float> (area.getX(), area.getY() + 15.f, area.getWidth() - 80.f, 12.f),
                 juce::Justification::centredLeft, false);

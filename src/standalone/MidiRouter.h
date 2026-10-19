@@ -536,7 +536,7 @@ private:
             rows.add (devBox);
 
             auto* chBox = new juce::ComboBox();
-            chBox->addItem ("─ pass-thru ─", 1);
+            chBox->addItem ("- pass-thru -", 1);
             for (int ch = 1; ch <= 16; ++ch)
                 chBox->addItem ("Ch " + juce::String (ch), ch + 1);
             chBox->setSelectedId (route.channelOverride == 0 ? 1 : route.channelOverride + 1,
@@ -576,7 +576,7 @@ private:
         }
 
         {
-            auto* thruLabel = new juce::Label ("", "MIDI Thru →");
+            auto* thruLabel = new juce::Label ("", "MIDI Thru ->");
             thruLabel->setFont (juce::Font (12.f));
             thruLabel->setColour (juce::Label::textColourId, juce::Colour (0xFFCCD0D8));
             thruLabel->setBounds (12, y, 100, 24);

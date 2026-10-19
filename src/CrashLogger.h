@@ -91,7 +91,7 @@ public:
 
         // ── Open log (append mode) ────────────────────────────────────────────
         logger = std::make_unique<juce::FileLogger> (logFile,
-            "DYSEKT-SF crash log — " + juce::Time::getCurrentTime().toString (true, true));
+            "DYSEKT-SF crash log - " + juce::Time::getCurrentTime().toString (true, true));
 
         if (previousCrash)
         {
@@ -111,7 +111,7 @@ public:
         s_dumpDirPath = dumpDir.getFullPathName();
         installHandlers();
 
-        log ("DysektProcessor constructed — session started");
+        log ("DysektProcessor constructed - session started");
         // Version marker for the zone-builder diagnostics added to
         // SoundFontLoader.cpp (discoverActiveNotes/finishAndPost logging for
         // the SfzPlayer2 target, full-0-127 empty-discovery fallback). If a
@@ -123,7 +123,7 @@ public:
 
     ~CrashLogger()
     {
-        log ("DysektProcessor destructed — session ended cleanly");
+        log ("DysektProcessor destructed - session ended cleanly");
         lockFile.deleteFile();
         // Leave the log file; only the sentinel is removed.
     }
@@ -223,7 +223,7 @@ private:
 
     static LONG WINAPI windowsExceptionFilter (EXCEPTION_POINTERS* info)
     {
-        crashWrite ("\n!! CRASH — unhandled exception !!\n");
+        crashWrite ("\n!! CRASH - unhandled exception !!\n");
 
         // Write a minidump alongside the log
         juce::String dumpPath = s_dumpDirPath + "\\dysekt_crash.dmp";
@@ -262,7 +262,7 @@ private:
 
     static void posixSignalHandler (int sig)
     {
-        crashWrite ("\n!! CRASH — signal received: ");
+        crashWrite ("\n!! CRASH - signal received: ");
         switch (sig)
         {
             case SIGSEGV: crashWrite ("SIGSEGV (segmentation fault)\n"); break;

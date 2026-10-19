@@ -34,7 +34,7 @@ MetroTransportBar::MetroTransportBar (SequencerEngine& sequencer, AbletonLink* l
     tempo.setEditable (true, true, false);
     tempo.setJustificationType (juce::Justification::centred);
     tempo.setFont (MetroTypography::body());
-    tempo.setTooltip ("Tempo in beats per minute (20–999)");
+    tempo.setTooltip ("Tempo in beats per minute (20-999)");
     tempo.onTextChange = [this] { updateTempoFromEditor(); };
     addAndMakeVisible (tempo);
 
