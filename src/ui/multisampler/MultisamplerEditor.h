@@ -227,6 +227,13 @@ public:
         PluginEditor.cpp. No-op if zoneIndex is out of range. */
     void applySliceControlBarFieldEdit (int zoneIndex, int field, float value);
 
+    /** Loop start/end dragged on MultisamplerWaveformLcd (loop edges). Live
+        frames (isCommit = false) only update the model + displays; the kit
+        re-render and onInstrumentChanged happen once, on the committing
+        mouse-up -- the same live/commit split the other waveform edits use.
+        Values are clamped to a well-formed loop; loopEnd is exclusive. */
+    void applyLoopPointsEdit (int zoneIndex, juce::int64 loopStart, juce::int64 loopEnd, bool isCommit);
+
     /** Applies one zoneLcd field edit (see MultisamplerZoneField) to the
         currently-editable zone (resolved by inspectedZoneId, not index —
         see MultisamplerZoneLcd.h's onFieldEdited doc comment for why: the

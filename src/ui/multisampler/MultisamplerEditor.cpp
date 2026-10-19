@@ -302,7 +302,7 @@ std::vector<KeysPanel::Keyzone> MultisamplerEditor::toKeyzones (const Multisampl
         kz.loVel     = z.lowVelocity;
         kz.hiVel     = z.highVelocity;
         kz.rootPitch = z.rootKey;
-        kz.isLooped  = (z.loopMode != LoopMode::noLoop);
+        kz.isLooped  = isLoopingMode (z.loopMode);
         kz.isSfz     = true;   // editable, same convention as parseSfzZones()
 
         // A user-picked colour (see ZoneMapView::showZoneContextMenu) always
@@ -1283,6 +1283,31 @@ void MultisamplerEditor::applyZoneFieldEdit (MultisamplerZoneField field, float 
     if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
 }
 
+void MultisamplerEditor::applyLoopPointsEdit (int zoneIndex, juce::int64 loopStart, juce::int64 loopEnd, bool isCommit)
+{
+    if (zoneIndex < 0 || zoneIndex >= (int) instrument.zones.size())
+        return;
+    auto& z = instrument.zones[(size_t) zoneIndex];
+    if (! isLoopingMode (z.loopMode))
+        return;                                   // loop edges only exist while LOOP is on
+
+    loopStart = juce::jmax ((juce::int64) 0, loopStart);
+    if (loopEnd <= loopStart)
+        loopEnd = loopStart + 1;                  // never write an inverted / empty loop
+    z.loopStart = loopStart;
+    z.loopEnd   = loopEnd;
+
+    dirty = true;
+    zoneMapView.refresh();
+    if (isCommit)
+    {
+        scheduleEngineSync();                     // one re-render per drag, not per frame
+        if (onInstrumentChanged) onInstrumentChanged();
+    }
+    refreshZoneLcdDisplay();
+    if (onZoneSelectionOrEditChanged) onZoneSelectionOrEditChanged();
+}
+
 // ── Drum-kit mode / DRUM PADS view ──────────────────────────────────────
 
 void MultisamplerEditor::updateViewToggle()
@@ -1640,7 +1665,7 @@ float MultisamplerEditor::getLiveFieldValue (MultisamplerZoneField field) const
         case MultisamplerZoneField::decay:       return z.decaySeconds;
         case MultisamplerZoneField::sustain:     return z.sustainLevel;
         case MultisamplerZoneField::release:     return z.releaseSeconds;
-        case MultisamplerZoneField::loopEnabled: return z.loopMode != LoopMode::noLoop ? 1.0f : 0.0f;
+        case MultisamplerZoneField::loopEnabled: return isLoopingMode (z.loopMode) ? 1.0f : 0.0f;
         case MultisamplerZoneField::cutoff:      return z.filterCutoffHz;
         case MultisamplerZoneField::resonance:   return z.filterResonance;
         case MultisamplerZoneField::group:       return (float) z.group;

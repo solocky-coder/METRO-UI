@@ -82,6 +82,10 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  {
      multisamplerEditor.applySliceControlBarFieldEdit (zoneIndex, field, value);
  };
+ multisamplerWaveformLcd.onLoopPointsEdited = [this] (int zoneIndex, juce::int64 ls, juce::int64 le, bool isCommit)
+ {
+     multisamplerEditor.applyLoopPointsEdit (zoneIndex, ls, le, isCommit);
+ };
  if (auto* cf = headerBar.getControlFrame())
  addAndMakeVisible (*cf);
  // UNDO/REDO/PANIC/cog now live inside the bottom of the control frame, so

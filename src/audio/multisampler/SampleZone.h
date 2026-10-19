@@ -27,6 +27,17 @@ enum class LoopMode
     loopSustain      ///< loop_mode=loop_sustain
 };
 
+/** True only for modes that actually LOOP the sample (continuous / sustain).
+    One-shot is deliberately NOT a loop: it plays the sample once, to the end,
+    ignoring note-off. UI that shows a LOOP indicator, draws the loop region,
+    or validates loop points must use this -- never `mode != LoopMode::noLoop`,
+    which also counts one-shot and made the 1SH button light the PLAYBACK
+    frame's LOOP pill and draw a loop region on the waveform. */
+inline bool isLoopingMode (LoopMode m) noexcept
+{
+    return m == LoopMode::loopContinuous || m == LoopMode::loopSustain;
+}
+
 inline juce::String loopModeToOpcodeValue (LoopMode m)
 {
     switch (m)

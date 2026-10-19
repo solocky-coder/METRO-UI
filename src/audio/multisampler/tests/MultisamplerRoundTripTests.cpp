@@ -105,6 +105,7 @@ public:
         testDrumPadBankAutoSelect();
         testDrumKitFlagRoundTrips();
         testPreviewReverseOpcode();
+        testOneShotIsNotALoop();
     }
 
 private:
@@ -638,6 +639,30 @@ private:
 
         inst.zones[0].reverse = false;
         expect (! SfzExporter::render (inst, juce::File(), preview).contains ("dysekt_reverse"));
+    }
+
+    void testOneShotIsNotALoop()
+    {
+        beginTest ("One-shot is not a loop: isLoopingMode and loop-point validation");
+        expect (! isLoopingMode (LoopMode::noLoop));
+        expect (! isLoopingMode (LoopMode::oneShot));
+        expect (isLoopingMode (LoopMode::loopContinuous));
+        expect (isLoopingMode (LoopMode::loopSustain));
+
+        MultisamplerInstrument inst;
+        auto z = padZone (36, 36, 36);
+        z.loopMode = LoopMode::oneShot;          // loop points left unset (-1)
+        inst.addZone (z);
+        bool loopIssue = false;
+        for (const auto& i : inst.validate())
+            if (i.message.containsIgnoreCase ("loop")) loopIssue = true;
+        expect (! loopIssue);                     // one-shot needs no loop points
+
+        inst.zones[0].loopMode = LoopMode::loopContinuous;
+        loopIssue = false;
+        for (const auto& i : inst.validate())
+            if (i.message.containsIgnoreCase ("loop")) loopIssue = true;
+        expect (loopIssue);                       // a real loop still does
     }
 };
 

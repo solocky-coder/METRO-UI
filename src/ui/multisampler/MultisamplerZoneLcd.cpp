@@ -86,7 +86,7 @@ void MultisamplerZoneLcd::setZoneForDisplay (const SampleZone* zone, int display
     snapshot.decaySeconds   = zone->decaySeconds;
     snapshot.sustainLevel   = zone->sustainLevel;
     snapshot.releaseSeconds = zone->releaseSeconds;
-    snapshot.loopOn         = zone->loopMode != LoopMode::noLoop;
+    snapshot.loopOn         = isLoopingMode (zone->loopMode);
     snapshot.filterCutoffHz = zone->filterCutoffHz;
     snapshot.filterResonance = zone->filterResonance;
     snapshot.eq1Freq = zone->eq1Freq;

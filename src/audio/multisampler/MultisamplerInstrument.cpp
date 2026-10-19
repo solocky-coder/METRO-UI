@@ -116,7 +116,7 @@ std::vector<MultisamplerInstrument::ValidationIssue> MultisamplerInstrument::val
             issues.push_back ({ ValidationIssue::Severity::warning, z.id,
                                  "Root key falls outside this zone's key range." });
 
-        if (z.loopMode != LoopMode::noLoop)
+        if (isLoopingMode (z.loopMode))   // one-shot needs no loop points
         {
             if (z.loopStart < 0 || z.loopEnd < 0)
                 issues.push_back ({ ValidationIssue::Severity::error, z.id,

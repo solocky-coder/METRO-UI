@@ -76,6 +76,14 @@ public:
         already expects from the SCB's own numeric ADSR cells. */
     std::function<void (int zoneIndex, int field, float value)> onZoneParamEdited;
 
+    /** Fired while a LOOP start/end handle is dragged (isCommit = false, every
+        frame -- display-only, no engine re-render) and once more on mouse-up
+        (isCommit = true, which is what triggers the kit re-render). Frames are
+        absolute positions in the zone's own sample file, the same coordinate
+        space as SampleZone::loopStart/loopEnd (loopEnd exclusive). Only
+        offered while the zone is actually looping (LOOP on). */
+    std::function<void (int zoneIndex, juce::int64 loopStart, juce::int64 loopEnd, bool isCommit)> onLoopPointsEdited;
+
     static constexpr int kPreferredHeight = 136;
 
 private:
@@ -191,6 +199,20 @@ private:
     int waveformMode { 0 };   // 0=Hard 1=Soft 2=Outline 3=Rectified 4=Mirrored 5=Bars 6=RMS 7=Stepped
 
     NodeRole dragRole { NodeRole::None };
+
+    // Draggable loop region edges (LOOP on). Separate from the ADSR node
+    // roles above: the envelope nodes win a hit-test first, the loop handles
+    // only get the click when no node is under the cursor.
+    enum class LoopHandle { None, Start, End };
+    LoopHandle hovLoop  { LoopHandle::None };
+    LoopHandle dragLoop { LoopHandle::None };
+
+    /** Which loop edge (if any) is under `pos`. Requires LOOP on with valid points. */
+    LoopHandle loopHandleAt (juce::Point<float> pos) const;
+    /** x (component coords) of absolute sample frame `frame` in the current zoom window. */
+    float loopFrameToX (juce::int64 frame, const juce::Rectangle<float>& area) const;
+    /** Absolute sample frame under component x `x`. */
+    juce::int64 loopXToFrame (float x, const juce::Rectangle<float>& area) const;
     NodeRole hovRole  { NodeRole::None };
     int      postCommitGuard { 0 };
 

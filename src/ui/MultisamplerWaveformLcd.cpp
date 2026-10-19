@@ -329,17 +329,56 @@ MultisamplerWaveformLcd::NodeRole MultisamplerWaveformLcd::hitTest (juce::Point<
     return best;
 }
 
+// ── Loop handles ──────────────────────────────────────────────────────────────
+
+float MultisamplerWaveformLcd::loopFrameToX (juce::int64 frame, const juce::Rectangle<float>& area) const
+{
+    const float t = ((float) frame - (float) windowStartFrame)
+                    / (float) juce::jmax (1, windowEndFrame - windowStartFrame);
+    return area.getX() + t * area.getWidth();
+}
+
+juce::int64 MultisamplerWaveformLcd::loopXToFrame (float x, const juce::Rectangle<float>& area) const
+{
+    const float t = (x - area.getX()) / juce::jmax (1.0f, area.getWidth());
+    return (juce::int64) windowStartFrame
+           + (juce::int64) std::llround ((double) t * (double) (windowEndFrame - windowStartFrame));
+}
+
+MultisamplerWaveformLcd::LoopHandle MultisamplerWaveformLcd::loopHandleAt (juce::Point<float> pos) const
+{
+    if (screenArea.isEmpty() || windowEndFrame <= windowStartFrame) return LoopHandle::None;
+    int zi = -1;
+    const SampleZone* z = resolveSelectedZone (zi);
+    if (z == nullptr || ! isLoopingMode (z->loopMode)) return LoopHandle::None;
+    if (z->loopStart < 0 || z->loopEnd <= z->loopStart) return LoopHandle::None;
+
+    const auto area = screenArea.reduced (2.0f);          // same box drawLoopOverlay uses
+    if (pos.y < area.getY() || pos.y > area.getBottom()) return LoopHandle::None;
+
+    constexpr float kGrab = 7.0f;                         // generous: the line itself is 1px
+    const float x0 = loopFrameToX (z->loopStart, area);
+    const float x1 = loopFrameToX (z->loopEnd,   area);
+    const float d0 = std::abs (pos.x - x0);
+    const float d1 = std::abs (pos.x - x1);
+    if (d0 > kGrab && d1 > kGrab) return LoopHandle::None;
+    return d0 <= d1 ? LoopHandle::Start : LoopHandle::End;  // overlapping edges: nearest wins
+}
+
 // ── Mouse ─────────────────────────────────────────────────────────────────────
 
 void MultisamplerWaveformLcd::mouseMove (const juce::MouseEvent& e)
 {
     const NodeRole newHov = hitTest (e.position);
-    if (newHov != hovRole)
+    // Envelope nodes take priority; the loop edges only react where no node is.
+    const LoopHandle newLoop = (newHov == NodeRole::None) ? loopHandleAt (e.position) : LoopHandle::None;
+    if (newHov != hovRole || newLoop != hovLoop)
     {
         hovRole = newHov;
-        setMouseCursor (hovRole != NodeRole::None
-                            ? juce::MouseCursor::PointingHandCursor
-                            : juce::MouseCursor::NormalCursor);
+        hovLoop = newLoop;
+        setMouseCursor (hovRole != NodeRole::None ? juce::MouseCursor::PointingHandCursor
+                        : hovLoop != LoopHandle::None ? juce::MouseCursor::LeftRightResizeCursor
+                                                      : juce::MouseCursor::NormalCursor);
         repaint();
     }
 }
@@ -356,10 +395,37 @@ void MultisamplerWaveformLcd::mouseDown (const juce::MouseEvent& e)
     if (! data.hasSelection || data.missingSample) return;
 
     dragRole = hitTest (e.position);
+    dragLoop = (dragRole == NodeRole::None) ? loopHandleAt (e.position) : LoopHandle::None;
 }
 
 void MultisamplerWaveformLcd::mouseDrag (const juce::MouseEvent& e)
 {
+    if (dragLoop != LoopHandle::None && ! screenArea.isEmpty())
+    {
+        int zi = -1;
+        const SampleZone* z = resolveSelectedZone (zi);
+        if (z == nullptr || ! data.hasSelection || data.missingSample || ! isLoopingMode (z->loopMode))
+        {
+            dragLoop = LoopHandle::None;
+            return;
+        }
+
+        const auto area = screenArea.reduced (2.0f);
+        constexpr juce::int64 kMinLoop = 32;                       // frames; keeps the loop well-formed
+        const juce::int64 maxFrame = (juce::int64) juce::jmax (data.totalFrames, data.endSample);
+        juce::int64 ls = z->loopStart, le = z->loopEnd;
+        const juce::int64 f = loopXToFrame (e.position.x, area);
+
+        if (dragLoop == LoopHandle::Start)
+            ls = juce::jlimit ((juce::int64) 0, le - kMinLoop, f);
+        else
+            le = juce::jlimit (ls + kMinLoop, maxFrame, f);
+
+        if (onLoopPointsEdited) onLoopPointsEdited (zi, ls, le, false);   // live: display only
+        repaint();
+        return;
+    }
+
     if (dragRole == NodeRole::None || screenArea.isEmpty()) return;
     if (! data.hasSelection || data.missingSample) { dragRole = NodeRole::None; return; }
 
@@ -401,6 +467,16 @@ void MultisamplerWaveformLcd::mouseDrag (const juce::MouseEvent& e)
 
 void MultisamplerWaveformLcd::mouseUp (const juce::MouseEvent&)
 {
+    if (dragLoop != LoopHandle::None)
+    {
+        // Commit: re-send the final points with isCommit = true so the editor
+        // schedules the kit re-render exactly once per drag.
+        int zi = -1;
+        if (const SampleZone* z = resolveSelectedZone (zi))
+            if (onLoopPointsEdited)
+                onLoopPointsEdited (zi, z->loopStart, z->loopEnd, true);
+        dragLoop = LoopHandle::None;
+    }
     dragRole        = NodeRole::None;
     postCommitGuard = 6;
     repaint();
@@ -638,7 +714,7 @@ void MultisamplerWaveformLcd::drawLoopOverlay (juce::Graphics& g, const juce::Re
 {
     int zoneIdx = -1;
     const SampleZone* z = resolveSelectedZone (zoneIdx);
-    if (z == nullptr || z->loopMode == LoopMode::noLoop) return;
+    if (z == nullptr || ! isLoopingMode (z->loopMode)) return;
     if (z->loopStart < 0 || z->loopEnd <= z->loopStart) return;
     if (windowEndFrame <= windowStartFrame) return;
 
@@ -657,9 +733,29 @@ void MultisamplerWaveformLcd::drawLoopOverlay (juce::Graphics& g, const juce::Re
     g.setColour (loopColour.withAlpha (0.06f));
     g.fillRect  (x0, area.getY(), x1 - x0, area.getHeight());
 
-    g.setColour (loopColour.withAlpha (0.50f));
+    const bool hotStart = (dragLoop == LoopHandle::Start) || (dragLoop == LoopHandle::None && hovLoop == LoopHandle::Start);
+    const bool hotEnd   = (dragLoop == LoopHandle::End)   || (dragLoop == LoopHandle::None && hovLoop == LoopHandle::End);
+
+    g.setColour (loopColour.withAlpha (hotStart ? 0.95f : 0.50f));
     g.drawVerticalLine (juce::roundToInt (x0), area.getY(), area.getBottom());
+    g.setColour (loopColour.withAlpha (hotEnd ? 0.95f : 0.50f));
     g.drawVerticalLine (juce::roundToInt (x1), area.getY(), area.getBottom());
+
+    // Grips: a small pill on each edge, mid-height, so it's visible that the
+    // loop edges can be grabbed (the 1px lines alone gave no hint).
+    {
+        const float gh = 18.0f, gw = 7.0f, cy = area.getCentreY();
+        auto grip = [&] (float x, bool hot)
+        {
+            const juce::Rectangle<float> r (x - gw * 0.5f, cy - gh * 0.5f, gw, gh);
+            g.setColour (loopColour.withAlpha (hot ? 0.95f : 0.65f));
+            g.fillRoundedRectangle (r, 2.5f);
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.drawVerticalLine (juce::roundToInt (x), cy - 5.0f, cy + 5.0f);
+        };
+        grip (x0, hotStart);
+        grip (x1, hotEnd);
+    }
 
     const float labelX = (x0 + x1) * 0.5f - 18.0f;
     const float labelY = area.getY() + 3.0f;
