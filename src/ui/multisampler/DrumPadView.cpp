@@ -116,6 +116,25 @@ void DrumPadView::paint (juce::Graphics& g)
         }
     }
 
+    // ZONE SYNC button (right end of the bank row)
+    {
+        const auto r    = zoneSyncBounds.toFloat();
+        const int  look = zoneSyncLook();
+        const bool on   = (look >= 2);
+        const bool held = (look == 3);
+        g.setColour (on ? theme.accent.withAlpha (held ? 0.40f : 0.85f) : theme.button);
+        g.fillRoundedRectangle (r, 4.0f * uiScale);
+        if (look == 1)   // switched on, but MIDI FOLLOW is off so nothing will sync yet
+        {
+            g.setColour (theme.accent.withAlpha (0.6f));
+            g.drawRoundedRectangle (r.reduced (1.0f), 4.0f * uiScale, 1.5f);
+        }
+        g.setColour ((on && ! held) ? theme.waveformBg : theme.foreground.withAlpha (0.85f));
+        g.setFont (juce::FontOptions (juce::jlimit (11.0f * uiScale, 20.0f * uiScale, r.getHeight() * 0.40f), juce::Font::bold));
+        g.drawFittedText (held ? "SYNC HELD" : "ZONE SYNC",
+                          r.toNearestInt().reduced ((int) (4 * uiScale), 0), juce::Justification::centred, 1, 0.8f);
+    }
+
     // Pads
     const int baseNote = bank * kPadsPerBank;
     for (int i = 0; i < kPadsPerBank; ++i)
@@ -179,6 +198,10 @@ void DrumPadView::resized()
     auto r = getLocalBounds().reduced ((int) (8 * uiScale));
     auto banks = r.removeFromTop ((int) (36 * uiScale));
     const int gap = juce::jmax (2, (int) (4 * uiScale));
+
+    // ZONE SYNC button sits at the right end of the bank row; banks share the rest.
+    zoneSyncBounds = banks.removeFromRight ((int) (104 * uiScale));
+    banks.removeFromRight (gap * 2);
     const int bw  = (banks.getWidth() - (kNumBanks - 1) * gap) / kNumBanks;
     for (int b = 0; b < kNumBanks; ++b)
         bankBounds[(size_t) b] = { banks.getX() + b * (bw + gap), banks.getY(), bw, banks.getHeight() };
@@ -193,8 +216,37 @@ void DrumPadView::resized()
 
 // ── Hit testing / mouse ──────────────────────────────────────────────────
 
+bool DrumPadView::isZoneSyncHeld() const
+{
+    const bool playing   = processor.sequencer.isPlaying()
+                           || processor.hostTransportPlaying.load (std::memory_order_relaxed);
+    const bool recording = processor.sequencer.isRecording();
+    return playing && ! recording;
+}
+
+int DrumPadView::zoneSyncLook() const
+{
+    if (! processor.padZoneSyncEnabled.load (std::memory_order_relaxed)) return 0;
+    if (! processor.midiSelectsSlice.load (std::memory_order_relaxed))   return 1;
+    return isZoneSyncHeld() ? 3 : 2;
+}
+
+int DrumPadView::zoneIndexForNote (int note, int velocity) const
+{
+    note = juce::jlimit (0, 127, note);
+    const auto& zones = instrument.zones;
+    for (int zi = 0; zi < (int) zones.size(); ++zi)
+    {
+        const auto& z = zones[(size_t) zi];
+        if (z.enabled && z.keyInRange (note) && z.velocityInRange (velocity))
+            return zi;
+    }
+    return pads[(size_t) note].zoneIndex;
+}
+
 int DrumPadView::hitTest (juce::Point<int> pos) const
 {
+    if (zoneSyncBounds.contains (pos)) return kHitZoneSync;
     for (int b = 0; b < kNumBanks; ++b)
         if (bankBounds[(size_t) b].contains (pos)) return -100 - b;
     for (int i = 0; i < kPadsPerBank; ++i)
@@ -217,6 +269,13 @@ void DrumPadView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    if (hit == kHitZoneSync)
+    {
+        processor.padZoneSyncEnabled.store (! processor.padZoneSyncEnabled.load (std::memory_order_relaxed),
+                                            std::memory_order_relaxed);
+        repaint();
+        return;
+    }
     if (hit <= -100) { setBank (-100 - hit); return; }
     if (hit < 0) return;
 
@@ -248,6 +307,8 @@ void DrumPadView::visibilityChanged()
 {
     if (isVisible())
     {
+        // Don't replay notes played while the view was hidden: start from "now".
+        lastNoteOnSeq = processor.sfz2NoteOnSeq.load (std::memory_order_acquire);
         startTimerHz (30);
     }
     else
@@ -263,6 +324,56 @@ void DrumPadView::timerCallback()
     // Reads the sfzPlayer2 active-note mask, so pads also light for MIDI from
     // the host / arranger / hardware, not just on-screen clicks.
     bool changed = false;
+
+    // MIDI follow: show the bank of the note that just played -- but ONLY while
+    // the app-wide MIDI FOLLOW button (processor.midiSelectsSlice) is active.
+    // The sequence counter is consumed either way, so notes played while follow
+    // is off are never replayed when it is switched on. Switches to the note's
+    // bank AND marks that pad as the selected pad (setSelectedNote does both).
+    //
+    // ZONE SYNC (separate button, off by default): additionally selects the note's
+    // zone in ZONES / the edit panel via onPadSelected -- the same call a pad click
+    // makes. It is skipped (the bank + pad highlight still follow) while:
+    //   - playback is running (internal sequencer or host transport), unless the
+    //     sequencer is recording -> see isZoneSyncHeld(); resumes by itself on stop,
+    //     without jumping to a note played in the meantime;
+    //   - a mouse button is down, so a note can't swap the zone under a drag in
+    //     the edit panel;
+    //   - the pad is empty (nothing to select: the current zone stays).
+    {
+        const std::uint32_t seq = processor.sfz2NoteOnSeq.load (std::memory_order_acquire);
+        if (seq != lastNoteOnSeq)
+        {
+            lastNoteOnSeq = seq;
+            if (processor.midiSelectsSlice.load (std::memory_order_relaxed))
+            {
+                const int note = processor.sfz2LastNoteOn.load (std::memory_order_relaxed);
+                if (note >= 0 && note < DrumPadModel::kNumNotes)
+                {
+                    setSelectedNote (note);
+
+                    if (processor.padZoneSyncEnabled.load (std::memory_order_relaxed)
+                        && ! isZoneSyncHeld()
+                        && ! juce::ModifierKeys::currentModifiers.isAnyMouseButtonDown()
+                        && onPadSelected)
+                    {
+                        const int vel = (int) processor.sfz2LastNoteOnVelocity[note].load (std::memory_order_relaxed);
+                        const int zi  = zoneIndexForNote (note, vel);
+                        if (zi >= 0 && zi < (int) instrument.zones.size())
+                            onPadSelected (zi);
+                    }
+                }
+            }
+        }
+    }
+
+    // Repaint the ZONE SYNC button when its look changes (toggled, MIDI FOLLOW
+    // switched, or playback started/stopped).
+    {
+        const int look = zoneSyncLook();
+        if (look != zoneSyncLookShown) { zoneSyncLookShown = look; changed = true; }
+    }
+
     for (int n = 0; n < DrumPadModel::kNumNotes; ++n)
     {
         const bool on = (processor.sfz2ActiveNotes[n / 64].load (std::memory_order_relaxed)

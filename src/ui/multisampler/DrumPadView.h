@@ -17,6 +17,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
+#include <cstdint>
 #include <functional>
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/DrumPadModel.h"
@@ -80,8 +81,20 @@ public:
 private:
     void timerCallback() override;
 
-    /** -1 = nothing; 0..127 = pad (in the CURRENT bank); <= -100 = bank button. */
+    /** -1 = nothing; 0..127 = pad (in the CURRENT bank); <= -100 = bank button;
+        kHitZoneSync = the ZONE SYNC button. */
     int  hitTest (juce::Point<int>) const;
+    static constexpr int kHitZoneSync = -2;
+
+    /** ZONE SYNC is automatically HELD while playback runs (internal sequencer or
+        host transport) -- unless the sequencer is recording, so live-played notes
+        recorded over playback still drive the zone selection. */
+    bool isZoneSyncHeld() const;
+
+    /** Zone to select for a played note: the enabled zone covering `note` whose
+        velocity range contains `velocity` (same pick the engine makes), else the
+        pad's primary zone. -1 if the pad is empty. */
+    int  zoneIndexForNote (int note, int velocity) const;
     static juce::String noteName (int note);
     juce::Colour padColour (const DrumPadModel::PadInfo&) const;
     int  velocityForClick (int padIndexInBank, juce::Point<int>) const;
@@ -90,9 +103,17 @@ private:
     MultisamplerInstrument& instrument;
 
     DrumPadModel::Model pads {};
+    juce::Rectangle<int> zoneSyncBounds;
+    int  zoneSyncLookShown = -1;      // last ZONE SYNC look painted (see zoneSyncLook()), to repaint on change
+
+    /** 0 = off, 1 = on but MIDI FOLLOW is off, 2 = active, 3 = active but HELD (playing). */
+    int  zoneSyncLook() const;
     std::array<juce::Rectangle<int>, DrumPadModel::kNumBanks>    bankBounds {};
     std::array<juce::Rectangle<int>, DrumPadModel::kPadsPerBank> padBounds {};
     std::array<bool, DrumPadModel::kNumNotes> active {};
+
+    // MIDI follow: last processor.sfz2NoteOnSeq value this view has consumed.
+    std::uint32_t lastNoteOnSeq = 0;
 
     int   bank         = 0;
     int   heldNote     = -1;

@@ -960,6 +960,28 @@ public:
     // sfz2ActiveNotes).
     std::atomic<uint8_t> sfz2LastNoteOnVelocity[128] {};
 
+    // MIDI-follow signal for the MULTISAMPLER pad view (DrumPadView). Written in
+    // processMidi2() on every note-on of sfzPlayer2's channel(s): the note number
+    // first, then the sequence counter (release), so a UI reader that sees a new
+    // sequence value (acquire) also sees the matching note. The counter -- not the
+    // note -- is what tells the UI a NEW note-on happened, so a repeated note still
+    // re-follows after the user has browsed to another bank by hand.
+    // Display-only; the UI only acts on it while midiSelectsSlice (the app-wide
+    // MIDI FOLLOW button) is on.
+    std::atomic<int>      sfz2LastNoteOn   { -1 };
+    std::atomic<uint32_t> sfz2NoteOnSeq    { 0 };
+
+    // ZONE SYNC (multisampler pad view): when on -- and MIDI FOLLOW is on -- a
+    // played note also selects its zone in ZONES / the edit panel, exactly like
+    // clicking the pad. Session-only (not saved with the project); lives here so
+    // it survives the editor being closed and reopened.
+    std::atomic<bool>     padZoneSyncEnabled { false };
+
+    // True while the HOST DAW transport is playing (written once per block from
+    // the host playhead; stays false in builds/hosts without a playhead). With
+    // sequencer.isPlaying() it drives ZONE SYNC's automatic hold.
+    std::atomic<bool>     hostTransportPlaying { false };
+
     // MIDI channel routing bitmasks (bit N = channel N, 1-based, bits 1–16 used).
     //
     // Channel ownership rules:

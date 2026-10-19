@@ -3008,6 +3008,13 @@ void DysektProcessor::processMidi2 (const juce::MidiBuffer& midi)
                 // ZoneMapView resolve the correct velocity-layer zone for
                 // this note instead of every key-range match.
                 sfz2LastNoteOnVelocity[note].store ((uint8_t) msg.getVelocity(), std::memory_order_relaxed);
+
+                // MIDI-follow signal for the pad view. Published LAST, after the
+                // velocity above: note first, then the sequence counter with
+                // release ordering, so a UI reader that sees the new counter value
+                // also sees this note and its velocity (see PluginProcessor.h).
+                sfz2LastNoteOn.store (note, std::memory_order_relaxed);
+                sfz2NoteOnSeq.fetch_add (1, std::memory_order_release);
             }
 
             const int sliceIdx = sliceManager2.midiNoteToSlice (note);
@@ -3195,6 +3202,10 @@ void DysektProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     {
         if (auto pos = ph->getPosition())
         {
+            // Host transport state for the multisampler pad view's ZONE SYNC
+            // auto-hold (display/UI-only; the internal sequencer has its own flag).
+            hostTransportPlaying.store (pos->getIsPlaying(), std::memory_order_relaxed);
+
             if (auto bpmOpt = pos->getBpm())
             {
                 dawBpm.store ((float) *bpmOpt, std::memory_order_relaxed);
