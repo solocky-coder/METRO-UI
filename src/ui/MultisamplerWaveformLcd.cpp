@@ -954,7 +954,48 @@ void MultisamplerWaveformLcd::drawPlayhead (juce::Graphics& g, const juce::Recta
         if (segRange <= 0) continue;
 
         const float rawPos = processor.voicePool2.voicePositions[i].load (std::memory_order_relaxed);
-        const float xn = juce::jlimit (0.0f, 1.0f, (rawPos - (float) segStart) / (float) segRange);
+        const float tau    = rawPos - (float) segStart;   // render frames since this note's segment began
+        float xn = juce::jlimit (0.0f, 1.0f, tau / (float) segRange);
+
+        // The playhead has to follow the zone's playback mode, not just sweep
+        // left-to-right once:
+        //  * LOOP  -- the render keeps looping, so a one-pass 0..1 sweep is
+        //             wrong. Convert elapsed render time back to a position in
+        //             the ORIGINAL sample (real playback pitch + sample-rate
+        //             ratio) and wrap it inside the loop points.
+        //  * REV   -- the rendered note is the reversed sample, so the sweep
+        //             runs right-to-left over the (forward-drawn) waveform.
+        //  * 1SH   -- needs nothing here: a one-shot voice stays active to the
+        //             end of the sample, so the head simply keeps going.
+        const bool looping = (z->loopMode == LoopMode::loopContinuous
+                              || z->loopMode == LoopMode::loopSustain);
+        if (looping && instrument != nullptr && data.endSample > data.startSample)
+        {
+            const double hostSr = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 44100.0;
+            const double semis  = (double) (v.midiNote - z->rootKey)
+                                  + (double) instrument->transposeSemitones
+                                  + (double) (z->tuneCents + instrument->fineTuneCents) / 100.0;
+            const double ratio  = std::pow (2.0, semis / 12.0) * (data.sampleRate / hostSr);
+
+            const double ls = (z->loopStart >= 0 && z->loopEnd > z->loopStart) ? (double) z->loopStart : (double) data.startSample;
+            const double le = (z->loopStart >= 0 && z->loopEnd > z->loopStart) ? (double) z->loopEnd   : (double) data.endSample;
+
+            double orig = (double) data.startSample + (double) tau * ratio;
+            if (le > ls && orig >= le)
+                orig = ls + std::fmod (orig - ls, le - ls);
+            if (z->reverse)
+                orig = (double) data.startSample + (double) data.endSample - orig;
+
+            const bool haveWindow = windowEndFrame > windowStartFrame;
+            const double a = haveWindow ? (double) windowStartFrame : (double) data.startSample;
+            const double b = haveWindow ? (double) windowEndFrame   : (double) data.endSample;
+            xn = juce::jlimit (0.0f, 1.0f, (float) ((orig - a) / (b - a)));
+        }
+        else if (z->reverse)
+        {
+            xn = 1.0f - xn;
+        }
+
         const float x  = area.getX() + xn * area.getWidth();
 
         g.setColour (msLcdPhosphor().withAlpha (0.85f));
