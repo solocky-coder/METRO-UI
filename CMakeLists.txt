@@ -164,6 +164,8 @@ target_sources(Avix PRIVATE
     src/ui/IconManager.cpp
     src/metro/MetroTheme.cpp
     src/metro/MetroLookAndFeel.cpp
+    src/metro/XivaTheme.cpp
+    src/metro/XivaLookAndFeel.cpp
     src/ui/HeaderBar.cpp
     src/ui/SliceControlBar.cpp
     src/ui/WaveformView.cpp
@@ -280,6 +282,8 @@ target_sources(AvixStandalone PRIVATE
     src/ui/IconManager.cpp
     src/metro/MetroTheme.cpp
     src/metro/MetroLookAndFeel.cpp
+    src/metro/XivaTheme.cpp
+    src/metro/XivaLookAndFeel.cpp
     src/ui/HeaderBar.cpp
     src/ui/SliceControlBar.cpp
     src/ui/WaveformView.cpp
