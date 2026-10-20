@@ -1,707 +1,73 @@
+cpp
 #include "AvixLookAndFeel.h"
-#include "BinaryData.h"
-#include "IconManager.h"
+#include "ThemeData.h"
 #include "ToolIcons.h"
+#include "BinaryData.h"
 
-// Default theme is now Metro (flat, square, no-gloss chrome per the design
-// manual). Was previously ThemeData::opendawTheme(), which meant every
-// theme.name == "metro" flat-rendering branch across the codebase
-// (ActionPanel, FileBrowserPanel, GlobalEqPanel, HeaderBar, LogoBar,
-// PadGridView, Sf2LcdDisplay, Sf2ProgramGrid, SfzDropdownPanel,
-// SfzLcdDisplay, ShortcutsPanel, SliceLcdDisplay, DualLcdControlFrame,
-// LcdColours) was unreachable — the app rendered the old rounded/gradient/
-// glow "opendaw" look by default even though the flat code path was already
-// implemented and correct. Flipping this one line activates the flat look
-// everywhere at once, with no other file needing to change.
-static ThemeData globalTheme = ThemeData::metroTheme();
-
-ThemeData& getTheme() { return globalTheme; }
-void setTheme (const ThemeData& t) { globalTheme = t; }
-
-juce::Typeface::Ptr AvixLookAndFeel::sRegularTypeface;
-juce::Typeface::Ptr AvixLookAndFeel::sBoldTypeface;
-juce::Typeface::Ptr AvixLookAndFeel::sMonoTypeface;
-juce::Typeface::Ptr AvixLookAndFeel::sMonoBoldTypeface;
-float AvixLookAndFeel::sMenuScale = 1.0f;
-std::atomic<int> AvixLookAndFeel::sInstanceCount { 0 };
-
-AvixLookAndFeel::AvixLookAndFeel()
-{
-    ++sInstanceCount;
-
-    setColour (juce::ResizableWindow::backgroundColourId, getTheme().background);
-
-    // Labels / UI text — Barlow Condensed (sharp, narrow, technical)
-    regularTypeface = juce::Typeface::createSystemTypefaceFor (
-        BinaryData::BarlowCondensedRegular_ttf, BinaryData::BarlowCondensedRegular_ttfSize);
-    boldTypeface = juce::Typeface::createSystemTypefaceFor (
-        BinaryData::BarlowCondensedSemiBold_ttf, BinaryData::BarlowCondensedSemiBold_ttfSize);
-
-    // Values / numbers — JetBrains Mono (monospaced, digits never jump width)
-    monoTypeface = juce::Typeface::createSystemTypefaceFor (
-        BinaryData::JetBrainsMonoRegular_ttf, BinaryData::JetBrainsMonoRegular_ttfSize);
-    monoBoldTypeface = juce::Typeface::createSystemTypefaceFor (
-        BinaryData::JetBrainsMonoBold_ttf, BinaryData::JetBrainsMonoBold_ttfSize);
-
-    sRegularTypeface  = regularTypeface;
-    sBoldTypeface     = boldTypeface;
-    sMonoTypeface     = monoTypeface;
-    sMonoBoldTypeface = monoBoldTypeface;
-}
-
-AvixLookAndFeel::~AvixLookAndFeel()
-{
-    // Last look-and-feel gone (editor / standalone window closed): drop the
-    // static typeface references now, while JUCE's font registry still exists.
-    // The per-instance members release themselves right after this body runs.
-    if (--sInstanceCount == 0)
-    {
-        sRegularTypeface  = nullptr;
-        sBoldTypeface     = nullptr;
-        sMonoTypeface     = nullptr;
-        sMonoBoldTypeface = nullptr;
-    }
-}
-
-juce::Font AvixLookAndFeel::makeFont (float pointSize, bool bold)
-{
-    // Font selection is unrelated to the flat/square shape-language collapse —
-    // Metro still asks for native Segoe UI chrome; every other theme still
-    // uses the embedded Barlow Condensed faces. Left exactly as it was.
-    if (getTheme().name == "metro")
-    {
-        auto opts = juce::FontOptions().withName ("Segoe UI").withHeight (pointSize);
-        if (bold)
-            opts = opts.withStyle ("Semibold");
-        return juce::Font (opts);
-    }
-
-    auto tf = bold ? sBoldTypeface : sRegularTypeface;
-    if (tf != nullptr)
-        return juce::Font (juce::FontOptions().withTypeface (tf).withPointHeight (pointSize));
-    return juce::Font (juce::FontOptions().withHeight (pointSize));
-}
-
-juce::Font AvixLookAndFeel::makeMonoFont (float pointSize, bool bold)
-{
-    auto tf = bold ? sMonoBoldTypeface : sMonoTypeface;
-    if (tf != nullptr)
-        return juce::Font (juce::FontOptions().withTypeface (tf).withPointHeight (pointSize));
-    return makeFont (pointSize, bold);
-}
-
-juce::Typeface::Ptr AvixLookAndFeel::getTypefaceForFont (const juce::Font& f)
-{
-    // Check both the bold flag and the typeface style string — macOS can request
-    // bold via style name ("Bold", "SemiBold") rather than the isBold() flag,
-    // which would otherwise fall through to a system typeface (Helvetica, etc.)
-    auto style = f.getTypefaceStyle().toLowerCase();
-    if (f.isBold() || style.contains ("bold") || style.contains ("semi"))
-        return boldTypeface;
-    return regularTypeface;
-}
-
-// ── Buttons ───────────────────────────────────────────────────────────────────
-// COLLAPSED: this used to branch metro (flat/square/accent-only) vs. every
-// other theme (asset sprite base + serum metallic gradient + rounded border).
-// The else branch is gone — every theme now renders the flat/square shape,
-// still reading its own getTheme() colours.
-void AvixLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
-                                               const juce::Colour& /*bgColour*/,
-                                               bool isHighlighted, bool isDown)
-{
-    auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
-    const float r = 0.0f;   // flat, square corners — was Metro-only, now universal
-
-    auto btnCol = button.findColour (juce::TextButton::buttonColourId);
-    auto baseBg = (btnCol != juce::Colour()) ? btnCol : getTheme().button;
-
-    if (baseBg.isTransparent())
-        return;
-
-    const bool toggled = button.getToggleState();
-
-    // Opt-in outline style — set the "flatOutline" property on a button to
-    // get the AVIX chassis look (transparent fill, 1px cyan hairline,
-    // squared corners) instead of the app's default solid flat fill. Used
-    // by TrackInspector's M/S/R row so it matches the SELECTED TRACK card's
-    // border treatment; left opt-in rather than global so every other
-    // button in the app (transport, mixer, etc.) keeps its existing fill.
-    if (button.getProperties().getWithDefault ("flatOutline", false))
-    {
-        auto outline = toggled ? getTheme().accent
-                                : getTheme().accent.withAlpha (isHighlighted ? 0.85f : 0.55f);
-        g.setColour (outline);
-        g.drawRect (bounds, 1.0f);
-        return;
-    }
-
-    // AVIX-METRO opt-in — unlike the default fill path below, this one
-    // actually reads the button's own buttonColourId/buttonOnColourId
-    // rather than the app-wide theme accent, so callers with per-button
-    // roles (M/S/R's amber/gold/red) render as distinct solid tiles
-    // instead of collapsing to one colour. Square corners, no highlight
-    // brightening — the colour itself carries the state.
-    if (button.getProperties().getWithDefault ("flatFill", false))
-    {
-        auto roleFill = toggled ? button.findColour (juce::TextButton::buttonOnColourId)
-                                 : button.findColour (juce::TextButton::buttonColourId);
-        g.setColour (roleFill);
-        g.fillRect (bounds);
-        return;
-    }
-
-    auto fill = isDown        ? getTheme().accent
-              : toggled       ? getTheme().accent
-              : isHighlighted ? getTheme().buttonHover
-                              : getTheme().button;
-    g.setColour (fill);
-    g.fillRoundedRectangle (bounds, r);
-}
-
-void AvixLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
-                                         bool /*isHighlighted*/, bool /*isDown*/)
-{
-    juce::Colour textCol;
-
-    // flatOutline buttons always read cyan-on-black, ignoring any per-role
-    // colour (amber/yellow/red) passed via textColourOffId — the outline
-    // style is monochrome accent, same as the card border it sits under.
-    if (button.getProperties().getWithDefault ("flatOutline", false))
-    {
-        textCol = getTheme().accent;
-    }
-    else
-    {
-        textCol = button.findColour (button.getToggleState()
-                                       ? juce::TextButton::textColourOnId
-                                       : juce::TextButton::textColourOffId);
-        if (textCol.isTransparent())
-            textCol = button.getToggleState()
-                    ? getTheme().accent
-                    : getTheme().foreground.withAlpha (0.85f);
-    }
-
-    g.setColour (textCol);
-
-    // The Arranger's five edit-tool buttons use the exact same procedural
-    // glyphs as its right-click Tool submenu. Keep the button labels for
-    // accessibility/tooltips, but replace their text rendering with the
-    // shared ToolIcons artwork so the two control surfaces cannot drift.
-    if (button.getProperties().getWithDefault ("flatFill", false))
-    {
-        const auto txt = button.getButtonText();
-        ToolIcons::Kind kind;
-        bool isArrangeTool = true;
-
-        if      (txt == "SELECT") kind = ToolIcons::Kind::Select;
-        else if (txt == "DRAW")   kind = ToolIcons::Kind::Draw;
-        else if (txt == "ERASE")  kind = ToolIcons::Kind::Erase;
-        else if (txt == "SPLIT")  kind = ToolIcons::Kind::Split;
-        else if (txt == "GLUE")   kind = ToolIcons::Kind::Glue;
-        else                       isArrangeTool = false;
-
-        if (isArrangeTool)
-        {
-            const auto iconBounds = button.getLocalBounds().toFloat().reduced (7.0f, 4.0f);
-            ToolIcons::draw (g, kind, iconBounds, textCol);
-            return;
-        }
-    }
-
-    const int h = button.getHeight();
-    // Symbol-only button (loop): single non-ASCII char — render larger with system font
-    const juce::String txt = button.getButtonText();
-    const bool isSymbol = (txt.length() <= 2 && txt[0] > 127);
-    float fontSize = isSymbol ? (h < 22 ? 14.0f : 17.0f)
-                   : h < 16 ? 8.0f
-                   : h < 22 ? 10.0f
-                   : h < 28 ? 11.0f
-                   : 13.0f;
-    const auto requestedSize = button.getProperties().getWithDefault ("transportFontSize", 0.0);
-    if ((double) requestedSize > 0.0)
-        fontSize = (float) (double) requestedSize;
-    g.setFont (isSymbol ? juce::Font (fontSize) : makeFont (fontSize));
-    g.drawText (button.getButtonText(), button.getLocalBounds().reduced (2, 0),
-                juce::Justification::centred);
-}
-
-// ── Popup menus ───────────────────────────────────────────────────────────────
-void AvixLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
-{
-    const float r = 0.0f;   // flat, square corners — was Metro-only, now universal
-    auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
-    const auto bgColour = getTheme().darkBar.brighter (0.06f);
-
-    // Fill entire rect first — eliminates white OS window corners behind rounded shape
-    g.fillAll (bgColour);
-
-    // Flat panel fill for every theme — the serum metallic-gradient special
-    // case is gone, this reads plainly from getTheme() now.
-    g.setColour (bgColour);
-    g.fillRoundedRectangle (bounds, r);
-
-    // Outer border — accent tint, full opacity
-    g.setColour (getTheme().separator.withAlpha (1.0f));
-    g.drawRoundedRectangle (bounds.reduced (0.5f), r, 1.0f);
-
-    // Top accent line — 1px, subtle
-    g.setColour (getTheme().accent.withAlpha (0.22f));
-    g.fillRect (bounds.reduced (r, 0).removeFromTop (1.0f));
-}
-
-void AvixLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
-                                            bool isSeparator, bool isActive, bool isHighlighted,
-                                            bool isTicked, bool /*hasSubMenu*/,
-                                            const juce::String& text, const juce::String& /*shortcutText*/,
-                                            const juce::Drawable* icon, const juce::Colour* /*textColour*/)
-{
-    // Solid background first
-    g.setColour (getTheme().darkBar.brighter (0.06f));
-    g.fillRect (area);
-
-    if (isSeparator)
-    {
-        g.setColour (getTheme().separator);
-        g.fillRect (area.reduced (4, 0).withHeight (1).withY (area.getCentreY()));
-        return;
-    }
-
-    if (isHighlighted && isActive)
-    {
-        // Flat highlight — square corners now (was fixed 2.0f radius regardless
-        // of theme; flattened to match the rest of the shape language).
-        g.setColour (getTheme().buttonHover);
-        g.fillRoundedRectangle (area.reduced (3, 1).toFloat(), 0.0f);
-
-        // Accent left edge — 2px solid bar
-        g.setColour (getTheme().accent);
-        g.fillRect (juce::Rectangle<float> ((float)area.getX() + 3, (float)area.getY() + 3,
-                                             2.0f, (float)area.getHeight() - 6));
-    }
-
-    const int tickZoneW = (int) (16 * sMenuScale);
-    if (isTicked)
-    {
-        const int dotSize = (int) (4 * sMenuScale);
-        g.setColour (getTheme().accent);
-        g.fillRect (area.getX() + (tickZoneW - dotSize) / 2,
-                    area.getCentreY() - dotSize / 2,
-                    dotSize, dotSize);
-    }
-
-    // ── Leading icon (e.g. the piano-roll tool glyphs on the right-click
-    //    Tool submenu) ────────────────────────────────────────────────────
-    // getIdealPopupMenuItemSize() already widens rows that carry an icon, but
-    // this override used to ignore the `icon` parameter entirely (it was
-    // named as a discarded /*icon*/ argument), so PopupMenu::Item::setImage()
-    // had no visible effect — items always rendered as text-only regardless
-    // of what the caller set. Paint it in a fixed-width zone right after the
-    // tick zone, then push the text start past it.
-    int contentLeft = area.getX() + tickZoneW;
-    if (icon != nullptr)
-    {
-        const int iconZoneW = (int) (22 * sMenuScale);
-        const int iconSize  = (int) (16 * sMenuScale);
-        auto iconBounds = juce::Rectangle<int> (contentLeft, area.getY(), iconZoneW, area.getHeight())
-                              .withSizeKeepingCentre (iconSize, iconSize);
-        icon->drawWithin (g, iconBounds.toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        contentLeft += iconZoneW;
-    }
-
-    const juce::Colour textCol = isTicked ? getTheme().accent
-                               : isActive ? getTheme().foreground
-                                          : getTheme().foreground.withAlpha (0.4f);
-    g.setColour (textCol);
-    g.setFont (getPopupMenuFont());
-
-    auto textArea = area.withLeft (contentLeft)
-                        .withRight (area.getRight() - (int) (4 * sMenuScale));
-    g.drawText (text, textArea, juce::Justification::centredLeft);
-}
-
-void AvixLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g,
-                                                     const juce::Rectangle<int>& area,
-                                                     const juce::String& sectionName)
-{
-    g.setFont (makeFont (14.0f * sMenuScale, true));
-    g.setColour (getTheme().foreground);
-    g.drawFittedText (sectionName,
-                      area.getX() + (int) (12 * sMenuScale), area.getY(),
-                      area.getWidth() - (int) (16 * sMenuScale),
-                      (int) ((float) area.getHeight() * 0.8f),
-                      juce::Justification::bottomLeft, 1);
-}
-
-juce::Font AvixLookAndFeel::getPopupMenuFont()
-{
-    return makeFont (14.0f * sMenuScale);
-}
-
-// ── ComboBox ──────────────────────────────────────────────────────────────────
-// COLLAPSED: this used to branch metro (flat fill + chevron) vs. every other
-// theme (bevel gradient body + glow-on-focus + chevron). The else branch is
-// gone — every theme now renders the flat Metro-style combo box, still
-// reading its own getTheme() colours.
-void AvixLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
-                                      bool isButtonDown, int buttonX, int /*buttonY*/,
-                                      int /*buttonW*/, int /*buttonH*/, juce::ComboBox& box)
-{
-    const auto& t = getTheme();
-    auto cbBounds = juce::Rectangle<float> (0, 0, (float)width, (float)height).reduced (0.5f);
-
-    const float r = 0.0f;   // Flat — matches every other flattened control in the app
-    g.setColour (isButtonDown ? t.buttonHover : t.button);
-    g.fillRoundedRectangle (cbBounds, r);
-
-    const bool focused = box.hasKeyboardFocus (false);
-    g.setColour (focused ? t.accent : t.separator);
-    g.drawRoundedRectangle (cbBounds, r, 1.0f);
-
-    const int arrowCX = buttonX + (width - buttonX) / 2;
-    const int arrowCY = height / 2;
-    const int arrowHalf = 4;
-    g.setColour (t.foreground.withAlpha (0.85f));
-    g.drawLine ((float)(arrowCX - arrowHalf), (float)(arrowCY - 2),
-                (float)(arrowCX),              (float)(arrowCY + 2), 1.5f);
-    g.drawLine ((float)(arrowCX),              (float)(arrowCY + 2),
-                (float)(arrowCX + arrowHalf),  (float)(arrowCY - 2), 1.5f);
-}
-
-juce::Font AvixLookAndFeel::getComboBoxFont (juce::ComboBox& box)
-{
-    const auto requestedSize = box.getProperties().getWithDefault ("transportFontSize", 0.0);
-    if ((double) requestedSize > 0.0)
-        return makeFont ((float) (double) requestedSize);
-    return makeFont (14.0f * sMenuScale);
-}
-
-void AvixLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
-{
-    label.setBounds (1, 1, box.getWidth() - 28, box.getHeight() - 2);
-    label.setFont (getComboBoxFont (box));
-    label.setColour (juce::Label::textColourId, getTheme().foreground);
-    label.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-}
-
-// Scroll arrows — filled triangles, no unicode
-void AvixLookAndFeel::drawPopupMenuUpDownArrow (juce::Graphics& g, int width, int height,
-                                                  bool isScrollUpArrow)
-{
-    g.setColour (getTheme().foreground.withAlpha (0.6f));
-    const float cx = (float) width * 0.5f;
-    const float cy = (float) height * 0.5f;
-    const float sz = 4.0f;
-    juce::Path arrow;
-    if (isScrollUpArrow)
-        arrow.addTriangle (cx - sz, cy + sz * 0.5f, cx + sz, cy + sz * 0.5f, cx, cy - sz * 0.5f);
-    else
-        arrow.addTriangle (cx - sz, cy - sz * 0.5f, cx + sz, cy - sz * 0.5f, cx, cy + sz * 0.5f);
-    g.fillPath (arrow);
-}
-
-// ── Tooltip ───────────────────────────────────────────────────────────────────
-void AvixLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
-{
-    // Flattened — was a fixed 2.0f radius regardless of theme; now square
-    // corners everywhere, in line with the rest of the shape language.
-    const float r = 0.0f;
-    auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
-
-    g.setColour (getTheme().darkBar.brighter (0.10f));
-    g.fillRoundedRectangle (bounds, r);
-
-    g.setColour (getTheme().accent.withAlpha (0.55f));
-    g.drawRoundedRectangle (bounds.reduced (0.5f), r, 1.0f);
-
-    g.setColour (getTheme().foreground.withAlpha (0.95f));
-    g.setFont (makeFont (13.0f));
-    g.drawText (text, 6, 0, width - 12, height, juce::Justification::centredLeft);
-}
-
-juce::Rectangle<int> AvixLookAndFeel::getTooltipBounds (const juce::String& text,
-                                                            juce::Point<int> screenPos,
-                                                            juce::Rectangle<int> parentArea)
-{
-    int w = (int) juce::GlyphArrangement::getStringWidth(makeFont (14.0f), text) + 14;
-    int h = 24;
-    int x = screenPos.x;
-    int y = screenPos.y + 18;
-
-    if (x + w > parentArea.getRight())
-        x = parentArea.getRight() - w;
-    if (y + h > parentArea.getBottom())
-        y = screenPos.y - h - 4;
-
-    return { x, y, w, h };
-}
-
-// ── Scrollbar ─────────────────────────────────────────────────────────────────
-// Flattened — was always a rounded "pill" thumb with a gradient fill and a
-// hover/drag glow regardless of theme. Now a flat square-cornered accent bar,
-// no gradient, no glow, matching the rest of the shape language.
-void AvixLookAndFeel::drawScrollbar (juce::Graphics& g,
-                                       juce::ScrollBar& /*scrollbar*/,
-                                       int x, int y, int width, int height,
-                                       bool isScrollbarVertical,
-                                       int thumbStartPosition,
-                                       int thumbSize,
-                                       bool isMouseOver,
-                                       bool isMouseDown)
-{
-    const auto& t = getTheme();
-
-    // Track — flat, dark
-    g.setColour (t.darkBar.darker (0.30f));
-    g.fillRect (x, y, width, height);
-    g.setColour (t.separator);
-    g.drawRect (x, y, width, height, 1);
-
-    if (thumbSize > 0)
-    {
-        juce::Rectangle<int> thumb;
-        if (isScrollbarVertical)
-            thumb = { x + 1, y + thumbStartPosition, width - 2, thumbSize };
-        else
-            thumb = { x + thumbStartPosition, y + 1, thumbSize, height - 2 };
-
-        auto thumbF = thumb.toFloat().reduced (1.0f);
-        const float baseAlpha = isMouseDown ? 0.85f : isMouseOver ? 0.70f : 0.55f;
-
-        g.setColour (t.accent.withAlpha (baseAlpha));
-        g.fillRect (thumbF);
-
-        g.setColour (t.accent.withAlpha (0.40f));
-        g.drawRect (thumbF, 1.0f);
-    }
-}
-
-// ── Linear slider ─────────────────────────────────────────────────────────────
-// COLLAPSED: this used to branch metro (thin track + accent fill + round
-// dot thumb) vs. every other theme (recessed gradient track + glow fill +
-// glassy beveled thumb). The else branch is gone — every theme now renders
-// the flat Metro-style slider, still reading its own getTheme() colours.
-void AvixLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
-                                          float sliderPos, float minSliderPos, float maxSliderPos,
-                                          const juce::Slider::SliderStyle style, juce::Slider& slider)
-{
-    const auto& t = getTheme();
-    auto bounds = juce::Rectangle<float> ((float)x, (float)y, (float)width, (float)height);
-
-    if (style == juce::Slider::LinearVertical)
-    {
-        // Not currently used anywhere in the plugin, but keep a sane vertical
-        // fallback to stock drawing rather than mis-rendering a horizontal bar.
-        juce::LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos,
-                                                minSliderPos, maxSliderPos, style, slider);
-        return;
-    }
-
-    const float trackH = 3.0f;   // thin flat track — was Metro-only, now universal
-    auto track = bounds.withSizeKeepingCentre (bounds.getWidth(), trackH);
-    g.setColour (t.gridLine);
-    g.fillRect (track);
-
-    const float fillLeft  = track.getX();
-    const float fillRight = juce::jlimit (fillLeft, track.getRight(), sliderPos);
-    if (fillRight > fillLeft)
-    {
-        g.setColour (t.accent);
-        g.fillRect (juce::Rectangle<float> (fillLeft, track.getY(), fillRight - fillLeft, track.getHeight()));
-    }
-
-    const float thumbD = juce::jmin (bounds.getHeight(), 14.0f);
-    auto thumb = juce::Rectangle<float> (thumbD, thumbD).withCentre ({ sliderPos, bounds.getCentreY() });
-    g.setColour (t.accent);
-    g.fillEllipse (thumb);
-}
-
-// ── Rotary slider ─────────────────────────────────────────────────────────────
-// COLLAPSED: this used to branch metro (thin arc track + accent fill arc +
-// indicator line) vs. every other theme (recessed gradient arc + glow fill
-// arc + glassy beveled thumb dot). The else branch is gone — every theme now
-// renders the flat Metro-style rotary, still reading its own getTheme() colours.
-void AvixLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
-                                          float sliderPosProportional, float rotaryStartAngle,
-                                          float rotaryEndAngle, juce::Slider& slider)
-{
-    const auto& t = getTheme();
-    auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height).reduced (2.0f);
-    const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
-    const auto centre = bounds.getCentre();
-    const float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
-    const float lineW = juce::jmin (4.0f, radius * 0.22f);
-    const float arcR  = radius - lineW * 0.5f;
-
-    juce::Path track;
-    track.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour (t.gridLine);
-    g.strokePath (track, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    if (angle > rotaryStartAngle)
-    {
-        juce::Path fill;
-        fill.addCentredArc (centre.x, centre.y, arcR, arcR, 0.0f, rotaryStartAngle, angle, true);
-        g.setColour (t.accent);
-        g.strokePath (fill, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    }
-
-    // Simple indicator line from centre toward the pointer tip — flat, no glow
-    juce::Point<float> tip (centre.x + std::sin (angle) * radius, centre.y - std::cos (angle) * radius);
-    g.setColour (t.accent);
-    g.drawLine (centre.x, centre.y, tip.x, tip.y, 2.0f);
-}
-
-// ── TextEditor ────────────────────────────────────────────────────────────────
-// Flat fill + flat outline, matching drawButtonBackground's shape language.
-void AvixLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, int height, juce::TextEditor& te)
-{
-    auto bg = te.findColour (juce::TextEditor::backgroundColourId);
-    if (bg.isTransparent())
-        bg = getTheme().darkBar.brighter (0.04f);
-
-    auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
-    g.setColour (bg);
-    g.fillRoundedRectangle (bounds, 0.0f);
-}
-
-void AvixLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
-{
-    if (te.isReadOnly())
-        return;
-
-    auto bounds = juce::Rectangle<float> (0, 0, (float) width, (float) height).reduced (0.5f);
-    const bool focused = te.hasKeyboardFocus (true);
-    g.setColour (focused ? getTheme().accent
-                          : getTheme().separator.withAlpha (0.60f));
-    g.drawRoundedRectangle (bounds, 0.0f, focused ? 1.4f : 1.0f);
-}
+using T = AvixLookAndFeel::Tokens;
 
 //==============================================================================
-// AlertWindow overrides — make every SF-player popup readable
-//==============================================================================
-juce::Font AvixLookAndFeel::getAlertWindowTitleFont()
-{
-    return makeFont (16.0f * sMenuScale, true);
-}
-
-juce::Font AvixLookAndFeel::getAlertWindowMessageFont()
-{
-    return makeFont (14.0f * sMenuScale);
-}
-
-int AvixLookAndFeel::getAlertWindowButtonHeight()
-{
-    return juce::roundToInt (28.0f * sMenuScale);
-}
-
-void AvixLookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& alert,
-                                      const juce::Rectangle<int>& textArea,
-                                      juce::TextLayout& textLayout)
-{
-    const auto& t = getTheme();
-    const float r = 0.0f;   // flattened — was a fixed 4.0f radius regardless of theme
-
-    // Background
-    g.setColour (t.darkBar);
-    g.fillRoundedRectangle (alert.getLocalBounds().toFloat(), r);
-
-    // Accent border
-    g.setColour (t.accent.withAlpha (0.6f));
-    g.drawRoundedRectangle (alert.getLocalBounds().toFloat().reduced (0.5f), r, 1.0f);
-
-    // Title strip
-    const auto titleArea = juce::Rectangle<int> (0, 0, alert.getWidth(), textArea.getY());
-    g.setColour (t.accent.withAlpha (0.15f));
-    g.fillRoundedRectangle (titleArea.toFloat(), r);
-
-    g.setColour (t.foreground);
-    g.setFont (getAlertWindowTitleFont());
-    g.drawFittedText (alert.getName(),
-                      titleArea.reduced (8, 4),
-                      juce::Justification::centredLeft, 1);
-
-    // Message body
-    textLayout.draw (g, textArea.toFloat());
-}
-
-//==============================================================================
-//  DocumentWindow title bar — themed to match AVIX's dark palette
-//==============================================================================
-
-void AvixLookAndFeel::drawDocumentWindowTitleBar (
-    juce::DocumentWindow& window, juce::Graphics& g,
-    int w, int h, int titleSpaceX, int titleSpaceW,
-    const juce::Image* /*icon*/, bool /*drawTitleTextOnLeft*/)
-{
-    const auto& t = getTheme();
-
-    // Title bar background
-    g.setColour (t.header);
-    g.fillRect (0, 0, w, h);
-
-    // Thin accent line along the bottom edge
-    g.setColour (t.accent.withAlpha (0.35f));
-    g.fillRect (0, h - 1, w, 1);
-
-    // Title text
-    g.setColour (t.foreground);
-    g.setFont (makeFont (13.f, false));
-    g.drawFittedText (window.getName(),
-                      titleSpaceX + 4, 0, titleSpaceW - 8, h,
-                      juce::Justification::centredLeft, 1);
-}
-
-//==============================================================================
-//  Themed close / minimise / maximise buttons for DocumentWindow
-//==============================================================================
-
 namespace
 {
-    // A simple flat button that draws an X, –, or □ in AVIX's colours.
+    /** Flat matte plate with a microscopic (~3%) top-to-bottom fade. */
+    void fillPlate (juce::Graphics& g, const juce::Path& p, juce::Rectangle<float> b, juce::Colour c)
+    {
+        g.setGradientFill (juce::ColourGradient (c.brighter (0.035f), b.getX(), b.getY(),
+                                                 c.darker   (0.035f), b.getX(), b.getBottom(), false));
+        g.fillPath (p);
+    }
+
+    /** Recessed bed: the fade runs the other way (darker at the top edge). */
+    void fillRecess (juce::Graphics& g, const juce::Path& p, juce::Rectangle<float> b, juce::Colour c)
+    {
+        g.setGradientFill (juce::ColourGradient (c.darker   (0.035f), b.getX(), b.getY(),
+                                                 c.brighter (0.035f), b.getX(), b.getBottom(), false));
+        g.fillPath (p);
+    }
+
+    juce::Path roundedPath (juce::Rectangle<float> b, float r)
+    {
+        juce::Path p;
+        p.addRoundedRectangle (b, r);
+        return p;
+    }
+
+    juce::Colour dimmedAccent (float amount) { return T::panelDark.interpolatedWith (T::accentGreen, amount); }
+
+    float buttonFontSize (int h) { return h < 16 ? 8.0f : h < 22 ? 10.0f : h < 28 ? 11.0f : 13.0f; }
+
+    //==========================================================================
     class AvixTitleBarButton : public juce::Button
     {
     public:
-        enum class Kind { Close, Minimise, Maximise };
-
-        AvixTitleBarButton (Kind k) : juce::Button ({}), kind (k) {}
+        enum class Kind { close, minimise, maximise };
+        explicit AvixTitleBarButton (Kind k) : juce::Button ({}), kind (k) {}
 
         void paintButton (juce::Graphics& g, bool isHighlighted, bool isDown) override
         {
-            const auto& t = getTheme();
-            const auto  b = getLocalBounds().toFloat().reduced (2.f);
-            const float r = 0.0f;   // flattened — was a fixed 3.f radius regardless of theme
+            auto b = getLocalBounds().toFloat().reduced (2.0f);
+            const bool close = (kind == Kind::close);
 
-            // Hover / press fill
-            if (isDown)
-                g.setColour (kind == Kind::Close ? juce::Colour (0xFFBB3333)
-                                                 : t.buttonHover);
-            else if (isHighlighted)
-                g.setColour (kind == Kind::Close ? juce::Colour (0xFF883333)
-                                                 : t.button);
+            if (isHighlighted || isDown)
+            {
+                g.setColour (close ? T::accentAmber.withAlpha (isDown ? 1.0f : 0.85f)
+                                   : T::accentGreen.withAlpha (isDown ? 0.28f : 0.14f));
+                g.fillRoundedRectangle (b, T::cornerRadius);
+            }
+
+            g.setColour ((isHighlighted && close) ? T::backgroundDark
+                                                  : (isHighlighted ? T::textMain : T::textMuted));
+            const float cx = b.getCentreX(), cy = b.getCentreY(), r = b.getHeight() * 0.22f;
+
+            if (kind == Kind::close)
+            {
+                g.drawLine (cx - r, cy - r, cx + r, cy + r, 1.25f);
+                g.drawLine (cx + r, cy - r, cx - r, cy + r, 1.25f);
+            }
+            else if (kind == Kind::minimise)
+                g.drawLine (cx - r, cy, cx + r, cy, 1.25f);
             else
-                g.setColour (juce::Colours::transparentBlack);
-
-            g.fillRoundedRectangle (b, r);
-
-            // Icon
-            g.setColour (isHighlighted ? t.foreground : t.foreground.withAlpha (0.6f));
-            const float cx = b.getCentreX(), cy = b.getCentreY();
-            const float rad  = b.getHeight() * 0.22f;
-
-            if (kind == Kind::Close)
-            {
-                g.drawLine (cx - rad, cy - rad, cx + rad, cy + rad, 1.5f);
-                g.drawLine (cx + rad, cy - rad, cx - rad, cy + rad, 1.5f);
-            }
-            else if (kind == Kind::Minimise)
-            {
-                g.drawLine (cx - rad, cy, cx + rad, cy, 1.5f);
-            }
-            else  // Maximise
-            {
-                g.drawRect (juce::Rectangle<float> (cx - rad, cy - rad, rad * 2.f, rad * 2.f), 1.5f);
-            }
+                g.drawRect (juce::Rectangle<float> (cx - r, cy - r, r * 2.0f, r * 2.0f), 1.25f);
         }
 
     private:
@@ -709,12 +75,749 @@ namespace
     };
 }
 
+//==============================================================================
+//  Static Fallback for getMenuScale (Retained from project requirements)
+//==============================================================================
+float AvixLookAndFeel::getMenuScale()
+{
+    return 1.0f; // Default scale multiplier if fallback implementation is called
+}
+
+//==============================================================================
+//  Construction / colour registration
+//==============================================================================
+AvixLookAndFeel::AvixLookAndFeel (FontFace f) : face (f)
+{
+    if (face == FontFace::jetBrainsMono)
+    {
+        regularTypeface = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::JetBrainsMonoRegular_ttf, BinaryData::JetBrainsMonoRegular_ttfSize);
+        boldTypeface = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::JetBrainsMonoBold_ttf, BinaryData::JetBrainsMonoBold_ttfSize);
+    }
+    else
+    {
+        regularTypeface = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::BarlowCondensedRegular_ttf, BinaryData::BarlowCondensedRegular_ttfSize);
+        boldTypeface = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::BarlowCondensedSemiBold_ttf, BinaryData::BarlowCondensedSemiBold_ttfSize);
+    }
+
+    registerColours();
+}
+
+AvixLookAndFeel::~AvixLookAndFeel()
+{
+    regularTypeface = nullptr;
+    boldTypeface    = nullptr;
+}
+
+void AvixLookAndFeel::registerColours()
+{
+    using namespace juce;
+    const auto clear = Colours::transparentBlack;
+    const auto glow  = T::accentGreen.withAlpha (0.14f);   // selection / hover wash
+    const auto sel   = T::accentGreen.withAlpha (0.28f);   // text selection
+
+    // 1) Base scheme first — LookAndFeel_V4 fans this out to dozens of IDs
+    setColourScheme (ColourScheme (T::backgroundDark,   // windowBackground
+                                   T::panelDark,        // widgetBackground
+                                   T::panelDark,        // menuBackground
+                                   T::elementBorder,    // outline
+                                   T::textMain,         // defaultText
+                                   T::accentGreen,      // defaultFill
+                                   T::backgroundDark,   // highlightedText
+                                   T::accentGreen,      // highlightedFill
+                                   T::textMain));       // menuText
+
+    // 2) Windows & canvases
+    setColour (ResizableWindow::backgroundColourId,  T::backgroundDark);
+    setColour (DocumentWindow::textColourId,         T::textMain);
+    setColour (AlertWindow::backgroundColourId,      T::panelDark);
+    setColour (AlertWindow::textColourId,            T::textMain);
+    setColour (AlertWindow::outlineColourId,         T::elementBorder);
+
+    // 3) Buttons
+    setColour (TextButton::buttonColourId,           T::panelDark);
+    setColour (TextButton::buttonOnColourId,         dimmedAccent (0.22f));
+    setColour (TextButton::textColourOffId,          T::textMain);
+    setColour (TextButton::textColourOnId,           T::accentGreen);
+    setColour (ToggleButton::textColourId,           T::textMain);
+    setColour (ToggleButton::tickColourId,           T::accentGreen);
+    setColour (ToggleButton::tickDisabledColourId,   T::textMuted);
+    setColour (HyperlinkButton::textColourId,        T::accentGreen);
+
+    // 4) Labels & text entry
+    setColour (Label::textColourId,                  T::textMain);
+    setColour (Label::backgroundColourId,            clear);
+    setColour (Label::outlineColourId,               clear);
+    setColour (Label::backgroundWhenEditingColourId, T::backgroundDark);
+    setColour (Label::textWhenEditingColourId,       T::textMain);
+    setColour (Label::outlineWhenEditingColourId,    T::accentGreen);
+
+    setColour (TextEditor::backgroundColourId,       T::backgroundDark);
+    setColour (TextEditor::textColourId,             T::textMain);
+    setColour (TextEditor::highlightColourId,        sel);
+    setColour (TextEditor::highlightedTextColourId,  T::textMain);
+    setColour (TextEditor::outlineColourId,          T::elementBorder);
+    setColour (TextEditor::focusedOutlineColourId,   T::accentGreen);
+    setColour (TextEditor::shadowColourId,           clear);
+    setColour (CaretComponent::caretColourId,        T::accentGreen);
+
+    // 5) Sliders
+    setColour (Slider::backgroundColourId,           T::backgroundDark);
+    setColour (Slider::thumbColourId,                T::accentGreen);
+    setColour (Slider::trackColourId,                T::accentGreen);
+    setColour (Slider::rotarySliderFillColourId,     T::accentGreen);
+    setColour (Slider::rotarySliderOutlineColourId,  T::elementBorder);
+    setColour (Slider::textBoxTextColourId,          T::textMain);
+    setColour (Slider::textBoxBackgroundColourId,    T::backgroundDark);
+    setColour (Slider::textBoxHighlightColourId,     sel);
+    setColour (Slider::textBoxOutlineColourId,       T::elementBorder);
+
+    // 6) ComboBox & popup menus
+    setColour (ComboBox::backgroundColourId,         T::panelDark);
+    setColour (ComboBox::textColourId,               T::textMain);
+    setColour (ComboBox::outlineColourId,            T::elementBorder);
+    setColour (ComboBox::buttonColourId,             T::panelDark);
+    setColour (ComboBox::arrowColourId,              T::textMuted);
+    setColour (ComboBox::focusedOutlineColourId,     T::accentGreen);
+
+    setColour (PopupMenu::backgroundColourId,            T::panelDark);
+    setColour (PopupMenu::textColourId,                  T::textMain);
+    setColour (PopupMenu::headerTextColourId,            T::textMuted);
+    setColour (PopupMenu::highlightedBackgroundColourId, glow);
+    setColour (PopupMenu::highlightedTextColourId,       T::accentGreen);
+
+    // 7) Scrollbars, tooltips, lists, trees, tables, tabs, groups, progress
+    setColour (ScrollBar::backgroundColourId,        T::backgroundDark);
+    setColour (ScrollBar::trackColourId,             T::backgroundDark);
+    setColour (ScrollBar::thumbColourId,             T::textMuted.withAlpha (0.45f));
+
+    setColour (TooltipWindow::backgroundColourId,    T::panelDark);
+    setColour (TooltipWindow::textColourId,          T::textMain);
+    setColour (TooltipWindow::outlineColourId,       T::elementBorder);
+
+    setColour (ListBox::backgroundColourId,          T::backgroundDark);
+    setColour (ListBox::outlineColourId,             T::elementBorder);
+    setColour (ListBox::textColourId,                T::textMain);
+
+    setColour (TreeView::backgroundColourId,         T::backgroundDark);
+    setColour (TreeView::linesColourId,              T::elementBorder);
+    setColour (TreeView::dragAndDropIndicatorColourId, T::accentGreen);
+    setColour (TreeView::selectedItemBackgroundColourId, glow);
+    setColour (TreeView::oddItemsColourId,           clear);
+    setColour (TreeView::evenItemsColourId,          clear);
+
+Use code with caution.
+setColour (TableHeaderComponent::textColourId,       T::textMain);
+setColour (TableHeaderComponent::backgroundColourId, T::panelDark);
+setColour (TableHeaderComponent::outlineColourId,    T::elementBorder);
+setColour (TableHeaderComponent::highlightColourId,  glow);
+setColour (TabbedButtonBar::tabOutlineColourId,  T::elementBorder);
+setColour (TabbedButtonBar::tabTextColourId,     T::textMuted);
+setColour (TabbedButtonBar::frontOutlineColourId, T::accentGreen);
+setColour (TabbedButtonBar::frontTextColourId,   T::accentGreen);
+setColour (TabbedComponent::backgroundColourId,  T::backgroundDark);
+setColour (TabbedComponent::outlineColourId,     T::elementBorder);
+setColour (GroupComponent::outlineColourId,      T::elementBorder);
+setColour (GroupComponent::textColourId,         T::textMuted);
+setColour (ProgressBar::backgroundColourId,      T::backgroundDark);
+setColour (ProgressBar::foregroundColourId,      T::accentGreen);
+// 8) Property panels, file browsing, toolbars, misc dialogs
+setColour (PropertyComponent::backgroundColourId, T::panelDark);
+setColour (PropertyComponent::labelTextColourId,  T::textMain);
+setColour (PropertyComponent::outlineColourId,    T::elementBorder);
+setColour (TextPropertyComponent::backgroundColourId, T::backgroundDark);
+setColour (TextPropertyComponent::textColourId,       T::textMain);
+setColour (TextPropertyComponent::outlineColourId,    T::elementBorder);
+setColour (BooleanPropertyComponent::backgroundColourId, T::backgroundDark);
+setColour (BooleanPropertyComponent::outlineColourId,    T::elementBorder);
+setColour (DirectoryContentsDisplayComponent::highlightColourId,      glow);
+setColour (DirectoryContentsDisplayComponent::textColourId,           T::textMain);
+setColour (DirectoryContentsDisplayComponent::highlightedTextColourId, T::accentGreen);
+setColour (FileBrowserComponent::currentPathBoxBackgroundColourId, T::backgroundDark);
+setColour (FileBrowserComponent::currentPathBoxTextColourId,       T::textMain);
+setColour (FileBrowserComponent::currentPathBoxArrowColourId,      T::textMuted);
+setColour (FileBrowserComponent::filenameBoxBackgroundColourId,    T::backgroundDark);
+setColour (FileBrowserComponent::filenameBoxTextColourId,          T::textMain);
+setColour (FileChooserDialogBox::titleTextColourId,                T::textMain);
+setColour (Toolbar::backgroundColourId,                    T::panelDark);
+setColour (Toolbar::separatorColourId,                     T::elementBorder);
+setColour (Toolbar::labelTextColourId,                     T::textMuted);
+setColour (Toolbar::buttonMouseOverBackgroundColourId,     glow);
+setColour (Toolbar::buttonMouseDownBackgroundBackgroundColourId, sel);
+setColour (ColourSelector::backgroundColourId,   T::backgroundDark);
+setColour (ColourSelector::labelTextColourId,    T::textMain);
+setColour (KeyMappingEditorComponent::backgroundColourId, T::backgroundDark);
+setColour (KeyMappingEditorComponent::textColourId,       T::textMain);
+}
+//==============================================================================
+//  Theme factory for the app's hand-painted components
+//==============================================================================
+ThemeData AvixLookAndFeel::buildTheme()
+{
+ThemeData t = ThemeData::metroTheme();
+t.background       = T::backgroundDark;
+t.waveformBg       = T::backgroundDark;
+t.darkBar          = T::panelDark;
+t.foreground       = T::textMain;
+t.header           = T::backgroundDark;
+t.waveform         = T::accentGreen;
+t.selectionOverlay = T::accentGreen.withAlpha (0.18f);
+t.lockActive       = T::accentAmber;
+t.lockInactive     = T::textMuted;
+t.gridLine         = T::elementBorder.darker (0.35f);
+t.accent           = T::accentGreen;
+t.button           = T::panelDark;
+t.buttonHover      = T::panelDark.interpolatedWith (T::accentGreen, 0.10f);
+t.separator        = T::elementBorder;
+return t;
+}
+//==============================================================================
+//  Typography
+//==============================================================================
+juce::Font AvixLookAndFeel::makeFont (float height, bool bold) const
+{
+auto tf = bold ? boldTypeface : regularTypeface;
+auto opts = juce::FontOptions().withHeight (height);
+if (tf != nullptr)
+opts = opts.withTypeface (tf);
+return juce::Font (opts);
+}
+juce::Typeface::Ptr AvixLookAndFeel::getTypefaceForFont (const juce::Font& f)
+{
+const auto style = f.getTypefaceStyle().toLowerCase();
+const bool bold = f.isBold() || style.contains ("bold") || style.contains ("semi");
+auto tf = bold ? boldTypeface : regularTypeface;
+return tf != nullptr ? tf : juce::LookAndFeel_V4::getTypefaceForFont (f);
+}
+juce::Font AvixLookAndFeel::getLabelFont (juce::Label& label)
+{
+const auto f = label.getFont();
+return makeFont (f.getHeight(), f.isBold());
+}
+juce::Font AvixLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
+{
+return makeFont (juce::jmin (16.0f, (float) buttonHeight * 0.6f));
+}
+juce::Font AvixLookAndFeel::getComboBoxFont (juce::ComboBox& box)
+{
+const auto requested = (double) box.getProperties().getWithDefault ("transportFontSize", 0.0);
+return makeFont (requested > 0.0 ? (float) requested : 14.0f * menuScale());
+}
+juce::Font AvixLookAndFeel::getPopupMenuFont()          { return makeFont (14.0f * menuScale()); }
+juce::Font AvixLookAndFeel::getAlertWindowTitleFont()   { return makeFont (16.0f * menuScale(), true); }
+juce::Font AvixLookAndFeel::getAlertWindowMessageFont() { return makeFont (14.0f * menuScale()); }
+int        AvixLookAndFeel::getAlertWindowButtonHeight(){ return juce::roundToInt (28.0f * menuScale()); }
+//==============================================================================
+//  Buttons
+//==============================================================================
+void AvixLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
+const juce::Colour& /backgroundColour/,
+bool isHighlighted, bool isDown)
+{
+if (button.findColour (juce::TextButton::buttonColourId).isTransparent())
+return;
+const auto bounds   = button.getLocalBounds().toFloat().reduced (0.5f);
+const bool toggled  = button.getToggleState();
+const bool enabled  = button.isEnabled();
+const float r       = T::cornerRadius;
+const auto& props   = button.getProperties();
+if ((bool) props.getWithDefault ("flatOutline", false))
+{
+g.setColour ((toggled ? T::accentGreen
+: isHighlighted ? T::accentGreen.withAlpha (0.75f) : T::elementBorder)
+.withMultipliedAlpha (enabled ? 1.0f : 0.45f));
+g.drawRoundedRectangle (bounds, r, 1.0f);
+return;
+}
+if ((bool) props.getWithDefault ("flatFill", false))
+{
+auto role = toggled ? button.findColour (juce::TextButton::buttonOnColourId)
+: button.findColour (juce::TextButton::buttonColourId);
+if (! enabled) role = role.withMultipliedAlpha (0.45f);
+const auto p = roundedPath (bounds, r);
+fillPlate (g, p, bounds, role);
+g.setColour (isHighlighted || isDown ? T::accentGreen.withAlpha (0.7f) : T::elementBorder);
+g.strokePath (p, juce::PathStrokeType (1.0f));
+return;
+}
+auto fill   = T::panelDark;
+auto border = T::elementBorder;
+if (isDown)            { fill = dimmedAccent (0.24f); border = T::accentGreen; }
+else if (toggled)      { fill = dimmedAccent (0.16f); border = T::accentGreen.withAlpha (0.90f); }
+else if (isHighlighted){ fill = dimmedAccent (0.07f); border = T::accentGreen.withAlpha (0.65f); }
+if (! enabled)
+{
+fill   = fill.withMultipliedAlpha (0.6f);
+border = border.withMultipliedAlpha (0.6f);
+}
+using B = juce::Button;
+const int f = button.getConnectedEdgeFlags();
+juce::Path p;
+p.addRoundedRectangle (bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight(), r, r,
+(f & (B::ConnectedOnLeft  | B::ConnectedOnTop))    == 0,
+(f & (B::ConnectedOnRight | B::ConnectedOnTop))    == 0,
+(f & (B::ConnectedOnLeft  | B::ConnectedOnBottom)) == 0,
+(f & (B::ConnectedOnRight | B::ConnectedOnBottom)) == 0);
+fillPlate (g, p, bounds, fill);
+g.setColour (border);
+g.strokePath (p, juce::PathStrokeType (1.0f));
+}
+void AvixLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
+bool /isHighlighted/, bool /isDown/)
+{
+const bool toggled = button.getToggleState();
+const auto& props  = button.getProperties();
+juce::Colour textCol;
+if ((bool) props.getWithDefault ("flatOutline", false))
+textCol = T::accentGreen;
+else
+{
+textCol = button.findColour (toggled ? juce::TextButton::textColourOnId
+: juce::TextButton::textColourOffId);
+if (textCol.isTransparent())
+textCol = toggled ? T::accentGreen : T::textMain;
+}
+if (! button.isEnabled())
+textCol = textCol.withMultipliedAlpha (0.45f);
+g.setColour (textCol);
+if ((bool) props.getWithDefault ("flatFill", false))
+{
+const auto txt = button.getButtonText();
+ToolIcons::Kind kind {};
+bool isTool = true;
+if      (txt == "SELECT") kind = ToolIcons::Kind::Select;
+else if (txt == "DRAW")   kind = ToolIcons::Kind::Draw;
+else if (txt == "ERASE")  kind = ToolIcons::Kind::Erase;
+else if (txt == "SPLIT")  kind = ToolIcons::Kind::Split;
+else if (txt == "GLUE")   kind = ToolIcons::Kind::Glue;
+else                      isTool = false;
+if (isTool)
+{
+ToolIcons::draw (g, kind, button.getLocalBounds().toFloat().reduced (7.0f, 4.0f), textCol);
+return;
+}
+}
+const int h = button.getHeight();
+const auto txt = button.getButtonText();
+const bool isSymbol = (txt.length() <= 2 && txt[0] > 127);
+float fontSize = isSymbol ? (h < 22 ? 14.0f : 17.0f) : buttonFontSize (h);
+const auto requested = (double) props.getWithDefault ("transportFontSize", 0.0);
+if (requested > 0.0)
+fontSize = (float) requested;
+g.setFont (makeFont (fontSize));
+g.drawFittedText (txt, button.getLocalBounds().reduced (2, 0),
+juce::Justification::centred, 1, 0.6f);
+}
+void AvixLookAndFeel::drawTickBox (juce::Graphics& g, juce::Component& c,
+float x, float y, float w, float h,
+bool ticked, bool isEnabled, bool isHighlighted, bool isDown)
+{
+auto box = juce::Rectangle (x, y, w, h).reduced (0.5f);
+const float a = isEnabled ? 1.0f : 0.45f;
+const auto p = roundedPath (box, T::cornerRadius);
+fillRecess (g, p, box, T::backgroundDark.withMultipliedAlpha (a));
+g.setColour ((ticked || isHighlighted || isDown ? T::accentGreen.withAlpha (ticked ? 0.9f : 0.6f)
+: T::elementBorder).withMultipliedAlpha (a));
+g.strokePath (p, juce::PathStrokeType (1.0f));
+if (ticked)
+{
+g.setColour (c.findColour (juce::ToggleButton::tickColourId).withMultipliedAlpha (a));
+g.fillRoundedRectangle (box.reduced (box.getWidth() * 0.26f), 1.5f);
+}
+}
+void AvixLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
+bool isHighlighted, bool isDown)
+{
+const float fontSize  = juce::jmin (15.0f, (float) button.getHeight() * 0.75f);
+const float tickWidth = fontSize * 1.1f;
+drawTickBox (g, button, 4.0f, ((float) button.getHeight() - tickWidth) * 0.5f, tickWidth, tickWidth,
+button.getToggleState(), button.isEnabled(), isHighlighted, isDown);
+g.setColour (button.findColour (juce::ToggleButton::textColourId)
+.withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.5f));
+g.setFont (makeFont (fontSize));
+g.drawFittedText (button.getButtonText(),
+button.getLocalBounds().withTrimmedLeft (juce::roundToInt (tickWidth) + 10).withTrimmedRight (2),
+juce::Justification::centredLeft, 1, 0.6f);
+}
+//==============================================================================
+//  Sliders
+//==============================================================================
+void AvixLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+float sliderPos, float startAngle, float endAngle,
+juce::Slider& slider)
+{
+auto area = juce::Rectangle ((float) x, (float) y, (float) width, (float) height).reduced (2.0f);
+const float size = juce::jmin (area.getWidth(), area.getHeight());
+if (size < 8.0f)
+return;
+const auto  c = area.getCentre();
+const float R = size * 0.5f;
+const float a = slider.isEnabled() ? 1.0f : 0.4f;
+const float ringW = juce::jlimit (1.5f, 3.0f, R * 0.12f);
+const float arcR  = R - 1.0f - ringW * 0.5f - 1.0f;
+const float bodyR = juce::jmax (2.0f, arcR - ringW * 0.5f - juce::jmax (2.0f, R * 0.10f));
+{
+auto bed = juce::Rectangle (R * 2.0f, R * 2.0f).withCentre (c).reduced (0.5f);
+juce::Path p; p.addEllipse (bed);
+fillRecess (g, p, bed, T::backgroundDark.withMultipliedAlpha (a));
+g.setColour (T::elementBorder.withMultipliedAlpha (a));
+g.drawEllipse (bed, 1.0f);
+}
+const float angle = startAngle + sliderPos * (endAngle - startAngle);
+const juce::PathStrokeType stroke (ringW, juce::PathStrokeType::curved, juce::PathStrokeType::butt);
+{
+juce::Path track;
+track.addCentredArc (c.x, c.y, arcR, arcR, 0.0f, startAngle, endAngle, true);
+g.setColour (T::elementBorder.brighter (0.15f).withMultipliedAlpha (a));
+g.strokePath (track, stroke);
+}
+float fromAngle = startAngle;
+if (slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0)
+fromAngle = startAngle + (float) slider.valueToProportionOfLength (0.0) * (endAngle - startAngle);
+const float a0 = juce::jmin (fromAngle, angle), a1 = juce::jmax (fromAngle, angle);
+if (a1 - a0 > 0.005f)
+{
+juce::Path arc;
+arc.addCentredArc (c.x, c.y, arcR, arcR, 0.0f, a0, a1, true);
+if (slider.isMouseOverOrDragging() && slider.isEnabled())
+{
+g.setColour (T::accentGreen.withAlpha (0.16f));
+g.strokePath (arc, juce::PathStrokeType (ringW + 3.0f, juce::PathStrokeType::curved,
+juce::PathStrokeType::butt));
+}
+g.setColour (T::accentGreen.withMultipliedAlpha (a));
+g.strokePath (arc, stroke);
+}
+{
+auto cap = juce::Rectangle (bodyR * 2.0f, bodyR * 2.0f).withCentre (c);
+juce::Path p; p.addEllipse (cap);
+fillPlate (g, p, cap, T::panelDark.withMultipliedAlpha (a));
+g.setColour (T::elementBorder.withMultipliedAlpha (a));
+g.drawEllipse (cap.reduced (0.5f), 1.0f);
+}
+const float s = std::sin (angle), co = std::cos (angle);
+const juce::Point p0 (c.x + s * bodyR * 0.30f, c.y - co * bodyR * 0.30f);
+const juce::Point p1 (c.x + s * (bodyR - 1.5f), c.y - co * (bodyR - 1.5f));
+g.setColour (T::accentGreen.withMultipliedAlpha (a));
+g.drawLine (juce::Line (p0, p1), 1.25f);
+if (slider.isEnabled())
+{
+const float dr = juce::jmax (1.5f, bodyR * 0.10f);
+g.setColour (T::accentGreen.withAlpha (0.18f));
+g.fillEllipse (juce::Rectangle (dr * 4.0f, dr * 4.0f).withCentre (p1));
+g.setColour (T::accentGreen.withAlpha (0.40f));
+g.fillEllipse (juce::Rectangle (dr * 2.6f, dr * 2.6f).withCentre (p1));
+g.setColour (T::textMain);
+g.fillEllipse (juce::Rectangle (dr * 1.2f, dr * 1.2f).withCentre (p1));
+}
+}
+void AvixLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+float sliderPos, float minSliderPos, float maxSliderPos,
+juce::Slider::SliderStyle style, juce::Slider& slider)
+{
+if (slider.isBar() || slider.isTwoValue() || slider.isThreeValue())
+{
+juce::LookAndFeel_V4::drawLinearSlider (g, x, y, width, height, sliderPos,
+minSliderPos, maxSliderPos, style, slider);
+return;
+}
+const bool horiz = slider.isHorizontal();
+const float a = slider.isEnabled() ? 1.0f : 0.45f;
+const auto bounds = juce::Rectangle ((float) x, (float) y, (float) width, (float) height);
+constexpr float channelT = 6.0f;
+const auto channel = horiz ? bounds.withSizeKeepingCentre (bounds.getWidth(), channelT)
+: bounds.withSizeKeepingCentre (channelT, bounds.getHeight());
+{
+const auto p = roundedPath (channel.reduced (0.5f), T::cornerRadius);
+fillRecess (g, p, channel, T::backgroundDark.withMultipliedAlpha (a));
+g.setColour (T::elementBorder.withMultipliedAlpha (a));
+g.strokePath (p, juce::PathStrokeType (1.0f));
+}
+float fromPos = minSliderPos;
+const bool bipolar = slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0;
+if (bipolar)
+fromPos = minSliderPos + (float) slider.valueToProportionOfLength (0.0) * (maxSliderPos - minSliderPos);
+else if (! horiz)
+fromPos = channel.getBottom();
+else
+fromPos = channel.getX();
+const auto inner = channel.reduced (1.0f);
+juce::Rectangle fill;
+if (horiz)
+{
+const float l = juce::jlimit (inner.getX(), inner.getRight(), juce::jmin (fromPos, sliderPos));
+const float r = juce::jlimit (inner.getX(), inner.getRight(), juce::jmax (fromPos, sliderPos));
+fill = { l, inner.getY(), r - l, inner.getHeight() };
+}
+else
+{
+const float t = juce::jlimit (inner.getY(), inner.getBottom(), juce::jmin (fromPos, sliderPos));
+const float b = juce::jlimit (inner.getY(), inner.getBottom(), juce::jmax (fromPos, sliderPos));
+fill = { inner.getX(), t, inner.getWidth(), b - t };
+}
+if (! fill.isEmpty())
+{
+g.setColour (T::accentGreen.withMultipliedAlpha (a));
+g.fillRoundedRectangle (fill, 1.5f);
+}
+if (bipolar)
+{
+g.setColour (T::textMuted.withMultipliedAlpha (a));
+if (horiz) g.fillRect (fromPos - 0.5f, channel.getY() - 2.0f, 1.0f, channelT + 4.0f);
+else       g.fillRect (channel.getX() - 2.0f, fromPos - 0.5f, channelT + 4.0f, 1.0f);
+}
+const float thumbLong  = 8.0f;
+const float thumbShort = horiz ? juce::jmin ((float) height, 18.0f) : juce::jmin ((float) width, 18.0f);
+const auto thumb = horiz ? juce::Rectangle (thumbLong, thumbShort).withCentre ({ sliderPos, bounds.getCentreY() })
+: juce::Rectangle (thumbShort, thumbLong).withCentre ({ bounds.getCentreX(), sliderPos });
+const auto thumbCol = T::panelDark.interpolatedWith (T::textMain, 0.14f).withMultipliedAlpha (a);
+g.setColour (thumbCol);
+g.fillRoundedRectangle (thumb, 1.5f);
+g.setColour (T::elementBorder.brighter (0.5f).withMultipliedAlpha (a));
+g.drawRoundedRectangle (thumb.reduced (0.5f), 1.5f, 1.0f);
+g.setColour (T::accentGreen.withMultipliedAlpha (a));
+if (horiz) g.fillRect (thumb.getCentreX() - 1.0f, thumb.getY() + 3.0f, 2.0f, thumb.getHeight() - 6.0f);
+else       g.fillRect (thumb.getX() + 3.0f, thumb.getCentreY() - 1.0f, thumb.getWidth() - 6.0f, 2.0f);
+}
+//==============================================================================
+//  ComboBox
+//==============================================================================
+void AvixLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, bool isButtonDown,
+int buttonX, int /buttonY/, int /buttonW/, int /buttonH/,
+juce::ComboBox& box)
+{
+const auto bounds = juce::Rectangle (0, 0, (float) width, (float) height).reduced (0.5f);
+const float a = box.isEnabled() ? 1.0f : 0.5f;
+const bool active = isButtonDown || box.isPopupActive() || box.hasKeyboardFocus (false);
+const bool hover  = box.isMouseOver (true);
+auto fill = T::panelDark;
+if (active)     fill = dimmedAccent (0.10f);
+else if (hover) fill = dimmedAccent (0.05f);
+const auto p = roundedPath (bounds, T::cornerRadius);
+fillPlate (g, p, bounds, fill.withMultipliedAlpha (a));
+g.setColour ((active ? T::accentGreen : hover ? T::accentGreen.withAlpha (0.55f) : T::elementBorder)
+.withMultipliedAlpha (a));
+g.strokePath (p, juce::PathStrokeType (1.0f));
+if (buttonX > 0 && buttonX < width)
+{
+g.setColour (T::elementBorder.withMultipliedAlpha (a));
+g.fillRect (buttonX, 4, 1, juce::jmax (0, height - 8));
+}
+const float cx = (float) (buttonX + (width - buttonX) / 2);
+const float cy = (float) height * 0.5f;
+g.setColour ((active || hover ? T::accentGreen : T::textMuted).withMultipliedAlpha (a));
+juce::Path chevron;
+chevron.startNewSubPath (cx - 4.0f, cy - 2.0f);
+chevron.lineTo (cx, cy + 2.0f);
+chevron.lineTo (cx + 4.0f, cy - 2.0f);
+g.strokePath (chevron, juce::PathStrokeType (1.5f));
+}
+void AvixLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+{
+label.setBounds (1, 1, box.getWidth() - 28, box.getHeight() - 2);
+label.setFont (getComboBoxFont (box));
+label.setColour (juce::Label::textColourId, box.findColour (juce::ComboBox::textColourId));
+label.setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+}
+//==============================================================================
+//  Popup menus
+//==============================================================================
+void AvixLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
+{
+const auto b = juce::Rectangle (0, 0, (float) width, (float) height);
+g.fillAll (T::backgroundDark);
+const auto p = roundedPath (b.reduced (0.5f), T::cornerRadiusLarge);
+fillPlate (g, p, b, T::panelDark);
+g.setColour (T::elementBorder);
+g.strokePath (p, juce::PathStrokeType (1.0f));
+}
+void AvixLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle& area,
+bool isSeparator, bool isActive, bool isHighlighted,
+bool isTicked, bool hasSubMenu,
+const juce::String& text, const juce::String& shortcutKeyText,
+const juce::Drawable* icon, const juce::Colour* textColour)
+{
+const float ms = 1.0f; // Simplified using local default multiplier
+if (isSeparator)
+{
+g.setColour (T::elementBorder);
+g.fillRect (area.reduced (6, 0).withHeight (1).withY (area.getCentreY()));
+return;
+}
+if (isHighlighted && isActive)
+{
+g.setColour (T::accentGreen.withAlpha (0.12f));
+g.fillRoundedRectangle (area.reduced (3, 1).toFloat(), 2.0f);
+g.setColour (T::accentGreen);
+g.fillRect (juce::Rectangle ((float) area.getX() + 3.0f, (float) area.getY() + 3.0f,
+2.0f, (float) area.getHeight() - 6.0f));
+}
+const int tickZoneW = (int) (16 * ms);
+if (isTicked)
+{
+const int d = (int) (4 * ms);
+g.setColour (T::accentGreen);
+g.fillRect (area.getX() + (tickZoneW - d) / 2, area.getCentreY() - d / 2, d, d);
+}
+int contentLeft = area.getX() + tickZoneW;
+if (icon != nullptr)
+{
+const int zone = (int) (22 * ms), sz = (int) (16 * ms);
+auto ib = juce::Rectangle (contentLeft, area.getY(), zone, area.getHeight()).withSizeKeepingCentre (sz, sz);
+icon->drawWithin (g, ib.toFloat(), juce::RectanglePlacement::centred, 1.0f);
+contentLeft += zone;
+}
+juce::Colour col = ! isActive            ? T::textMuted.withAlpha (0.6f)
+: isTicked              ? T::accentGreen
+: (textColour != nullptr && ! isHighlighted) ? *textColour
+: T::textMain;
+g.setColour (col);
+g.setFont (getPopupMenuFont());
+const int rightPad = (int) (hasSubMenu ? 16 * ms : 6 * ms);
+auto textArea = area.withLeft (contentLeft).withRight (area.getRight() - rightPad);
+g.drawFittedText (text, textArea, juce::Justification::centredLeft, 1, 0.7f);
+if (shortcutKeyText.isNotEmpty())
+{
+g.setColour (T::textMuted);
+g.setFont (makeFont (12.0f * ms));
+g.drawText (shortcutKeyText, textArea, juce::Justification::centredRight);
+}
+if (hasSubMenu)
+{
+const float cx = (float) area.getRight() - 8.0f * ms, cy = (float) area.getCentreY(), s = 3.5f * ms;
+juce::Path arrow;
+arrow.startNewSubPath (cx - s * 0.5f, cy - s);
+arrow.lineTo (cx + s * 0.5f, cy);
+arrow.lineTo (cx - s * 0.5f, cy + s);
+g.setColour (col);
+g.strokePath (arrow, juce::PathStrokeType (1.25f));
+}
+}
+void AvixLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g, const juce::Rectangle& area,
+const juce::String& sectionName)
+{
+const float ms = 1.0f;
+g.setFont (makeFont (12.0f * ms, true));
+g.setColour (T::textMuted);
+g.drawFittedText (sectionName.toUpperCase(),
+area.getX() + (int) (12 * ms), area.getY(),
+area.getWidth() - (int) (16 * ms), (int) ((float) area.getHeight() * 0.8f),
+juce::Justification::bottomLeft, 1, 0.7f);
+}
+void AvixLookAndFeel::drawPopupMenuUpDownArrow (juce::Graphics& g, int width, int height, bool isScrollUpArrow)
+{
+const float cx = (float) width * 0.5f, cy = (float) height * 0.5f, s = 4.0f;
+juce::Path p;
+if (isScrollUpArrow) p.addTriangle (cx - s, cy + s * 0.5f, cx + s, cy + s * 0.5f, cx, cy - s * 0.5f);
+else                 p.addTriangle (cx - s, cy - s * 0.5f, cx + s, cy - s * 0.5f, cx, cy + s * 0.5f);
+g.setColour (T::textMuted);
+g.fillPath (p);
+}
+//==============================================================================
+//  Text editors
+//==============================================================================
+void AvixLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, int height, juce::TextEditor& te)
+{
+auto bg = te.findColour (juce::TextEditor::backgroundColourId);
+if (bg.isTransparent())
+bg = T::backgroundDark;
+const auto b = juce::Rectangle (0, 0, (float) width, (float) height).reduced (0.5f);
+const auto p = roundedPath (b, T::cornerRadius);
+fillRecess (g, p, b, bg);
+}
+void AvixLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
+{
+if (te.isReadOnly())
+return;
+const auto b = juce::Rectangle (0, 0, (float) width, (float) height).reduced (0.5f);
+g.setColour (te.hasKeyboardFocus (true) ? T::accentGreen : T::elementBorder);
+g.drawRoundedRectangle (b, T::cornerRadius, 1.0f);
+}
+//==============================================================================
+//  Scrollbars / tooltips / alerts / document windows
+//==============================================================================
+void AvixLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar&, int x, int y, int width, int height,
+bool isVertical, int thumbStart, int thumbSize,
+bool isMouseOver, bool isMouseDown)
+{
+g.setColour (T::backgroundDark);
+g.fillRect (x, y, width, height);
+g.setColour (T::elementBorder);
+g.drawRect (x, y, width, height, 1);
+if (thumbSize <= 0)
+return;
+auto thumb = isVertical ? juce::Rectangle (x + 1, y + thumbStart, width - 2, thumbSize)
+: juce::Rectangle (x + thumbStart, y + 1, thumbSize, height - 2);
+g.setColour (isMouseDown ? T::accentGreen
+: isMouseOver ? T::accentGreen.withAlpha (0.70f)
+: T::textMuted.withAlpha (0.45f));
+g.fillRoundedRectangle (thumb.toFloat().reduced (1.0f), 2.0f);
+}
+void AvixLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
+{
+const auto b = juce::Rectangle (0, 0, (float) width, (float) height).reduced (0.5f);
+const auto p = roundedPath (b, T::cornerRadius);
+fillPlate (g, p, b, T::panelDark);
+g.setColour (T::elementBorder);
+g.strokePath (p, juce::PathStrokeType (1.0f));
+g.setColour (T::textMain);
+g.setFont (makeFont (13.0f));
+g.drawFittedText (text, 6, 0, width - 12, height, juce::Justification::centredLeft, 1, 0.7f);
+}
+juce::Rectangle AvixLookAndFeel::getTooltipBounds (const juce::String& text, juce::Point screenPos,
+juce::Rectangle parentArea)
+{
+const int w = (int) juce::GlyphArrangement::getStringWidth (makeFont (14.0f), text) + 14;
+const int h = 24;
+int x = screenPos.x, y = screenPos.y + 18;
+if (x + w > parentArea.getRight())  x = parentArea.getRight() - w;
+if (y + h > parentArea.getBottom()) y = screenPos.y - h - 4;
+return { x, y, w, h };
+}
+void AvixLookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& alert,
+const juce::Rectangle& textArea, juce::TextLayout& textLayout)
+{
+const auto full = alert.getLocalBounds().toFloat();
+const auto p = roundedPath (full.reduced (0.5f), T::cornerRadiusLarge);
+fillPlate (g, p, full, T::panelDark);
+const auto titleArea = juce::Rectangle (0, 0, alert.getWidth(), textArea.getY());
+g.saveState();
+g.reduceClipRegion (titleArea);
+g.setColour (T::accentGreen.withAlpha (0.08f));
+g.fillPath (p);
+g.restoreState();
+g.setColour (T::elementBorder);
+g.fillRect (0, titleArea.getBottom() - 1, alert.getWidth(), 1);
+g.setColour (T::elementBorder);
+g.strokePath (p, juce::PathStrokeType (1.0f));
+g.setColour (T::textMain);
+g.setFont (getAlertWindowTitleFont());
+g.drawFittedText (alert.getName(), titleArea.reduced (10, 4), juce::Justification::centredLeft, 1, 0.7f);
+g.setColour (alert.findColour (juce::AlertWindow::textColourId));
+textLayout.draw (g, textArea.toFloat());
+}
+void AvixLookAndFeel::drawDocumentWindowTitleBar (juce::DocumentWindow& window, juce::Graphics& g,
+int w, int h, int titleSpaceX, int titleSpaceW,
+const juce::Image*, bool)
+{
+g.setColour (T::backgroundDark);
+g.fillRect (0, 0, w, h);
+g.setColour (T::elementBorder);
+g.fillRect (0, h - 1, w, 1);
+g.setColour (T::accentGreen.withAlpha (0.55f));
+g.fillRect (0, h - 1, juce::jmin (48, w), 1);
+g.setColour (T::textMain);
+g.setFont (makeFont (13.0f));
+g.drawFittedText (window.getName(), titleSpaceX + 4, 0, titleSpaceW - 8, h,
+juce::Justification::centredLeft, 1, 0.7f);
+}
 juce::Button* AvixLookAndFeel::createDocumentWindowButton (int buttonType)
 {
-    using Kind = AvixTitleBarButton::Kind;
-    if (buttonType == juce::DocumentWindow::closeButton)
-        return new AvixTitleBarButton (Kind::Close);
-    if (buttonType == juce::DocumentWindow::minimiseButton)
-        return new AvixTitleBarButton (Kind::Minimise);
-    return new AvixTitleBarButton (Kind::Maximise);
+using K = AvixTitleBarButton::Kind;
+if (buttonType == juce::DocumentWindow::closeButton)    return new AvixTitleBarButton (K::close);
+if (buttonType == juce::DocumentWindow::minimiseButton) return new AvixTitleBarButton (K::minimise);
+return new AvixTitleBarButton (K::maximise);
 }
