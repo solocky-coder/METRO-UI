@@ -5,6 +5,7 @@
 
 #include "PluginProcessor.h"
 #include "metro/MetroLookAndFeel.h"
+#include "metro/XivaLookAndFeel.h"
 #include "ui/LogoBar.h"
 #include "ui/HeaderBar.h"
 #include "ui/MiniTransportBar.h"
@@ -266,6 +267,7 @@ private:
 
     AvixLookAndFeel lnf;
     MetroLookAndFeel  metroLnf;   // swapped in via setLookAndFeel() only while theme == "metro"
+    XivaLookAndFeel   xivaLnf;    // XIVA-specific controls while theme == "xiva"
 
     LogoBar         logoBar;
     HeaderBar       headerBar;
