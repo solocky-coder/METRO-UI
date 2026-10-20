@@ -1,7 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
-struct ThemeData;   // src/ui/ThemeData.h — only needed by buildTheme()
+#include "ThemeData.h"   // full definition: getTheme() / ThemeData are used by every panel that includes this header
 
 //==============================================================================
 //  AvixLookAndFeel
@@ -51,7 +51,8 @@ public:
     //==========================================================================
     //  Static utilities
     //==========================================================================
-    static float getMenuScale(); // Exposed for internal plugin editor scaling
+    static float getMenuScale();               // Exposed for internal plugin editor scaling
+    static void  setMenuScale (float newScale); // Called by the plugin editor when its UI scale changes
 
     //==========================================================================
     //  Typography
