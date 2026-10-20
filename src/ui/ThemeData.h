@@ -1,10 +1,18 @@
 #pragma once
 #include <juce_graphics/juce_graphics.h>
 #include "../metro/MetroTheme.h"
+#include "../metro/XivaTheme.h"
 
 struct ThemeData
 {
     juce::String name;
+
+    // Optional shape/glow/panel treatment used by XIVA. Defaults preserve
+    // the existing flat appearance of all other themes.
+    float cornerRadius = 0.0f;
+    float glow = 0.0f;
+    juce::Colour panelTop;
+    juce::Colour panelBottom;
 
     juce::Colour background;
     juce::Colour waveformBg;
@@ -531,6 +539,15 @@ struct ThemeData
         return t;
     }
 
+    // XIVA uses the same ThemeData channel as every other theme so both
+    // hand-painted controls and the LookAndFeel receive its palette.
+    static ThemeData xivaTheme()
+    {
+        auto t = XivaTheme::build();
+        completeSlicePalette (t);
+        return t;
+    }
+
     static juce::Colour parseHex (const juce::String& hex)
     {
         return juce::Colour ((juce::uint32) (0xFF000000 | hex.getHexValue32()));
@@ -545,6 +562,7 @@ struct ThemeData
         if (text.contains("name: avix"))   return avixTheme();
         if (text.contains("name: serum"))    return serumTheme();
         if (text.contains("name: opendaw"))  return opendawTheme();
+        if (text.contains("name: xiva"))     return xivaTheme();
         if (text.contains("name: metro"))    return metroTheme();
 
         for (auto line : juce::StringArray::fromLines (text))
