@@ -4,7 +4,7 @@
 class AvixProcessor;
 
 /**  Draws the AVIX brand logo (ring + waveform mark with the AVIX wordmark)
-     centred in its bounds on the current theme's header colour.
+     centred in its bounds with a transparent background.
 
      The logo is a single transparent PNG shared by every theme, so it keeps
      its neon-cyan brand colour regardless of which theme is active. */

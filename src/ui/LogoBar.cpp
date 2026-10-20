@@ -7,7 +7,8 @@ LogoBar::LogoBar (AvixProcessor& p) : processor (p) {}
 
 void LogoBar::paint (juce::Graphics& g)
 {
-    g.fillAll (getTheme().header);
+    // No background fill: the logo is a transparent PNG and should float on
+    // whatever the editor paints behind it, not sit in a header-coloured box.
 
     // ── AVIX logo ─────────────────────────────────────────────────────────
     // One transparent PNG for every theme (the brand colour is fixed), drawn
