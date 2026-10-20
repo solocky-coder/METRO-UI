@@ -2510,6 +2510,7 @@ void AvixEditor::ensureDefaultThemes()
  // files left over from a previous version are removed below so they
  // don't linger in the picker after an update.
  write ("metro", ThemeData::metroTheme());
+ write ("xiva", ThemeData::xivaTheme());
 
  // "dysekt" is the pre-rebrand name of the built-in now called "avix";
  // installs that predate the rename still have a dysekt.dsk to clean up.
@@ -2544,7 +2545,9 @@ void AvixEditor::applyTheme (const juce::String& themeName)
  if (t.name == themeName)
  {
  setTheme (t);
- setLookAndFeel (t.name == "metro" ? (juce::LookAndFeel*) &metroLnf : (juce::LookAndFeel*) &lnf);
+ setLookAndFeel (t.name == "metro" ? (juce::LookAndFeel*) &metroLnf
+                 : t.name == "xiva" ? (juce::LookAndFeel*) &xivaLnf
+                                     : (juce::LookAndFeel*) &lnf);
  processor.sliceManager.setSlicePalette (getTheme().slicePalette);
  saveUserSettings (themeName);
  applyWindowIcon (this);
