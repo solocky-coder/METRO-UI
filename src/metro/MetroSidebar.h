@@ -4,7 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "MetroContent.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /** Primary standalone navigation. Owns selection state and emits content changes. */
 class MetroSidebar final : public juce::Component
@@ -26,4 +26,4 @@ private:
     juce::TextButton browser { "Browser" };
     juce::TextButton mixer { "Mixer" };
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

@@ -2,7 +2,7 @@
 //  SfzDropdownPanel.cpp  —  SF2 / SFZ instrument strip with inline file browser
 // =============================================================================
 #include "SfzDropdownPanel.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
 #include <set>
@@ -18,7 +18,7 @@ static constexpr int kKnobGap      = 4;
 //  SfzDropdownPanel — constructor / destructor
 // =============================================================================
 
-SfzDropdownPanel::SfzDropdownPanel (DysektProcessor& p)
+SfzDropdownPanel::SfzDropdownPanel (AvixProcessor& p)
     : processor (p)
 {
     // ── SF2 program grid ──────────────────────────────────────────────────────
@@ -283,7 +283,7 @@ void SfzDropdownPanel::openProgramGrid()
                             processor.sfzPlayer.getCurrentPresetIndex(),
                             processor.sfzPlayer.getMidiChannel());
     {
-        const uint32_t mask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & DysektProcessor::kSf2AllowedMidiChannelMask;
+        const uint32_t mask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & AvixProcessor::kSf2AllowedMidiChannelMask;
         int lo = 0, hi = 0;
         if (mask != 0)
         {
@@ -462,7 +462,7 @@ void SfzDropdownPanel::drawSf2ChStrip (juce::Graphics& g) const
     const bool disabled = (lo == 0);
 
     // "CH" prefix
-    g.setFont (DysektLookAndFeel::makeFont (11.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (11.f, true));
     g.setColour (dim);
     g.drawText ("CH", chRangeLabelZone, juce::Justification::centred, false);
 
@@ -480,13 +480,13 @@ void SfzDropdownPanel::drawSf2ChStrip (juce::Graphics& g) const
 
         // Arrows (plain ASCII so MSVC code page 1252 never chokes)
         g.setColour (disabled ? dim : accent);
-        g.setFont (DysektLookAndFeel::makeFont (13.f));
+        g.setFont (AvixLookAndFeel::makeFont (13.f));
         g.drawText ("<", decR, juce::Justification::centred, false);
         g.drawText (">", incR, juce::Justification::centred, false);
 
         // Value
         g.setColour (disabled ? dim : bright);
-        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (14.f, true));
         const auto valStr = disabled ? juce::String ("--") : juce::String (value);
         g.drawText (valStr, numR, juce::Justification::centred, false);
     };
@@ -498,7 +498,7 @@ void SfzDropdownPanel::drawSf2ChStrip (juce::Graphics& g) const
                                             chHighDec.getX() - chLowInc.getRight(),
                                             chLowInc.getHeight());
     g.setColour (dim);
-    g.setFont (DysektLookAndFeel::makeFont (13.f));
+    g.setFont (AvixLookAndFeel::makeFont (13.f));
     g.drawText ("-", sepR, juce::Justification::centred, false);
 
     drawSpinner (chHighDec, chHighLabel, chHighInc, hi);
@@ -616,11 +616,11 @@ void SfzDropdownPanel::drawKnob (juce::Graphics& g, juce::Rectangle<int> bounds,
     const int textX = cx + (int) r + 5;
     const int textW = bounds.getRight() - textX;
 
-    g.setFont (DysektLookAndFeel::makeFont (10.5f, true));
+    g.setFont (AvixLookAndFeel::makeFont (10.5f, true));
     g.setColour (theme.foreground.withAlpha (0.38f));
     g.drawText (label,    textX, cy - 10, textW, 10, juce::Justification::centredLeft, false);
 
-    g.setFont (DysektLookAndFeel::makeFont (11.5f));
+    g.setFont (AvixLookAndFeel::makeFont (11.5f));
     g.setColour (theme.foreground.withAlpha (0.82f));
     g.drawText (valueStr, textX, cy,      textW, 10, juce::Justification::centredLeft, false);
 }
@@ -725,7 +725,7 @@ void SfzDropdownPanel::timerCallback()
     // Derive lo/hi as the lowest and highest set channel bits for spinner display.
     // Channels 1-2 are hardwired to the slicer/SFZ-player and never appear in sfPlayerChannelMask.
     {
-        const uint32_t mask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & DysektProcessor::kSf2AllowedMidiChannelMask;
+        const uint32_t mask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & AvixProcessor::kSf2AllowedMidiChannelMask;
         cachedChLow  = 0;
         cachedChHigh = 0;
         if (mask != 0)
@@ -762,7 +762,7 @@ void SfzDropdownPanel::showMidiLearnMenu (int fieldId, juce::Point<int> screenPo
     menu.addItem (1000, "Open MIDI Learn Dialog...");
 
     auto* topLvl = getTopLevelComponent();
-    float ms = DysektLookAndFeel::getMenuScale();
+    float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
@@ -774,7 +774,7 @@ void SfzDropdownPanel::showMidiLearnMenu (int fieldId, juce::Point<int> screenPo
             else if (result == 2) { processor.midiLearn.clearMapping (fieldId); repaint(); }
             else if (result == 1000)
             {
-                if (auto* editor = findParentComponentOfClass<DysektEditor>())
+                if (auto* editor = findParentComponentOfClass<AvixEditor>())
                     editor->keyPressed (juce::KeyPress ('M', juce::ModifierKeys(), 0));
             }
         });
@@ -792,7 +792,7 @@ void SfzDropdownPanel::mouseDown (const juce::MouseEvent& e)
     auto adjustChannel = [&](bool isLow, int delta)
     {
         // Derive current lo/hi from sfPlayerChannelMask for spinner display.
-        const uint32_t curMask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & DysektProcessor::kSf2AllowedMidiChannelMask;
+        const uint32_t curMask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & AvixProcessor::kSf2AllowedMidiChannelMask;
         int lo = 0, hi = 0;
         if (curMask != 0)
         {
@@ -868,7 +868,7 @@ void SfzDropdownPanel::mouseDown (const juce::MouseEvent& e)
     if (e.mods.isRightButtonDown())
     {
         // Right-click on any knob → MIDI Learn menu
-        using F = DysektProcessor::SliceParamField;
+        using F = AvixProcessor::SliceParamField;
         struct { juce::Rectangle<int>& zone; int fieldId; } knobFields[] =
         {
             { volZone,     F::FieldSfzVol        },

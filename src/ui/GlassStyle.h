@@ -2,7 +2,7 @@
 // Shared painting helpers for the opt-in Glass theme. All call sites guard
 // these helpers with on(), so other themes retain their existing appearance.
 #include <juce_graphics/juce_graphics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 namespace GlassStyle
 {

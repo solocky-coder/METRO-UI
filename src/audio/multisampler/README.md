@@ -38,7 +38,7 @@ review earlier in this conversation for the full comparison.
    whatever target already builds `src/audio/SfzPlayer.cpp`.
 2. These files depend on `juce_core` (plus `juce::File`/`juce::Uuid`, both in
    `juce_core`) and `juce_graphics` (`juce::Colour`, for `SampleZone`'s
-   custom per-zone colour override — see `dysekt_zone_color` in
+   custom per-zone colour override — see `avix_zone_color` in
    `SfzExporter`/`SfzImporter`) — no `juce_audio_*` or `juce_gui_*` needed,
    so they can be exercised by a headless test target if you have one that
    links `juce_graphics`.

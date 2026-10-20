@@ -1,5 +1,5 @@
 #include "SfzWaveformLcd.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 
 // ── Theme helpers ─────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ static const juce::Colour kSfzColRelease { 0xFFFF6B00 }; // Molten Orange
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-SfzWaveformLcd::SfzWaveformLcd (DysektProcessor& p)
+SfzWaveformLcd::SfzWaveformLcd (AvixProcessor& p)
     : processor (p)
 {
     setOpaque (false);
@@ -248,7 +248,7 @@ void SfzWaveformLcd::buildWaveformPeaks()
     {
         const float t   = (float) i / (float) kPeaks;
         const int   pos = startF + (int) (t * (float) (endF - startF));
-        peaks.set (i, DysektProcessor::getWaveformPeakAtIn (processor.sampleData2, pos));
+        peaks.set (i, AvixProcessor::getWaveformPeakAtIn (processor.sampleData2, pos));
     }
 }
 
@@ -335,7 +335,7 @@ void SfzWaveformLcd::drawLoopOverlay (juce::Graphics& g,
 
     const float labelX = (x0 + x1) * 0.5f - 18.0f;
     const float labelY = area.getY() + 3.0f;
-    g.setFont (DysektLookAndFeel::makeFont (7.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (7.0f, true));
     g.setColour (loopColour.withAlpha (0.55f));
     g.drawText ("LOOP", juce::Rectangle<float> (labelX, labelY, 36.0f, 10.0f),
                 juce::Justification::centred, false);
@@ -420,7 +420,7 @@ void SfzWaveformLcd::drawSegmentLabel (juce::Graphics& g,
 {
     const float mx = area.getX() + ((x0 + x1) * 0.5f) * area.getWidth();
     const float my = area.getY() + ((y0 + y1) * 0.5f) * area.getHeight() - 9.0f;
-    g.setFont (DysektLookAndFeel::makeFont (8.0f));
+    g.setFont (AvixLookAndFeel::makeFont (8.0f));
     g.setColour (col.withAlpha (0.40f));
     g.drawText (juce::String (text),
                 juce::Rectangle<float> (mx - 30.0f, my - 6.0f, 60.0f, 12.0f),
@@ -434,7 +434,7 @@ void SfzWaveformLcd::drawHeader (juce::Graphics& g,
     const float headerH = 18.0f;
     const auto  headerR = area.withHeight (headerH);
 
-    g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
+    g.setFont (AvixLookAndFeel::makeFont (8.5f, true));
     g.setColour (sfzLcd2Phosphor().withAlpha (0.55f));
     g.drawText ("SF PLAYER", headerR.withRight (headerR.getX() + 64.0f),
                 juce::Justification::centredLeft, false);
@@ -445,7 +445,7 @@ void SfzWaveformLcd::drawHeader (juce::Graphics& g,
                                       .getFileNameWithoutExtension();
         if (name.isNotEmpty())
         {
-            g.setFont (DysektLookAndFeel::makeFont (8.0f));
+            g.setFont (AvixLookAndFeel::makeFont (8.0f));
             g.setColour (sfzLcd2Phosphor().withAlpha (0.38f));
             g.drawText (name, headerR, juce::Justification::centredRight, true);
         }
@@ -546,7 +546,7 @@ void SfzWaveformLcd::drawNodes (juce::Graphics& g,
         g.fillEllipse (cx - dr, cy - dr, dr * 2.0f, dr * 2.0f);
 
         // Letter label below node
-        g.setFont (DysektLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
         g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.70f));
         g.drawText (juce::String (node.label),
                     juce::Rectangle<float> (cx - 14.0f, cy + r + 2.0f, 28.0f, 12.0f),
@@ -557,7 +557,7 @@ void SfzWaveformLcd::drawNodes (juce::Graphics& g,
 void SfzWaveformLcd::drawNoInstrument (juce::Graphics& g)
 {
     const auto b = getLocalBounds().reduced (4);
-    g.setFont (DysektLookAndFeel::makeFont (10.0f));
+    g.setFont (AvixLookAndFeel::makeFont (10.0f));
     g.setColour (sfzLcd2Dim().brighter (0.4f));
     g.drawText ("-- NO INSTRUMENT LOADED --", b, juce::Justification::centred);
 }

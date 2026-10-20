@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
     Metro UI
 
     MetroMetrics.h
@@ -8,7 +8,7 @@
 */
 #pragma once
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /**
     The single source of truth for Metro UI geometry.
@@ -61,4 +61,4 @@ struct MetroMetrics final
     static constexpr float focusRingThickness  = 1.0f;
 };
 
-} // namespace dysekt::metro
+} // namespace avix::metro

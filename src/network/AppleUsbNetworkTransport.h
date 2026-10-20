@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace dysekt::network
+namespace avix::network
 {
 
 class AppleUsbNetworkTransport final : public DeviceNetworkTransport
@@ -24,4 +24,4 @@ private:
     std::unique_ptr<Impl> impl;
 };
 
-} // namespace dysekt::network
+} // namespace avix::network

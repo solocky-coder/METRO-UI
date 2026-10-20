@@ -1,12 +1,12 @@
 #pragma once
 #include <juce_gui_extra/juce_gui_extra.h>
 
-class DysektProcessor;
+class AvixProcessor;
 
 //==============================================================================
 /// Pad-grid alternate interface view.
 ///
-/// Shows DYSEKT-SF's 32 slices as two banks of 16 pads in a 4×4 grid.
+/// Shows AVIX's 32 slices as two banks of 16 pads in a 4×4 grid.
 /// Bank A = slices 1–16   Bank B = slices 17–32
 /// The user switches banks with the A / B buttons at the top of the component.
 /// No scrolling is required — the full bank always fits the visible area.
@@ -16,7 +16,7 @@ class DysektProcessor;
 class PadGridView : public juce::Component
 {
 public:
-    explicit PadGridView (DysektProcessor& proc);
+    explicit PadGridView (AvixProcessor& proc);
     ~PadGridView() override;
 
     //==========================================================================
@@ -58,7 +58,7 @@ public:
 
 private:
     //==========================================================================
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     int currentBank  = 0;    ///< 0 = Bank A, 1 = Bank B.
     int hoveredPad   = -1;   ///< Absolute pad index under mouse (-1 = none).

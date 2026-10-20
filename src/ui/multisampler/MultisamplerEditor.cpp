@@ -1,8 +1,8 @@
 #include "MultisamplerEditor.h"
 #include "../../PluginProcessor.h"
-#include "../../PluginEditor.h"   // DysektEditor — needed for findParentComponentOfClass<DysektEditor>()
+#include "../../PluginEditor.h"   // AvixEditor — needed for findParentComponentOfClass<AvixEditor>()
                                    // in showMidiLearnMenu's "Open MIDI Learn Dialog..." item below
-#include "../DysektLookAndFeel.h"
+#include "../AvixLookAndFeel.h"
 #include "../SliceControlBar.h"
 #include "../../audio/multisampler/SfzImporter.h"
 #include "../../audio/multisampler/SfzExporter.h"
@@ -25,7 +25,7 @@ namespace
     }
 }
 
-MultisamplerEditor::MultisamplerEditor (DysektProcessor& processorToUse)
+MultisamplerEditor::MultisamplerEditor (AvixProcessor& processorToUse)
     : processor (processorToUse), zoneMapView (processorToUse)
 {
     instrument.name = "New Instrument";
@@ -349,7 +349,7 @@ void MultisamplerEditor::setInstrument (MultisamplerInstrument newInstrument, bo
     dirty = false;
     zoneMapView.setInstrument (&instrument);
     // Kits (instrument.drumKit, restored from .metrokit JSON / the SFZ
-    // dysekt_drum_kit opcode, or set by the load-time classifier right after)
+    // avix_drum_kit opcode, or set by the load-time classifier right after)
     // open in PADS; everything else in ZONES. Done here, synchronously with the
     // swap, so the zone map is never painted first.
     applyKitView (true);
@@ -647,7 +647,7 @@ bool MultisamplerEditor::importFromFile (const juce::File& file, bool syncEngine
 
     // Every import route (IMPORT SFZ button, file browser, drag-and-drop,
     // discard-revert) lands here, so this is the one place a kit is recognised
-    // and opened in PADS. A file that already carried dysekt_drum_kit=1 is a
+    // and opened in PADS. A file that already carried avix_drum_kit=1 is a
     // kit by definition; otherwise run the same heuristic the bus-assign prompt
     // uses (percussive + at least 3 zones). Not user-initiated -> not dirty.
     if (! instrument.drumKit)
@@ -782,7 +782,7 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
     // SfzPlayer::loadFile()'s pending-load handoff makes each call replace
     // whatever the previous one queued.
     const auto cacheFile = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                                .getChildFile ("DYSEKT")
+                                .getChildFile ("AVIX")
                                 .getChildFile ("multisampler_preview.sfz");
     cacheFile.getParentDirectory().createDirectory();
 
@@ -828,7 +828,7 @@ void MultisamplerEditor::performEngineSync (bool isFreshLoad)
                 // comment describes for the ZONES editor, fixed there the same way.
                 //
                 // Only mark this a "zone edit" rebuild (preserve each slice's
-                // DYSEKT-only fields — custom ADSR, per-slice EQ/filter, chromatic
+                // AVIX-only fields — custom ADSR, per-slice EQ/filter, chromatic
                 // channel, mute group, etc. — across the rebuild) when it genuinely is
                 // one, i.e. the debounced-timer path following a real in-place edit.
                 // setInstrument()'s immediate isFreshLoad=true call is a wholesale
@@ -1443,7 +1443,7 @@ void MultisamplerEditor::showDrumPadContextMenu (int note, juce::Point<int> scre
     menu.addItem (5, "Treat as normal instrument (leave kit mode)");
 
     auto* topLvl = getTopLevelComponent();
-    const float ms = DysektLookAndFeel::getMenuScale();
+    const float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (juce::PopupMenu::Options()
                             .withTargetScreenArea ({ screenPosition.x, screenPosition.y, 1, 1 })
                             .withParentComponent (topLvl)
@@ -1508,7 +1508,7 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
     // same-menu affordance offered, which just re-armed the same slot to no
     // effect and didn't read as a way out. "Cancel Learn" in its place is
     // the discoverable, explicit way to back out, instead of relying on the
-    // Esc shortcut (see DysektEditor::keyPressed) that nothing in either
+    // Esc shortcut (see AvixEditor::keyPressed) that nothing in either
     // menu ever mentioned.
     if (armed)
         menu.addItem (3, "Cancel Learn");
@@ -1523,12 +1523,12 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
     // in MidiLearnDialog.cpp, which has an entry for every
     // MultisamplerZoneField slot), so this isn't adding a Multisampler-
     // specific view — it's just parity with the Slicer's menu, on the same
-    // "M" keyboard-shortcut path (see DysektEditor::keyPressed).
+    // "M" keyboard-shortcut path (see AvixEditor::keyPressed).
     menu.addSeparator();
     menu.addItem (1000, "Open MIDI Learn Dialog...");
 
     auto* topLvl = getTopLevelComponent();
-    const float ms = DysektLookAndFeel::getMenuScale();
+    const float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
@@ -1541,7 +1541,7 @@ void MultisamplerEditor::showMidiLearnMenu (MultisamplerZoneField field, juce::P
             else if (result == 3) { processor.midiLearn.cancelLearn();        zoneLcd.repaint(); }
             else if (result == 1000)
             {
-                if (auto* editor = findParentComponentOfClass<DysektEditor>())
+                if (auto* editor = findParentComponentOfClass<AvixEditor>())
                     editor->keyPressed (juce::KeyPress ('M', juce::ModifierKeys(), 0));
             }
         });
@@ -1586,7 +1586,7 @@ void MultisamplerEditor::pollTrimAuditionPlayhead()
     // See trimAuditionPlayheadPoller's doc comment in the header for why
     // this exists as its own out-of-line method rather than inline in
     // TrimAuditionPlayheadPoller::timerCallback() — that would need
-    // DysektProcessor's complete type right there in the header, where it's
+    // AvixProcessor's complete type right there in the header, where it's
     // only forward-declared.
     if (zoneTrimOverlay)
         zoneTrimOverlay->setPlayheadFrame (

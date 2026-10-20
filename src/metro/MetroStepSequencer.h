@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
     Metro UI
 
     MetroStepSequencer.h
@@ -27,7 +27,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /** One row of the step grid. Rows store their musical identity (a MIDI
     note number) independently of their visual position, per the
@@ -228,4 +228,4 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MetroStepSequencer)
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

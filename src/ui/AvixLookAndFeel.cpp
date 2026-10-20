@@ -1,4 +1,4 @@
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "BinaryData.h"
 #include "IconManager.h"
 #include "ToolIcons.h"
@@ -18,14 +18,14 @@ static ThemeData globalTheme = ThemeData::metroTheme();
 ThemeData& getTheme() { return globalTheme; }
 void setTheme (const ThemeData& t) { globalTheme = t; }
 
-juce::Typeface::Ptr DysektLookAndFeel::sRegularTypeface;
-juce::Typeface::Ptr DysektLookAndFeel::sBoldTypeface;
-juce::Typeface::Ptr DysektLookAndFeel::sMonoTypeface;
-juce::Typeface::Ptr DysektLookAndFeel::sMonoBoldTypeface;
-float DysektLookAndFeel::sMenuScale = 1.0f;
-std::atomic<int> DysektLookAndFeel::sInstanceCount { 0 };
+juce::Typeface::Ptr AvixLookAndFeel::sRegularTypeface;
+juce::Typeface::Ptr AvixLookAndFeel::sBoldTypeface;
+juce::Typeface::Ptr AvixLookAndFeel::sMonoTypeface;
+juce::Typeface::Ptr AvixLookAndFeel::sMonoBoldTypeface;
+float AvixLookAndFeel::sMenuScale = 1.0f;
+std::atomic<int> AvixLookAndFeel::sInstanceCount { 0 };
 
-DysektLookAndFeel::DysektLookAndFeel()
+AvixLookAndFeel::AvixLookAndFeel()
 {
     ++sInstanceCount;
 
@@ -49,7 +49,7 @@ DysektLookAndFeel::DysektLookAndFeel()
     sMonoBoldTypeface = monoBoldTypeface;
 }
 
-DysektLookAndFeel::~DysektLookAndFeel()
+AvixLookAndFeel::~AvixLookAndFeel()
 {
     // Last look-and-feel gone (editor / standalone window closed): drop the
     // static typeface references now, while JUCE's font registry still exists.
@@ -63,7 +63,7 @@ DysektLookAndFeel::~DysektLookAndFeel()
     }
 }
 
-juce::Font DysektLookAndFeel::makeFont (float pointSize, bool bold)
+juce::Font AvixLookAndFeel::makeFont (float pointSize, bool bold)
 {
     // Font selection is unrelated to the flat/square shape-language collapse —
     // Metro still asks for native Segoe UI chrome; every other theme still
@@ -82,7 +82,7 @@ juce::Font DysektLookAndFeel::makeFont (float pointSize, bool bold)
     return juce::Font (juce::FontOptions().withHeight (pointSize));
 }
 
-juce::Font DysektLookAndFeel::makeMonoFont (float pointSize, bool bold)
+juce::Font AvixLookAndFeel::makeMonoFont (float pointSize, bool bold)
 {
     auto tf = bold ? sMonoBoldTypeface : sMonoTypeface;
     if (tf != nullptr)
@@ -90,7 +90,7 @@ juce::Font DysektLookAndFeel::makeMonoFont (float pointSize, bool bold)
     return makeFont (pointSize, bold);
 }
 
-juce::Typeface::Ptr DysektLookAndFeel::getTypefaceForFont (const juce::Font& f)
+juce::Typeface::Ptr AvixLookAndFeel::getTypefaceForFont (const juce::Font& f)
 {
     // Check both the bold flag and the typeface style string — macOS can request
     // bold via style name ("Bold", "SemiBold") rather than the isBold() flag,
@@ -106,7 +106,7 @@ juce::Typeface::Ptr DysektLookAndFeel::getTypefaceForFont (const juce::Font& f)
 // other theme (asset sprite base + serum metallic gradient + rounded border).
 // The else branch is gone — every theme now renders the flat/square shape,
 // still reading its own getTheme() colours.
-void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
+void AvixLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
                                                const juce::Colour& /*bgColour*/,
                                                bool isHighlighted, bool isDown)
 {
@@ -122,7 +122,7 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
     const bool toggled = button.getToggleState();
 
     // Opt-in outline style — set the "flatOutline" property on a button to
-    // get the DYSEKT-SF chassis look (transparent fill, 1px cyan hairline,
+    // get the AVIX chassis look (transparent fill, 1px cyan hairline,
     // squared corners) instead of the app's default solid flat fill. Used
     // by TrackInspector's M/S/R row so it matches the SELECTED TRACK card's
     // border treatment; left opt-in rather than global so every other
@@ -136,7 +136,7 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
         return;
     }
 
-    // DYSEKT-METRO opt-in — unlike the default fill path below, this one
+    // AVIX-METRO opt-in — unlike the default fill path below, this one
     // actually reads the button's own buttonColourId/buttonOnColourId
     // rather than the app-wide theme accent, so callers with per-button
     // roles (M/S/R's amber/gold/red) render as distinct solid tiles
@@ -159,7 +159,7 @@ void DysektLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
     g.fillRoundedRectangle (bounds, r);
 }
 
-void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
+void AvixLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
                                          bool /*isHighlighted*/, bool /*isDown*/)
 {
     juce::Colour textCol;
@@ -227,7 +227,7 @@ void DysektLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
 }
 
 // ── Popup menus ───────────────────────────────────────────────────────────────
-void DysektLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
+void AvixLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
     const float r = 0.0f;   // flat, square corners — was Metro-only, now universal
     auto bounds = juce::Rectangle<float> (0, 0, (float)width, (float)height);
@@ -250,7 +250,7 @@ void DysektLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, i
     g.fillRect (bounds.reduced (r, 0).removeFromTop (1.0f));
 }
 
-void DysektLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
+void AvixLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
                                             bool isSeparator, bool isActive, bool isHighlighted,
                                             bool isTicked, bool /*hasSubMenu*/,
                                             const juce::String& text, const juce::String& /*shortcutText*/,
@@ -320,7 +320,7 @@ void DysektLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectan
     g.drawText (text, textArea, juce::Justification::centredLeft);
 }
 
-void DysektLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g,
+void AvixLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g,
                                                      const juce::Rectangle<int>& area,
                                                      const juce::String& sectionName)
 {
@@ -333,7 +333,7 @@ void DysektLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g,
                       juce::Justification::bottomLeft, 1);
 }
 
-juce::Font DysektLookAndFeel::getPopupMenuFont()
+juce::Font AvixLookAndFeel::getPopupMenuFont()
 {
     return makeFont (14.0f * sMenuScale);
 }
@@ -343,7 +343,7 @@ juce::Font DysektLookAndFeel::getPopupMenuFont()
 // theme (bevel gradient body + glow-on-focus + chevron). The else branch is
 // gone — every theme now renders the flat Metro-style combo box, still
 // reading its own getTheme() colours.
-void DysektLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
+void AvixLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
                                       bool isButtonDown, int buttonX, int /*buttonY*/,
                                       int /*buttonW*/, int /*buttonH*/, juce::ComboBox& box)
 {
@@ -368,7 +368,7 @@ void DysektLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
                 (float)(arrowCX + arrowHalf),  (float)(arrowCY - 2), 1.5f);
 }
 
-juce::Font DysektLookAndFeel::getComboBoxFont (juce::ComboBox& box)
+juce::Font AvixLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 {
     const auto requestedSize = box.getProperties().getWithDefault ("transportFontSize", 0.0);
     if ((double) requestedSize > 0.0)
@@ -376,7 +376,7 @@ juce::Font DysektLookAndFeel::getComboBoxFont (juce::ComboBox& box)
     return makeFont (14.0f * sMenuScale);
 }
 
-void DysektLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+void AvixLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
     label.setBounds (1, 1, box.getWidth() - 28, box.getHeight() - 2);
     label.setFont (getComboBoxFont (box));
@@ -385,7 +385,7 @@ void DysektLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& 
 }
 
 // Scroll arrows — filled triangles, no unicode
-void DysektLookAndFeel::drawPopupMenuUpDownArrow (juce::Graphics& g, int width, int height,
+void AvixLookAndFeel::drawPopupMenuUpDownArrow (juce::Graphics& g, int width, int height,
                                                   bool isScrollUpArrow)
 {
     g.setColour (getTheme().foreground.withAlpha (0.6f));
@@ -401,7 +401,7 @@ void DysektLookAndFeel::drawPopupMenuUpDownArrow (juce::Graphics& g, int width, 
 }
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
-void DysektLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
+void AvixLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int width, int height)
 {
     // Flattened — was a fixed 2.0f radius regardless of theme; now square
     // corners everywhere, in line with the rest of the shape language.
@@ -419,7 +419,7 @@ void DysektLookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text
     g.drawText (text, 6, 0, width - 12, height, juce::Justification::centredLeft);
 }
 
-juce::Rectangle<int> DysektLookAndFeel::getTooltipBounds (const juce::String& text,
+juce::Rectangle<int> AvixLookAndFeel::getTooltipBounds (const juce::String& text,
                                                             juce::Point<int> screenPos,
                                                             juce::Rectangle<int> parentArea)
 {
@@ -440,7 +440,7 @@ juce::Rectangle<int> DysektLookAndFeel::getTooltipBounds (const juce::String& te
 // Flattened — was always a rounded "pill" thumb with a gradient fill and a
 // hover/drag glow regardless of theme. Now a flat square-cornered accent bar,
 // no gradient, no glow, matching the rest of the shape language.
-void DysektLookAndFeel::drawScrollbar (juce::Graphics& g,
+void AvixLookAndFeel::drawScrollbar (juce::Graphics& g,
                                        juce::ScrollBar& /*scrollbar*/,
                                        int x, int y, int width, int height,
                                        bool isScrollbarVertical,
@@ -481,7 +481,7 @@ void DysektLookAndFeel::drawScrollbar (juce::Graphics& g,
 // dot thumb) vs. every other theme (recessed gradient track + glow fill +
 // glassy beveled thumb). The else branch is gone — every theme now renders
 // the flat Metro-style slider, still reading its own getTheme() colours.
-void DysektLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
+void AvixLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                                           float sliderPos, float minSliderPos, float maxSliderPos,
                                           const juce::Slider::SliderStyle style, juce::Slider& slider)
 {
@@ -521,7 +521,7 @@ void DysektLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int w
 // indicator line) vs. every other theme (recessed gradient arc + glow fill
 // arc + glassy beveled thumb dot). The else branch is gone — every theme now
 // renders the flat Metro-style rotary, still reading its own getTheme() colours.
-void DysektLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+void AvixLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                                           float sliderPosProportional, float rotaryStartAngle,
                                           float rotaryEndAngle, juce::Slider& slider)
 {
@@ -554,7 +554,7 @@ void DysektLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
 
 // ── TextEditor ────────────────────────────────────────────────────────────────
 // Flat fill + flat outline, matching drawButtonBackground's shape language.
-void DysektLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, int height, juce::TextEditor& te)
+void AvixLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, int height, juce::TextEditor& te)
 {
     auto bg = te.findColour (juce::TextEditor::backgroundColourId);
     if (bg.isTransparent())
@@ -565,7 +565,7 @@ void DysektLookAndFeel::fillTextEditorBackground (juce::Graphics& g, int width, 
     g.fillRoundedRectangle (bounds, 0.0f);
 }
 
-void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
+void AvixLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int height, juce::TextEditor& te)
 {
     if (te.isReadOnly())
         return;
@@ -580,22 +580,22 @@ void DysektLookAndFeel::drawTextEditorOutline (juce::Graphics& g, int width, int
 //==============================================================================
 // AlertWindow overrides — make every SF-player popup readable
 //==============================================================================
-juce::Font DysektLookAndFeel::getAlertWindowTitleFont()
+juce::Font AvixLookAndFeel::getAlertWindowTitleFont()
 {
     return makeFont (16.0f * sMenuScale, true);
 }
 
-juce::Font DysektLookAndFeel::getAlertWindowMessageFont()
+juce::Font AvixLookAndFeel::getAlertWindowMessageFont()
 {
     return makeFont (14.0f * sMenuScale);
 }
 
-int DysektLookAndFeel::getAlertWindowButtonHeight()
+int AvixLookAndFeel::getAlertWindowButtonHeight()
 {
     return juce::roundToInt (28.0f * sMenuScale);
 }
 
-void DysektLookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& alert,
+void AvixLookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& alert,
                                       const juce::Rectangle<int>& textArea,
                                       juce::TextLayout& textLayout)
 {
@@ -626,10 +626,10 @@ void DysektLookAndFeel::drawAlertBox (juce::Graphics& g, juce::AlertWindow& aler
 }
 
 //==============================================================================
-//  DocumentWindow title bar — themed to match DYSEKT-SF's dark palette
+//  DocumentWindow title bar — themed to match AVIX's dark palette
 //==============================================================================
 
-void DysektLookAndFeel::drawDocumentWindowTitleBar (
+void AvixLookAndFeel::drawDocumentWindowTitleBar (
     juce::DocumentWindow& window, juce::Graphics& g,
     int w, int h, int titleSpaceX, int titleSpaceW,
     const juce::Image* /*icon*/, bool /*drawTitleTextOnLeft*/)
@@ -658,13 +658,13 @@ void DysektLookAndFeel::drawDocumentWindowTitleBar (
 
 namespace
 {
-    // A simple flat button that draws an X, –, or □ in DYSEKT-SF's colours.
-    class DysektTitleBarButton : public juce::Button
+    // A simple flat button that draws an X, –, or □ in AVIX's colours.
+    class AvixTitleBarButton : public juce::Button
     {
     public:
         enum class Kind { Close, Minimise, Maximise };
 
-        DysektTitleBarButton (Kind k) : juce::Button ({}), kind (k) {}
+        AvixTitleBarButton (Kind k) : juce::Button ({}), kind (k) {}
 
         void paintButton (juce::Graphics& g, bool isHighlighted, bool isDown) override
         {
@@ -709,12 +709,12 @@ namespace
     };
 }
 
-juce::Button* DysektLookAndFeel::createDocumentWindowButton (int buttonType)
+juce::Button* AvixLookAndFeel::createDocumentWindowButton (int buttonType)
 {
-    using Kind = DysektTitleBarButton::Kind;
+    using Kind = AvixTitleBarButton::Kind;
     if (buttonType == juce::DocumentWindow::closeButton)
-        return new DysektTitleBarButton (Kind::Close);
+        return new AvixTitleBarButton (Kind::Close);
     if (buttonType == juce::DocumentWindow::minimiseButton)
-        return new DysektTitleBarButton (Kind::Minimise);
-    return new DysektTitleBarButton (Kind::Maximise);
+        return new AvixTitleBarButton (Kind::Minimise);
+    return new AvixTitleBarButton (Kind::Maximise);
 }

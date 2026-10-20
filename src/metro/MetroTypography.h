@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
     Metro UI
 
     MetroTypography.h
@@ -10,7 +10,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /**
     The complete Metro type scale.
@@ -77,4 +77,4 @@ private:
     }
 };
 
-} // namespace dysekt::metro
+} // namespace avix::metro

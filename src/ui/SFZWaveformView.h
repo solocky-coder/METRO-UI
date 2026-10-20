@@ -2,7 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "WaveformCache.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 // =============================================================================
 //  SFZWaveformView  —  Main waveform display for SFZ / SF2 Player mode
@@ -14,7 +14,7 @@ class DysektProcessor;
 //    • Drag-and-drop target for .sfz / .sf2 files
 //    • "DROP SFZ / SF2 FILE" placeholder when no instrument is loaded
 //
-//  Wire into DysektEditor by including this header, adding a member and
+//  Wire into AvixEditor by including this header, adding a member and
 //  calling addAndMakeVisible / setBounds inside resized().
 // =============================================================================
 
@@ -22,7 +22,7 @@ class SFZWaveformView : public juce::Component,
                         public juce::FileDragAndDropTarget
 {
 public:
-    explicit SFZWaveformView (DysektProcessor& p);
+    explicit SFZWaveformView (AvixProcessor& p);
 
     // ── juce::Component overrides ─────────────────────────────────────────────
     void paint          (juce::Graphics& g) override;
@@ -77,7 +77,7 @@ private:
     int  waveformMode  = 0;      ///< 0 = Hard, 1 = Soft
     bool dragHighlight = false;  ///< true while a valid file is being dragged over
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SFZWaveformView)
 };

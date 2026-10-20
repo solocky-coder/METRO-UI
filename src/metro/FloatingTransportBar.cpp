@@ -5,19 +5,19 @@
 #include "MetroTypography.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
-#include "../ui/DysektLookAndFeel.h"
+#include "../ui/AvixLookAndFeel.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 namespace
 {
     // Mirrors PluginEditor.cpp's getSettingsDir() convention (same app-data
-    // folder, "DYSEKT-SF") without pulling in that file — this panel's
+    // folder, "AVIX") without pulling in that file — this panel's
     // position is its own small piece of state, not part of settings.yaml.
     juce::File getSettingsDir()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("DYSEKT-SF");
+                   .getChildFile ("AVIX");
     }
 
     void configureChrome (juce::TextButton& b, const juce::String& text, const juce::String& tooltip)
@@ -66,7 +66,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
     // ── Tempo ────────────────────────────────────────────────────────────
     tempoLabel.setEditable (true, true, false);
     tempoLabel.setJustificationType (juce::Justification::centred);
-    tempoLabel.setFont (DysektLookAndFeel::makeMonoFont (16.0f, true));
+    tempoLabel.setFont (AvixLookAndFeel::makeMonoFont (16.0f, true));
     tempoLabel.setColour (juce::Label::backgroundColourId, Base::Background);
     tempoLabel.setColour (juce::Label::textColourId, Transport::Tempo);
     tempoLabel.setTooltip ("Tempo in beats per minute (20-999)");
@@ -80,7 +80,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
 
     // ── Musical position ─────────────────────────────────────────────────
     positionLabel.setJustificationType (juce::Justification::centred);
-    positionLabel.setFont (DysektLookAndFeel::makeMonoFont (26.0f, true));
+    positionLabel.setFont (AvixLookAndFeel::makeMonoFont (26.0f, true));
     positionLabel.setColour (juce::Label::backgroundColourId, Base::Background);
     positionLabel.setColour (juce::Label::textColourId, Accent::Orange);
     addAndMakeVisible (positionLabel);
@@ -120,7 +120,7 @@ FloatingTransportBar::FloatingTransportBar (SequencerEngine& sequencer, AbletonL
 
     // ── Locators ─────────────────────────────────────────────────────────
     locatorsLabel.setJustificationType (juce::Justification::centredLeft);
-    locatorsLabel.setFont (DysektLookAndFeel::makeMonoFont (13.0f));
+    locatorsLabel.setFont (AvixLookAndFeel::makeMonoFont (13.0f));
     locatorsLabel.setColour (juce::Label::backgroundColourId, Base::Background);
     locatorsLabel.setColour (juce::Label::textColourId, Text::Primary);
     addAndMakeVisible (locatorsLabel);
@@ -471,4 +471,4 @@ void FloatingTransportBar::savePosition() const
     xml.setAttribute ("y", getY());
     xml.writeTo (getPositionFile());
 }
-} // namespace dysekt::metro
+} // namespace avix::metro

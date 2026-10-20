@@ -2,7 +2,7 @@
 //  SfzPlayerDropdownPanel.cpp  —  SF2 / SFZ instrument strip with inline file browser
 // =============================================================================
 #include "SfzPlayerDropdownPanel.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
@@ -32,7 +32,7 @@ static constexpr int kKnobGap      = 4;
 //  SfzPlayerDropdownPanel — constructor / destructor
 // =============================================================================
 
-SfzPlayerDropdownPanel::SfzPlayerDropdownPanel (DysektProcessor& p)
+SfzPlayerDropdownPanel::SfzPlayerDropdownPanel (AvixProcessor& p)
     : processor (p),
       keysPanel (p)
 {
@@ -415,7 +415,7 @@ void SfzPlayerDropdownPanel::drawPresetPicker (juce::Graphics& g) const
     // Folder icon (always visible — this is the open/close toggle)
     {
         const bool hover = folderIconZone.contains (getMouseXYRelative());
-        g.setFont (DysektLookAndFeel::makeFont (13.0f));
+        g.setFont (AvixLookAndFeel::makeFont (13.0f));
         g.setColour (browserOpen
                      ? theme.accent.withAlpha (0.90f)
                      : hover ? theme.accent.withAlpha (0.70f)
@@ -430,7 +430,7 @@ void SfzPlayerDropdownPanel::drawPresetPicker (juce::Graphics& g) const
         const bool hover  = zone.contains (getMouseXYRelative()) && active;
         g.setColour (hover ? theme.accent.withAlpha (0.30f) : juce::Colours::transparentBlack);
         g.fillRoundedRectangle (zone.toFloat(), 0.0f);
-        g.setFont (DysektLookAndFeel::makeFont (13.0f));
+        g.setFont (AvixLookAndFeel::makeFont (13.0f));
         g.setColour (active ? theme.accent.withAlpha (0.75f)
                             : theme.foreground.withAlpha (0.20f));
         g.drawText (sym, zone, juce::Justification::centred, false);
@@ -445,21 +445,21 @@ void SfzPlayerDropdownPanel::drawPresetPicker (juce::Graphics& g) const
         if (browserOpen)
         {
             // Browser is open — show a hint
-            g.setFont (DysektLookAndFeel::makeFont (12.0f));
+            g.setFont (AvixLookAndFeel::makeFont (12.0f));
             g.setColour (theme.accent.withAlpha (0.70f));
             g.drawText ("browsing files - double-click to load", lbl,
                         juce::Justification::centred, true);
         }
         else if (! isLoaded)
         {
-            g.setFont (DysektLookAndFeel::makeFont (12.0f));
+            g.setFont (AvixLookAndFeel::makeFont (12.0f));
             g.setColour (theme.foreground.withAlpha (0.38f));
             g.drawText ("click \U0001F4C1 or drop a file", lbl,
                         juce::Justification::centred, false);
         }
         else if (presetList.empty())
         {
-            g.setFont (DysektLookAndFeel::makeFont (12.0f));
+            g.setFont (AvixLookAndFeel::makeFont (12.0f));
             g.setColour (theme.foreground.withAlpha (0.75f));
             g.drawText (processor.sfzPlayer2.getLoadedFile().getFileNameWithoutExtension(),
                         lbl, juce::Justification::centred, true);
@@ -473,7 +473,7 @@ void SfzPlayerDropdownPanel::drawPresetPicker (juce::Graphics& g) const
             // Top mini-label
             {
                 auto topLine = lbl.removeFromTop (lbl.getHeight() / 2);
-                g.setFont (DysektLookAndFeel::makeFont (10.5f));
+                g.setFont (AvixLookAndFeel::makeFont (10.5f));
                 g.setColour (theme.foreground.withAlpha (0.38f));
                 const auto caption =
                     processor.sfzPlayer2.getLoadedFile().getFileNameWithoutExtension()
@@ -483,7 +483,7 @@ void SfzPlayerDropdownPanel::drawPresetPicker (juce::Graphics& g) const
             }
 
             // Preset name
-            g.setFont (DysektLookAndFeel::makeFont (13.0f));
+            g.setFont (AvixLookAndFeel::makeFont (13.0f));
             g.setColour (theme.foreground);
             g.drawText (info.name, lbl, juce::Justification::centred, true);
         }
@@ -527,11 +527,11 @@ void SfzPlayerDropdownPanel::drawKnob (juce::Graphics& g, juce::Rectangle<int> b
     const int textX = cx + (int) r + 5;
     const int textW = bounds.getRight() - textX;
 
-    g.setFont (DysektLookAndFeel::makeFont (10.5f, true));
+    g.setFont (AvixLookAndFeel::makeFont (10.5f, true));
     g.setColour (theme.foreground.withAlpha (0.38f));
     g.drawText (label,    textX, cy - 10, textW, 10, juce::Justification::centredLeft, false);
 
-    g.setFont (DysektLookAndFeel::makeFont (11.5f));
+    g.setFont (AvixLookAndFeel::makeFont (11.5f));
     g.setColour (theme.foreground.withAlpha (0.82f));
     g.drawText (valueStr, textX, cy,      textW, 10, juce::Justification::centredLeft, false);
 }
@@ -658,7 +658,7 @@ void SfzPlayerDropdownPanel::showMidiLearnMenu (int fieldId, juce::Point<int> sc
     menu.addItem (1000, "Open MIDI Learn Dialog...");
 
     auto* topLvl = getTopLevelComponent();
-    float ms = DysektLookAndFeel::getMenuScale();
+    float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
@@ -670,7 +670,7 @@ void SfzPlayerDropdownPanel::showMidiLearnMenu (int fieldId, juce::Point<int> sc
             else if (result == 2) { processor.midiLearn.clearMapping (fieldId); repaint(); }
             else if (result == 1000)
             {
-                if (auto* editor = findParentComponentOfClass<DysektEditor>())
+                if (auto* editor = findParentComponentOfClass<AvixEditor>())
                     editor->keyPressed (juce::KeyPress ('M', juce::ModifierKeys(), 0));
             }
         });
@@ -795,7 +795,7 @@ void SfzPlayerDropdownPanel::mouseDown (const juce::MouseEvent& e)
                         menu.addItem (200 + ch, "Channel " + juce::String (ch), true, curCh == ch);
 
                     auto* topLvl = getTopLevelComponent();
-                    float ms = DysektLookAndFeel::getMenuScale();
+                    float ms = AvixLookAndFeel::getMenuScale();
                     menu.showMenuAsync (
                         juce::PopupMenu::Options()
                             .withTargetScreenArea (juce::Rectangle<int> (
@@ -822,7 +822,7 @@ void SfzPlayerDropdownPanel::mouseDown (const juce::MouseEvent& e)
         }
 
         // Right-click on any knob → MIDI Learn menu
-        using F = DysektProcessor::SliceParamField;
+        using F = AvixProcessor::SliceParamField;
         struct { juce::Rectangle<int>& zone; int fieldId; } knobFields[] =
         {
             { volZone,     F::FieldSfzVol        },
@@ -1077,7 +1077,7 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
     bool         inRegion = false;
     int          colIdx   = 0;
     juce::String sampleName;
-    juce::String customColourHex;   // set from a persisted dysekt_zone_color= opcode, if present
+    juce::String customColourHex;   // set from a persisted avix_zone_color= opcode, if present
 
     auto flush = [&]
     {
@@ -1092,7 +1092,7 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
             z.isLooped = false;
             z.isSfz    = true;   // SFZ zones are editable — must set explicitly (default is false)
             // A user-picked "Zone Color" (persisted via writeSfzZoneChange's
-            // dysekt_zone_color opcode) takes priority over the deterministic
+            // avix_zone_color opcode) takes priority over the deterministic
             // per-index default so a recoloured zone keeps its colour across
             // reloads instead of reverting to the palette hash.
             z.colour   = customColourHex.isNotEmpty()
@@ -1143,7 +1143,7 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
             // Parsing itself now lives in SfzKeyParsing.h, shared with
             // SfzImporter::buildZone() (MULTISAMPLER) so the two views can't
             // silently disagree on what a note name means — see that header
-            // for the DYSEKT-vs-spec octave convention note.
+            // for the AVIX-vs-spec octave convention note.
 
             auto loRaw = getOpcodeValue (lineLower, "lokey=");
             if (loRaw.isNotEmpty())
@@ -1197,14 +1197,16 @@ std::vector<KeysPanel::Keyzone> SfzPlayerDropdownPanel::parseSfzZones (const juc
                 sampleName = bare.isNotEmpty() ? bare : rawPath;
             }
 
-            // Extract a persisted dysekt_zone_color= value (see
+            // Extract a persisted avix_zone_color= value (see
             // writeSfzZoneChange). Written via z.colour.toString(), an
             // 8-digit AARRGGBB hex string with no embedded spaces, so the
             // generic getOpcodeValue token scan (split on the next space)
             // is safe to reuse here.
             if (customColourHex.isEmpty())
             {
-                auto cRaw = getOpcodeValue (lineLower, "dysekt_zone_color=");
+                auto cRaw = getOpcodeValue (lineLower, "avix_zone_color=");
+                if (cRaw.isEmpty())   // SFZ files saved before the rebrand
+                    cRaw = getOpcodeValue (lineLower, "dysekt_zone_color=");
                 if (cRaw.isNotEmpty())
                     customColourHex = cRaw;
             }
@@ -1704,7 +1706,7 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
     // safe to leave in the file — it only round-trips through parseSfzZones
     // below so a user-picked "Zone Color" survives reload instead of falling
     // back to the deterministic per-index default every time.
-    setOpcode (lines, regionLine, "dysekt_zone_color", z.colour.toString());
+    setOpcode (lines, regionLine, "avix_zone_color", z.colour.toString());
 
     // Write back — join with \n (preserve original line endings best-effort)
     const bool crlf = f.loadFileAsString().contains ("\r\n");
@@ -1724,7 +1726,7 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
 
     // The line above only updates sfzPlayer2 — the live sfizz/FluidSynth
     // engine — but sfzPlayer2.process() is never called anywhere in
-    // DysektProcessor::processBlock() (see MixerPanel::sfz2TotalH()'s note
+    // AvixProcessor::processBlock() (see MixerPanel::sfz2TotalH()'s note
     // on this). What voicePool2 actually plays back is the pre-rendered
     // slice data in sliceManager2/sampleData2, populated by SoundFontLoader
     // via loadSoundFontAsync(..., SoundFontLoadTarget::SfzPlayer2). Without
@@ -1739,5 +1741,5 @@ void SfzPlayerDropdownPanel::writeSfzZoneChange (const juce::File& f,
 // openSaveAsNewForZone / openSaveAsOverlay / hideOverlays / showOverlay<>
 // removed — this panel is never shown (see PluginEditor.cpp), so this whole
 // Add Zone / Save SFZ As flow was dead code, fully duplicated by
-// DysektEditor's zone-builder flow in PluginEditor.cpp. See the note in
+// AvixEditor's zone-builder flow in PluginEditor.cpp. See the note in
 // SfzPlayerDropdownPanel.h.

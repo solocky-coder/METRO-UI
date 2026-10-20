@@ -2,7 +2,7 @@
 #include "MetroColours.h"
 #include "MetroMetrics.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 MetroSidebar::MetroSidebar()
 {
@@ -49,4 +49,4 @@ void MetroSidebar::selectContent (MetroContent content)
     if (onSelectionChanged)
         onSelectionChanged (content);
 }
-} // namespace dysekt::metro
+} // namespace avix::metro

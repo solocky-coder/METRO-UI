@@ -20,7 +20,7 @@
 // =============================================================================
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 class AddZoneOverlay : public juce::Component
 {
@@ -55,7 +55,7 @@ public:
             nameEditor.setColour (juce::TextEditor::textColourId,           T.foreground);
             nameEditor.setColour (juce::TextEditor::outlineColourId,        T.accent.withAlpha (0.5f));
             nameEditor.setColour (juce::TextEditor::focusedOutlineColourId, T.accent);
-            nameEditor.setFont (DysektLookAndFeel::makeFont (13.0f));
+            nameEditor.setFont (AvixLookAndFeel::makeFont (13.0f));
             nameEditor.onEscapeKey = [this] { fire (false); };
             nameEditor.setMouseCursor (juce::MouseCursor::NormalCursor);
             addAndMakeVisible (nameEditor);
@@ -134,7 +134,7 @@ public:
         const int padX = 18;
 
         // Title
-        g.setFont (DysektLookAndFeel::makeFont (16.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f, true));
         g.setColour (T.accent);
         g.drawText (title,
                     box.getX() + padX, box.getY() + 16,
@@ -143,7 +143,7 @@ public:
 
         if (hasNameField)
         {
-            g.setFont (DysektLookAndFeel::makeFont (10.0f));
+            g.setFont (AvixLookAndFeel::makeFont (10.0f));
             g.setColour (T.foreground.withAlpha (0.50f));
             g.drawText ("Name your SFZ (no extension)",
                         box.getX() + padX, box.getY() + 44,
@@ -163,7 +163,7 @@ public:
             const auto& c = rows[i];
 
             // Label
-            g.setFont (DysektLookAndFeel::makeFont (13.5f, true));
+            g.setFont (AvixLookAndFeel::makeFont (13.5f, true));
             g.setColour (T.foreground.withAlpha (0.85f));
             g.drawText (labels[i],
                         c.labelX, c.y,
@@ -171,7 +171,7 @@ public:
                         juce::Justification::centredLeft, false);
 
             // Note name readout (centred between the two spinner buttons)
-            g.setFont (DysektLookAndFeel::makeFont (19.0f, true));
+            g.setFont (AvixLookAndFeel::makeFont (19.0f, true));
             g.setColour (T.foreground);
             g.drawText (noteName (vals[i]),
                         c.readoutX, c.y,
@@ -179,7 +179,7 @@ public:
                         juce::Justification::centred, false);
 
             // MIDI number subscript
-            g.setFont (DysektLookAndFeel::makeFont (11.0f));
+            g.setFont (AvixLookAndFeel::makeFont (11.0f));
             g.setColour (T.foreground.withAlpha (0.55f));
             g.drawText ("(" + juce::String (vals[i]) + ")",
                         c.subX, c.y,
@@ -188,7 +188,7 @@ public:
         }
 
         // Hint line
-        g.setFont (DysektLookAndFeel::makeFont (11.5f));
+        g.setFont (AvixLookAndFeel::makeFont (11.5f));
         g.setColour (T.foreground.withAlpha (0.55f));
         g.drawText ("Default is one key. Expand the range before confirming.",
                     box.getX() + padX,

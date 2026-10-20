@@ -4,7 +4,7 @@
 // =============================================================================
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <unordered_map>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../audio/SfzPlayer.h"
 
@@ -14,7 +14,7 @@ struct Sf2PresetInfo;
 class Sf2MixerPanel : public juce::Component
 {
 public:
-    explicit Sf2MixerPanel (DysektProcessor& p) : processor (p) { setOpaque (false); }
+    explicit Sf2MixerPanel (AvixProcessor& p) : processor (p) { setOpaque (false); }
     ~Sf2MixerPanel() override = default;
 
     void setActiveChannels (const std::vector<Sf2PresetInfo>& presets,
@@ -47,7 +47,7 @@ public:
 
         if (strips.empty())
         {
-            g.setFont (DysektLookAndFeel::makeFont (12.0f));
+            g.setFont (AvixLookAndFeel::makeFont (12.0f));
             g.setColour (theme.foreground.withAlpha (0.40f));
             g.drawText ("No presets assigned  -  right-click a preset in the grid to assign a MIDI channel",
                         getLocalBounds(), juce::Justification::centred, true);
@@ -128,7 +128,7 @@ public:
     }
 
 private:
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     struct ActiveStrip
     {
@@ -183,26 +183,26 @@ private:
         g.setColour (theme.accent.withAlpha (0.12f));
         g.fillRect (s.bounds.getRight() - 1, s.bounds.getY() + 4, 1, s.bounds.getHeight() - 8);
 
-        g.setFont (DysektLookAndFeel::makeFont (10.5f));
+        g.setFont (AvixLookAndFeel::makeFont (10.5f));
         g.setColour (theme.foreground.withAlpha (0.70f));
         g.drawText (s.name, s.nameLbl, juce::Justification::centredLeft, true);
 
         g.setColour (theme.accent.withAlpha (0.22f));
         g.fillRoundedRectangle(s.chBadge.toFloat(), 0.0f);
-        g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (9.5f, true));
         g.setColour (theme.accent.withAlpha (0.90f));
         g.drawText (juce::String (s.midiCh), s.chBadge, juce::Justification::centred, false);
 
         const bool muted = state.muted;
         g.setColour (muted ? juce::Colour (0xFFFF6B6B).withAlpha (0.85f) : theme.darkBar.brighter (0.20f));
         g.fillRoundedRectangle(s.muteBtn.toFloat(), 0.0f);
-        g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (9.5f, true));
         g.setColour (muted ? juce::Colours::white : theme.foreground.withAlpha (0.65f));
         g.drawText ("M", s.muteBtn, juce::Justification::centred, false);
 
         g.setColour (soloed ? juce::Colour (0xFFFFD93D).withAlpha (0.85f) : theme.darkBar.brighter (0.20f));
         g.fillRoundedRectangle(s.soloBtn.toFloat(), 0.0f);
-        g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (9.5f, true));
         g.setColour (soloed ? juce::Colours::black : theme.foreground.withAlpha (0.65f));
         g.drawText ("S", s.soloBtn, juce::Justification::centred, false);
 
@@ -233,7 +233,7 @@ private:
         g.setColour (theme.accent.brighter (0.3f));
         g.fillEllipse (tx - 2.f, ty - 2.f, 4.f, 4.f);
 
-        g.setFont (DysektLookAndFeel::makeFont (9.0f));
+        g.setFont (AvixLookAndFeel::makeFont (9.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (label, bounds.getX(), bounds.getBottom() - 12, bounds.getWidth(), 12,
                     juce::Justification::centred, false);
@@ -259,7 +259,7 @@ private:
         g.fillRoundedRectangle((float)(trackX - 5), (float)(fillY - 4), (float)(trackW + 10), 8.0f, 0.0f);
 
         const float db = juce::Decibels::gainToDecibels (vol);
-        g.setFont (DysektLookAndFeel::makeFont (9.0f));
+        g.setFont (AvixLookAndFeel::makeFont (9.0f));
         g.setColour (theme.foreground.withAlpha (0.45f));
         g.drawText (db <= -95.f ? "-inf" : juce::String (db, 1),
                     track.getX(), track.getY() - 11, track.getWidth(), 10,

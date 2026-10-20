@@ -1,8 +1,8 @@
 #pragma once
 // =============================================================================
-//  SoundFontLoader.h  —  SF2 / SFZ → DYSEKT-SF sample engine  (sfizz backend)
+//  SoundFontLoader.h  —  SF2 / SFZ → AVIX sample engine  (sfizz backend)
 //  ─────────────────────────────────────────────────────────────────────────
-//  Requires: sfizz linked in CMakeLists.txt and DYSEKT_HAS_SFIZZ=1 defined.
+//  Requires: sfizz linked in CMakeLists.txt and AVIX_HAS_SFIZZ=1 defined.
 //
 //  What it does
 //  ─────────────
@@ -36,12 +36,12 @@
 #include "SampleData.h"   // for INTERSECT_HAS_STD_ATOMIC_SHARED_PTR
 #include "SfzZoneColours.h"
 
-#if DYSEKT_HAS_SFIZZ
+#if AVIX_HAS_SFIZZ
   #include "../../sfizz/src/sfizz.h"
 #endif
 
 // Forward declaration — full definition is in PluginProcessor.h
-class DysektProcessor;
+class AvixProcessor;
 
 // =============================================================================
 //  SoundFontLoadTarget — which preview buffer a load() call should populate.
@@ -74,7 +74,7 @@ enum class SoundFontLoadTarget { Slicer = 0, SfzPlayer2 = 1, SfPlayer = 2 };
 class SoundFontLoader
 {
 public:
-    explicit SoundFontLoader (DysektProcessor& p) : processor (p) {}
+    explicit SoundFontLoader (AvixProcessor& p) : processor (p) {}
 
     // ── Public API (call from UI thread) ─────────────────────────────────────
     // Queues a background job; returns immediately.
@@ -89,9 +89,9 @@ public:
                int presetBank = -1, int presetProgram = -1);
 
 private:
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
-#if DYSEKT_HAS_SFIZZ
+#if AVIX_HAS_SFIZZ
     // ── Background job ────────────────────────────────────────────────────────
     class LoadJob;
 #endif
@@ -140,7 +140,7 @@ struct SfzSliceDescriptor
     // load, or a slice built outside the normal zone-load path).
     int zoneRegionIdx = -1;
 
-    // Output-bus override carried by the <region>'s dysekt_output_bus
+    // Output-bus override carried by the <region>'s avix_output_bus
     // custom opcode (see SfzExporter/SfzImporter and SampleZone::outputBus).
     // -1 = "unset" (no opcode present, or not an SfzPlayer2-target load) —
     // consumers should fall back to their own default (bus 0/Main) rather
@@ -150,7 +150,7 @@ struct SfzSliceDescriptor
     int outputBus = -1;
 
     // Manual mixer-pin override carried by the <region>'s
-    // dysekt_show_in_mixer custom opcode (see SfzExporter/SfzImporter and
+    // avix_show_in_mixer custom opcode (see SfzExporter/SfzImporter and
     // SampleZone::showInMixer). Always a definite true/false — unlike
     // outputBus there's no "unset" state to preserve, since absence of the
     // opcode means the same thing as writing it false (see PluginProcessor's
@@ -237,7 +237,7 @@ struct SfzPreviewZonePayload
     // Which preset these zones/sampleData3 belong to (SfPlayer target only).
     // -1/-1 means "the file's default preset" (SfzPlayer2 target, or an
     // SfPlayer load that didn't request a specific preset). Consumed in
-    // processBlock to update DysektProcessor::sf2PreviewRenderedBank/Program.
+    // processBlock to update AvixProcessor::sf2PreviewRenderedBank/Program.
     int presetBank    = -1;
     int presetProgram = -1;
 };

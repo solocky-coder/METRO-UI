@@ -15,23 +15,23 @@
  #include <windows.h>
 #endif
 
-// Replaces AppleUsbShareEngine (deleted). DYSEKT no longer reimplements the
+// Replaces AppleUsbShareEngine (deleted). AVIX no longer reimplements the
 // USB/PnP/WinUSB/NCM/ICS state machine in-process; that logic stays in the
 // separate iPhoneUsbShare.exe helper, unmodified, running elevated. This
 // class only launches and monitors that helper.
 //
 // See docs/APPLE_USB_SHARE_STANDALONE_MIGRATION.md for the full design.
 //
-// The helper is NOT embedded into DysektStandalone — a self-contained
+// The helper is NOT embedded into AvixStandalone — a self-contained
 // single-file .NET publish runs 150+ MB, which is both too large for a
 // plain git push and a bad fit for JUCE's BinaryData (compiling that much
 // data into a C-array is its own problem independent of git). Instead it
-// ships as a loose file, copied next to DysektStandalone.exe by CMake's
+// ships as a loose file, copied next to AvixStandalone.exe by CMake's
 // POST_BUILD step (see the WIN32 block in CMakeLists.txt), and located at
 // runtime via helperExecutablePath() below.
 //
 // IMPORTANT — start() is asynchronous. The first time it runs, it registers
-// a Task Scheduler task (\DYSEKT\iPhoneUsbShare) with TASK_RUNLEVEL_HIGHEST +
+// a Task Scheduler task (\AVIX\iPhoneUsbShare) with TASK_RUNLEVEL_HIGHEST +
 // TASK_LOGON_INTERACTIVE_TOKEN, then calls IRegisteredTask::Run() on it —
 // this is the standard "elevate without a fresh UAC prompt every launch"
 // pattern, and it only works silently for an account that's already a local
@@ -61,7 +61,7 @@ public:
     // relaunchSelfElevatedToRegister() in the .cpp and the class comment
     // above). The app relaunches itself with --register-usb-share-task and
     // a UAC "runas" prompt; the elevated instance runs *only* this - no UI,
-    // no window - and exits immediately. It registers the \DYSEKT\
+    // no window - and exits immediately. It registers the \AVIX\
     // iPhoneUsbShare task (which requires an elevated caller) and returns a
     // process exit code: 0 on success, 1 on failure. After this succeeds
     // once, every future launch can Run() the already-registered task
@@ -121,7 +121,7 @@ private:
     void setStatus (const juce::String& s);
 
     // Marshals a log line to the message thread and drops it if this
-    // object has since been destroyed. Mirrors DysektProcessor's
+    // object has since been destroyed. Mirrors AvixProcessor's
     // loaderAliveFlag idiom (see PluginProcessor.h) for the same reason:
     // the tail thread can outlive the request to stop it by up to the
     // stopThread() timeout below.
@@ -140,9 +140,9 @@ private:
     // COM-handler actions, not EXEC actions like this one), so the name has
     // to be a fixed constant — see kStopEventName in the .cpp. That's fine;
     // this feature is inherently single-instance (one user, one phone, one
-    // DYSEKT).
+    // AVIX).
 
-    // juce::File::currentApplicationFile resolves to DysektStandalone.exe
+    // juce::File::currentApplicationFile resolves to AvixStandalone.exe
     // itself only for the Standalone target — this deliberately doesn't
     // need to work (and isn't linked) for the VST3 target.
     static juce::File helperExecutablePath();

@@ -1,7 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
-class DysektProcessor;
+class AvixProcessor;
 
 /**  Centre control frame between the two LCD panels.
  *
@@ -14,7 +14,7 @@ class DysektProcessor;
 class DualLcdControlFrame : public juce::Component
 {
 public:
-    explicit DualLcdControlFrame (DysektProcessor& p);
+    explicit DualLcdControlFrame (AvixProcessor& p);
 
     void paint        (juce::Graphics& g) override;
     void mouseDown    (const juce::MouseEvent& e) override;
@@ -51,7 +51,7 @@ public:
 private:
     void drawIcon (juce::Graphics& g, juce::Rectangle<float> b, int type, bool active, bool hovered = false);
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     // Icon toggle state
     bool browserActive    = false;

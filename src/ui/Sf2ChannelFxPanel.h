@@ -59,14 +59,14 @@
 #include "../PluginProcessor.h"
 #include "../audio/SfzPlayer.h"
 #include "ThemeData.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "UIHelpers.h"
 
 class Sf2ChannelFxPanel  : public juce::Component,
                             public juce::Timer
 {
 public:
-    explicit Sf2ChannelFxPanel (DysektProcessor& p)
+    explicit Sf2ChannelFxPanel (AvixProcessor& p)
         : processor (p)
     {
         startTimerHz (30);
@@ -152,7 +152,7 @@ public:
         if (numActive == 0)
         {
             g.setColour (theme.foreground.withAlpha (0.4f));
-            g.setFont (DysektLookAndFeel::makeFont(14.f));
+            g.setFont (AvixLookAndFeel::makeFont(14.f));
             g.drawText ("No SF2 channels active", getLocalBounds(), juce::Justification::centred);
             return;
         }
@@ -486,7 +486,7 @@ private:
         // possible to confirm which channel a controller needs to send on
         // without switching back to the Workspace MIDI INPUT readout.
         g.setColour (strip.muted ? accent.withAlpha (0.35f) : accent);
-        g.setFont (DysektLookAndFeel::makeFont(12.f, true));
+        g.setFont (AvixLookAndFeel::makeFont(12.f, true));
         juce::String label = "CH " + juce::String (ch + 1) + "  "
                             + (channelLabels[ch].isEmpty() ? juce::String ("(empty)") : channelLabels[ch]);
         g.drawText (label, labelZone (row).reduced (0.f, 1.f).toNearestInt(),
@@ -528,7 +528,7 @@ private:
         const auto track = block.withSizeKeepingCentre (block.getWidth(), kTrackH);
 
         // Label
-        g.setFont (DysektLookAndFeel::makeFont(9.f));
+        g.setFont (AvixLookAndFeel::makeFont(9.f));
         g.setColour (theme.foreground.withAlpha (0.55f * alpha));
         g.drawText (label, labelRect.toNearestInt(), juce::Justification::centredLeft);
 
@@ -570,14 +570,14 @@ private:
             }
             default: valStr = juce::String (juce::roundToInt (norm * 100.f)) + "%"; break;
         }
-        g.setFont (DysektLookAndFeel::makeFont(10.f, true));
+        g.setFont (AvixLookAndFeel::makeFont(10.f, true));
         g.setColour (theme.foreground.withMultipliedAlpha (alpha));
         g.drawText (valStr, valueRect.toNearestInt(), juce::Justification::centredRight);
     }
 
     // ── State ─────────────────────────────────────────────────────────────────
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     uint16_t         activeMask  { 0x0000 };   // nothing shown until told otherwise
     juce::String     channelLabels[16];
     juce::Colour     channelColours[16];

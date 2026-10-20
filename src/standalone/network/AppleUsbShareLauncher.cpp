@@ -36,7 +36,7 @@ AppleUsbShareLauncher::~AppleUsbShareLauncher()
     if (launchThread != nullptr)
     {
         // Same idiom as fileLoadPool.removeAllJobs(true, 5000) in
-        // ~DysektProcessor(): wait, but don't forcibly kill the thread if
+        // ~AvixProcessor(): wait, but don't forcibly kill the thread if
         // it's stuck inside a blocking Win32 call past the timeout. The
         // aliveFlag check above is what makes that survivable.
         launchThread = nullptr; // LaunchThread's destructor calls stopThread(5000)
@@ -118,7 +118,7 @@ juce::File AppleUsbShareLauncher::helperExecutablePath()
 {
     // Copied here by CMake's POST_BUILD step (see the WIN32 block in
     // CMakeLists.txt) — not embedded, not extracted anywhere. This only
-    // resolves correctly when running as DysektStandalone.exe itself.
+    // resolves correctly when running as AvixStandalone.exe itself.
     return juce::File::getSpecialLocation (juce::File::currentApplicationFile)
                .getSiblingFile ("AppleUsbShareDriver")
                .getChildFile ("iPhoneUsbShare.exe");
@@ -136,12 +136,12 @@ namespace
 {
     // Registered under its own subfolder purely so it's easy to find in
     // taskschd.msc — has no functional effect.
-    const wchar_t* const kTaskFolder = L"\\DYSEKT";
+    const wchar_t* const kTaskFolder = L"\\AVIX";
     const wchar_t* const kTaskName   = L"iPhoneUsbShare";
 
     // Fixed rather than per-launch-unique — see the comment on this in
     // AppleUsbShareLauncher.h next to the (now-removed) stopEventName field.
-    const wchar_t* const kStopEventName = L"Local\\DysektAppleUsbShare_StopEvent";
+    const wchar_t* const kStopEventName = L"Local\\AvixAppleUsbShare_StopEvent";
 
     struct ComInitGuard
     {
@@ -197,7 +197,7 @@ namespace
     }
 
     // Registers (or, on later calls, silently updates — TASK_CREATE_OR_UPDATE)
-    // the \DYSEKT\iPhoneUsbShare task: runs exePath at TASK_RUNLEVEL_HIGHEST
+    // the \AVIX\iPhoneUsbShare task: runs exePath at TASK_RUNLEVEL_HIGHEST
     // under the current interactive user, with no triggers — it only ever
     // runs because runRegisteredTask() below explicitly calls Run() on it.
     // Called on every start(): cheap, and keeps the registered path/arguments
@@ -224,18 +224,18 @@ namespace
         if (FAILED (hr) || ! rootFolder)
             { hrOut = hr; return hrError ("could not open Task Scheduler root folder", hr); }
 
-        ComPtr<ITaskFolder> dysektFolder;
-        hr = rootFolder->GetFolder (Bstr (kTaskFolder), dysektFolder.address());
-        if (FAILED (hr) || ! dysektFolder)
+        ComPtr<ITaskFolder> avixFolder;
+        hr = rootFolder->GetFolder (Bstr (kTaskFolder), avixFolder.address());
+        if (FAILED (hr) || ! avixFolder)
         {
             ComPtr<ITaskFolder> created;
             EmptyVariant sddl;
             hr = rootFolder->CreateFolder (Bstr (kTaskFolder), sddl, created.address());
             if (FAILED (hr) && hr != HRESULT_FROM_WIN32 (ERROR_ALREADY_EXISTS))
-                { hrOut = hr; return hrError ("could not create the DYSEKT task folder", hr); }
-            hr = rootFolder->GetFolder (Bstr (kTaskFolder), dysektFolder.address());
-            if (FAILED (hr) || ! dysektFolder)
-                { hrOut = hr; return hrError ("could not open the DYSEKT task folder", hr); }
+                { hrOut = hr; return hrError ("could not create the AVIX task folder", hr); }
+            hr = rootFolder->GetFolder (Bstr (kTaskFolder), avixFolder.address());
+            if (FAILED (hr) || ! avixFolder)
+                { hrOut = hr; return hrError ("could not open the AVIX task folder", hr); }
         }
 
         ComPtr<ITaskDefinition> task;
@@ -246,8 +246,8 @@ namespace
         ComPtr<IRegistrationInfo> regInfo;
         if (SUCCEEDED (task->get_RegistrationInfo (regInfo.address())) && regInfo)
         {
-            regInfo->put_Author (Bstr (L"DYSEKT"));
-            regInfo->put_Description (Bstr (L"Runs iPhoneUsbShare.exe elevated for DYSEKT's "
+            regInfo->put_Author (Bstr (L"AVIX"));
+            regInfo->put_Description (Bstr (L"Runs iPhoneUsbShare.exe elevated for AVIX's "
                                              L"Apple USB Share feature, without a UAC prompt on every launch."));
         }
 
@@ -290,7 +290,7 @@ namespace
 
         ComPtr<IRegisteredTask> registered;
         EmptyVariant userId, password, sddl;
-        hr = dysektFolder->RegisterTaskDefinition (Bstr (kTaskName), task.p, TASK_CREATE_OR_UPDATE,
+        hr = avixFolder->RegisterTaskDefinition (Bstr (kTaskName), task.p, TASK_CREATE_OR_UPDATE,
                                                     userId, password, TASK_LOGON_INTERACTIVE_TOKEN, sddl,
                                                     registered.address());
         if (FAILED (hr) || ! registered)
@@ -303,12 +303,12 @@ namespace
     // the *calling process* to already be running elevated - this is a
     // documented Task Scheduler restriction (see "Security Contexts for
     // Tasks" on learn.microsoft.com), independent of whether the signed-in
-    // account is an Administrator. DYSEKT normally runs non-elevated, so
+    // account is an Administrator. AVIX normally runs non-elevated, so
     // registerTask() called from here always fails with E_ACCESSDENIED,
-    // for every account. This relaunches DYSEKT itself, elevated, with
+    // for every account. This relaunches AVIX itself, elevated, with
     // nothing but --register-usb-share-task so it can register the task
     // and immediately exit (see AppleUsbShareLauncher::runRegistrationBootstrap()
-    // and DysektApplication::initialise() in Main.cpp) - one UAC prompt,
+    // and AvixApplication::initialise() in Main.cpp) - one UAC prompt,
     // once. After that the task exists, and Run()'ing an already-registered
     // highest-privilege task does NOT require the caller to be elevated
     // (the elevation decision was made at registration time), so every
@@ -375,12 +375,12 @@ namespace
         if (FAILED (hr)) { errorOut = hrError ("could not connect to Task Scheduler", hr); return 0; }
 
         // Folder not existing yet means this is a first-ever run: nothing
-        // has been registered at all, not even the \DYSEKT folder itself.
+        // has been registered at all, not even the \AVIX folder itself.
         ComPtr<ITaskFolder> folder;
         hr = service->GetFolder (Bstr (kTaskFolder), folder.address());
         if (FAILED (hr) || ! folder)
         {
-            errorOut = hrError ("could not open the DYSEKT task folder", hr);
+            errorOut = hrError ("could not open the AVIX task folder", hr);
             taskNotFound = true;
             return 0;
         }
@@ -475,7 +475,7 @@ namespace
 }
 
 // Owns the background thread that: tries to Run() the already-registered
-// \DYSEKT\iPhoneUsbShare task (silent, no elevation needed by this
+// \AVIX\iPhoneUsbShare task (silent, no elevation needed by this
 // process — see the header comment above the class), and only if that task
 // isn't registered yet, does the one-time elevated bootstrap that registers
 // it (relaunchSelfElevatedToRegister()) before retrying. Either way it ends
@@ -669,7 +669,7 @@ bool AppleUsbShareLauncher::start()
     if (! exePath.existsAsFile())
     {
         log ("ERROR: iPhoneUsbShare.exe not found at " + exePath.getFullPathName()
-             + " - it ships alongside DysektStandalone.exe and is not part of the installer zip yet.");
+             + " - it ships alongside AvixStandalone.exe and is not part of the installer zip yet.");
         return false;
     }
 

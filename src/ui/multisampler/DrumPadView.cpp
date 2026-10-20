@@ -1,13 +1,13 @@
 #include "DrumPadView.h"
 #include "../../PluginProcessor.h"
 #include "../../audio/SfzZoneColours.h"
-#include "../DysektLookAndFeel.h"
+#include "../AvixLookAndFeel.h"
 #include <algorithm>
 
 using DrumPadModel::kNumBanks;
 using DrumPadModel::kPadsPerBank;
 
-DrumPadView::DrumPadView (DysektProcessor& p, MultisamplerInstrument& i)
+DrumPadView::DrumPadView (AvixProcessor& p, MultisamplerInstrument& i)
     : processor (p), instrument (i)
 {
     setMouseCursor (juce::MouseCursor::PointingHandCursor);

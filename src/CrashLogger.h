@@ -32,7 +32,7 @@
 /**
  *  CrashLogger  v1
  *  ===============
- *  Attach one instance to DysektProcessor to detect and log crashes on exit.
+ *  Attach one instance to AvixProcessor to detect and log crashes on exit.
  *
  *  Mechanism 1 — Sentinel file
  *  ----------------------------
@@ -52,9 +52,9 @@
  *
  *  Log location
  *  ------------
- *  Windows : %APPDATA%\DunSoft\DYSEKT-SF\dysekt_crash.log
- *  macOS   : ~/Library/Logs/DunSoft/DYSEKT-SF/dysekt_crash.log
- *  Linux   : ~/.config/DunSoft/DYSEKT-SF/dysekt_crash.log
+ *  Windows : %APPDATA%\DunSoft\AVIX\avix_crash.log
+ *  macOS   : ~/Library/Logs/DunSoft/AVIX/avix_crash.log
+ *  Linux   : ~/.config/DunSoft/AVIX/avix_crash.log
  *
  *  Thread safety
  *  -------------
@@ -65,7 +65,7 @@
  *
  *  Usage
  *  -----
- *  Add a member to DysektProcessor:
+ *  Add a member to AvixProcessor:
  *
  *      CrashLogger crashLogger;    // declare before other members
  *
@@ -82,7 +82,7 @@ public:
         const auto logDir = getLogDirectory();
         logDir.createDirectory();
 
-        logFile    = logDir.getChildFile ("dysekt_crash.log");
+        logFile    = logDir.getChildFile ("avix_crash.log");
         lockFile   = logDir.getChildFile ("session.lock");
         dumpDir    = logDir;   // minidumps written to same folder
 
@@ -91,14 +91,14 @@ public:
 
         // ── Open log (append mode) ────────────────────────────────────────────
         logger = std::make_unique<juce::FileLogger> (logFile,
-            "DYSEKT-SF crash log - " + juce::Time::getCurrentTime().toString (true, true));
+            "AVIX crash log - " + juce::Time::getCurrentTime().toString (true, true));
 
         if (previousCrash)
         {
             logger->logMessage ("");
             logger->logMessage ("!! PREVIOUS SESSION CRASHED OR WAS FORCE-KILLED !!");
             logger->logMessage ("   The session.lock sentinel was not removed, which means");
-            logger->logMessage ("   DysektProcessor::~DysektProcessor() did not run cleanly.");
+            logger->logMessage ("   AvixProcessor::~AvixProcessor() did not run cleanly.");
             logger->logMessage ("");
         }
 
@@ -111,7 +111,7 @@ public:
         s_dumpDirPath = dumpDir.getFullPathName();
         installHandlers();
 
-        log ("DysektProcessor constructed - session started");
+        log ("AvixProcessor constructed - session started");
         // Version marker for the zone-builder diagnostics added to
         // SoundFontLoader.cpp (discoverActiveNotes/finishAndPost logging for
         // the SfzPlayer2 target, full-0-127 empty-discovery fallback). If a
@@ -123,7 +123,7 @@ public:
 
     ~CrashLogger()
     {
-        log ("DysektProcessor destructed - session ended cleanly");
+        log ("AvixProcessor destructed - session ended cleanly");
         lockFile.deleteFile();
         // Leave the log file; only the sentinel is removed.
     }
@@ -159,13 +159,13 @@ private:
     {
 #if JUCE_WINDOWS
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("DunSoft/DYSEKT-SF");
+                   .getChildFile ("DunSoft/AVIX");
 #elif JUCE_MAC
         return juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                   .getChildFile ("Library/Logs/DunSoft/DYSEKT-SF");
+                   .getChildFile ("Library/Logs/DunSoft/AVIX");
 #else
         return juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                   .getChildFile (".config/DunSoft/DYSEKT-SF");
+                   .getChildFile (".config/DunSoft/AVIX");
 #endif
     }
 
@@ -226,7 +226,7 @@ private:
         crashWrite ("\n!! CRASH - unhandled exception !!\n");
 
         // Write a minidump alongside the log
-        juce::String dumpPath = s_dumpDirPath + "\\dysekt_crash.dmp";
+        juce::String dumpPath = s_dumpDirPath + "\\avix_crash.dmp";
         HANDLE hDump = CreateFileW (dumpPath.toWideCharPointer(),
                                     GENERIC_WRITE, 0, nullptr,
                                     CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

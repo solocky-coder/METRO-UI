@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-class NetworkAudioProcessor final : public DysektProcessor
+class NetworkAudioProcessor final : public AvixProcessor
 {
 public:
     NetworkAudioProcessor() { activeProcessor.store (this, std::memory_order_release); }
@@ -192,7 +192,7 @@ public:
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
     {
-        DysektProcessor::prepareToPlay (sampleRate, samplesPerBlock);
+        AvixProcessor::prepareToPlay (sampleRate, samplesPerBlock);
         networkSampleRate = sampleRate;
 
         // Tell the AOO sinks the host's block size (message thread, not the
@@ -210,7 +210,7 @@ public:
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
     {
         // Diagnostics only: measures the whole callback (including the base
-        // DysektProcessor::processBlock) and reports it to MetroNetworkAudio,
+        // AvixProcessor::processBlock) and reports it to MetroNetworkAudio,
         // which logs calls/sec and avg/max duration once a second.
         struct BlockTimer
         {
@@ -229,7 +229,7 @@ public:
         } blockTimer { networkAudio != nullptr ? networkAudio : activeNetworkAudio.load (std::memory_order_acquire),
                        &buffer, buffer.getNumSamples() };
 
-        DysektProcessor::processBlock (buffer, midi);
+        AvixProcessor::processBlock (buffer, midi);
 
         // Solo convention shared with the sequencer: while any track is soloed, only
         // soloed tracks are audible. Recording is not affected by solo.
@@ -402,7 +402,7 @@ private:
 
     void startTrackRecording (TrackRecorder& slot, const juce::String& trackName, int64_t startTick) noexcept
     {
-        const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("DYSEKT-SF Recordings");
+        const auto dir = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory).getChildFile ("AVIX Recordings");
         const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d-%H%M%S");
         auto safeName = trackName.replaceCharacters ("\\/:*?\"<>|", "_________");
         const auto file = dir.getNonexistentChildFile (safeName.isEmpty() ? "AOO" : safeName, "_" + stamp + ".wav");

@@ -4,7 +4,7 @@
 #include "MetroTypography.h"
 #include "../sequencer/SequencerEngine.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 namespace
 {
@@ -235,4 +235,4 @@ void MetroArrangeWorkspace::mouseUp (const juce::MouseEvent&)
     draggingDivider = false;
 }
 
-} // namespace dysekt::metro
+} // namespace avix::metro

@@ -7,19 +7,19 @@
 //  AbletonLink
 //
 //  Wraps the Ableton Link SDK (link/include/ableton/Link.hpp).
-//  Conditionally compiled — without DYSEKT_HAS_LINK the class is a no-op
+//  Conditionally compiled — without AVIX_HAS_LINK the class is a no-op
 //  stub so the rest of the codebase needs zero #ifdefs.
 //
 //  Setup (one-time):
 //    git submodule add https://github.com/Ableton/link.git link
 //    git submodule update --init
-//  CMakeLists.txt detects the submodule and sets DYSEKT_HAS_LINK=1.
+//  CMakeLists.txt detects the submodule and sets AVIX_HAS_LINK=1.
 //
 //  Audio-thread use in SequencerEngine::processBlock():
 //    float bpm = abletonLink.getBpm (internalBpm);   // Link BPM or fallback
 // ─────────────────────────────────────────────────────────────────────────────
 
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
   #include <ableton/Link.hpp>
 #endif
 
@@ -28,7 +28,7 @@ class AbletonLink : private juce::AsyncUpdater
 public:
     AbletonLink()
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         link = std::make_unique<ableton::Link> (120.0);
         link->enable (false);
         // Tempo sync and start/stop sync are independent opt-ins in the Link
@@ -54,7 +54,7 @@ public:
 
     ~AbletonLink()
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link) link->enable (false);
 #endif
     }
@@ -62,7 +62,7 @@ public:
     // ── Enable / disable  (message thread) ───────────────────────────────────
     void setEnabled (bool v)
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link) link->enable (v);
 #endif
         enabled.store (v, std::memory_order_relaxed);
@@ -81,7 +81,7 @@ public:
     // audio thread (e.g. following the host's transport tempo in processBlock()).
     void setBpm (double bpm)
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link && isEnabled())
         {
             auto s = link->captureAppSessionState();
@@ -116,7 +116,7 @@ public:
     /** Realtime-safe Link session tempo read. Use this from processBlock(). */
     float getAudioBpm (float fallback = 120.f) const noexcept
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link && isEnabled())
         {
             // The audio-thread session snapshot is the authoritative Link
@@ -135,7 +135,7 @@ public:
      *  quantum=4 = bar-level alignment. */
     double getPhase (double quantum = 4.0) const noexcept
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link && isEnabled())
         {
             const auto s = link->captureAudioSessionState();
@@ -149,7 +149,7 @@ public:
     /** Request play aligned to the next quantum boundary — call on Play press. */
     void requestBeatAlignedStart (double quantum = 4.0)
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link && isEnabled())
         {
             auto s = link->captureAppSessionState();
@@ -163,7 +163,7 @@ public:
 
     void notifyStop()
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link && isEnabled())
         {
             auto s = link->captureAppSessionState();
@@ -180,7 +180,7 @@ public:
      *  stopping transport. */
     bool isSessionPlaying() const noexcept
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link && isEnabled())
         {
             const auto s = link->captureAudioSessionState();
@@ -195,7 +195,7 @@ private:
     // triggerAsyncUpdate(); safe to touch AppSessionState here.
     void handleAsyncUpdate() override
     {
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
         if (link && isEnabled())
         {
             auto s = link->captureAppSessionState();
@@ -206,7 +206,7 @@ private:
 #endif
     }
 
-#if DYSEKT_HAS_LINK
+#if AVIX_HAS_LINK
     std::unique_ptr<ableton::Link> link;
 #endif
     std::atomic<bool>  enabled  { false };

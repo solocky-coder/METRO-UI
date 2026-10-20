@@ -1,5 +1,5 @@
 #include "MultisamplerZoneLcd.h"
-#include "../DysektLookAndFeel.h"
+#include "../AvixLookAndFeel.h"
 #include "../UIHelpers.h"
 #include "../ZoneEnvelopeRanges.h"
 #include "../EnvelopeDisplay.h"
@@ -477,7 +477,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
     if (! snapshot.valid)
     {
         g.setColour (theme.foreground.withAlpha (0.55f));
-        g.setFont (DysektLookAndFeel::makeFont (12.0f * uiScale, false));
+        g.setFont (AvixLookAndFeel::makeFont (12.0f * uiScale, false));
         g.drawText ("NO ZONE SELECTED", bounds, juce::Justification::centred);
         return;
     }
@@ -587,7 +587,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
         g.fillRoundedRectangle ((float) (mb.getX() + modPadX),
                                 (float) mb.getY() + 3.0f + ((float) titleH - 3.0f - tickH) * 0.5f,
                                 3.0f, tickH, 1.5f);
-        g.setFont (DysektLookAndFeel::makeFont (11.0f * sc, true));
+        g.setFont (AvixLookAndFeel::makeFont (11.0f * sc, true));
         g.drawText (m.title, mb.getX() + modPadX + juce::roundToInt (8.0f * sc), mb.getY() + 3,
                     juce::jmax (0, w - 2 * modPadX - juce::roundToInt (8.0f * sc)), titleH - 3,
                     juce::Justification::centredLeft);
@@ -626,7 +626,7 @@ void MultisamplerZoneLcd::paint (juce::Graphics& g)
             if (m.groups.size() > 1)
             {
                 g.setColour (theme.foreground.withAlpha (0.4f));
-                g.setFont (DysektLookAndFeel::makeFont (9.5f * sc, false));
+                g.setFont (AvixLookAndFeel::makeFont (9.5f * sc, false));
                 g.drawText ("BAND " + juce::String ((int) gi + 1), cx, mb.getY() + 3, groupW, titleH - 3,
                             juce::Justification::centredRight);
             }
@@ -693,7 +693,7 @@ void MultisamplerZoneLcd::drawCell (juce::Graphics& g, juce::Rectangle<int> boun
     // CC's label text otherwise.
     if (mapped || armed)
     {
-        g.setFont (DysektLookAndFeel::makeMonoFont (8.0f * uiScale));
+        g.setFont (AvixLookAndFeel::makeMonoFont (8.0f * uiScale));
         g.setColour (armed ? getTheme().accent
                             : getTheme().foreground.withAlpha (0.6f));
         g.drawText (armed ? juce::String ("ARM") : midiLearn->getLabelText (slot),
@@ -798,17 +798,17 @@ void MultisamplerZoneLcd::drawKnobField (juce::Graphics& g, juce::Rectangle<int>
     if (envSeg >= 0)
     {
         g.setColour (editable ? tint.withAlpha (0.95f) : tint.withAlpha (0.4f));
-        g.setFont (DysektLookAndFeel::makeFont (10.5f * uiScale, true));
+        g.setFont (AvixLookAndFeel::makeFont (10.5f * uiScale, true));
     }
     else
     {
         g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.28f));
-        g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
+        g.setFont (AvixLookAndFeel::makeFont (9.5f * uiScale, false));
     }
     g.drawText (labelFor (field), labelRow, juce::Justification::centred);
 
     g.setColour (editable ? theme.foreground.withAlpha (envSeg >= 0 ? 0.95f : 0.88f) : theme.foreground.withAlpha (0.4f));
-    g.setFont (DysektLookAndFeel::makeMonoFont ((envSeg >= 0 ? 12.0f : 11.5f) * uiScale, true));
+    g.setFont (AvixLookAndFeel::makeMonoFont ((envSeg >= 0 ? 12.0f : 11.5f) * uiScale, true));
     g.drawText (formatFieldValue (field), valueRow, juce::Justification::centred);
 }
 
@@ -836,7 +836,7 @@ void MultisamplerZoneLcd::drawDropdownField (juce::Graphics& g, juce::Rectangle<
     auto labelRow = r.removeFromTop (labelH);
 
     g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.28f));
-    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
+    g.setFont (AvixLookAndFeel::makeFont (9.5f * uiScale, false));
     g.drawText (labelFor (field), labelRow, juce::Justification::centred);
 
     const int boxH = juce::jmin (r.getHeight() - 4, juce::roundToInt (26.0f * uiScale));
@@ -851,7 +851,7 @@ void MultisamplerZoneLcd::drawDropdownField (juce::Graphics& g, juce::Rectangle<
     // Note name (left of centre) + chevron on the right edge.
     const float chevW = 14.0f * uiScale;
     g.setColour (editable ? theme.foreground.withAlpha (0.9f) : theme.foreground.withAlpha (0.4f));
-    g.setFont (DysektLookAndFeel::makeMonoFont (11.5f * uiScale, true));
+    g.setFont (AvixLookAndFeel::makeMonoFont (11.5f * uiScale, true));
     g.drawText (formatFieldValue (field),
                 box.withTrimmedRight (chevW).toNearestInt(), juce::Justification::centred);
 
@@ -915,7 +915,7 @@ void MultisamplerZoneLcd::drawTogglePill (juce::Graphics& g, juce::Rectangle<int
     auto labelRow = r.removeFromTop (labelH);
 
     g.setColour (editable ? theme.foreground.withAlpha (0.55f) : theme.foreground.withAlpha (0.28f));
-    g.setFont (DysektLookAndFeel::makeFont (9.5f * uiScale, false));
+    g.setFont (AvixLookAndFeel::makeFont (9.5f * uiScale, false));
     g.drawText (labelFor (field), labelRow, juce::Justification::centred);
 
     const int pillH = juce::jmin (r.getHeight() - 4, juce::roundToInt (24.0f * uiScale));
@@ -933,7 +933,7 @@ void MultisamplerZoneLcd::drawTogglePill (juce::Graphics& g, juce::Rectangle<int
 
     g.setColour (isOn ? theme.darkBar.darker (0.6f)
                       : (editable ? theme.foreground.withAlpha (0.75f) : theme.foreground.withAlpha (0.4f)));
-    g.setFont (DysektLookAndFeel::makeMonoFont (11.0f * uiScale, true));
+    g.setFont (AvixLookAndFeel::makeMonoFont (11.0f * uiScale, true));
     g.drawText (formatFieldValue (field), pill.toNearestInt(), juce::Justification::centred);
 }
 

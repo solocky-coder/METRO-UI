@@ -2,12 +2,12 @@
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 #include "ThemeData.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include <cmath>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-GlobalEqPanel::GlobalEqPanel (DysektProcessor& p)
+GlobalEqPanel::GlobalEqPanel (AvixProcessor& p)
     : processor (p)
 {
     //            band       gain  freq     q    defaultFreq  draggable
@@ -126,7 +126,7 @@ void GlobalEqPanel::paint (juce::Graphics& g)
 
     // ── dB labels (LEFT edge, matching the reference layout) ──────────────────
     g.setColour (theme.foreground.withAlpha (0.40f));
-    g.setFont (DysektLookAndFeel::makeFont (8.f));
+    g.setFont (AvixLookAndFeel::makeFont (8.f));
     for (int db : { -12, -6, 0, 6, 12 })
     {
         float y = gainToY ((float) db);
@@ -139,7 +139,7 @@ void GlobalEqPanel::paint (juce::Graphics& g)
 
     // ── Frequency labels (bottom edge) ───────────────────────────────────────
     g.setColour (theme.foreground.withAlpha (0.40f));
-    g.setFont (DysektLookAndFeel::makeFont (8.f));
+    g.setFont (AvixLookAndFeel::makeFont (8.f));
     for (float hz : { 50.f, 100.f, 200.f, 500.f, 1000.f, 2000.f, 5000.f, 10000.f, 20000.f })
     {
         float x = freqToX (hz);
@@ -246,7 +246,7 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         // label doesn't read; use foreground instead.
         g.setColour (theme.name == "metro" ? theme.foreground.withAlpha (0.90f)
                                             : theme.background.withAlpha (0.90f));
-        g.setFont (DysektLookAndFeel::makeFont (8.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (8.f, true));
         g.drawText (bandLabels[i],
                     juce::Rectangle<float> (x - kNodeRadius, y - kNodeRadius,
                                             kNodeRadius * 2.f, kNodeRadius * 2.f),
@@ -277,11 +277,11 @@ void GlobalEqPanel::paint (juce::Graphics& g)
         g.drawRoundedRectangle (box, 3.f, 1.0f);
 
         g.setColour (theme.foreground.withAlpha (0.90f));
-        g.setFont (DysektLookAndFeel::makeFont (9.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (9.f, true));
         g.drawText (line1, box.withTrimmedBottom (th * 0.5f), juce::Justification::centred, false);
 
         g.setColour (theme.accent);
-        g.setFont (DysektLookAndFeel::makeFont (9.f));
+        g.setFont (AvixLookAndFeel::makeFont (9.f));
         g.drawText (line2, box.withTrimmedTop (th * 0.5f), juce::Justification::centred, false);
     }
 
@@ -505,14 +505,14 @@ void GlobalEqPanel::drawHeader (juce::Graphics& g, juce::Rectangle<float> area) 
 
     // Title
     g.setColour (theme.foreground.withAlpha (0.90f));
-    g.setFont (DysektLookAndFeel::makeFont (11.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (11.f, true));
     g.drawText ("FREQUENCY RESPONSE",
                 juce::Rectangle<float> (area.getX(), area.getY(), area.getWidth() - 80.f, 14.f),
                 juce::Justification::centredLeft, false);
 
     // Subtitle — "N-BAND PARAMETRIC • STEREO"
     g.setColour (theme.foreground.withAlpha (0.38f));
-    g.setFont (DysektLookAndFeel::makeFont (8.f));
+    g.setFont (AvixLookAndFeel::makeFont (8.f));
     juce::String subtitle = juce::String (kNumBands) + "-BAND PARAMETRIC   -   STEREO";
     g.drawText (subtitle,
                 juce::Rectangle<float> (area.getX(), area.getY() + 15.f, area.getWidth() - 80.f, 12.f),
@@ -521,7 +521,7 @@ void GlobalEqPanel::drawHeader (juce::Graphics& g, juce::Rectangle<float> area) 
     // Analyzer toggle — local UI state, click to show/hide the spectrum overlay
     auto toggleR = analyzerToggleBounds();
     g.setColour (analyzerEnabled ? theme.accent : theme.foreground.withAlpha (0.35f));
-    g.setFont (DysektLookAndFeel::makeFont (8.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (8.f, true));
     g.drawText ("ANALYZER", toggleR, juce::Justification::centredRight, false);
 }
 
@@ -553,7 +553,7 @@ void GlobalEqPanel::drawBandStrip (juce::Graphics& g, juce::Rectangle<float> are
 
         // "BAND 0N" label
         g.setColour (theme.foreground.withAlpha (0.40f));
-        g.setFont (DysektLookAndFeel::makeFont (7.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (7.5f, true));
         g.drawText ("BAND 0" + juce::String (i + 1), inner.removeFromTop (11.f),
                     juce::Justification::centredLeft, false);
 
@@ -565,7 +565,7 @@ void GlobalEqPanel::drawBandStrip (juce::Graphics& g, juce::Rectangle<float> are
 
         // Frequency — big
         g.setColour (theme.foreground.withAlpha (0.92f));
-        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (13.f, true));
         g.drawText (formatFreq (n.freqHz) + " Hz", inner.removeFromTop (18.f),
                     juce::Justification::centredLeft, false);
 
@@ -575,7 +575,7 @@ void GlobalEqPanel::drawBandStrip (juce::Graphics& g, juce::Rectangle<float> are
             sub += "   Q " + juce::String (n.q, 1);
 
         g.setColour (theme.foreground.withAlpha (0.45f));
-        g.setFont (DysektLookAndFeel::makeFont (9.f));
+        g.setFont (AvixLookAndFeel::makeFont (9.f));
         g.drawText (sub, inner.removeFromTop (12.f), juce::Justification::centredLeft, false);
     }
 }

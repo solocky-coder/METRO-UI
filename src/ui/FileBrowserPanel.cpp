@@ -1,5 +1,5 @@
 #include "FileBrowserPanel.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
 #include <cmath>
@@ -140,7 +140,7 @@ void FileBrowserPanel::ArchiveListModel::listBoxItemDoubleClicked (int row, cons
                 {
                     // The download is done, but SoundFontLoader::load() (called below)
                     // just kicks off an async sfizz decode/render — mirrored by
-                    // DysektProcessor::mainLoadInFlight — that can itself take a while
+                    // AvixProcessor::mainLoadInFlight — that can itself take a while
                     // for a large kit. Claim a fresh generation (stopPreview() just
                     // bumped it) and keep the popup up, now in an indeterminate
                     // "loading instrument" state, instead of hiding it here.
@@ -193,7 +193,7 @@ void FileBrowserPanel::ArchiveListModel::listBoxItemDoubleClicked (int row, cons
 
 // ── Constructor / Destructor ─────────────────────────────────────────────────
 
-FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
+FileBrowserPanel::FileBrowserPanel (AvixProcessor& p)
     : processor (p)
 {
     // ── SfzFileBrowser — same widget used in the SFZ-Player panel ────────────
@@ -292,7 +292,7 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
     };
     transport.setGain (0.8f);
     addChildComponent (volumeSlider);
-    volumeSlider.getProperties().set ("dysektThemeKey", "accent");
+    volumeSlider.getProperties().set ("avixThemeKey", "accent");
 
     // ── File name label ───────────────────────────────────────────────────────
     fileNameLabel.setFont (juce::Font (juce::FontOptions{}.withHeight (19.5f)));
@@ -370,7 +370,7 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
             });
     };
     addAndMakeVisible (addBmBtn);
-    addBmBtn.getProperties().set ("dysektThemeKey", "button");
+    addBmBtn.getProperties().set ("avixThemeKey", "button");
 
     // ── Internet Archive bookmarks ────────────────────────────────────────────
     addArchiveBtn.setButtonText ("IA");
@@ -380,7 +380,7 @@ FileBrowserPanel::FileBrowserPanel (DysektProcessor& p)
     addArchiveBtn.setColour (juce::TextButton::textColourOffId, getTheme().foreground);
     addArchiveBtn.onClick = [this] { showArchiveUrlDialog(); };
     addAndMakeVisible (addArchiveBtn);
-    addArchiveBtn.getProperties().set ("dysektThemeKey", "button");
+    addArchiveBtn.getProperties().set ("avixThemeKey", "button");
 
     loadArchiveBookmarks();
     rebuildArchiveButtons();
@@ -627,7 +627,7 @@ void FileBrowserPanel::fileDoubleClicked (const juce::File& f)
     {
         // Same reasoning as the archive-download path: loading a local
         // .sf2/.sfz file is fast to read off disk but can still take a
-        // while to decode/render via sfizz (DysektProcessor::mainLoadInFlight).
+        // while to decode/render via sfizz (AvixProcessor::mainLoadInFlight).
         // stopPreview() above already bumped streamGeneration once; claim a
         // fresh id for this load so a later click can supersede this poll.
         const int loadGeneration = ++streamGeneration;
@@ -1102,7 +1102,7 @@ void FileBrowserPanel::detectCloudFolders()
 static juce::File getBookmarksFile()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("DYSEKT-SF/bookmarks.txt");
+               .getChildFile ("AVIX/bookmarks.txt");
 }
 
 void FileBrowserPanel::loadCustomBookmarks()
@@ -1190,7 +1190,7 @@ void FileBrowserPanel::rebuildBookmarkBar()
 juce::File FileBrowserPanel::getArchiveBookmarksFile()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("DYSEKT-SF/archive_bookmarks.txt");
+               .getChildFile ("AVIX/archive_bookmarks.txt");
 }
 
 void FileBrowserPanel::loadArchiveBookmarks()

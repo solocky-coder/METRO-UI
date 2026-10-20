@@ -1,8 +1,8 @@
 ﻿#pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
-class DysektProcessor;
+class AvixProcessor;
 class WaveformView;
 
 /** Inline trim panel rendered at the bottom of the waveform view.
@@ -21,7 +21,7 @@ public:
                       juce::Component* parent,
                       std::function<void (Result)> callback);
 
-    TrimDialog (DysektProcessor& processor, WaveformView& waveformView);
+    TrimDialog (AvixProcessor& processor, WaveformView& waveformView);
     ~TrimDialog() override;
 
     void paint        (juce::Graphics& g) override;
@@ -32,7 +32,7 @@ public:
     void timerCallback() override;
 
 private:
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     WaveformView&    waveformView;
 
     juce::TextButton applyBtn  { "APPLY" };

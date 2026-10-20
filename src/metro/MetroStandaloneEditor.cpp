@@ -5,9 +5,9 @@
 #include "../ui/FileBrowserPanel.h"
 #include "../ui/MixerPanel.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
-MetroStandaloneEditor::MetroStandaloneEditor (DysektProcessor& processorToEdit)
+MetroStandaloneEditor::MetroStandaloneEditor (AvixProcessor& processorToEdit)
     : AudioProcessorEditor (processorToEdit), processor (processorToEdit),
       transportBar (processor.sequencer, &processor.abletonLink)
 {
@@ -109,4 +109,4 @@ void MetroStandaloneEditor::dockTransport()
 
     transportBar.setVisible (true);
 }
-} // namespace dysekt::metro
+} // namespace avix::metro

@@ -1,7 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
-class DysektProcessor;
+class AvixProcessor;
 
 /**  Left LCD panel shown when uiMode == 1 (SF-Player).
  *
@@ -20,7 +20,7 @@ class DysektProcessor;
 class SfzLcdDisplay : public juce::Component
 {
 public:
-    explicit SfzLcdDisplay (DysektProcessor& p);
+    explicit SfzLcdDisplay (AvixProcessor& p);
 
     static constexpr int kPreferredHeight = 320;
 
@@ -83,7 +83,7 @@ private:
     static juce::String formatPct (float v);
     static juce::String midiNoteName (int note);
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     DisplayData      data;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SfzLcdDisplay)

@@ -395,14 +395,14 @@ struct ThemeData
         return t;
     }
 
-    // ── DYSEKT-SF ────────────────────────────────────────────────────────────────
+    // ── AVIX ────────────────────────────────────────────────────────────────
     // The signature industrial skin: near-void black chassis, neon teal accent,
     // charcoal panel bars.  Only active / selected elements glow — everything
     // else stays dim.  Matches the dark-mode UI mockup shown in the design docs.
-    static ThemeData dysektTheme()
+    static ThemeData avixTheme()
     {
         ThemeData t;
-        t.name             = "dysekt";
+        t.name             = "avix";
         t.background       = juce::Colour (0xFF000000);   // absolute black chassis
         t.waveformBg       = juce::Colour (0xFF060609);   // near-void waveform panel
         t.darkBar          = juce::Colour (0xFF0D0D12);   // charcoal panel bars
@@ -542,7 +542,7 @@ struct ThemeData
         if (text.contains("name: midnight")) return midnightTheme();
         if (text.contains("name: pigments")) return pigmentsTheme();
         if (text.contains("name: cr8"))      return cr8Theme();
-        if (text.contains("name: dysekt"))   return dysektTheme();
+        if (text.contains("name: avix"))   return avixTheme();
         if (text.contains("name: serum"))    return serumTheme();
         if (text.contains("name: opendaw"))  return opendawTheme();
         if (text.contains("name: metro"))    return metroTheme();

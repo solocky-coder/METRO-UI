@@ -56,7 +56,7 @@ namespace
         return juce::String::fromUTF8 (reinterpret_cast<const char*> (p + offset), len);
     }
 
-    const char* const kSessionName = "DYSEKT-SF";
+    const char* const kSessionName = "AVIX";
 }
 
 //==============================================================================
@@ -342,7 +342,7 @@ void RtpMidiSession::openSockets()
     {
         advertiser = std::make_unique<WifiMidiAdvertiser>();
         advertiser->start (ctrl->getBoundPort());
-        setStatus (State::Inviting, "Advertising DYSEKT-SF on the local network; waiting for a MIDI peer");
+        setStatus (State::Inviting, "Advertising AVIX on the local network; waiting for a MIDI peer");
     }
     else
     {
@@ -458,7 +458,7 @@ void RtpMidiSession::serviceSession (uint32_t nowMs)
         if (hostMode.load())
         {
             peerIp.clear();
-            setStatus (State::Inviting, "Advertising DYSEKT-SF; waiting for a MIDI peer");
+            setStatus (State::Inviting, "Advertising AVIX; waiting for a MIDI peer");
         }
         else
         {
@@ -580,7 +580,7 @@ void RtpMidiSession::handlePacket (bool onDataSocket, const uint8_t* p, int n,
                     stage = 0;
                     sessionToken = randomNonZero();
                     inviteDueMs = lastRxMs + 3000;
-                    setStatus (State::Inviting, "The device refused the session - allow DYSEKT in the app's network MIDI settings");
+                    setStatus (State::Inviting, "The device refused the session - allow AVIX in the app's network MIDI settings");
                 }
                 break;
 
@@ -591,7 +591,7 @@ void RtpMidiSession::handlePacket (bool onDataSocket, const uint8_t* p, int n,
                     if (hostMode.load())
                     {
                         peerIp.clear();
-                        setStatus (State::Inviting, "Advertising DYSEKT-SF; waiting for a MIDI peer");
+                        setStatus (State::Inviting, "Advertising AVIX; waiting for a MIDI peer");
                     }
                     else
                     {

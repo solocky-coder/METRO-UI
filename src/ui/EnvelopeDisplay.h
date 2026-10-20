@@ -1,6 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "ZoneEnvelopeRanges.h"
 #include <cmath>
 
@@ -151,7 +151,7 @@ namespace EnvDisplay
             g.drawEllipse (pt.x - r, pt.y - r, 2.0f * r, 2.0f * r, 1.0f);
         }
 
-        g.setFont (DysektLookAndFeel::makeFont (10.5f * scale, true));
+        g.setFont (AvixLookAndFeel::makeFont (10.5f * scale, true));
         auto letter = [&] (int idx, const char* txt, float xa, float xb)
         {
             g.setColour (highlight == idx ? juce::Colours::white : colourForSegment (idx));

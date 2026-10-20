@@ -4,13 +4,13 @@
 #include "../audio/SliceManager.h"
 #include "../audio/VoicePool.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 class WaveformView : public juce::Component,
                      public juce::FileDragAndDropTarget
 {
 public:
-    explicit WaveformView (DysektProcessor& p);
+    explicit WaveformView (AvixProcessor& p);
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -140,7 +140,7 @@ private:
     int optimisticStartSample = -1;
 
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     WaveformCache cache;
     CacheKey prevCacheKey;
     bool midiSliceOverlayActive = false;

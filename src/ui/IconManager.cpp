@@ -1,6 +1,6 @@
 #include "IconManager.h"
 #include "BinaryData.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../metro/MetroIcons.h"
 
 namespace IconManager

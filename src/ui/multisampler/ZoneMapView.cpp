@@ -2,13 +2,13 @@
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/SfzZoneColours.h"
 #include "../../PluginProcessor.h"
-#include "../DysektLookAndFeel.h"
+#include "../AvixLookAndFeel.h"
 #include "../UIHelpers.h"
 #include <algorithm>
 #include <cmath>
 #include <iterator>
 
-ZoneMapView::ZoneMapView (DysektProcessor& processorToUse)
+ZoneMapView::ZoneMapView (AvixProcessor& processorToUse)
     : processor (processorToUse)
 {
     // Needs focus now so Delete/Backspace (see keyPressed) can reach this
@@ -659,7 +659,7 @@ void ZoneMapView::showEmptyAreaContextMenu (juce::Point<float> localPos,
     // clipboard is empty, same "discoverable but greyed out" treatment
     // showZoneContextMenu() already gives its own Paste Zone item.
     auto* topLvl = getTopLevelComponent();
-    const float ms = DysektLookAndFeel::getMenuScale();
+    const float ms = AvixLookAndFeel::getMenuScale();
     juce::PopupMenu menu;
     menu.addItem (5, "Paste Zone", zoneClipboard.has_value());
     menu.showMenuAsync (
@@ -730,7 +730,7 @@ void ZoneMapView::showZoneContextMenu (const juce::Uuid& zoneId,
     }
 
     auto* topLvl = getTopLevelComponent();
-    float ms = DysektLookAndFeel::getMenuScale();
+    float ms = AvixLookAndFeel::getMenuScale();
     juce::PopupMenu menu;
     const bool multi = std::find (selectedIds.begin(), selectedIds.end(), zoneId) != selectedIds.end()
                             && selectedIds.size() > 1;

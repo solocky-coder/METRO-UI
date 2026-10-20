@@ -11,7 +11,7 @@
 // =============================================================================
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 class SaveSfzOverlay : public juce::Component
 {
@@ -36,7 +36,7 @@ public:
         nameEditor.setColour (juce::TextEditor::textColourId,           T.foreground);
         nameEditor.setColour (juce::TextEditor::outlineColourId,        T.accent.withAlpha (0.5f));
         nameEditor.setColour (juce::TextEditor::focusedOutlineColourId, T.accent);
-        nameEditor.setFont (DysektLookAndFeel::makeFont (13.0f));
+        nameEditor.setFont (AvixLookAndFeel::makeFont (13.0f));
         nameEditor.onReturnKey = [this] { commit(); };
         nameEditor.onEscapeKey = [this] { fire (false); };
         addAndMakeVisible (nameEditor);
@@ -84,7 +84,7 @@ public:
 
         UIHelpers::drawPopupBox (g, box, T);
 
-        g.setFont (DysektLookAndFeel::makeFont (15.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (15.0f, true));
         g.setColour (T.accent);
         g.drawText ("SAVE SFZ AS",
                     box.getX() + padX, box.getY() + 14,
@@ -93,7 +93,7 @@ public:
 
 
         // Sub-labels
-        g.setFont (DysektLookAndFeel::makeFont (10.0f));
+        g.setFont (AvixLookAndFeel::makeFont (10.0f));
         g.setColour (T.foreground.withAlpha (0.50f));
         g.drawText ("Filename (no extension)",
                     box.getX() + padX, box.getY() + 44,

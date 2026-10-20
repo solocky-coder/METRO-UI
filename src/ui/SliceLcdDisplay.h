@@ -3,12 +3,12 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "../audio/multisampler/MultisamplerInstrument.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 class SliceLcdDisplay : public juce::Component
 {
 public:
- explicit SliceLcdDisplay (DysektProcessor& p);
+ explicit SliceLcdDisplay (AvixProcessor& p);
 
  // Height the component requests — used by PluginEditor for layout
  // 11 rows × 28px + bezel padding
@@ -123,7 +123,7 @@ private:
  // — routes all reads/writes to sliceManager2/voicePool2 instead of the Slicer's.
  bool isSfzPlayer2Mode() const noexcept;
 
- DysektProcessor& processor;
+ AvixProcessor& processor;
 
  // ── Flag hit rects (updated each paint, used by mouseDown) ───────────────
  struct FlagHitRect

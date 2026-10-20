@@ -1,7 +1,7 @@
 #pragma once
 #include "UIHelpers.h"
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 /** Themed in-plugin rename dialog.
     Replaces juce::AlertWindow for slice renaming so the prompt
@@ -22,7 +22,7 @@ public:
         editor.setColour (juce::TextEditor::textColourId,        T.foreground);
         editor.setColour (juce::TextEditor::outlineColourId,     T.accent.withAlpha (0.6f));
         editor.setColour (juce::TextEditor::focusedOutlineColourId, T.accent);
-        editor.setFont (DysektLookAndFeel::makeFont (13.0f));
+        editor.setFont (AvixLookAndFeel::makeFont (13.0f));
         editor.onReturnKey = [this] { commit (true); };
         editor.onEscapeKey = [this] { cancel(); };
         addAndMakeVisible (editor);
@@ -67,7 +67,7 @@ public:
         const int padX = 18;
 
         // Title
-        g.setFont (DysektLookAndFeel::makeFont (15.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (15.0f, true));
         g.setColour (T.accent);
         g.drawText (titleText,
                     box.getX() + padX, box.getY() + 14,
@@ -75,7 +75,7 @@ public:
                     juce::Justification::centredLeft, false);
 
         // Sub-label above text field
-        g.setFont (DysektLookAndFeel::makeFont (11.0f));
+        g.setFont (AvixLookAndFeel::makeFont (11.0f));
         g.setColour (T.foreground.withAlpha (0.65f));
         g.drawText ("Max 14 characters - leave blank to clear",
                     box.getX() + padX, box.getY() + 46,

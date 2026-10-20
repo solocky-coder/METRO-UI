@@ -2,13 +2,13 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "ArchiveIntegration.h"
 #include "ArchiveUrlOverlay.h"
 #include "LoadProgressOverlay.h"
 #include "SfzFileBrowser.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 // ── Themed folder glyph ───────────────────────────────────────────────────────
 // Colour-emoji glyphs (like U+1F4C1) render from their own embedded colour
@@ -35,12 +35,12 @@ static inline void drawFileListFolderGlyph (juce::Graphics& g, juce::Rectangle<f
 }
 
 // ── Tiny LookAndFeel override to shrink the file-list font ───────────────────
-// Inherits DysektLookAndFeel (not juce::LookAndFeel_V4 directly) so popup menus,
+// Inherits AvixLookAndFeel (not juce::LookAndFeel_V4 directly) so popup menus,
 // the combo box, and every widget not overridden here automatically track the
 // app's shape language and theme colours — same pattern as TransportLAF/
 // MetroLookAndFeel. Only the small file-list's own sizing and row painting are
 // genuinely specialized; everything else is inherited unchanged.
-class SmallListLookAndFeel : public DysektLookAndFeel
+class SmallListLookAndFeel : public AvixLookAndFeel
 {
 public:
     SmallListLookAndFeel() {}
@@ -61,7 +61,7 @@ public:
     }
 
     // Popup menu background/item drawing and the combo box are no longer
-    // overridden here — DysektLookAndFeel's versions are flat and theme-driven
+    // overridden here — AvixLookAndFeel's versions are flat and theme-driven
     // now, so this list gets the same look as every other combo/popup in the
     // app for free. Only the font size stays specialized (below).
     juce::Font getPopupMenuFont() override { return juce::Font (juce::FontOptions{}.withHeight (19.5f)); }
@@ -222,7 +222,7 @@ class FileBrowserPanel : public juce::Component,
                          private juce::Timer
 {
 public:
-    explicit FileBrowserPanel (DysektProcessor& p);
+    explicit FileBrowserPanel (AvixProcessor& p);
     ~FileBrowserPanel() override;
 
     void resized() override;
@@ -255,7 +255,7 @@ private:
     // ── Post-load "instrument decoding" indicator ─────────────────────────────
     // Downloading (or reading) an .sf2/.sfz file is only half the wait — once
     // handed to SoundFontLoader, sfizz still has to decode/render it, tracked
-    // by DysektProcessor::mainLoadInFlight. This polls that flag and keeps
+    // by AvixProcessor::mainLoadInFlight. This polls that flag and keeps
     // showLoadProgress()'s popup up (in an indeterminate state) through that
     // second phase, for BOTH the archive-download path and plain local
     // double-clicks.
@@ -273,7 +273,7 @@ private:
     void hideLoadProgress();
     std::unique_ptr<LoadProgressOverlay> loadProgressOverlay;
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     // ── Local folder bookmarks ────────────────────────────────────────────────
     struct Bookmark
@@ -366,7 +366,7 @@ private:
     bool                           previewVisible = false;
     std::atomic<int>               streamGeneration { 0 };  // incremented to cancel stale stream callbacks
 
-    // Polls DysektProcessor::mainLoadInFlight at 100ms while an .sf2/.sfz
+    // Polls AvixProcessor::mainLoadInFlight at 100ms while an .sf2/.sfz
     // decode is in flight (either from an archive download or a local
     // double-click), separate from the coarser 400ms bookmark-spinner timer
     // below, so showLoadProgress()'s popup can clear promptly.

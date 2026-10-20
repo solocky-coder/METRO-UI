@@ -1,10 +1,10 @@
 #include "WaveformOverview.h"
 #include "../PluginProcessor.h"
-#include "DysektLookAndFeel.h"   // getTheme()
+#include "AvixLookAndFeel.h"   // getTheme()
 #include "../PluginEditor.h"
 
 //==============================================================================
-WaveformOverview::WaveformOverview (DysektProcessor& p)
+WaveformOverview::WaveformOverview (AvixProcessor& p)
     : processor (p)
 {
     setOpaque (false);
@@ -430,7 +430,7 @@ void WaveformOverview::mouseDown (const juce::MouseEvent& e)
 {
     if (e.mods.isRightButtonDown())
     {
-        using F = DysektProcessor;
+        using F = AvixProcessor;
         const auto screenPos = e.getScreenPosition();
         juce::PopupMenu menu;
         menu.addSectionHeader ("MIDI Learn");
@@ -453,21 +453,21 @@ void WaveformOverview::mouseDown (const juce::MouseEvent& e)
         menu.addItem (1000, "Open MIDI Learn Dialog...");
 
         auto* topLvl = getTopLevelComponent();
-        float ms = DysektLookAndFeel::getMenuScale();
+        float ms = AvixLookAndFeel::getMenuScale();
         menu.showMenuAsync (
             juce::PopupMenu::Options()
                 .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
                 .withParentComponent (topLvl)
                 .withStandardItemHeight ((int)(24 * ms)),
             [this] (int result) {
-                using F = DysektProcessor;
+                using F = AvixProcessor;
                 if      (result == 1) { processor.midiLearn.armLearn (F::FieldZoom);   repaint(); }
                 else if (result == 2) { processor.midiLearn.clearMapping (F::FieldZoom);   repaint(); }
                 else if (result == 3) { processor.midiLearn.armLearn (F::FieldScroll); repaint(); }
                 else if (result == 4) { processor.midiLearn.clearMapping (F::FieldScroll); repaint(); }
                 else if (result == 1000)
                 {
-                    if (auto* editor = findParentComponentOfClass<DysektEditor>())
+                    if (auto* editor = findParentComponentOfClass<AvixEditor>())
                         editor->keyPressed (juce::KeyPress ('M', juce::ModifierKeys::commandModifier, 0));
                 }
             }

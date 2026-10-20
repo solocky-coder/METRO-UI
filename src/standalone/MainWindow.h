@@ -43,7 +43,7 @@ public:
         const double deviceSampleRate = device != nullptr ? device->getCurrentSampleRate() : 44100.0;
         const int deviceBlockSize = device != nullptr ? juce::jmax (1, device->getCurrentBufferSizeSamples()) : 512;
         processor->prepareToPlay (deviceSampleRate > 0.0 ? deviceSampleRate : 44100.0, deviceBlockSize);
-        editor = std::make_unique<DysektEditor> (*processor);
+        editor = std::make_unique<AvixEditor> (*processor);
         editor->setWindowMenuBar (this, kMenuH);
 
         player.setProcessor (processor.get());
@@ -193,7 +193,7 @@ public:
         }
         else
         {
-            menu.addItem (20, "About DYSEKT-SF");
+            menu.addItem (20, "About AVIX");
         }
         return menu;
     }
@@ -236,7 +236,7 @@ private:
                     juce::MemoryBlock blank;
                     processor->setStateInformation (blank.getData(), (int) blank.getSize());
                     currentProjectFile = juce::File();
-                    setName ("DYSEKT-SF");
+                    setName ("AVIX");
                 }
             }));
     }
@@ -244,8 +244,10 @@ private:
     void openProject()
     {
         fileChooser = std::make_unique<juce::FileChooser> (
-            "Open DYSEKT-SF Project",
-            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.dysekt");
+            "Open AVIX Project",
+            // ".dysekt" is the pre-rebrand project extension; same file format,
+            // so old projects stay openable.
+            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.avix;*.dysekt");
         fileChooser->launchAsync (
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
             [this] (const juce::FileChooser& fc)
@@ -259,7 +261,7 @@ private:
                 fis.read (block.getData(), (int) size);
                 processor->setStateInformation (block.getData(), (int) block.getSize());
                 currentProjectFile = result;
-                setName ("DYSEKT-SF  -  " + result.getFileNameWithoutExtension());
+                setName ("AVIX  -  " + result.getFileNameWithoutExtension());
             });
     }
 
@@ -280,18 +282,18 @@ private:
     void saveProjectAs()
     {
         fileChooser = std::make_unique<juce::FileChooser> (
-            "Save DYSEKT-SF Project",
+            "Save AVIX Project",
             juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                .getChildFile ("Untitled.dysekt"), "*.dysekt");
+                .getChildFile ("Untitled.avix"), "*.avix");
         fileChooser->launchAsync (
             juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
             [this] (const juce::FileChooser& fc)
             {
                 auto result = fc.getResult();
                 if (result == juce::File()) return;
-                currentProjectFile = result.withFileExtension ("dysekt");
+                currentProjectFile = result.withFileExtension ("avix");
                 saveProject();
-                setName ("DYSEKT-SF  -  " + currentProjectFile.getFileNameWithoutExtension());
+                setName ("AVIX  -  " + currentProjectFile.getFileNameWithoutExtension());
             });
     }
 
@@ -300,7 +302,7 @@ private:
         fileChooser = std::make_unique<juce::FileChooser> (
             "Export MIDI Clip",
             juce::File::getSpecialLocation (juce::File::userDesktopDirectory)
-                .getChildFile ("DYSEKT_clip.mid"), "*.mid");
+                .getChildFile ("AVIX_clip.mid"), "*.mid");
         fileChooser->launchAsync (
             juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
             [this] (const juce::FileChooser& fc)
@@ -579,8 +581,8 @@ private:
     void showAbout()
     {
         juce::AlertWindow::showMessageBoxAsync (
-            juce::AlertWindow::InfoIcon, "DYSEKT-SF Standalone",
-            "DYSEKT-SF Sampler + Sequencer\nVersion 1.0\n\nPowered by JUCE.");
+            juce::AlertWindow::InfoIcon, "AVIX Standalone",
+            "AVIX Sampler + Sequencer\nVersion 1.0\n\nPowered by JUCE.");
     }
 
     void timerCallback() override
@@ -627,7 +629,7 @@ private:
     std::unique_ptr<NetworkMidiManager> networkMidiManager;
     std::unique_ptr<NetworkAudioAutoTrack> autoTrack;
     std::unique_ptr<NetworkAudioProcessor> processor;
-    std::unique_ptr<DysektEditor> editor;
+    std::unique_ptr<AvixEditor> editor;
     std::unique_ptr<juce::MenuBarComponent> menuBar;
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::File currentProjectFile;

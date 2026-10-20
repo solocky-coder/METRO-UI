@@ -12,7 +12,7 @@
 //  (a plain getIntValue() on "c3" returns 0, not 60). Extracted here so
 //  there is exactly one implementation for both call sites to drift from.
 //
-//  DYSEKT OCTAVE CONVENTION — DELIBERATE, NOT A BUG:
+//  AVIX OCTAVE CONVENTION — DELIBERATE, NOT A BUG:
 //  This uses C3 == MIDI 60, matching KeysPanel.cpp / SliceLcdDisplay.cpp /
 //  SliceControlBar.cpp / SfzLcdDisplay.cpp elsewhere in this app. That is
 //  NOT the SFZ file-format spec's own convention (spec: MIDI note 0 = C-1,
@@ -81,7 +81,7 @@ namespace SfzKeyParsing
             return -1;
 
         const int octave = octaveStr.getIntValue();
-        // DYSEKT convention: C3 == MIDI note 60 (octave = note/12 - 2) — see
+        // AVIX convention: C3 == MIDI note 60 (octave = note/12 - 2) — see
         // the file-level comment above before changing this offset.
         return juce::jlimit (0, 127, (octave + 2) * 12 + semitone);
     }

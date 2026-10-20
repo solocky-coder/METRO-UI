@@ -2,7 +2,7 @@
 //  SfzFileBrowser.cpp  —  Implementation of the self-contained directory browser
 // =============================================================================
 #include "SfzFileBrowser.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include <algorithm>
 
 // ── Themed folder glyph ───────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
             g.setColour (theme.accent.withAlpha (0.18f));
             g.fillRoundedRectangle (upBtnZone.toFloat(), 0.0f);
         }
-        g.setFont (DysektLookAndFeel::makeFont (14.0f * sf));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f * sf));
         g.setColour (canGoUp ? theme.accent.withAlpha (0.90f)
                              : theme.accent.withAlpha (0.30f));
         g.drawText (juce::String::fromUTF8 ("←"), upBtnZone, juce::Justification::centred, false);
@@ -94,7 +94,7 @@ void SfzFileBrowser::paint (juce::Graphics& g)
     {
         const auto pathArea = breadcrumbZone.withTrimmedLeft (upBtnZone.getWidth() + 4)
                                             .withTrimmedRight (4);
-        g.setFont (DysektLookAndFeel::makeFont (12.0f * sf));
+        g.setFont (AvixLookAndFeel::makeFont (12.0f * sf));
         g.setColour (theme.foreground.withAlpha (0.55f));
 
         // Show last 2 path segments so it fits; show "Drives" in virtual-root mode;
@@ -432,7 +432,7 @@ bool SfzFileBrowser::extractZipEntryToTemp (const juce::File& zipFile, const juc
     const auto ext        = juce::File (entryName).getFileExtension();   // includes leading '.'
 
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("DYSEKT-SF_zip_extract");
+                       .getChildFile ("AVIX_zip_extract");
     tempDir.createDirectory();
 
     const auto tempFile = tempDir.getChildFile (
@@ -463,7 +463,7 @@ bool SfzFileBrowser::extractSfzFolderToTemp (const juce::File& zipFile, const ju
     const auto folderPfx = lastSlash >= 0 ? entryPath.substring (0, lastSlash + 1) : juce::String();
 
     auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                       .getChildFile ("DYSEKT-SF_zip_extract")
+                       .getChildFile ("AVIX_zip_extract")
                        .getChildFile ("sfz_" + juce::String (juce::Time::getCurrentTime().toMilliseconds()));
     if (! tempDir.createDirectory())
         return false;
@@ -568,7 +568,7 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
                                                 (float) iconColW - 6.0f * sf, (float) h * 0.46f);
         drawFolderGlyph (g, iconBox, selected ? theme.accent : theme.foreground.withAlpha (0.85f));
 
-        g.setFont (DysektLookAndFeel::makeFont (textSize));
+        g.setFont (AvixLookAndFeel::makeFont (textSize));
         g.setColour (selected ? theme.accent : theme.foreground.withAlpha (0.80f));
         g.drawText (r.displayName, iconColW + 6, 0, w - iconColW - 10, h,
                     juce::Justification::centredLeft, true);
@@ -583,7 +583,7 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
         const auto ext = nameParser.getFileExtension().toUpperCase().trimCharactersAtStart (".");
         if (ext.isEmpty())
         {
-            g.setFont (DysektLookAndFeel::makeFont (textSize));
+            g.setFont (AvixLookAndFeel::makeFont (textSize));
             g.setColour (selected ? theme.accent : theme.foreground.withAlpha (0.80f));
             g.drawText (r.displayName, juce::roundToInt (6 * sf), 0,
                         w - juce::roundToInt (10 * sf), h,
@@ -597,12 +597,12 @@ void SfzFileBrowser::paintListBoxItem (int row, juce::Graphics& g,
                                                           (h - badgeH) / 2, badgeW, badgeH);
             g.setColour (theme.accent.withAlpha (0.18f));
             g.fillRoundedRectangle (badgeRect.toFloat(), 0.0f);
-            g.setFont (DysektLookAndFeel::makeFont (10.0f * sf));
+            g.setFont (AvixLookAndFeel::makeFont (10.0f * sf));
             g.setColour (theme.accent.withAlpha (0.80f));
             g.drawText (ext, badgeRect, juce::Justification::centred, false);
 
             // Filename
-            g.setFont (DysektLookAndFeel::makeFont (textSize));
+            g.setFont (AvixLookAndFeel::makeFont (textSize));
             g.setColour (selected ? theme.accent : theme.foreground.withAlpha (0.80f));
             g.drawText (nameParser.getFileNameWithoutExtension(), juce::roundToInt (6 * sf), 0,
                         w - badgeW - juce::roundToInt (14 * sf), h,

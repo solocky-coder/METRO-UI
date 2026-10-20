@@ -2,12 +2,12 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "DualLcdControlFrame.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 class HeaderBar : public juce::Component
 {
 public:
-    explicit HeaderBar (DysektProcessor& p);
+    explicit HeaderBar (AvixProcessor& p);
     void paint            (juce::Graphics& g) override;
     void resized          () override;
     void mouseDown        (const juce::MouseEvent& e) override;
@@ -55,7 +55,7 @@ public:
 private:
     void openRelinkBrowser();
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     DualLcdControlFrame controlFrame;
 

@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
     Metro UI
 
     MetroArrangementView.h
@@ -20,7 +20,7 @@
 
 class SequencerEngine;
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /** Draws and drives interaction for the arrangement (track/clip) workspace. */
 class MetroArrangementView final : public juce::Component,
@@ -105,4 +105,4 @@ private:
     void glueSelectedClip ();
     std::function<void (const MetroSelection&)> onSelectionChanged;
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

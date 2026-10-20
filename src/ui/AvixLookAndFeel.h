@@ -6,11 +6,11 @@
 ThemeData& getTheme();
 void setTheme (const ThemeData& t);
 
-class DysektLookAndFeel : public juce::LookAndFeel_V4
+class AvixLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    DysektLookAndFeel();
-    ~DysektLookAndFeel() override;
+    AvixLookAndFeel();
+    ~AvixLookAndFeel() override;
 
     void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
                                bool isHighlighted, bool isDown) override;
@@ -91,7 +91,7 @@ private:
     static juce::Typeface::Ptr sMonoBoldTypeface;  // JetBrainsMono-Bold       — bold values
     static float sMenuScale;
 
-    // Number of live DysektLookAndFeel objects (this class and subclasses). When
+    // Number of live AvixLookAndFeel objects (this class and subclasses). When
     // the last one is destroyed, the static typeface references above are
     // released while JUCE is still fully alive. If they were left to ordinary
     // static destruction they would run AFTER JUCE's function-local

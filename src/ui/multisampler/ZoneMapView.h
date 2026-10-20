@@ -27,13 +27,13 @@
 #include <optional>
 
 struct MultisamplerInstrument;
-class DysektProcessor;
+class AvixProcessor;
 
 class ZoneMapView : public juce::Component,
                      private juce::Timer
 {
 public:
-    explicit ZoneMapView (DysektProcessor& processorToUse);
+    explicit ZoneMapView (AvixProcessor& processorToUse);
     ~ZoneMapView() override;
 
     /** Non-owning. Pass nullptr to show an empty grid. */
@@ -130,7 +130,7 @@ public:
 
     /** Scales every font size this component draws with, so zone labels and
         the velocity ruler keep pace with the rest of the app's host-window-
-        driven scaling (see DysektEditor::resized()'s `sf`/`si()`) instead of
+        driven scaling (see AvixEditor::resized()'s `sf`/`si()`) instead of
         staying pinned at design-time pixel sizes on a much larger window.
         1.0 = the design-time sizes this file was authored with.
         MultisamplerEditor forwards its own scale here — see
@@ -238,7 +238,7 @@ private:
     // to EngineSource::SfzPlayer2 — same atomics, same 30Hz poll, so a note
     // played through MULTISAMPLER lights up identically to how it would in
     // ZONES' keyboard.
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     void timerCallback() override;
     uint64_t activeNotesSnap[2] = { 0, 0 };
     bool isNoteActive (int note) const noexcept;

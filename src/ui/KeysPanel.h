@@ -3,13 +3,13 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 
-class DysektProcessor;
+class AvixProcessor;
 
 class KeysPanel : public juce::Component,
                   private juce::Timer
 {
 public:
-    explicit KeysPanel (DysektProcessor& p);
+    explicit KeysPanel (AvixProcessor& p);
     ~KeysPanel() override;
 
     void paint     (juce::Graphics& g) override;
@@ -193,7 +193,7 @@ private:
     std::vector<KeyRect>  keyRects;
     std::vector<Keyzone>  keyzones;
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     bool slicerHighlightEnabled = true; ///< false in SF-player mode — suppresses slicer note borders
 

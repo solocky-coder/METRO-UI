@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
     Metro UI
 
     MetroColours.h
@@ -7,7 +7,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
-namespace dysekt::metro
+namespace avix::metro
 {
 using Colour = juce::Colour;
 

@@ -1,7 +1,7 @@
 #include "Sf2WaveformLcd.h"
 #include "ZoneEnvelopeRanges.h"
 #include "UIHelpers.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 
 // ── Theme helpers ─────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ static const juce::Colour kSf2ColRelease { 0xFFFF6B00 };
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-Sf2WaveformLcd::Sf2WaveformLcd (DysektProcessor& p)
+Sf2WaveformLcd::Sf2WaveformLcd (AvixProcessor& p)
     : processor (p)
 {
     setOpaque (false);
@@ -256,7 +256,7 @@ void Sf2WaveformLcd::buildWaveformPeaks()
     {
         const float t   = (float) i / (float) kPeaks;
         const int   pos = startF + (int) (t * (float) (endF - startF));
-        peaks.set (i, DysektProcessor::getWaveformPeakAtIn (processor.sampleData3, pos));
+        peaks.set (i, AvixProcessor::getWaveformPeakAtIn (processor.sampleData3, pos));
     }
 }
 
@@ -591,7 +591,7 @@ void Sf2WaveformLcd::drawLoopOverlay (juce::Graphics& g,
     g.drawVerticalLine (juce::roundToInt (x0), area.getY(), area.getBottom());
     g.drawVerticalLine (juce::roundToInt (x1), area.getY(), area.getBottom());
 
-    g.setFont (DysektLookAndFeel::makeFont (7.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (7.0f, true));
     g.setColour (loopColour.withAlpha (0.55f));
     const float labelX = (x0 + x1) * 0.5f - 18.0f;
     g.drawText ("LOOP", juce::Rectangle<float> (labelX, area.getY() + 3.0f, 36.0f, 10.0f),
@@ -673,7 +673,7 @@ void Sf2WaveformLcd::drawSegmentLabel (juce::Graphics& g,
 {
     const float mx = area.getX() + ((x0 + x1) * 0.5f) * area.getWidth();
     const float my = area.getY() + ((y0 + y1) * 0.5f) * area.getHeight() - 9.0f;
-    g.setFont (DysektLookAndFeel::makeFont (8.0f));
+    g.setFont (AvixLookAndFeel::makeFont (8.0f));
     g.setColour (col.withAlpha (0.40f));
     g.drawText (juce::String (text),
                 juce::Rectangle<float> (mx - 30.0f, my - 6.0f, 60.0f, 12.0f),
@@ -686,7 +686,7 @@ void Sf2WaveformLcd::drawHeader (juce::Graphics& g,
     const float headerH = 18.0f;
     const auto  headerR = area.withHeight (headerH);
 
-    g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
+    g.setFont (AvixLookAndFeel::makeFont (8.5f, true));
     g.setColour (sf2Lcd2Phosphor().withAlpha (0.55f));
     g.drawText ("SF2 PLAYER", headerR.withRight (headerR.getX() + 72.0f),
                 juce::Justification::centredLeft, false);
@@ -698,7 +698,7 @@ void Sf2WaveformLcd::drawHeader (juce::Graphics& g,
     // the previous preset's stale waveform up with no explanation.
     if (processor.sf2PreviewRenderInFlight.load (std::memory_order_relaxed))
     {
-        g.setFont (DysektLookAndFeel::makeFont (8.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (8.0f, true));
         g.setColour (kSf2ColDecay.withAlpha (0.75f));
         g.drawText ("RENDERING PREVIEW...", headerR, juce::Justification::centredRight, true);
         return;
@@ -710,7 +710,7 @@ void Sf2WaveformLcd::drawHeader (juce::Graphics& g,
                                       .getFileNameWithoutExtension();
         if (name.isNotEmpty())
         {
-            g.setFont (DysektLookAndFeel::makeFont (8.0f));
+            g.setFont (AvixLookAndFeel::makeFont (8.0f));
             g.setColour (sf2Lcd2Phosphor().withAlpha (0.38f));
             g.drawText (name, headerR, juce::Justification::centredRight, true);
         }
@@ -804,7 +804,7 @@ void Sf2WaveformLcd::drawNodes (juce::Graphics& g,
         g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.80f));
         g.fillEllipse (cx - dr, cy - dr, dr * 2.0f, dr * 2.0f);
 
-        g.setFont (DysektLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
         g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.70f));
         g.drawText (juce::String (node.label),
                     juce::Rectangle<float> (cx - 14.0f, cy + r + 2.0f, 28.0f, 12.0f),
@@ -815,7 +815,7 @@ void Sf2WaveformLcd::drawNodes (juce::Graphics& g,
 void Sf2WaveformLcd::drawNoInstrument (juce::Graphics& g)
 {
     const auto b = getLocalBounds().reduced (4);
-    g.setFont (DysektLookAndFeel::makeFont (10.0f));
+    g.setFont (AvixLookAndFeel::makeFont (10.0f));
     g.setColour (sf2Lcd2Dim().brighter (0.4f));
     g.drawText ("-- NO INSTRUMENT LOADED --", b, juce::Justification::centred);
 }

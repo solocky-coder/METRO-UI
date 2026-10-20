@@ -2,13 +2,13 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../MidiLearnManager.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 class SliceControlBar : public juce::Component,
                         private juce::Timer
 {
 public:
-    explicit SliceControlBar (DysektProcessor& p);
+    explicit SliceControlBar (AvixProcessor& p);
     void paint (juce::Graphics& g) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent& e) override;
@@ -202,7 +202,7 @@ private:
     int psCellH  { 32 };   // 32 * paintSf
     int psKnobR  { kKnobR };// kKnobR * paintSf       // set at start of paint() — scales to component height
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     // Drag state
     int hoveredCellIdx = -1;   // index into cells[] under cursor, -1 = none

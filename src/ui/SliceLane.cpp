@@ -1,12 +1,12 @@
 #include "SliceLane.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
 #include "../audio/Slice.h"
 #include <algorithm>
 #include <array>
 
-SliceLane::SliceLane (DysektProcessor& p) : processor (p) {}
+SliceLane::SliceLane (AvixProcessor& p) : processor (p) {}
 
 void SliceLane::paint (juce::Graphics& g)
 {
@@ -150,7 +150,7 @@ void SliceLane::paint (juce::Graphics& g)
         std::array<int, SliceManager::kMaxSlices> labelEndsCache {};
         int labelEndCount = 0;
 
-        g.setFont (DysektLookAndFeel::makeFont (12.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (12.0f, true));
 
         for (int i = 0; i < visCount; ++i)
         {
@@ -353,7 +353,7 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
             menu.addSubMenu ("AHDSR Lock", adsrSub);  // Changed label to AHDSR
 
             auto* topLvl = getTopLevelComponent();
-            float ms = DysektLookAndFeel::getMenuScale();
+            float ms = AvixLookAndFeel::getMenuScale();
             const auto screenPt = e.getScreenPosition();
             menu.showMenuAsync (
                 juce::PopupMenu::Options()
@@ -364,8 +364,8 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
                 {
                     auto toggleLock = [&] (uint32_t bit)
                     {
-                        DysektProcessor::Command cmd;
-                        cmd.type      = DysektProcessor::CmdToggleLock;
+                        AvixProcessor::Command cmd;
+                        cmd.type      = AvixProcessor::CmdToggleLock;
                         cmd.intParam1 = targetSlice;   // slice to lock — explicit, not racy selectedSlice
                         cmd.intParam2 = (int) bit;
                         processor.pushCommand (cmd);
@@ -373,15 +373,15 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
 
                     if (result == 1)
                     {
-                        DysektProcessor::Command cmd;
-                        cmd.type      = DysektProcessor::CmdDeleteSlice;
+                        AvixProcessor::Command cmd;
+                        cmd.type      = AvixProcessor::CmdDeleteSlice;
                         cmd.intParam1 = targetSlice;
                         processor.pushCommand (cmd);
                     }
                     else if (result == 2)
                     {
-                        DysektProcessor::Command cmd;
-                        cmd.type        = DysektProcessor::CmdSetSliceLockAll;
+                        AvixProcessor::Command cmd;
+                        cmd.type        = AvixProcessor::CmdSetSliceLockAll;
                         cmd.intParam1   = targetSlice;
                         cmd.floatParam1 = allLocked ? 0.f : 1.f;
                         processor.pushCommand (cmd);
@@ -400,8 +400,8 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
                             0xFF00BFFF, 0xFF00FFD0, 0xFFA8FF3E, 0xFFFFD700,
                             0xFFFF7F50, 0xFFFF00FF, 0xFFE8E8E8, 0xFF888888,
                         };
-                        DysektProcessor::Command cmd;
-                        cmd.type      = DysektProcessor::CmdSetSliceColour;
+                        AvixProcessor::Command cmd;
+                        cmd.type      = AvixProcessor::CmdSetSliceColour;
                         cmd.intParam1 = targetSlice;
                         cmd.intParam2 = (int) kPalARGB[result - 20];
                         processor.pushCommand (cmd);
@@ -431,8 +431,8 @@ void SliceLane::mouseDown (const juce::MouseEvent& e)
             target = overlapping.front();
         }
 
-        DysektProcessor::Command cmd;
-        cmd.type      = DysektProcessor::CmdSelectSlice;
+        AvixProcessor::Command cmd;
+        cmd.type      = AvixProcessor::CmdSelectSlice;
         cmd.intParam1 = target;
         processor.pushCommand (cmd);
     }

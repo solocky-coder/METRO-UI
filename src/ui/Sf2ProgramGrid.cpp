@@ -2,7 +2,7 @@
 //  Sf2ProgramGrid.cpp
 // =============================================================================
 #include "Sf2ProgramGrid.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "IconManager.h"
 #include "UIHelpers.h"
 
@@ -232,7 +232,7 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
             // Accent left-rule
             g.setColour (theme.accent.withAlpha (0.75f));
             g.fillRect (juce::Rectangle<int> (0, y, 2, hh));
-            g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
+            g.setFont (AvixLookAndFeel::makeFont (11.0f, true));
             g.setColour (theme.accent.withAlpha (0.65f));
             g.drawText ("BANK " + juce::String (row.bank),
                         hdrBounds.reduced (4, 0).withTrimmedLeft (4),
@@ -310,7 +310,7 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                 else if (isHovered)
                 {
                     // Same treatment as HeaderBar buttons (see
-                    // DysektLookAndFeel::drawButtonBackground): the hover
+                    // AvixLookAndFeel::drawButtonBackground): the hover
                     // sprite as base layer, theme-tinted border on top so it
                     // still follows the active theme like every other button.
                     if (hoverSprite != nullptr)
@@ -370,7 +370,7 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                 {
                     const auto badge = cell.withWidth (28).withHeight (14)
                                            .withX (cell.getX() + 2).withY (cell.getY() + 2);
-                    g.setFont (DysektLookAndFeel::makeFont (11.5f));
+                    g.setFont (AvixLookAndFeel::makeFont (11.5f));
                     g.setColour (isPreviewing ? theme.accent.brighter (0.3f)
                                  : isEditing  ? trackCol.brighter (0.3f)
                                  : isAssigned ? trackCol.brighter (0.1f)
@@ -389,14 +389,14 @@ void Sf2ProgramGrid::paint (juce::Graphics& g)
                         cell.getRight() - bw - 2, cell.getBottom() - bh - 2, bw, bh);
                     g.setColour (isEditing ? trackCol : trackCol.withAlpha (0.85f));
                     g.fillRoundedRectangle (badgeR.toFloat(), rBadge);
-                    g.setFont (DysektLookAndFeel::makeFont (10.0f, true));
+                    g.setFont (AvixLookAndFeel::makeFont (10.0f, true));
                     g.setColour (theme.darkBar);
                     g.drawText (chLabel, badgeR, juce::Justification::centred, false);
                 }
 
                 // Preset name (centred)
                 {
-                    g.setFont (DysektLookAndFeel::makeFont (15.0f));
+                    g.setFont (AvixLookAndFeel::makeFont (15.0f));
                     g.setColour (isPreviewing ? theme.foreground.brighter (0.2f).withAlpha (0.95f)
                                  : isEditing  ? theme.foreground.brighter (0.2f)
                                  : isAssigned ? theme.foreground.brighter (0.05f).withAlpha (0.90f)
@@ -580,7 +580,7 @@ void Sf2ProgramGrid::showChannelMenu (int presetIdx, juce::Point<int> screenPos)
     menu.addItem (1, "Deactivate", current != 0);
 
     auto* topLvl = getTopLevelComponent();
-    float ms = DysektLookAndFeel::getMenuScale();
+    float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))

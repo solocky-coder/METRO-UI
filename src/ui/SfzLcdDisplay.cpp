@@ -1,5 +1,5 @@
 #include "SfzLcdDisplay.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "LcdColours.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
@@ -34,7 +34,7 @@ juce::String SfzLcdDisplay::midiNoteName (int note)
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-SfzLcdDisplay::SfzLcdDisplay (DysektProcessor& p)
+SfzLcdDisplay::SfzLcdDisplay (AvixProcessor& p)
     : processor (p)
 {
     setOpaque (true);
@@ -119,8 +119,8 @@ void SfzLcdDisplay::drawRow (juce::Graphics& g, int row,
 
     if (y + rowH <= b.getY() + 4 || y >= b.getBottom() - 4) return;
 
-    const juce::Font labelFont = DysektLookAndFeel::makeFont (24.0f * sf, true);
-    const juce::Font valueFont = DysektLookAndFeel::makeFont (26.0f * sf);
+    const juce::Font labelFont = AvixLookAndFeel::makeFont (24.0f * sf, true);
+    const juce::Font valueFont = AvixLookAndFeel::makeFont (26.0f * sf);
 
     if (highlight)
     {
@@ -150,7 +150,7 @@ void SfzLcdDisplay::drawRowPair (juce::Graphics& g, int row,
     const int   rowH  = effectiveRowH();
     const int   lPad  = juce::roundToInt (kLeftPad * sf);
     const int   y     = b.getY() + 4 + row * rowH;
-    const juce::Font f = DysektLookAndFeel::makeFont (23.0f * sf);
+    const juce::Font f = AvixLookAndFeel::makeFont (23.0f * sf);
 
     if (y + rowH <= b.getY() + 4 || y >= b.getBottom() - 4) return;
 
@@ -200,11 +200,11 @@ void SfzLcdDisplay::drawNoInstrument (juce::Graphics& g)
     const auto  b   = getLocalBounds().reduced (4);
     const float sf  = (float) getHeight() / (float) kPreferredHeight;
 
-    g.setFont (DysektLookAndFeel::makeFont (22.0f * sf));
+    g.setFont (AvixLookAndFeel::makeFont (22.0f * sf));
     g.setColour (pal.noDataCol);
     g.drawText ("-- NO INSTRUMENT --", b, juce::Justification::centred);
 
-    g.setFont (DysektLookAndFeel::makeFont (18.0f * sf));
+    g.setFont (AvixLookAndFeel::makeFont (18.0f * sf));
     g.setColour (pal.dim);
     g.drawText ("DROP AN SFZ OR SF2 FILE",
                 b, juce::Justification::centredBottom);
@@ -249,8 +249,8 @@ void SfzLcdDisplay::paint (juce::Graphics& g)
         g.setColour (pal.phosphor.withAlpha (0.10f));
         g.fillRect (screen.getX(), y, screen.getWidth(), rowH - 1);
 
-        const juce::Font lblF = DysektLookAndFeel::makeFont (24.0f * sf, true);
-        const juce::Font valF = DysektLookAndFeel::makeFont (26.0f * sf);
+        const juce::Font lblF = AvixLookAndFeel::makeFont (24.0f * sf, true);
+        const juce::Font valF = AvixLookAndFeel::makeFont (26.0f * sf);
 
         const int lblW  = juce::GlyphArrangement::getStringWidthInt(lblF, tagStr);
         const int gap   = 8;

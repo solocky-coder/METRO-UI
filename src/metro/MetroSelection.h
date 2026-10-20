@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
     Metro UI
 
     MetroSelection.h
@@ -14,7 +14,7 @@
 
 #include "../sequencer/SequencerEngine.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 enum class SelectionKind
 {
@@ -63,4 +63,4 @@ struct MetroSelection final
     bool isClip()  const noexcept { return kind == SelectionKind::clip; }
 };
 
-} // namespace dysekt::metro
+} // namespace avix::metro

@@ -1,5 +1,5 @@
 #include "SliceWaveformLcd.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 #include "../audio/Slice.h"
@@ -46,7 +46,7 @@ static const juce::Colour kColRelease { 0xFFFF6B00 }; // Molten Orange
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-SliceWaveformLcd::SliceWaveformLcd (DysektProcessor& p)
+SliceWaveformLcd::SliceWaveformLcd (AvixProcessor& p)
  : processor (p)
 {
  setOpaque (false); // rounded corners — must not claim full opaque coverage
@@ -134,7 +134,7 @@ void SliceWaveformLcd::buildDisplayData()
  {
  const float t = (float) i / (float) kPeaks;
  const int pos = data.startSample + (int) (t * (float) sliceLen);
- data.peaks.set (i, DysektProcessor::getWaveformPeakAtIn (activeSample, pos));
+ data.peaks.set (i, AvixProcessor::getWaveformPeakAtIn (activeSample, pos));
  }
  if (! sfzMode) processor.releaseUiSliceSnapshot(); else processor.releaseUiSliceSnapshot2();
 }
@@ -312,8 +312,8 @@ void SliceWaveformLcd::commitNodes()
     const bool sfzMode = isSfzPlayer2Mode();
     auto writePerSlice = [&] (int fieldId, float nativeVal)
     {
-        DysektProcessor::Command cmd;
-        cmd.type         = DysektProcessor::CmdSetSliceParam;
+        AvixProcessor::Command cmd;
+        cmd.type         = AvixProcessor::CmdSetSliceParam;
         cmd.intParam1    = fieldId;
         cmd.floatParam1  = nativeVal;
         cmd.intParam2    = 1; // skipLock
@@ -331,10 +331,10 @@ void SliceWaveformLcd::commitNodes()
     // Always write per-slice. Lock = protection only (drag blocked upstream).
     switch (dragRole)
     {
-        case NodeRole::Attack:  writePerSlice (DysektProcessor::FieldAttack,  attackMs  / 1000.f); break;
-        case NodeRole::Decay:   writePerSlice (DysektProcessor::FieldDecay,   decayMs   / 1000.f); break;
-        case NodeRole::Sustain: writePerSlice (DysektProcessor::FieldSustain, sustainPc / 100.f);  break;
-        case NodeRole::Release: writePerSlice (DysektProcessor::FieldRelease, releaseMs / 1000.f); break;
+        case NodeRole::Attack:  writePerSlice (AvixProcessor::FieldAttack,  attackMs  / 1000.f); break;
+        case NodeRole::Decay:   writePerSlice (AvixProcessor::FieldDecay,   decayMs   / 1000.f); break;
+        case NodeRole::Sustain: writePerSlice (AvixProcessor::FieldSustain, sustainPc / 100.f);  break;
+        case NodeRole::Release: writePerSlice (AvixProcessor::FieldRelease, releaseMs / 1000.f); break;
         default: break;
     }
 
@@ -458,8 +458,8 @@ void SliceWaveformLcd::mouseDown (const juce::MouseEvent& e)
          else if (bit == kLockRelease) writeApvts (ParamIds::defaultRelease, s.releaseSec   * 1000.0f);
      }
 
-     DysektProcessor::Command cmd;
-     cmd.type      = DysektProcessor::CmdToggleLock;
+     AvixProcessor::Command cmd;
+     cmd.type      = AvixProcessor::CmdToggleLock;
      cmd.intParam1 = sel;
      cmd.intParam2 = (int) bit;
      cmd.targetEngine2 = sfzMode2;
@@ -472,16 +472,16 @@ void SliceWaveformLcd::mouseDown (const juce::MouseEvent& e)
      // whatever was last written by drag or the knob) — NOT from APVTS,
      // which could be at a different position and would cause a jump.
      float snapVal = 0.0f;
-     DysektProcessor::SliceParamField field = DysektProcessor::FieldAttack;
-     if      (bit == kLockAttack)  { snapVal = s.attackSec;    field = DysektProcessor::FieldAttack;  }
-     else if (bit == kLockDecay)   { snapVal = s.decaySec;     field = DysektProcessor::FieldDecay;   }
-     else if (bit == kLockSustain) { snapVal = s.sustainLevel; field = DysektProcessor::FieldSustain; }
-     else if (bit == kLockRelease) { snapVal = s.releaseSec;   field = DysektProcessor::FieldRelease; }
+     AvixProcessor::SliceParamField field = AvixProcessor::FieldAttack;
+     if      (bit == kLockAttack)  { snapVal = s.attackSec;    field = AvixProcessor::FieldAttack;  }
+     else if (bit == kLockDecay)   { snapVal = s.decaySec;     field = AvixProcessor::FieldDecay;   }
+     else if (bit == kLockSustain) { snapVal = s.sustainLevel; field = AvixProcessor::FieldSustain; }
+     else if (bit == kLockRelease) { snapVal = s.releaseSec;   field = AvixProcessor::FieldRelease; }
 
      // Write the value (skipLock=1) so the slice record is current
      {
-         DysektProcessor::Command c;
-         c.type        = DysektProcessor::CmdSetSliceParam;
+         AvixProcessor::Command c;
+         c.type        = AvixProcessor::CmdSetSliceParam;
          c.intParam1   = (int) field;
          c.floatParam1 = snapVal;
          c.intParam2   = 1; // skipLock
@@ -490,8 +490,8 @@ void SliceWaveformLcd::mouseDown (const juce::MouseEvent& e)
      }
      // Now toggle the lock bit on
      {
-         DysektProcessor::Command cmd;
-         cmd.type      = DysektProcessor::CmdToggleLock;
+         AvixProcessor::Command cmd;
+         cmd.type      = AvixProcessor::CmdToggleLock;
          cmd.intParam1 = sel;
          cmd.intParam2 = (int) bit;
          cmd.targetEngine2 = sfzMode2;
@@ -823,7 +823,7 @@ void SliceWaveformLcd::drawSegmentLabel (juce::Graphics& g,
 {
  const float mx = area.getX() + ((x0 + x1) * 0.5f) * area.getWidth();
  const float my = area.getY() + ((y0 + y1) * 0.5f) * area.getHeight() - 9.0f;
- g.setFont (DysektLookAndFeel::makeFont (8.0f));
+ g.setFont (AvixLookAndFeel::makeFont (8.0f));
  g.setColour (col.withAlpha (0.40f));
  g.drawText (juce::String (text),
  juce::Rectangle<float> (mx - 30.0f, my - 6.0f, 60.0f, 12.0f),
@@ -959,7 +959,7 @@ void SliceWaveformLcd::drawNodes (juce::Graphics& g, const juce::Rectangle<float
  }
 
  // Label BELOW node (always inside frame)
- g.setFont (DysektLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
+ g.setFont (AvixLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
  g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.85f));
  g.drawText (juce::String (node.label),
  juce::Rectangle<float> (cx - 14.0f, cy + r + 2.0f, 28.0f, 12.0f),
@@ -968,7 +968,7 @@ void SliceWaveformLcd::drawNodes (juce::Graphics& g, const juce::Rectangle<float
  // Hover tooltip below label
  if (hov)
  {
- g.setFont (DysektLookAndFeel::makeFont (8.5f));
+ g.setFont (AvixLookAndFeel::makeFont (8.5f));
  g.setColour (node.colour.withAlpha (0.75f));
  g.drawText ("right-click to unlock",
  juce::Rectangle<float> (cx - 48.0f, cy + r + 15.0f, 96.0f, 12.0f),
@@ -987,7 +987,7 @@ void SliceWaveformLcd::drawNodes (juce::Graphics& g, const juce::Rectangle<float
  g.fillEllipse (cx - dr, cy - dr, dr * 2.0f, dr * 2.0f);
 
  // Label BELOW node (always inside frame)
- g.setFont (DysektLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
+ g.setFont (AvixLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
  g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.70f));
  g.drawText (juce::String (node.label),
  juce::Rectangle<float> (cx - 14.0f, cy + r + 2.0f, 28.0f, 12.0f),
@@ -995,7 +995,7 @@ void SliceWaveformLcd::drawNodes (juce::Graphics& g, const juce::Rectangle<float
 
  if (hov)
  {
- g.setFont (DysektLookAndFeel::makeFont (8.5f));
+ g.setFont (AvixLookAndFeel::makeFont (8.5f));
  g.setColour (node.colour.withAlpha (0.60f));
  g.drawText ("right-click to lock",
  juce::Rectangle<float> (cx - 48.0f, cy + r + 15.0f, 96.0f, 12.0f),
@@ -1010,13 +1010,13 @@ void SliceWaveformLcd::drawNoData (juce::Graphics& g)
  auto b = getLocalBounds().reduced (4);
 
  // A Slicer/SFZ-PLAYER kit (SF2/SFZ) is decoding in the background — see
- // DysektProcessor::mainLoadInFlight, set in SoundFontLoader::load() and
+ // AvixProcessor::mainLoadInFlight, set in SoundFontLoader::load() and
  // cleared once processBlock consumes the result (or the load fails).
  // Without this, drawNoData only ever checks data.hasSample, so a kit
  // loading in the background just kept showing "EMPTY" with zero feedback.
  if (processor.mainLoadInFlight.load (std::memory_order_relaxed))
  {
- g.setFont (DysektLookAndFeel::makeFont (13.0f, true));
+ g.setFont (AvixLookAndFeel::makeFont (13.0f, true));
  g.setColour (lcd2Phosphor().withAlpha (0.45f));
  g.drawText ("LOADING...", b, juce::Justification::centred);
  return;
@@ -1031,18 +1031,18 @@ void SliceWaveformLcd::drawNoData (juce::Graphics& g)
  if (! data.hasSample || data.isDefault || data.totalFrames <= 0)
  {
  // Show "EMPTY" prominently when no real sample is loaded
- g.setFont (DysektLookAndFeel::makeFont (18.0f, true));
+ g.setFont (AvixLookAndFeel::makeFont (18.0f, true));
  g.setColour (lcd2Phosphor().withAlpha (0.18f));
  g.drawText ("EMPTY", b, juce::Justification::centred);
 
- g.setFont (DysektLookAndFeel::makeFont (7.5f));
+ g.setFont (AvixLookAndFeel::makeFont (7.5f));
  g.setColour (lcd2Dim().brighter (0.5f));
  g.drawText ("drag a sample here or use the browser",
  b.removeFromBottom (18), juce::Justification::centred);
  }
  else
  {
- g.setFont (DysektLookAndFeel::makeFont (10.0f));
+ g.setFont (AvixLookAndFeel::makeFont (10.0f));
  g.setColour (lcd2Dim().brighter (0.4f));
  g.drawText ("-- SELECT A SLICE --",
              b, juce::Justification::centred);

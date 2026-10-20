@@ -14,7 +14,7 @@
 class FileBrowserPanel;
 class MixerPanel;
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /** Standalone-only Metro shell. The shared processor and plugin editor stay UI-agnostic.
     This class only coordinates child components (creation, layout, tab switching); it
@@ -23,7 +23,7 @@ namespace dysekt::metro
 class MetroStandaloneEditor final : public juce::AudioProcessorEditor
 {
 public:
-    explicit MetroStandaloneEditor (DysektProcessor&);
+    explicit MetroStandaloneEditor (AvixProcessor&);
     ~MetroStandaloneEditor() override;
 
     void paint (juce::Graphics&) override;
@@ -43,7 +43,7 @@ private:
         bar. Wired to FloatingTransportBar::onDockRequested. */
     void dockTransport();
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     MetroLookAndFeel lookAndFeel;
     MetroTransportBar transportBar;
     std::unique_ptr<FloatingTransportBar> floatingTransport;
@@ -55,4 +55,4 @@ private:
     std::unique_ptr<::MixerPanel> mixerView;
     MetroContent activeContent = MetroContent::arrange;
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

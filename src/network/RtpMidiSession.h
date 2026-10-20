@@ -1,14 +1,14 @@
 #pragma once
 //==============================================================================
 //  RtpMidiSession.h  -  RTP-MIDI (AppleMIDI network session) over the direct
-//                       USB NCM link, for the DYSEKT standalone.
+//                       USB NCM link, for the AVIX standalone.
 //
-//  Purpose: forward DYSEKT's live incoming MIDI to an iPad/iPhone over the
+//  Purpose: forward AVIX's live incoming MIDI to an iPad/iPhone over the
 //  wired 192.168.99.x (…102.x) Apple USB link, using the same network-MIDI
 //  session protocol iOS apps already speak over Wi-Fi.
 //
 //  - Protocol: AppleMIDI session (IN/OK/NO/BY/CK) + RFC 6295 RTP-MIDI payload.
-//  - DYSEKT is the session INITIATOR by default (it invites the iPad's session
+//  - AVIX is the session INITIATOR by default (it invites the iPad's session
 //    at <peer>:5004). It also ACCEPTS an invitation from the configured peer if
 //    the iPad app initiates instead (works when ports 5004/5005 could be bound).
 //  - Sockets are bound to the local address that sits in the same /24 as the

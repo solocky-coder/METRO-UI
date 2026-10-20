@@ -2,15 +2,15 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../MidiLearnManager.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 class MidiLearnDialog : public juce::Component, private juce::ListBoxModel
 {
 public:
     MidiLearnDialog (MidiLearnManager& ml,
-                     DysektProcessor&  proc,
+                     AvixProcessor&  proc,
                      std::function<void()> onClose = nullptr);
 
     void paint   (juce::Graphics&) override;
@@ -23,7 +23,7 @@ public:
 
 private:
     MidiLearnManager& midiLearn;
-    DysektProcessor&  processor;
+    AvixProcessor&  processor;
     std::function<void()> onCloseCallback;
 
     juce::ListBox    mappingList { "Midi Mapping List", this };

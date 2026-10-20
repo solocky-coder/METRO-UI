@@ -5,7 +5,7 @@
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/AbletonLink.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 MetroTransportBar::MetroTransportBar (SequencerEngine& sequencer, AbletonLink* link)
     : engine (sequencer), linkPtr (link)
@@ -117,4 +117,4 @@ void MetroTransportBar::showLinkContextMenu()
                 engine.setLinkFollowsTransport (! engine.getLinkFollowsTransport());
         });
 }
-} // namespace dysekt::metro
+} // namespace avix::metro

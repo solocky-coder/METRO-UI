@@ -6,7 +6,7 @@
 #include "../sequencer/MidiClip.h"
 #include <cmath>
 
-namespace dysekt::metro
+namespace avix::metro
 {
 MetroArrangementView::MetroArrangementView (SequencerEngine& sequencer)
     : engine (sequencer)
@@ -701,4 +701,4 @@ void MetroArrangementView::timerCallback()
     repaint();
 }
 
-} // namespace dysekt::metro
+} // namespace avix::metro

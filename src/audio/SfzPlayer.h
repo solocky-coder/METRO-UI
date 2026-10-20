@@ -4,7 +4,7 @@
 //                  SF2 → FluidSynth backend
 //                  SFZ → sfizz backend
 // =============================================================================
-//  Owned by DysektProcessor.  prepareToPlay / processBlock / loadFile are
+//  Owned by AvixProcessor.  prepareToPlay / processBlock / loadFile are
 //  called from the audio thread (processBlock) or UI thread (load/param set).
 //
 //  Thread safety:
@@ -43,11 +43,11 @@
 #include "Sf2ChannelMixer.h"
 #include "SfzLayerScanner.h"
 
-#if DYSEKT_HAS_FLUIDSYNTH
+#if AVIX_HAS_FLUIDSYNTH
   #include <fluidsynth.h>
 #endif
 
-#if DYSEKT_HAS_SFIZZ
+#if AVIX_HAS_SFIZZ
   #include "../../sfizz/src/sfizz.h"
 #endif
 
@@ -81,10 +81,10 @@ public:
     /** Unload current instrument (silent output). */
     void unload();
 
-#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+#if AVIX_SF2_EXPERIMENTAL_MULTI_GROUP
     /** Runtime on/off switch for the audio-groups=16 / reverb+chorus-off
      *  experimental load path (see the long comment at the top of
-     *  SfzPlayer.cpp). Only compiled in when the DYSEKT_SF2_EXPERIMENTAL_
+     *  SfzPlayer.cpp). Only compiled in when the AVIX_SF2_EXPERIMENTAL_
      *  MULTI_GROUP CMake option is ON — that option remains the hard
      *  kill switch for release builds; this atomic is the convenience
      *  toggle on top of it for supervised debug-build testing. UI thread
@@ -428,7 +428,7 @@ private:
     // each pendingLoad publish; safely visible on the audio thread via the
     // same release/acquire pair that publishes pendingLoad itself (the same
     // guarantee owner->file/owner->shouldUnload already rely on). Raw,
-    // non-owning: SfzPlayer never outlives the DysektProcessor that owns
+    // non-owning: SfzPlayer never outlives the AvixProcessor that owns
     // both it and fileLoadPool.
     juce::ThreadPool* loadPool { nullptr };
 
@@ -441,14 +441,14 @@ private:
     mutable std::vector<Sf2PresetInfo>               cachedPresets;
 
     // ── Audio-thread FluidSynth state (SF2) ───────────────────────────────────
-#if DYSEKT_HAS_FLUIDSYNTH
+#if AVIX_HAS_FLUIDSYNTH
     fluid_settings_t* settings { nullptr };
     fluid_synth_t*    synth    { nullptr };
     int               sfontId  { -1 };
 #endif
 
     // ── Audio-thread sfizz state (SFZ) ────────────────────────────────────────
-#if DYSEKT_HAS_SFIZZ
+#if AVIX_HAS_SFIZZ
     sfizz_synth_t*    sfizzSynth { nullptr };
 #endif
 
@@ -461,7 +461,7 @@ private:
     std::atomic<float> volume      { 1.0f };
     std::atomic<int>   transpose   { 0 };
     std::atomic<float> pitchShift  { 0.0f };  ///< SFZ audio-rate pitch, -24..+24 semitones
-    std::atomic<int>   midiChannel { 16 };   // 0 = omni, default 16 = DY-SFP dedicated channel
+    std::atomic<int>   midiChannel { 16 };   // 0 = omni, default 16 = SF-Player dedicated channel
     std::atomic<float> pan         { 0.0f }; // -1..+1
     std::atomic<float> fineTune    { 0.0f }; // cents -100..+100
     std::atomic<float> reverb      { 0.4f }; // 0..1
@@ -472,8 +472,8 @@ private:
     std::atomic<int>   pendingProgram{ 0 };  // program number for applyProgramChange
     std::atomic<bool>  loaded      { false };
 
-#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
-    // Runtime companion to the DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP CMake
+#if AVIX_SF2_EXPERIMENTAL_MULTI_GROUP
+    // Runtime companion to the AVIX_SF2_EXPERIMENTAL_MULTI_GROUP CMake
     // option — see setExperimentalMultiGroupEnabled() above and the load-site
     // comment in SfzPlayer.cpp. Defaults OFF even in a build compiled with
     // the option on, so enabling it is always an explicit action.

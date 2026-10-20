@@ -36,7 +36,7 @@
 #include "KeysPanel.h"
 #include "../audio/SfzPlayer.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 // =============================================================================
 #include "SfzFileBrowser.h"
@@ -49,7 +49,7 @@ class SfzPlayerDropdownPanel : public juce::Component,
                          public juce::FileDragAndDropTarget
 {
 public:
-    explicit SfzPlayerDropdownPanel (DysektProcessor& p);
+    explicit SfzPlayerDropdownPanel (AvixProcessor& p);
     ~SfzPlayerDropdownPanel() override;
 
     // ── Core overrides ────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ private:
     // openSaveAsOverlay / openSaveAsNewForZone), but SfzPlayerDropdownPanel
     // is never made visible (see every setVisible() call site in
     // PluginEditor.cpp) — that flow was 100% unreachable dead code, fully
-    // duplicated by DysektEditor's own zone-builder flow in PluginEditor.cpp,
+    // duplicated by AvixEditor's own zone-builder flow in PluginEditor.cpp,
     // which is what the live [+ ZONE]/SAVE UI actually drives. Removed.
     // parseSfzZones / writeSfzZoneChange / deleteSfzZone / reloadZones stay —
     // PluginEditor calls those directly as data-layer utilities.
@@ -202,7 +202,7 @@ private:
     void mouseWheelMove   (const juce::MouseEvent&,
                            const juce::MouseWheelDetails&) override;
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SfzPlayerDropdownPanel)
 };

@@ -1,10 +1,10 @@
 #include "DualLcdControlFrame.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "IconManager.h"
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 
-DualLcdControlFrame::DualLcdControlFrame (DysektProcessor& p)
+DualLcdControlFrame::DualLcdControlFrame (AvixProcessor& p)
     : processor (p)
 {
     // No child components — all drawing is manual.
@@ -18,7 +18,7 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
     const auto accent = getTheme().accent;
     const auto fg     = getTheme().foreground;
 
-    // ── Chrome — matches DysektLookAndFeel::drawButtonBackground exactly,
+    // ── Chrome — matches AvixLookAndFeel::drawButtonBackground exactly,
     // so these icon toggles read as the same "button" as HeaderBar's real
     // juce::TextButtons (UNDO/REDO/PANIC/⚙): 2px radius, theme.button base
     // fill, accent fill+border when toggled, separator border otherwise.
@@ -30,7 +30,7 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
                      : active  ? baseBg.interpolatedWith (accent, 0.18f)
                                : baseBg;
 
-        // Sprite base layer — must match DysektLookAndFeel::drawButtonBackground's
+        // Sprite base layer — must match AvixLookAndFeel::drawButtonBackground's
         // idle/hover/active selection exactly, or these toggles will look like flat
         // vector rectangles next to HeaderBar's real TextButtons, which draw this
         // sprite first and the fillCol/border only as a fallback.
@@ -450,7 +450,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
 
         auto drawTab = [&] (juce::Rectangle<int> r, const char* label, bool active)
         {
-            // Same chrome formula as DysektLookAndFeel::drawButtonBackground
+            // Same chrome formula as AvixLookAndFeel::drawButtonBackground
             // (HeaderBar's UNDO/REDO/PANIC buttons): 2px radius, theme.button
             // base fill, accent fill+border when active/toggled.
             juce::Rectangle<float> rf = r.toFloat().reduced (0.5f);
@@ -459,7 +459,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             auto fillCol = active ? baseBg.interpolatedWith (accent, 0.18f) : baseBg;
 
             // Sprite base layer — see drawIcon() above for why this must mirror
-            // DysektLookAndFeel::drawButtonBackground's idle/active sprite choice
+            // AvixLookAndFeel::drawButtonBackground's idle/active sprite choice
             // rather than only the flat-tint fallback.
             auto stateDrawable = active ? IconManager::getButtonActive()
                                          : IconManager::getButtonIdle();
@@ -478,7 +478,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             g.drawRoundedRectangle (rf, r2, 1.0f);
 
             g.setColour (active ? accent : fg.withAlpha (0.85f));
-            g.setFont (DysektLookAndFeel::makeFont (sf1 (8.5f), true));
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (8.5f), true));
             g.drawText (label, r, juce::Justification::centred);
         };
 
@@ -496,7 +496,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
     {
         const int btnSz  = si (26);
         const int btnY   = (half - btnSz) / 2;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         const int gap    = (w - 5 * btnSz) / 6;
         filIconArea        = { gap,                       btnY, btnSz, btnSz };
         waIconArea         = { gap * 2 + btnSz,           btnY, btnSz, btnSz };
@@ -518,7 +518,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         drawIcon (g, waIconArea        .toFloat(), 1, waveMode != 0,    hoveredIcon == 1);
         drawIcon (g, midiFollowIconArea.toFloat(), 2, midiFollowActive, hoveredIcon == 2);
         drawIcon (g, bodeIconArea      .toFloat(), 3, bodeActive,       hoveredIcon == 3);
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         drawIcon (g, seqIconArea       .toFloat(), 6, seqActive,        hoveredIcon == 4);
 #endif
 
@@ -531,7 +531,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             const auto& area = *areas[hoveredIcon];
             const int labelH  = si (9);
             const int labelY  = area.getY() - labelH - 2;
-            g.setFont (DysektLookAndFeel::makeFont (sf1 (7.0f)));
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (7.0f)));
             g.setColour (getTheme().accent.withAlpha (0.80f));
             g.drawText (kLabels[hoveredIcon], area.getX() - si(20), labelY, area.getWidth() + si(40), labelH,
                         juce::Justification::centred);
@@ -585,11 +585,11 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
                         (float)k1cx + lr * std::cos (angle),
                         (float)kcy  + lr * std::sin (angle), sf1 (1.3f));
 
-            g.setFont (DysektLookAndFeel::makeFont (sf1 (7.5f), true));
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (7.5f), true));
             g.setColour (fg.withAlpha (0.45f));
             g.drawText ("GLOBAL PITCH", k1cx - si(28), kcy + kr + si(2), si(56), si(9), juce::Justification::centred);
 
-            g.setFont (DysektLookAndFeel::makeFont (sf1 (8.0f)));
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (8.0f)));
             g.setColour (accent.withAlpha (0.80f));
             g.drawText (pitchStr, k1cx - si(18), kcy + kr + si(11), si(36), si(9), juce::Justification::centred);
 
@@ -603,7 +603,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             eqIconArea = { kcx - kr, kcy - kr, eqSz, eqSz };
             drawIcon (g, eqIconArea.toFloat(), 5, eqActive);
 
-            g.setFont (DysektLookAndFeel::makeFont (sf1 (7.5f), true));
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (7.5f), true));
             g.setColour (fg.withAlpha (0.45f));
             g.drawText ("GLOBAL EQ", kcx - si(28), kcy + kr + si(2), si(56), si(9), juce::Justification::centred);
         }
@@ -667,11 +667,11 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
                         (float)kcy  + lr * std::sin (angle), sf1 (1.3f));
 
             // Labels
-            g.setFont (DysektLookAndFeel::makeFont (sf1 (7.5f), true));
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (7.5f), true));
             g.setColour (fg.withAlpha (0.45f));
             g.drawText ("GLOBAL VOL", k2cx - si (28), kcy + kr + si (2), si (56), si (9), juce::Justification::centred);
 
-            g.setFont (DysektLookAndFeel::makeFont (sf1 (8.0f)));
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (8.0f)));
             g.setColour (accent.withAlpha (0.80f));
             g.drawText (volStr, k2cx - si (18), kcy + kr + si (11), si (36), si (9), juce::Justification::centred);
 

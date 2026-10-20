@@ -54,7 +54,7 @@ public:
         latencyProfileBox.setSelectedId (1, juce::dontSendNotification);
         latencyProfileBox.onChange = [this]
         {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
             if (networkAudio == nullptr) return;
             switch (latencyProfileBox.getSelectedId())
             {
@@ -225,7 +225,7 @@ public:
 
             updateDirectUsbButtonText();
 
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
             networkAudio->disconnect();
             networkAudio->disconnectDirectPeers();
             networkAudio->stop();
@@ -633,7 +633,7 @@ private:
     {
         std::vector<int64_t> keys;
         juce::StringArray names;
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
         if (networkAudio != nullptr)
             for (const auto& source : networkAudio->getSources())
             {
@@ -708,7 +708,7 @@ private:
 
     void setNetworkAudioEnabled (bool enabled)
     {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
         if (enabled)
         {
             if (networkAudio == nullptr)
@@ -826,7 +826,7 @@ private:
 
     void connectClicked()
     {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
         if (networkAudio == nullptr)
         {
             updateStatus ("AOO network audio is unavailable");
@@ -906,7 +906,7 @@ private:
 
     void disconnectClicked()
     {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
         if (networkAudio != nullptr)
         {
             networkAudio->disconnect();
@@ -934,7 +934,7 @@ private:
         juce::String text = "Sources";
         auto colour = juce::Colours::white;
 
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
         if (networkAudio != nullptr && sourceModel.getNumRows() > 0)
         {
             const auto timing = networkAudio->getHostTiming();
@@ -983,7 +983,7 @@ private:
         // name over a direct link) or reset it to the default "USB n" name.
         void listBoxItemClicked (int row, const juce::MouseEvent& e) override
         {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
             if (owner == nullptr || ! e.mods.isPopupMenu())
                 return;
 
@@ -1009,7 +1009,7 @@ private:
 
         int getNumRows() override
         {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
             if (owner == nullptr)
                 return 0;
 
@@ -1027,7 +1027,7 @@ private:
         void paintListBoxItem (int rowNumber, juce::Graphics& g,
                                int width, int height, bool rowIsSelected) override
         {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
             if (owner == nullptr)
                 return;
             const auto sources = owner->getSources();
@@ -1151,7 +1151,7 @@ private:
             if (owner == nullptr)
                 return;
 
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
             // Remember who carried the old name so tracks already created from this
             // device can be renamed too (not just tracks created afterwards).
             struct Previous { int64_t sourceKey; juce::String label; };
@@ -1164,7 +1164,7 @@ private:
             owner->setSourceLabel (address, label);
             NetworkAudioLabels::save (owner->getSourceLabels());
 
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
             const auto newLabel = label.trim().isNotEmpty() ? label.trim()
                                                             : MetroNetworkAudio::defaultSourceLabel (address);
             int renamedTracks = 0;

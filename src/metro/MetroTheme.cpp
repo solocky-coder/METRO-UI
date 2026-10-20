@@ -26,7 +26,7 @@ namespace MetroTheme
         ThemeData t;
         t.name             = "metro";
         // Anchors — matched to the SF2 Player panel's black chassis (the
-        // "DYSEKT-SF" mockup) rather than the reskin spec's flat #1E1E1E
+        // "AVIX" mockup) rather than the reskin spec's flat #1E1E1E
         // grey canvas: that grey read as an inconsistent "washed out" tone
         // next to the near-black panels the SF2 workspace already paints
         // for itself, so the whole app now shares the same true-black base.
@@ -34,7 +34,7 @@ namespace MetroTheme
         // the strongest active state — playhead, selected item edge, active
         // tool. Everything below is derived from this one constant, so a
         // single-line change re-tints the whole theme.
-        // Re-tinted to match the DYSEKT-SF chassis's own accent (~#00D7E8)
+        // Re-tinted to match the AVIX chassis's own accent (~#00D7E8)
         // instead of the older, slightly darker blue-cyan — keeps the
         // arranger's borders in step with the SF panel it now visually
         // matches (outlined boxes, squared corners, cyan hairlines).

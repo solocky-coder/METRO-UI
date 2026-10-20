@@ -17,7 +17,7 @@ namespace AudioDeviceSettingsStore
     inline juce::File file()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("DYSEKT-SF")
+                   .getChildFile ("AVIX")
                    .getChildFile ("audio-device-state.xml");
     }
 

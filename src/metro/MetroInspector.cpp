@@ -3,7 +3,7 @@
 #include "MetroMetrics.h"
 #include "MetroTypography.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 MetroInspector::MetroInspector()
     : contextMessage ("Select a clip, pad, browser item, or mixer channel")
@@ -95,4 +95,4 @@ void MetroInspector::paintSelectionDetails (juce::Graphics& graphics, juce::Rect
                            juce::Justification::centredLeft, true);
     }
 }
-} // namespace dysekt::metro
+} // namespace avix::metro

@@ -1,7 +1,7 @@
 #pragma once
 #include "UIHelpers.h"
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 // =============================================================================
 //  LoadProgressOverlay — non-interactive status popup shown while a file is
@@ -79,7 +79,7 @@ private:
     juce::String label;
     float        progress = 0.0f;
 
-    static juce::Font labelFont() { return DysektLookAndFeel::makeFont (13.0f, true); }
+    static juce::Font labelFont() { return AvixLookAndFeel::makeFont (13.0f, true); }
 
     int labelHeight() const
     {

@@ -1,6 +1,6 @@
 #include "ShortcutsPanel.h"
 #include <BinaryData.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "MidiLearnDialog.h"
 
@@ -8,14 +8,14 @@
 // Constructor
 // ─────────────────────────────────────────────────────────────────────────────
 
-ShortcutsPanel::ShortcutsPanel (DysektProcessor& proc)
+ShortcutsPanel::ShortcutsPanel (AvixProcessor& proc)
     : processor (proc)
 {
     buildShortcutData();
 
     // ── Title label ───────────────────────────────────────────────────────────
     titleLabel.setText ("Settings & Shortcuts", juce::dontSendNotification);
-    titleLabel.setFont (DysektLookAndFeel::makeFont (21.0f, true));
+    titleLabel.setFont (AvixLookAndFeel::makeFont (21.0f, true));
     titleLabel.setColour (juce::Label::textColourId, getTheme().foreground);
     titleLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (titleLabel);
@@ -35,7 +35,7 @@ ShortcutsPanel::ShortcutsPanel (DysektProcessor& proc)
 
     // ── Search box ────────────────────────────────────────────────────────────
     searchBox.setTextToShowWhenEmpty ("Search shortcuts...", getTheme().foreground.withAlpha (0.4f));
-    searchBox.setFont (DysektLookAndFeel::makeFont (15.0f));
+    searchBox.setFont (AvixLookAndFeel::makeFont (15.0f));
     searchBox.setColour (juce::TextEditor::backgroundColourId, getTheme().background.withAlpha (0.6f));
     searchBox.setColour (juce::TextEditor::textColourId,       getTheme().foreground);
     searchBox.setColour (juce::TextEditor::outlineColourId,    getTheme().accent.withAlpha (0.4f));
@@ -66,15 +66,15 @@ ShortcutsPanel::~ShortcutsPanel() = default;
 void ShortcutsPanel::openManualPdf()
 {
     juce::File tmp = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                         .getChildFile ("DYSEKT_User_Manual.pdf");
+                         .getChildFile ("AVIX_User_Manual.pdf");
 
     if (! tmp.existsAsFile())
-        tmp.replaceWithData (BinaryData::DYSEKT_User_Manual_pdf,
-                             BinaryData::DYSEKT_User_Manual_pdfSize);
+        tmp.replaceWithData (BinaryData::AVIX_User_Manual_pdf,
+                             BinaryData::AVIX_User_Manual_pdfSize);
 
     if (! tmp.startAsProcess())
     {
-        juce::URL ("https://github.com/solocky-coder/DYSEKT-2/releases")
+        juce::URL ("https://github.com/solocky-coder/METRO-UI/releases")
             .launchInDefaultBrowser();
     }
 }
@@ -179,11 +179,11 @@ void ShortcutsPanel::mouseDown (const juce::MouseEvent& e)
     int       newPref = pref;
 
     if (trimAlwaysRect.contains (e.getPosition()))
-        newPref = DysektProcessor::TrimPrefAlways;
+        newPref = AvixProcessor::TrimPrefAlways;
     else if (trimNeverRect.contains (e.getPosition()))
-        newPref = DysektProcessor::TrimPrefNever;
+        newPref = AvixProcessor::TrimPrefNever;
     else if (trimLongRect.contains (e.getPosition()))
-        newPref = DysektProcessor::TrimPrefAsk;
+        newPref = AvixProcessor::TrimPrefAsk;
 
     if (newPref != pref)
     {
@@ -234,15 +234,15 @@ void ShortcutsPanel::drawTrimPrefsSection (juce::Graphics& g, juce::Rectangle<in
     g.fillRect (card.removeFromLeft (3));
     area.reduce (13, 8);
 
-    g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (14.0f, true));
     g.setColour (getTheme().accent);
     g.drawText ("TRIM ON LOAD", area.removeFromTop (20), juce::Justification::centredLeft);
 
     struct Option { juce::String label; int value; juce::Rectangle<int>* rect; };
     Option opts[] = {
-        { "Always Trim (Default)", DysektProcessor::TrimPrefAlways, &trimAlwaysRect },
-        { "Trim Long Samples",     DysektProcessor::TrimPrefAsk,    &trimLongRect   },
-        { "Never Trim",            DysektProcessor::TrimPrefNever,  &trimNeverRect  },
+        { "Always Trim (Default)", AvixProcessor::TrimPrefAlways, &trimAlwaysRect },
+        { "Trim Long Samples",     AvixProcessor::TrimPrefAsk,    &trimLongRect   },
+        { "Never Trim",            AvixProcessor::TrimPrefNever,  &trimNeverRect  },
     };
 
     auto row = area.removeFromTop (26);
@@ -250,7 +250,7 @@ void ShortcutsPanel::drawTrimPrefsSection (juce::Graphics& g, juce::Rectangle<in
     for (auto& opt : opts)
     {
         const int textW = juce::GlyphArrangement::getStringWidthInt (
-            DysektLookAndFeel::makeFont (13.5f), opt.label);
+            AvixLookAndFeel::makeFont (13.5f), opt.label);
         auto option = row.removeFromLeft (textW + 24);
         *opt.rect = option;
         const bool active = pref == opt.value;
@@ -264,7 +264,7 @@ void ShortcutsPanel::drawTrimPrefsSection (juce::Graphics& g, juce::Rectangle<in
             g.setColour (getTheme().header);
             g.fillEllipse (dot.toFloat().reduced (3.0f));
         }
-        g.setFont (DysektLookAndFeel::makeFont (13.5f));
+        g.setFont (AvixLookAndFeel::makeFont (13.5f));
         g.setColour (active ? getTheme().foreground : getTheme().foreground.withAlpha (0.72f));
         g.drawText (opt.label, option, juce::Justification::centredLeft);
         row.removeFromLeft (gap);
@@ -284,7 +284,7 @@ void ShortcutsPanel::drawInterfaceSection (juce::Graphics& g, juce::Rectangle<in
     g.fillRect (card.removeFromLeft (3));
     area.reduce (13, 8);
 
-    g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (14.0f, true));
     g.setColour (getTheme().accent);
     g.drawText ("INTERFACE", area.removeFromTop (20), juce::Justification::centredLeft);
 
@@ -299,7 +299,7 @@ void ShortcutsPanel::drawInterfaceSection (juce::Graphics& g, juce::Rectangle<in
     for (auto& opt : opts)
     {
         const int textW = juce::GlyphArrangement::getStringWidthInt (
-            DysektLookAndFeel::makeFont (14.0f), opt.label);
+            AvixLookAndFeel::makeFont (14.0f), opt.label);
         auto option = row.removeFromLeft (textW + 24);
         *opt.rect = option;
         const bool active = currentUiMode == opt.value;
@@ -313,7 +313,7 @@ void ShortcutsPanel::drawInterfaceSection (juce::Graphics& g, juce::Rectangle<in
             g.setColour (getTheme().header);
             g.fillEllipse (dot.toFloat().reduced (3.0f));
         }
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f));
         g.setColour (active ? getTheme().foreground : getTheme().foreground.withAlpha (0.72f));
         g.drawText (opt.label, option, juce::Justification::centredLeft);
         row.removeFromLeft (gap);
@@ -390,9 +390,9 @@ void ShortcutsPanel::paint (juce::Graphics& g)
     g.reduceClipRegion (shortcutsViewport);
     const int colGap = 22;
     const int colW = (shortcutsViewport.getWidth() - colGap) / 2;
-    const juce::Font titleFont = DysektLookAndFeel::makeFont (14.5f, true);
-    const juce::Font keyFont = DysektLookAndFeel::makeFont (14.0f, true);
-    const juce::Font descriptionFont = DysektLookAndFeel::makeFont (14.5f);
+    const juce::Font titleFont = AvixLookAndFeel::makeFont (14.5f, true);
+    const juce::Font keyFont = AvixLookAndFeel::makeFont (14.0f, true);
+    const juce::Font descriptionFont = AvixLookAndFeel::makeFont (14.5f);
 
     for (int c = 0; c < 2; ++c)
     {

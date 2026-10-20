@@ -239,7 +239,7 @@ bool AppleUsbNetworkTransport::start(const std::string& deviceId)
     if (mode.empty()) goto fail;
 
     // Proven transition: safe configuration 2 -> restart -> 3:3:3 ->
-    // configuration 4 -> SET_MODE(3).  DYSEKT deliberately does not start
+    // configuration 4 -> SET_MODE(3).  AVIX deliberately does not start
     // Internet Connection Sharing and does not wait for DHCP.
     if (mode != "5:3:3" && mode != "5:3:3:0")
     {

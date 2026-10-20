@@ -85,7 +85,7 @@ struct Slice
     // with up to kMaxSlices (128) slices per engine and two engines
     // (Slicer + SFZ-PLAYER), showing every slice unconditionally would
     // flood the mixer. Auto-set true the moment outputBus is routed away
-    // from Main (see DysektProcessor::handleCommand's FieldOutputBus case),
+    // from Main (see AvixProcessor::handleCommand's FieldOutputBus case),
     // and independently toggleable per-slice from SliceLane / the ZONES
     // summary so a user can still pin an unrouted slice for manual
     // gain/pan access, or hide a routed one they don't want cluttering

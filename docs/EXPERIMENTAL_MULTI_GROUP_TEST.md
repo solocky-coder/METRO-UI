@@ -1,6 +1,6 @@
 # Experimental SF2 multi-group test
 
-`DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP` compiles a supervised diagnostic path for
+`AVIX_SF2_EXPERIMENTAL_MULTI_GROUP` compiles a supervised diagnostic path for
 FluidSynth's 16 audio-group rendering. It is **off by default** and must never
 be enabled in a release build.
 
@@ -16,7 +16,7 @@ The script uses a separate `build-experimental-multigroup` directory, selects
 Debug, and configures CMake with:
 
 ```text
--DDYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=ON
+-DAVIX_SF2_EXPERIMENTAL_MULTI_GROUP=ON
 ```
 
 Normal `build.bat` behavior is unchanged and continues to produce a Release
@@ -27,7 +27,7 @@ build with the experiment disabled.
 ```bash
 cmake -S . -B build-experimental-multigroup \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DDYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=ON
+  -DAVIX_SF2_EXPERIMENTAL_MULTI_GROUP=ON
 cmake --build build-experimental-multigroup --config Debug
 ```
 

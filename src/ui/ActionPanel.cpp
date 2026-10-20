@@ -1,9 +1,9 @@
 #include "ActionPanel.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
 
-ActionPanel::ActionPanel (DysektProcessor& p, WaveformView& wv)
+ActionPanel::ActionPanel (AvixProcessor& p, WaveformView& wv)
     : processor (p), waveformView (wv)
 {
     for (auto* btn : { &lazyChopBtn, &shortcutsBtn })
@@ -25,8 +25,8 @@ ActionPanel::ActionPanel (DysektProcessor& p, WaveformView& wv)
         if (processor.trimModeActive.load (std::memory_order_relaxed)) return;
         bool midiActive = lazyChopBtn.getToggleState();
 
-        DysektProcessor::Command cmd;
-        cmd.type = midiActive ? DysektProcessor::CmdLazyChopStart : DysektProcessor::CmdLazyChopStop;
+        AvixProcessor::Command cmd;
+        cmd.type = midiActive ? AvixProcessor::CmdLazyChopStart : AvixProcessor::CmdLazyChopStop;
         processor.pushCommand(cmd);
 
         if (midiActive)

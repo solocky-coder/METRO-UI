@@ -1,7 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../sequencer/SequencerEngine.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "UIHelpers.h"
 #include "VelocityLane.h"
 #include "ToolIcons.h"
@@ -613,7 +613,7 @@ private:
     //── Toolbar buttons ─────────────────────────────────────────────────────────
     //  Tool buttons render a procedural vector glyph instead of a letter — see
     //  drawToolIcon()/ToolIconButton below (same "no external assets" approach
-    //  LogoBar.cpp uses for its waveform icon).
+    //  used for the other procedural vector glyphs in the UI).
     struct ToolIconButton : public juce::TextButton
     {
         Tool tool = Tool::Select;
@@ -1487,7 +1487,7 @@ private:
         g.fillRect (toolbarBounds.withTrimmedTop (toolbarBounds.getHeight() - 1));
 
         // Editor identity stays visible even when this is detached from Arrange.
-        g.setFont (DysektLookAndFeel::makeMonoFont (10.f));
+        g.setFont (AvixLookAndFeel::makeMonoFont (10.f));
         g.setColour (juce::Colour (0xFF75D7D1));
         g.drawText ("PIANO ROLL", toolbarBounds.getX() + 9, toolbarBounds.getY(),
                     84, toolbarBounds.getHeight(), juce::Justification::centredLeft, false);
@@ -1532,7 +1532,7 @@ private:
             g.drawVerticalLine ((int)x, (float)rulerBounds.getY(), (float)rulerBounds.getBottom());
         }
 
-        g.setFont (DysektLookAndFeel::makeMonoFont (10.f));
+        g.setFont (AvixLookAndFeel::makeMonoFont (10.f));
         for (int64_t bar = firstBar; bar <= lastBar; ++bar)
         {
             const float x = tickToX (bar * (int64_t) ticksPerBar);
@@ -1584,7 +1584,7 @@ private:
             g.fillRect ((float) keysBounds.getX(), y, (float) keysBounds.getWidth(), 1.0f);
             if (noteRowH >= 8)
             {
-                g.setFont (DysektLookAndFeel::makeMonoFont (8.f));
+                g.setFont (AvixLookAndFeel::makeMonoFont (8.f));
                 g.setColour (juce::Colour (0xFF404040));
                 // Was "C" + note/12-1 (C4==MIDI60) — every other note-name
                 // display in the app uses the C3==MIDI60 convention (see
@@ -1737,7 +1737,7 @@ private:
             // Note label (when rows are tall enough)
             if (noteRowH >= 11 && w > 18)
             {
-                g.setFont (DysektLookAndFeel::makeMonoFont (juce::jmin (9.f, (float)noteRowH - 2.f)));
+                g.setFont (AvixLookAndFeel::makeMonoFont (juce::jmin (9.f, (float)noteRowH - 2.f)));
                 g.setColour (sel ? juce::Colour (0xFF000000) : juce::Colours::white.withAlpha(0.7f));
                 g.drawText (juce::MidiMessage::getMidiNoteName(n.note, true, false, 4),
                             (int)(x + 2.f), (int)y, (int)(w - 6.f), noteRowH,

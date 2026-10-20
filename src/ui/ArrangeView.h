@@ -3,13 +3,13 @@
 #include "FloatingTransportBar.h"
 #include "TrackHeaderStrip.h"
 #include "TrackInspector.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../metro/MetroColours.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
 #include "ToolIcons.h"
 #include "ZoomableScrollBar.h"
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  #include "../standalone/NetworkAudioProcessor.h"
 #endif
 #include <limits>
@@ -95,8 +95,8 @@ public:
     /** Owner wires this to open the piano roll for the given track + clip. */
     std::function<void(int trackIndex, int clipIndex)> onClipDoubleClicked;
 
-#if DYSEKT_STANDALONE
-    /** Owner (DysektEditor, standalone build only) wires this to the single
+#if AVIX_STANDALONE
+    /** Owner (AvixEditor, standalone build only) wires this to the single
      *  NetworkAudioProcessor instance MainWindow already owns, so completed
      *  network recordings can be committed to the timeline. Never construct
      *  a second NetworkAudioProcessor to satisfy this — pass nullptr if none
@@ -254,10 +254,10 @@ public:
                 b.setClickingTogglesState (true);
                 // Same palette as the MIXER / ARRANGER / GLOBAL EQ and FLOAT / LINK
                 // buttons (FloatingTransportBar::configureChrome).
-                b.setColour (juce::TextButton::buttonColourId,   dysekt::metro::Base::Elevated);
+                b.setColour (juce::TextButton::buttonColourId,   avix::metro::Base::Elevated);
                 b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-                b.setColour (juce::TextButton::textColourOffId,  dysekt::metro::Base::White);
-                b.setColour (juce::TextButton::textColourOnId,   dysekt::metro::Base::White);
+                b.setColour (juce::TextButton::textColourOffId,  avix::metro::Base::White);
+                b.setColour (juce::TextButton::textColourOnId,   avix::metro::Base::White);
                 b.getProperties().set ("flatFill", true);
                 b.onClick = [this, itemId] { transport.setSnapItemId (itemId); };
                 addAndMakeVisible (b);
@@ -289,10 +289,10 @@ public:
                 auto& b = arrangerButtons[i];
                 b.setButtonText (labels[i]);
                 b.setTooltip (tips[i]);
-                b.setColour (juce::TextButton::buttonColourId, dysekt::metro::Base::Elevated);
+                b.setColour (juce::TextButton::buttonColourId, avix::metro::Base::Elevated);
                 b.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-                b.setColour (juce::TextButton::textColourOffId, dysekt::metro::Base::White);
-                b.setColour (juce::TextButton::textColourOnId, dysekt::metro::Base::White);
+                b.setColour (juce::TextButton::textColourOffId, avix::metro::Base::White);
+                b.setColour (juce::TextButton::textColourOnId, avix::metro::Base::White);
                 b.getProperties().set ("flatFill", true);
                 addAndMakeVisible (b);
             }
@@ -340,10 +340,10 @@ public:
         // ── Mini arranger expand/collapse toggle ─────────────────────────────
         miniArrangerToggleButton.setButtonText (miniToggleLabel (true));
         miniArrangerToggleButton.setTooltip ("Collapse mini arranger overview");
-        miniArrangerToggleButton.setColour (juce::TextButton::buttonColourId, dysekt::metro::Base::Elevated);
+        miniArrangerToggleButton.setColour (juce::TextButton::buttonColourId, avix::metro::Base::Elevated);
         miniArrangerToggleButton.setColour (juce::TextButton::buttonOnColourId, getTheme().accent);
-        miniArrangerToggleButton.setColour (juce::TextButton::textColourOffId, dysekt::metro::Base::White);
-        miniArrangerToggleButton.setColour (juce::TextButton::textColourOnId, dysekt::metro::Base::White);
+        miniArrangerToggleButton.setColour (juce::TextButton::textColourOffId, avix::metro::Base::White);
+        miniArrangerToggleButton.setColour (juce::TextButton::textColourOnId, avix::metro::Base::White);
         miniArrangerToggleButton.getProperties().set ("flatFill", true);
         miniArrangerToggleButton.onClick = [this]
         {
@@ -1257,7 +1257,7 @@ private:
     //  State
     //==========================================================================
     SequencerEngine&      engine;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
     NetworkAudioProcessor* networkAudioProcessor = nullptr;
 #endif
     FloatingTransportBar  transport;
@@ -1424,7 +1424,7 @@ private:
         // silently dropped.
         engine.drainRecordedEvents();
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         // Completed network recordings become timeline AudioClips only on
         // the message thread. This keeps vector/COW/file metadata work out
         // of the real-time audio callback. Cheap no-op when nothing has
@@ -2587,7 +2587,7 @@ private:
         const int framePad = dockedToolbarTall() ? 3 : 2;
         auto frame = [&g, framePad] (juce::Rectangle<int> r)
         {
-            g.setColour (dysekt::metro::Base::Border);
+            g.setColour (avix::metro::Base::Border);
             g.drawRoundedRectangle (r.expanded (framePad).toFloat().reduced (0.5f), 4.0f, 1.0f);
         };
         auto quantizeGroup = quantizeButtons[0].getBounds().getUnion (quantizeButtons[kNumQuantizeOptions - 1].getBounds());
@@ -2605,7 +2605,7 @@ private:
         // colour - the same face and colour as the track name ("MAIN") in the
         // inspector (TrackInspector draws it with makeFont (.., true)).
         g.setColour (theme.foreground);
-        g.setFont (DysektLookAndFeel::makeFont (13.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (13.0f, true));
         g.drawText ("QUANTIZE", dockedRowBounds (0).withWidth (kDockedLabelW),
                     juce::Justification::centredLeft, false);
         g.drawText ("EDIT", dockedRowBounds (1).withWidth (kDockedLabelW),
@@ -2899,7 +2899,7 @@ private:
         g.saveState();
         g.reduceClipRegion (clipGridBounds);
 
-        // DYSEKT-METRO pass: no translucent wash across the track rows — a
+        // AVIX-METRO pass: no translucent wash across the track rows — a
         // solid fill there would just hide every clip underneath it, and a
         // wash is the one thing this pass is meant to remove. The loop
         // range instead reads as full-opacity boundary lines at the loop's
@@ -2926,7 +2926,7 @@ private:
         g.saveState();
         g.reduceClipRegion (clipGridBounds);
 
-        // DYSEKT-METRO pass: solid outline only — a solid fill would hide
+        // AVIX-METRO pass: solid outline only — a solid fill would hide
         // the clips being selected, so the rectangle reads via a
         // full-opacity border instead of a wash-plus-border combo.
         const auto& theme = getTheme();
@@ -2951,7 +2951,7 @@ private:
         g.saveState();
         g.reduceClipRegion (clipGridBounds);
 
-        // DYSEKT-METRO pass: solid accent-colour block rather than a
+        // AVIX-METRO pass: solid accent-colour block rather than a
         // translucent fill + border — since it's landing in previously
         // empty space there's nothing underneath to preserve, and using
         // the accent colour (instead of the target track's own colour)
@@ -2978,7 +2978,7 @@ private:
         g.saveState();
         g.reduceClipRegion (clipGridBounds);
 
-        // DYSEKT-METRO pass: rows no longer lean on a barely-visible
+        // AVIX-METRO pass: rows no longer lean on a barely-visible
         // brightness alternation — every row is one flat colour, and the
         // "seam" between tracks is a solid dark gap rather than a 1px
         // hairline, so the row boundaries read clearly even at a glance.
@@ -3076,7 +3076,7 @@ private:
         const auto clipR = clipRectForClip (i, ci);
         if (! clipGridBounds.intersects (clipR)) return;
 
-        // DYSEKT-METRO pass: clips are solid flat tiles now — full-opacity
+        // AVIX-METRO pass: clips are solid flat tiles now — full-opacity
         // track colour, square corners (fillRect, not a 0-radius rounded
         // rect), no border and no left accent bar. Muted gets its own
         // desaturated tile colour rather than a lowered-alpha version of

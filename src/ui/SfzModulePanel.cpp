@@ -2,7 +2,7 @@
 //  SfzModulePanel.cpp
 // =============================================================================
 #include "SfzModulePanel.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
 #include <set>
@@ -19,7 +19,7 @@ static constexpr int kLoadBtnH = 26;
 
 // ── Constructor / destructor ──────────────────────────────────────────────────
 
-SfzModulePanel::SfzModulePanel (DysektProcessor& p)
+SfzModulePanel::SfzModulePanel (AvixProcessor& p)
     : processor (p),
       keysPanel (p)
 {
@@ -153,11 +153,11 @@ void SfzModulePanel::paint (juce::Graphics& g)
     // ── Header label ─────────────────────────────────────────────────────────
     {
         auto lbl = nameZone.reduced (4, 0);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f));
+        g.setFont (AvixLookAndFeel::makeFont (10.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText ("SFZ / SF2", lbl, juce::Justification::topLeft, false);
 
-        g.setFont (DysektLookAndFeel::makeFont (12.0f));
+        g.setFont (AvixLookAndFeel::makeFont (12.0f));
         const bool isLoaded = processor.sfzPlayer.isLoaded();
         if (isLoaded)
         {
@@ -184,7 +184,7 @@ void SfzModulePanel::paint (juce::Graphics& g)
         g.setColour (theme.accent.withAlpha (hover ? 0.85f : 0.55f));
         g.drawRoundedRectangle (btn.reduced (0.5f), 0.0f, 1.0f);
 
-        g.setFont (DysektLookAndFeel::makeFont (11.0f));
+        g.setFont (AvixLookAndFeel::makeFont (11.0f));
         g.setColour (theme.accent);
         g.drawText ("LOAD", loadBtnZone, juce::Justification::centred, false);
     }
@@ -200,7 +200,7 @@ void SfzModulePanel::paint (juce::Graphics& g)
         g.setColour (theme.accent.withAlpha (hover ? 0.70f : 0.38f));
         g.drawRoundedRectangle (btn.reduced (0.5f), 0.0f, 1.0f);
 
-        g.setFont (DysektLookAndFeel::makeFont (9.5f));
+        g.setFont (AvixLookAndFeel::makeFont (9.5f));
         g.setColour (theme.accent.withAlpha (hover ? 0.95f : 0.65f));
         g.drawText ("SAVE AS", saveAsBtnZone, juce::Justification::centred, false);
     }
@@ -232,7 +232,7 @@ void SfzModulePanel::paint (juce::Graphics& g)
         g.fillRoundedRectangle (pill, 0.0f);
         g.setColour (loaded ? theme.accent : theme.foreground.withAlpha (0.30f));
         g.drawRoundedRectangle (pill.reduced (0.5f), 0.0f, 1.0f);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f));
+        g.setFont (AvixLookAndFeel::makeFont (10.0f));
         g.drawText (loaded ? "READY" : "EMPTY", pill.toNearestInt(), juce::Justification::centred, false);
     }
 
@@ -310,10 +310,10 @@ void SfzModulePanel::paint (juce::Graphics& g)
             }
         };
 
-        drawAdsrKnob (atkZone, atkNorm, "ATK", fmtTime (processor.sfzPlayer.getSfzAttack()),  DysektProcessor::FieldSfzAttack);
-        drawAdsrKnob (decZone, decNorm, "DEC", fmtTime (processor.sfzPlayer.getSfzDecay()),   DysektProcessor::FieldSfzDecay);
-        drawAdsrKnob (susZone, susNorm, "SUS", juce::String (juce::roundToInt (processor.sfzPlayer.getSfzSustain())) + "%", DysektProcessor::FieldSfzSustain);
-        drawAdsrKnob (relZone, relNorm, "REL", fmtTime (processor.sfzPlayer.getSfzRelease()), DysektProcessor::FieldSfzRelease);
+        drawAdsrKnob (atkZone, atkNorm, "ATK", fmtTime (processor.sfzPlayer.getSfzAttack()),  AvixProcessor::FieldSfzAttack);
+        drawAdsrKnob (decZone, decNorm, "DEC", fmtTime (processor.sfzPlayer.getSfzDecay()),   AvixProcessor::FieldSfzDecay);
+        drawAdsrKnob (susZone, susNorm, "SUS", juce::String (juce::roundToInt (processor.sfzPlayer.getSfzSustain())) + "%", AvixProcessor::FieldSfzSustain);
+        drawAdsrKnob (relZone, relNorm, "REL", fmtTime (processor.sfzPlayer.getSfzRelease()), AvixProcessor::FieldSfzRelease);
     }
 
     // ── Reverb row ────────────────────────────────────────────────────────────
@@ -351,12 +351,12 @@ void SfzModulePanel::paint (juce::Graphics& g)
         const float rvMix   = processor.sfzPlayer.getReverbMix();
         const bool  rvFrz   = processor.sfzPlayer.getReverbFreeze();
 
-        drawRevKnob (rvSizeZone,   rvSize  / 100.0f, "SIZE",  juce::String (juce::roundToInt (rvSize))  + "%", DysektProcessor::FieldSfzReverbSize);
-        drawRevKnob (rvDampZone,   rvDamp  / 100.0f, "DAMP",  juce::String (juce::roundToInt (rvDamp))  + "%", DysektProcessor::FieldSfzReverbDamp);
-        drawRevKnob (rvWidthZone,  rvWidth / 100.0f, "WIDTH", juce::String (juce::roundToInt (rvWidth)) + "%", DysektProcessor::FieldSfzReverbWidth);
-        drawRevKnob (rvMixZone,    rvMix   / 100.0f, "MIX",   juce::String (juce::roundToInt (rvMix))   + "%", DysektProcessor::FieldSfzReverbMix);
+        drawRevKnob (rvSizeZone,   rvSize  / 100.0f, "SIZE",  juce::String (juce::roundToInt (rvSize))  + "%", AvixProcessor::FieldSfzReverbSize);
+        drawRevKnob (rvDampZone,   rvDamp  / 100.0f, "DAMP",  juce::String (juce::roundToInt (rvDamp))  + "%", AvixProcessor::FieldSfzReverbDamp);
+        drawRevKnob (rvWidthZone,  rvWidth / 100.0f, "WIDTH", juce::String (juce::roundToInt (rvWidth)) + "%", AvixProcessor::FieldSfzReverbWidth);
+        drawRevKnob (rvMixZone,    rvMix   / 100.0f, "MIX",   juce::String (juce::roundToInt (rvMix))   + "%", AvixProcessor::FieldSfzReverbMix);
         // Freeze — draws as a binary toggle (0 or 1 normalised)
-        drawRevKnob (rvFreezeZone, rvFrz ? 1.0f : 0.0f, "FRZ", rvFrz ? "ON" : "OFF", DysektProcessor::FieldSfzReverbFreeze);
+        drawRevKnob (rvFreezeZone, rvFrz ? 1.0f : 0.0f, "FRZ", rvFrz ? "ON" : "OFF", AvixProcessor::FieldSfzReverbFreeze);
     }
 
     // ── Drop-target hint when dragging over ───────────────────────────────────
@@ -404,12 +404,12 @@ void SfzModulePanel::drawKnob (juce::Graphics& g, juce::Rectangle<int> bounds,
     g.fillEllipse (tx - 3, ty - 3, 6, 6);
 
     // Labels
-    g.setFont (DysektLookAndFeel::makeFont (10.0f));
+    g.setFont (AvixLookAndFeel::makeFont (10.0f));
     g.setColour (theme.foreground.withAlpha (0.45f));
     g.drawText (label, bounds.withTrimmedTop (cy - bounds.getY() + (int) r + 2),
                 juce::Justification::centredTop, false);
 
-    g.setFont (DysektLookAndFeel::makeFont (10.0f));
+    g.setFont (AvixLookAndFeel::makeFont (10.0f));
     g.setColour (theme.foreground.withAlpha (0.80f));
     g.drawText (valueStr,
                 bounds.withTrimmedTop (cy - bounds.getY() + (int) r + 14),
@@ -448,7 +448,7 @@ void SfzModulePanel::drawMeter (juce::Graphics& g) const
         g.fillRect (bar.getX(), holdY - 1, bar.getWidth(), 2);
 
         // Label
-        g.setFont (DysektLookAndFeel::makeFont (9.0f));
+        g.setFont (AvixLookAndFeel::makeFont (9.0f));
         g.setColour (theme.foreground.withAlpha (0.35f));
     };
 
@@ -501,7 +501,7 @@ void SfzModulePanel::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos)
     menu.addItem (1000, "Open MIDI Learn Dialog...");
 
     auto* topLvl = getTopLevelComponent();
-    float ms = DysektLookAndFeel::getMenuScale();
+    float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
@@ -513,7 +513,7 @@ void SfzModulePanel::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos)
             else if (result == 2)  { processor.midiLearn.clearMapping (fieldId); repaint(); }
             else if (result == 1000)
             {
-                if (auto* editor = findParentComponentOfClass<DysektEditor>())
+                if (auto* editor = findParentComponentOfClass<AvixEditor>())
                     editor->keyPressed (juce::KeyPress ('M', juce::ModifierKeys(), 0));
             }
         });
@@ -542,15 +542,15 @@ void SfzModulePanel::mouseDown (const juce::MouseEvent& e)
     // Right-click on ADSR knobs → MIDI Learn menu
     if (e.mods.isRightButtonDown())
     {
-        if (atkZone.contains (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzAttack,  e.getScreenPosition()); return; }
-        if (decZone.contains (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzDecay,   e.getScreenPosition()); return; }
-        if (susZone.contains (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzSustain, e.getScreenPosition()); return; }
-        if (relZone.contains (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzRelease, e.getScreenPosition()); return; }
-        if (rvSizeZone.contains   (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzReverbSize,   e.getScreenPosition()); return; }
-        if (rvDampZone.contains   (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzReverbDamp,   e.getScreenPosition()); return; }
-        if (rvWidthZone.contains  (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzReverbWidth,  e.getScreenPosition()); return; }
-        if (rvMixZone.contains    (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzReverbMix,    e.getScreenPosition()); return; }
-        if (rvFreezeZone.contains (pos)) { showMidiLearnMenu (DysektProcessor::FieldSfzReverbFreeze, e.getScreenPosition()); return; }
+        if (atkZone.contains (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzAttack,  e.getScreenPosition()); return; }
+        if (decZone.contains (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzDecay,   e.getScreenPosition()); return; }
+        if (susZone.contains (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzSustain, e.getScreenPosition()); return; }
+        if (relZone.contains (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzRelease, e.getScreenPosition()); return; }
+        if (rvSizeZone.contains   (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzReverbSize,   e.getScreenPosition()); return; }
+        if (rvDampZone.contains   (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzReverbDamp,   e.getScreenPosition()); return; }
+        if (rvWidthZone.contains  (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzReverbWidth,  e.getScreenPosition()); return; }
+        if (rvMixZone.contains    (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzReverbMix,    e.getScreenPosition()); return; }
+        if (rvFreezeZone.contains (pos)) { showMidiLearnMenu (AvixProcessor::FieldSfzReverbFreeze, e.getScreenPosition()); return; }
     }
 
     // Knob drag start

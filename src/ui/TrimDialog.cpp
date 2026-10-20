@@ -1,11 +1,11 @@
 ﻿#include "TrimDialog.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "UIHelpers.h"
 #include "WaveformView.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
 
-TrimDialog::TrimDialog (DysektProcessor& proc, WaveformView& wv)
+TrimDialog::TrimDialog (AvixProcessor& proc, WaveformView& wv)
     : processor (proc), waveformView (wv)
 {
     UIHelpers::stylePrimaryPopupButton (applyBtn, getTheme());
@@ -93,7 +93,7 @@ void TrimDialog::drawTrimKnob (juce::Graphics& g,
 
     // Label — top half, small caps style
     const int midY = cell.getY() + cell.getHeight() / 2;
-    g.setFont (DysektLookAndFeel::makeFont (8.0f * sf));
+    g.setFont (AvixLookAndFeel::makeFont (8.0f * sf));
     g.setColour (T.accent.withAlpha (0.65f));
     g.drawText (label,
                 cell.getX(), cell.getY() + 2,
@@ -102,7 +102,7 @@ void TrimDialog::drawTrimKnob (juce::Graphics& g,
 
     // Value — bottom half, full brightness. Bold, matching the readout-text
     // weight AddZoneTrimOverlay uses for its IN/OUT/LENGTH figures.
-    g.setFont (DysektLookAndFeel::makeFont (10.0f * sf, true));
+    g.setFont (AvixLookAndFeel::makeFont (10.0f * sf, true));
     g.setColour (T.foreground);
     const int barH = juce::roundToInt (4.0f * sf);   // reserve space for progress bar
     g.drawText (juce::String (sampleVal),
@@ -141,7 +141,7 @@ void TrimDialog::paint (juce::Graphics& g)
         // Title text — single line: "TRIM SAMPLE" centred. Bold, matching the
         // weight of AddZoneTrimOverlay's "TRIM — <filename>" title.
         const float sf = (float) getHeight() / 34.0f;
-        g.setFont (DysektLookAndFeel::makeFont (11.0f * sf, true));
+        g.setFont (AvixLookAndFeel::makeFont (11.0f * sf, true));
         g.setColour (T.accent);
         g.drawText ("TRIM SAMPLE", r.getX(), (int) r.getY(),
                     (int) r.getWidth(), (int) r.getHeight(),
@@ -188,7 +188,7 @@ void TrimDialog::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos)
     menu.addSeparator();
     menu.addItem (1000, "Open MIDI Learn Dialog...");
     auto* topLvl = getTopLevelComponent();
-    float ms = DysektLookAndFeel::getMenuScale();
+    float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
@@ -199,7 +199,7 @@ void TrimDialog::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos)
             else if (result == 2) { processor.midiLearn.clearMapping (fieldId); repaint(); }
             else if (result == 1000)
             {
-                if (auto* editor = findParentComponentOfClass<DysektEditor>())
+                if (auto* editor = findParentComponentOfClass<AvixEditor>())
                     editor->keyPressed (juce::KeyPress ('M', juce::ModifierKeys::commandModifier, 0));
             }
         }
@@ -207,7 +207,7 @@ void TrimDialog::showMidiLearnMenu (int fieldId, juce::Point<int> screenPos)
 }
 void TrimDialog::mouseDown (const juce::MouseEvent& e)
 {
-    using F = DysektProcessor;
+    using F = AvixProcessor;
     if (inCell.contains (e.getPosition()))
     {
         if (e.mods.isRightButtonDown()) { showMidiLearnMenu (F::FieldSliceStart, e.getScreenPosition()); return; }

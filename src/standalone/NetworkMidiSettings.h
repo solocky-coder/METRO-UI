@@ -26,7 +26,7 @@ namespace NetworkMidiSettings
     inline juce::File file()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("DYSEKT-SF")
+                   .getChildFile ("AVIX")
                    .getChildFile ("usb-midi.json");
     }
 

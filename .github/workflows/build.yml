@@ -1,4 +1,4 @@
-name: Build DYSEKT
+name: Build AVIX
 
 on:
   push:
@@ -161,7 +161,7 @@ jobs:
         run: |
           cmake -B build -G "Visual Studio 17 2022" -A x64 `
             -DCMAKE_BUILD_TYPE=${{ matrix.build_config }} `
-            -DDYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=${{ matrix.multi_group_toggle }} `
+            -DAVIX_SF2_EXPERIMENTAL_MULTI_GROUP=${{ matrix.multi_group_toggle }} `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
             -DJUCE_BUILD_EXTRAS=OFF `
@@ -172,7 +172,7 @@ jobs:
       # needs FluidSynth itself, so it's cheap and runs before the full
       # plugin build -- if this alone reproduces the crash, the answer
       # doesn't require waiting on Standalone/VST3 to finish building.
-      # Runs once across the matrix (not tied to DYSEKT's own toggle --
+      # Runs once across the matrix (not tied to AVIX's own toggle --
       # this test always requests audio-groups=16 itself, independently).
       - name: Diagnostic - audio-groups=16 construct/destroy repro
         if: matrix.variant == 'experimental'
@@ -196,18 +196,18 @@ jobs:
       # hosted runner's memory limit when MSBuild and MSVC compile in parallel.
       - name: Build Standalone
         shell: pwsh
-        run: cmake --build build --config ${{ matrix.build_config }} --target DysektStandalone --parallel 1 -- /m:1 /bl:build\standalone.binlog /v:diag
+        run: cmake --build build --config ${{ matrix.build_config }} --target AvixStandalone --parallel 1 -- /m:1 /bl:build\standalone.binlog /v:diag
 
       - name: Build VST3
         shell: pwsh
-        run: cmake --build build --config ${{ matrix.build_config }} --target Dysekt_VST3 --parallel 1 -- /m:1 /bl:build\vst3.binlog /v:diag
+        run: cmake --build build --config ${{ matrix.build_config }} --target Avix_VST3 --parallel 1 -- /m:1 /bl:build\vst3.binlog /v:diag
 
       # Always retain MSBuild diagnostics, including when either build fails.
       - name: Upload build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: DYSEKT-build-diagnostics${{ matrix.artifact_suffix }}
+          name: AVIX-build-diagnostics${{ matrix.artifact_suffix }}
           path: build/*.binlog
           if-no-files-found: warn
 
@@ -217,10 +217,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts/Standalone | Out-Null
           New-Item -ItemType Directory -Force -Path artifacts/VST3 | Out-Null
 
-          # JUCE writes the standalone to DysektStandalone_artefacts/<config>/
-          # using PRODUCT_NAME (DYSEKT-SF), not the CMake target name.
-          $standaloneExes = @(Get-ChildItem -Recurse -File -Filter "DYSEKT-SF.exe" build/ |
-            Where-Object { $_.FullName -match "DysektStandalone_artefacts" })
+          # JUCE writes the standalone to AvixStandalone_artefacts/<config>/
+          # using PRODUCT_NAME (AVIX), not the CMake target name.
+          $standaloneExes = @(Get-ChildItem -Recurse -File -Filter "AVIX.exe" build/ |
+            Where-Object { $_.FullName -match "AvixStandalone_artefacts" })
           if ($standaloneExes.Count -ne 1) {
             Write-Error "Expected exactly one standalone executable; found $($standaloneExes.Count)."
             $standaloneExes | ForEach-Object { Write-Host "  $($_.FullName)" }
@@ -229,10 +229,10 @@ jobs:
           Copy-Item -Force $standaloneExes[0].FullName artifacts/Standalone/
 
           # VST3 bundle (JUCE outputs a .vst3 folder, not a file).
-          # NOTE: matched by extension, not a hardcoded product name — the
-          # actual product name is "DYSEKT-SF" (see PluginEditor.cpp /
-          # SfzPlayer.cpp), not "DYSEKT". A literal "DYSEKT.vst3" filter here
-          # previously matched nothing, so this step silently copied zero
+          # NOTE: matched by extension, not a hardcoded name — the bundle is
+          # named after PRODUCT_NAME ("AVIX"), not the CMake target name
+          # ("Avix"). A filter on the target name here previously matched
+          # nothing, so this step silently copied zero
           # files while the PDB loop above (which matches *.pdb generically)
           # still populated the folder — masking the miss entirely, since
           # "if-no-files-found: error" only trips on a fully empty folder.
@@ -257,13 +257,13 @@ jobs:
       - name: Upload Standalone
         uses: actions/upload-artifact@v4
         with:
-          name: DYSEKT-Standalone${{ matrix.artifact_suffix }}
+          name: AVIX-Standalone${{ matrix.artifact_suffix }}
           path: artifacts/Standalone/
           if-no-files-found: error
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
-          name: DYSEKT-VST3${{ matrix.artifact_suffix }}
+          name: AVIX-VST3${{ matrix.artifact_suffix }}
           path: artifacts/VST3/
           if-no-files-found: error

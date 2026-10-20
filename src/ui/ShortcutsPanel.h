@@ -3,7 +3,7 @@
 #include <functional>
 #include <vector>
 
-class DysektProcessor;
+class AvixProcessor;
 
 /// Modal overlay panel displaying keyboard shortcuts and global preferences.
 /// An "RTFM" button in the settings panel opens the embedded PDF in the
@@ -14,7 +14,7 @@ class DysektProcessor;
 class ShortcutsPanel : public juce::Component
 {
 public:
-    explicit ShortcutsPanel (DysektProcessor& proc);
+    explicit ShortcutsPanel (AvixProcessor& proc);
     ~ShortcutsPanel() override;
 
     void paint   (juce::Graphics& g) override;
@@ -39,7 +39,7 @@ public:
     int currentUiMode = 0;
 
 private:
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     // ── Manual button ─────────────────────────────────────────────────────────
     juce::TextButton rtfmBtn { "RTFM" };

@@ -42,7 +42,7 @@ private:
 
     void timerCallback() override
     {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
         if (audio == nullptr || ! audio->isRunning() || ! audio->isDirectMode())
         {
             handled.clear();

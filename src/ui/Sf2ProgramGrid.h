@@ -10,7 +10,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../audio/SfzPlayer.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 class Sf2ProgramGrid : public juce::Component,
                        public juce::ScrollBar::Listener
@@ -103,12 +103,12 @@ private:
     static constexpr int kBaseHdrH  = 18;
 
     // Scale factor: mirrors the live UI scale set on the editor via setTransform().
-    // DysektLookAndFeel::getMenuScale() is updated to userScale*hostScale every
+    // AvixLookAndFeel::getMenuScale() is updated to userScale*hostScale every
     // time the editor calls setTransform(), so it always reflects current scale.
     // Clamped to [0.5, 4] to guard against pathological values.
     float scaleFactor() const noexcept
     {
-        return juce::jlimit (0.5f, 4.0f, DysektLookAndFeel::getMenuScale());
+        return juce::jlimit (0.5f, 4.0f, AvixLookAndFeel::getMenuScale());
     }
 
     int cellH() const noexcept { return juce::roundToInt ((float) kBaseCellH * scaleFactor()); }

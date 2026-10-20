@@ -1,7 +1,7 @@
 #include "MixerPanel.h"
 #include "../PluginProcessor.h"
-static constexpr int kMaxMeterSlices = DysektProcessor::kMaxMeterSlices;
-#include "DysektLookAndFeel.h"
+static constexpr int kMaxMeterSlices = AvixProcessor::kMaxMeterSlices;
+#include "AvixLookAndFeel.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../network/NetworkTrackMeters.h"
 #include "IconManager.h"
@@ -18,7 +18,7 @@ namespace
     // slice index" everywhere the mixer lays out/hit-tests its slice rows.
     // See Slice::showInMixer's doc comment for how it gets set (auto-on
     // when routed off Main, or manually pinned from SliceLane/ZONES).
-    std::vector<int> collectVisibleSlices (const DysektProcessor::UiSliceSnapshot& snap)
+    std::vector<int> collectVisibleSlices (const AvixProcessor::UiSliceSnapshot& snap)
     {
         std::vector<int> out;
         out.reserve ((size_t) snap.numSlices);
@@ -63,7 +63,7 @@ namespace
     // rest of the zone (editing all siblings' GAIN/PAN, aggregating the
     // peak meter) re-derive the sibling list from that slice's
     // zoneLoKey/zoneHiKey; see drawSfz2ChannelRow.
-    std::vector<int> collectVisibleSfzZones (const DysektProcessor::UiSliceSnapshot& snap2)
+    std::vector<int> collectVisibleSfzZones (const AvixProcessor::UiSliceSnapshot& snap2)
     {
         std::vector<int> out;
         out.reserve ((size_t) snap2.numSlices);
@@ -96,7 +96,7 @@ namespace
 // ─────────────────────────────────────────────────────────────────────────────
 //  Ctor / Dtor
 // ─────────────────────────────────────────────────────────────────────────────
-MixerPanel::MixerPanel (DysektProcessor& p)
+MixerPanel::MixerPanel (AvixProcessor& p)
     : processor (p)
 {
     setWantsKeyboardFocus (false);
@@ -152,7 +152,7 @@ int MixerPanel::sfz2TotalH() const
     // This used to gate on processor.sfzPlayer2.isLoaded(), but that flag
     // is flipped inside SfzPlayer::applyPendingLoad(), which only runs at
     // the top of SfzPlayer::process() -- and sfzPlayer2.process() is never
-    // called anywhere in DysektProcessor::processBlock(). The SFZ-PLAYER
+    // called anywhere in AvixProcessor::processBlock(). The SFZ-PLAYER
     // tab's actual playback path is sliceManager2 + voicePool2 (see
     // PluginProcessor.h's note on sliceManager2/voicePool2 and
     // browserPanel.onLoadRequest's "sfzPlayer2 (never .process()'d)"
@@ -478,7 +478,7 @@ static constexpr int kKnobR = 14;  // knob radius (px) — bumped from 13 now th
 // a 3-pass glow arc (wide dim strokes layered under a solid stroke) for both
 // the gain-centred and hard-left-stop sweep cases. Now a plain guide ring +
 // single accent-coloured fill arc, no image, no gradient, no glow — matching
-// SliceControlBar::drawKnob / DysektLookAndFeel::drawRotarySlider's flat
+// SliceControlBar::drawKnob / AvixLookAndFeel::drawRotarySlider's flat
 // rotary language, still reading each theme's own colours.
 void MixerPanel::drawKnobInRow (juce::Graphics& g, int cx, int cy,
                                  float norm, bool locked, bool isMaster,
@@ -600,7 +600,7 @@ void MixerPanel::drawMuteBadge (juce::Graphics& g, int cx, int cy,
         g.fillRect (r);
         g.setColour (theme.foreground.withAlpha (0.15f));
         g.drawRect (r, 0.8f);
-        g.setFont (DysektLookAndFeel::makeFont (11.0f));
+        g.setFont (AvixLookAndFeel::makeFont (11.0f));
         g.setColour (theme.foreground.withAlpha (0.15f));
         g.drawText (juce::String (muteGroup), r.toNearestInt(), juce::Justification::centred);
         return;
@@ -617,7 +617,7 @@ void MixerPanel::drawMuteBadge (juce::Graphics& g, int cx, int cy,
                         : theme.foreground.withAlpha (0.25f));
     g.drawRect (r, 0.8f);
 
-    g.setFont (DysektLookAndFeel::makeFont (11.0f));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f));
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : theme.foreground.withAlpha (0.3f));
     g.drawText (juce::String (muteGroup), r.toNearestInt(), juce::Justification::centred);
@@ -634,7 +634,7 @@ void MixerPanel::drawHeader (juce::Graphics& g) const
     g.drawHorizontalLine (kHeaderH - 1, 0.f, (float) getWidth());
 
     // Track column
-    g.setFont (DysektLookAndFeel::makeFont (12.0f));
+    g.setFont (AvixLookAndFeel::makeFont (12.0f));
     g.setColour (theme.accent.withAlpha (0.5f));
     g.drawText ("TRACK", 10, 0, kNameColW - 10, kHeaderH, juce::Justification::centredLeft);
 
@@ -667,7 +667,7 @@ void MixerPanel::drawChroBadge (juce::Graphics& g, int cx, int cy, int channel, 
                         : (locked ? theme.lockActive.withAlpha (0.5f) : theme.foreground.withAlpha (0.25f)));
     g.drawRect (r, 0.8f);
 
-    g.setFont (DysektLookAndFeel::makeFont (11.0f));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f));
     g.setColour (active ? (locked ? theme.lockActive : theme.accent)
                         : (locked ? theme.lockActive.withAlpha (0.5f) : theme.foreground.withAlpha (0.3f)));
     g.drawText (active ? juce::String (channel) : "-", r.toNearestInt(), juce::Justification::centred);
@@ -825,7 +825,7 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
     g.fillRect (4, rgIns, kNameColW - 5, rgH);
 
     // Slice number / custom name
-    g.setFont (DysektLookAndFeel::makeFont (14.0f));
+    g.setFont (AvixLookAndFeel::makeFont (14.0f));
     g.setColour (dot.withAlpha (selected ? 0.95f : 0.65f));
     if (sl.name.isNotEmpty())
     {
@@ -843,7 +843,7 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         const double srate = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 44100.0;
         const int end = (idx >= 0 && idx < snap.numSlices) ? snap.sliceEndSamples[idx] : snap.sampleNumFrames;
         const double lenSec = (end - sl.startSample) / srate;
-        g.setFont (DysektLookAndFeel::makeFont (11.0f));
+        g.setFont (AvixLookAndFeel::makeFont (11.0f));
         g.setColour (theme.foreground.withAlpha (0.30f));
         g.drawText (juce::String (lenSec, 2) + "s",
                     40, ry, kNameColW - 42, kRowH, juce::Justification::centredLeft);
@@ -864,7 +864,7 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         // it a fixed distance after the knob.
         const int knobEdge = cx + kKnobR;
         const int divider   = x + kKnobColW;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (locked ? theme.foreground.withAlpha (0.90f)
                             : theme.foreground.withAlpha (0.40f));
         g.drawText (valStr, knobEdge, ry + 1, divider - knobEdge, kRowH - 2,
@@ -879,7 +879,7 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         drawKnobInRow (g, cx, kcy, toNormGain (sl.volume), gainLocked, false, /*isGain=*/true);
         const int knobEdge = cx + kKnobR;
         const int divider   = x + kKnobColW;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (gainLocked ? theme.foreground.withAlpha (0.90f)
                                 : theme.foreground.withAlpha (0.40f));
         g.drawText (fmtGain (sl.volume), knobEdge, ry + 1, divider - knobEdge, kRowH - 2,
@@ -901,7 +901,7 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         const auto    fillCol = panLocked ? theme.lockActive : theme.accent;
 
         // Value label — now drawn ABOVE the slider track, centred in column
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (panLocked ? theme.foreground.withAlpha (0.90f)
                                : theme.foreground.withAlpha (0.40f));
         g.drawText (fmtPan (pan), x, kcy - 20, kKnobColW, 16,
@@ -968,7 +968,7 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         const auto& T = getTheme();
         juce::Colour col = on ? T.accent : T.foreground.withAlpha (0.28f);
         if (legatoLocked) col = T.lockActive;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (col);
         g.drawText (on ? "ON" : "OFF", x, ry, kKnobColW, kRowH, juce::Justification::centred);
     }
@@ -978,7 +978,7 @@ void MixerPanel::drawSliceRow (juce::Graphics& g, int ry, int idx, bool selected
         const bool outLocked = (sl.lockMask & kLockOutputBus) != 0;
         const int x = colX (ColOut);
         const int cx = x + kKnobColW / 2 - 6;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (outLocked ? theme.foreground.withAlpha (0.85f)
                                : theme.foreground.withAlpha (0.32f));
         g.drawText (fmtOut (sl.outputBus), cx, ry, kKnobColW - 4, kRowH,
@@ -1017,7 +1017,7 @@ void MixerPanel::drawMasterRow (juce::Graphics& g, int ry) const
     g.fillRect (0, rgIns, 4, rgH);
 
     // Label
-    g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f, true));
     g.setColour (theme.accent.withAlpha (0.6f));
     g.drawText ("MASTER", 10, ry, kNameColW - 10, kMasterH, juce::Justification::centredLeft);
 
@@ -1033,7 +1033,7 @@ void MixerPanel::drawMasterRow (juce::Graphics& g, int ry) const
         drawKnobInRow (g, cx, kcy, norm, false, true, isGain);
         const int knobEdge = cx + kKnobR;
         const int divider   = x + kKnobColW;
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f));
         g.setColour (theme.accent.withAlpha (0.55f));
         g.drawText (valStr, knobEdge, ry + 1, divider - knobEdge, kMasterH - 2,
                     juce::Justification::centred);
@@ -1053,7 +1053,7 @@ void MixerPanel::drawMasterRow (juce::Graphics& g, int ry) const
         const int   centreX = sliderX + sliderW / 2;
         const auto  fillCol = theme.accent;
 
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f));
         g.setColour (theme.accent.withAlpha (0.55f));
         g.drawText (fmtPan (masterPan), x, kcy - 18, kKnobColW, 14,
                     juce::Justification::centred);
@@ -1085,7 +1085,7 @@ void MixerPanel::drawMasterRow (juce::Graphics& g, int ry) const
     }
 
         // Remaining columns — dimmed dashes
-    g.setFont (DysektLookAndFeel::makeFont (14.0f));
+    g.setFont (AvixLookAndFeel::makeFont (14.0f));
     g.setColour (theme.foreground.withAlpha (0.15f));
     for (int i = ColFcut; i < kNumCols; ++i)
         g.drawText ("-", colX ((Col)i), ry, kKnobColW, kMasterH, juce::Justification::centred);
@@ -1120,7 +1120,7 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
     // Label — this row is bound to processor.sfzPlayer, the .sf2-only engine
     // used by the SF2-PLAYER tab (it was previously mislabeled "SFZ-PLAYER",
     // which collided with the real .sfz engine's row — see drawSfz2Row).
-    g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f, true));
     g.setColour (theme.accent.withAlpha (0.75f));
     g.drawText ("SF2-PLAYER", 10, ry, kNameColW - 10, kSf2RowH, juce::Justification::centredLeft);
 
@@ -1136,7 +1136,7 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, true, /*isGain=*/true);
         const int knobEdge = cx + kKnobR;
         const int divider   = x + kKnobColW;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtGain (volDb), knobEdge, ry + 1, divider - knobEdge, kSf2RowH - 2,
                     juce::Justification::centred);
@@ -1154,7 +1154,7 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
         const int   centreX = sliderX + sliderW / 2;
         const auto  fillCol = theme.accent;
 
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtPan (pan), x, kcy - 20, kKnobColW, 16, juce::Justification::centred);
 
@@ -1177,7 +1177,7 @@ void MixerPanel::drawSf2Row (juce::Graphics& g, int ry) const
     }
 
     // Dash-fill columns that don't apply to the SF-Player
-    g.setFont (DysektLookAndFeel::makeFont (11.0f));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f));
     g.setColour (theme.foreground.withAlpha (0.15f));
     for (int i = ColFcut; i < kNumCols; ++i)
         g.drawText ("-", colX ((Col)i), ry, kKnobColW, kSf2RowH, juce::Justification::centred);
@@ -1239,7 +1239,7 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
     const int kcy = ry + kSf2ChRowH / 2;
 
     // Name column: indent + "ch N  PresetName"
-    g.setFont (DysektLookAndFeel::makeFont (11.0f));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f));
     g.setColour (chCol.withAlpha (0.55f));
     g.drawText (juce::String ("ch") + juce::String (channel + 1),
                 6, ry, 28, kSf2ChRowH, juce::Justification::centredLeft);
@@ -1261,7 +1261,7 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
         const int knobEdge = cx + kKnobR;
         const int divider   = x + kKnobColW;
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtGain (volDb), knobEdge, ry + 1, divider - knobEdge, kSf2ChRowH - 2,
                     juce::Justification::centred);
@@ -1279,7 +1279,7 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
         const int   centreX = sliderX + sliderW / 2;
         const auto  fillCol = chCol;
 
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtPan (strip.pan), x, kcy - 16, kKnobColW, 14,
                     juce::Justification::centred);
@@ -1316,13 +1316,13 @@ void MixerPanel::drawSf2ChannelRow (juce::Graphics& g, int ry,
         g.fillRect (r);
         g.setColour (muted ? theme.accent : theme.foreground.withAlpha (0.30f));
         g.drawRect (r, 0.8f);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f));
+        g.setFont (AvixLookAndFeel::makeFont (10.0f));
         g.setColour (muted ? theme.accent : theme.foreground.withAlpha (0.30f));
         g.drawText ("M", r.toNearestInt(), juce::Justification::centred);
     }
 
     // Remaining columns — dashes
-    g.setFont (DysektLookAndFeel::makeFont (10.0f));
+    g.setFont (AvixLookAndFeel::makeFont (10.0f));
     g.setColour (theme.foreground.withAlpha (0.12f));
     for (int i = ColPres; i < kNumCols; ++i)
         g.drawText ("-", colX ((Col)i), ry, kKnobColW, kSf2ChRowH, juce::Justification::centred);
@@ -1373,7 +1373,7 @@ void MixerPanel::drawSfz2Row (juce::Graphics& g, int ry) const
     g.drawHorizontalLine (ry + kSf2RowH - 1, 0.f, (float) getWidth());
 
     // Label
-    g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f, true));
     g.setColour (theme.accent.withAlpha (0.75f));
     g.drawText ("MULTISAMPLER", 10, ry, kNameColW - 10, kSf2RowH, juce::Justification::centredLeft);
 
@@ -1389,7 +1389,7 @@ void MixerPanel::drawSfz2Row (juce::Graphics& g, int ry) const
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, true, /*isGain=*/true);
         const int knobEdge = cx + kKnobR;
         const int divider   = x + kKnobColW;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtGain (volDb), knobEdge, ry + 1, divider - knobEdge, kSf2RowH - 2,
                     juce::Justification::centred);
@@ -1407,7 +1407,7 @@ void MixerPanel::drawSfz2Row (juce::Graphics& g, int ry) const
         const int   centreX = sliderX + sliderW / 2;
         const auto  fillCol = theme.accent;
 
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtPan (pan), x, kcy - 20, kKnobColW, 16, juce::Justification::centred);
 
@@ -1430,7 +1430,7 @@ void MixerPanel::drawSfz2Row (juce::Graphics& g, int ry) const
     }
 
     // Dash-fill columns that don't apply to the SFZ-Player
-    g.setFont (DysektLookAndFeel::makeFont (11.0f));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f));
     g.setColour (theme.foreground.withAlpha (0.15f));
     for (int i = ColFcut; i < kNumCols; ++i)
         g.drawText ("-", colX ((Col)i), ry, kKnobColW, kSf2RowH, juce::Justification::centred);
@@ -1494,7 +1494,7 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
     // the representative slice it happens to be drawn from. Slices with no
     // real zone identity (zoneLoKey == -1) fall back to the sample name,
     // same as before.
-    g.setFont (DysektLookAndFeel::makeFont (11.0f));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f));
     g.setColour (theme.foreground.withAlpha (0.55f));
     const juce::String nameStr = sl.zoneLoKey >= 0
         ? SfzZoneLabel::range (sl.zoneLoKey, sl.zoneHiKey)
@@ -1512,7 +1512,7 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
         const int knobEdge = cx + kKnobR;
         const int divider   = x + kKnobColW;
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtGain (volDb), knobEdge, ry + 1, divider - knobEdge, kSf2ChRowH - 2,
                     juce::Justification::centred);
@@ -1530,7 +1530,7 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
         const int   centreX = sliderX + sliderW / 2;
         const auto  fillCol = theme.accent;
 
-        g.setFont (DysektLookAndFeel::makeFont (14.0f));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtPan (pan), x, kcy - 16, kKnobColW, 14,
                     juce::Justification::centred);
@@ -1559,7 +1559,7 @@ void MixerPanel::drawSfz2ChannelRow (juce::Graphics& g, int ry, int zoneIdx) con
 
     // Remaining columns — dashes (only GAIN/PAN are editable for a zone row,
     // matching the aggregate SFZ-Player row's own restriction).
-    g.setFont (DysektLookAndFeel::makeFont (10.0f));
+    g.setFont (AvixLookAndFeel::makeFont (10.0f));
     g.setColour (theme.foreground.withAlpha (0.12f));
     for (int i = ColFcut; i < kNumCols; ++i)
         g.drawText ("-", colX ((Col)i), ry, kKnobColW, kSf2ChRowH, juce::Justification::centred);
@@ -1672,10 +1672,10 @@ void MixerPanel::drawNetworkRow (juce::Graphics& g, int ry, int trackIndex, int 
     g.drawHorizontalLine (ry + kNetRowH - 1, 0.f, (float) getWidth());
 
     // Name column: "NETWORK" caption over the network source / track name
-    g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (9.0f, true));
     g.setColour (theme.accent.withAlpha (0.75f));
     g.drawText ("NETWORK", 10, ry + 8, kNameColW - 12, 12, juce::Justification::centredLeft);
-    g.setFont (DysektLookAndFeel::makeFont (11.0f));
+    g.setFont (AvixLookAndFeel::makeFont (11.0f));
     g.setColour (theme.foreground.withAlpha (muted ? 0.35f : 0.75f));
     g.drawText (info.name.isNotEmpty() ? info.name : juce::String ("Audio ") + juce::String (trackIndex + 1),
                 10, ry + 22, kNameColW - 12, 16, juce::Justification::centredLeft, true);
@@ -1691,7 +1691,7 @@ void MixerPanel::drawNetworkRow (juce::Graphics& g, int ry, int trackIndex, int 
         drawKnobInRow (g, cx, kcy, toNormGain (volDb), false, false, /*isGain=*/true);
         const int knobEdge = cx + kKnobR;
         const int divider  = x + kKnobColW;
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtGain (volDb), knobEdge, ry + 1, divider - knobEdge, kNetRowH - 2,
                     juce::Justification::centred);
@@ -1709,7 +1709,7 @@ void MixerPanel::drawNetworkRow (juce::Graphics& g, int ry, int trackIndex, int 
         const int   centreX = sliderX + sliderW / 2;
         const auto  fillCol = theme.accent;
 
-        g.setFont (DysektLookAndFeel::makeFont (16.0f));
+        g.setFont (AvixLookAndFeel::makeFont (16.0f));
         g.setColour (theme.foreground.withAlpha (0.40f));
         g.drawText (fmtPan (pan), x, kcy - 20, kKnobColW, 16, juce::Justification::centred);
 
@@ -1738,12 +1738,12 @@ void MixerPanel::drawNetworkRow (juce::Graphics& g, int ry, int trackIndex, int 
         g.fillRect (r);
         g.setColour (muted ? theme.accent : theme.foreground.withAlpha (0.30f));
         g.drawRect (r, 0.8f);
-        g.setFont (DysektLookAndFeel::makeFont (10.0f));
+        g.setFont (AvixLookAndFeel::makeFont (10.0f));
         g.drawText ("M", r.toNearestInt(), juce::Justification::centred);
     }
 
     // Remaining columns do not apply to a network audio track
-    g.setFont (DysektLookAndFeel::makeFont (10.0f));
+    g.setFont (AvixLookAndFeel::makeFont (10.0f));
     g.setColour (theme.foreground.withAlpha (0.12f));
     for (int i = ColPres; i < kNumCols; ++i)
         g.drawText (juce::String::fromUTF8 ("\xe2\x80\x94"), colX ((Col) i), ry, kKnobColW, kNetRowH,
@@ -1828,7 +1828,7 @@ void MixerPanel::paint (juce::Graphics& g)
         const int mx = colX (ColOut) + kKnobColW;
         g.setColour (theme.accent.withAlpha (0.12f));
         g.drawVerticalLine (mx + 2, (float) kHeaderH, (float) getHeight());
-        g.setFont (DysektLookAndFeel::makeFont (12.0f));
+        g.setFont (AvixLookAndFeel::makeFont (12.0f));
         g.setColour (theme.foreground.withAlpha (0.22f));
         g.drawText ("METER", mx + 6, 0, kMeterColW - 8, kHeaderH, juce::Justification::centredLeft);
     }
@@ -1910,8 +1910,8 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
         }
         processor.releaseUiSliceSnapshot2();
 
-        DysektProcessor::Command sel;
-        sel.type          = DysektProcessor::CmdSelectSlice;
+        AvixProcessor::Command sel;
+        sel.type          = AvixProcessor::CmdSelectSlice;
         sel.intParam1     = c.sfz2ZoneIdx;
         sel.targetEngine2 = true;
         processor.pushCommand (sel);
@@ -1921,8 +1921,8 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
     if (c.row >= 0 && c.row < snap.numSlices)
     {
         // Always select the clicked row
-        DysektProcessor::Command sel;
-        sel.type = DysektProcessor::CmdSelectSlice;
+        AvixProcessor::Command sel;
+        sel.type = AvixProcessor::CmdSelectSlice;
         sel.intParam1 = c.row;
         processor.pushCommand (sel);
 
@@ -1950,9 +1950,9 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
             const auto& sl = snap.slices[(size_t) c.row];
             int next = (sl.muteGroup + 1);
             if (next > 32) next = 0;
-            DysektProcessor::Command cmd;
-            cmd.type = DysektProcessor::CmdSetSliceParam;
-            cmd.intParam1 = DysektProcessor::FieldMuteGroup;
+            AvixProcessor::Command cmd;
+            cmd.type = AvixProcessor::CmdSetSliceParam;
+            cmd.intParam1 = AvixProcessor::FieldMuteGroup;
             cmd.floatParam1 = (float) next;
             processor.pushCommand (cmd);
         }
@@ -1968,8 +1968,8 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
             if (e.mods.isRightButtonDown())
             {
                 // Right-click: toggle chromatic channel lock
-                DysektProcessor::Command cmd;
-                cmd.type      = DysektProcessor::CmdToggleLock;
+                AvixProcessor::Command cmd;
+                cmd.type      = AvixProcessor::CmdToggleLock;
                 cmd.intParam1 = (int) kLockChromaticChannel;
                 processor.pushCommand (cmd);
             }
@@ -1984,9 +1984,9 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
                 int next = sl.chromaticChannel;
                 do { next = (next + 1) % 17; }
                 while (next != 0 && sfMask != 0 && (sfMask & (1u << next)));
-                DysektProcessor::Command cmd;
-                cmd.type = DysektProcessor::CmdSetSliceParam;
-                cmd.intParam1 = DysektProcessor::FieldChromaticChannel;
+                AvixProcessor::Command cmd;
+                cmd.type = AvixProcessor::CmdSetSliceParam;
+                cmd.intParam1 = AvixProcessor::FieldChromaticChannel;
                 cmd.floatParam1 = (float) next;
                 processor.pushCommand (cmd);
             }
@@ -2002,16 +2002,16 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
             const auto& sl = snap.slices[(size_t) c.row];
             if (e.mods.isRightButtonDown())
             {
-                DysektProcessor::Command cmd;
-                cmd.type      = DysektProcessor::CmdToggleLock;
+                AvixProcessor::Command cmd;
+                cmd.type      = AvixProcessor::CmdToggleLock;
                 cmd.intParam1 = (int) kLockChromaticLegato;
                 processor.pushCommand (cmd);
             }
             else
             {
-                DysektProcessor::Command cmd;
-                cmd.type        = DysektProcessor::CmdSetSliceParam;
-                cmd.intParam1   = DysektProcessor::FieldChromaticLegato;
+                AvixProcessor::Command cmd;
+                cmd.type        = AvixProcessor::CmdSetSliceParam;
+                cmd.intParam1   = AvixProcessor::FieldChromaticLegato;
                 cmd.floatParam1 = sl.chromaticLegato ? 0.0f : 1.0f;
                 processor.pushCommand (cmd);
             }
@@ -2025,9 +2025,9 @@ void MixerPanel::mouseDown (const juce::MouseEvent& e)
         {
             const auto& sl = snap.slices[(size_t) c.row];
             int next = (sl.outputBus + 1) % 16;
-            DysektProcessor::Command cmd;
-            cmd.type = DysektProcessor::CmdSetSliceParam;
-            cmd.intParam1 = DysektProcessor::FieldOutputBus;
+            AvixProcessor::Command cmd;
+            cmd.type = AvixProcessor::CmdSetSliceParam;
+            cmd.intParam1 = AvixProcessor::FieldOutputBus;
             cmd.floatParam1 = (float) next;
             processor.pushCommand (cmd);
         }
@@ -2200,19 +2200,19 @@ void MixerPanel::mouseDrag (const juce::MouseEvent& e)
         // zoneWide=true propagates GAIN/PAN to every sibling slice in the
         // zone (see Command::zoneWide) — this merged row now represents
         // the whole zone, not just the representative slice it drags.
-        DysektProcessor::Command cmd2;
-        cmd2.type          = DysektProcessor::CmdSetSliceParam;
+        AvixProcessor::Command cmd2;
+        cmd2.type          = AvixProcessor::CmdSetSliceParam;
         cmd2.targetEngine2 = true;
         cmd2.zoneWide      = true;
         if (drag.col == ColGain)
         {
             newVal = juce::jlimit (-100.f, 24.f, drag.startVal + dy * 0.5f * fineMult);
-            cmd2.intParam1 = DysektProcessor::FieldVolume;
+            cmd2.intParam1 = AvixProcessor::FieldVolume;
         }
         else if (drag.col == ColPan)
         {
             newVal = juce::jlimit (-1.f, 1.f, drag.startVal + dx * 0.01f * fineMult);
-            cmd2.intParam1 = DysektProcessor::FieldPan;
+            cmd2.intParam1 = AvixProcessor::FieldPan;
         }
         else { repaint(); return; }
         cmd2.floatParam1 = newVal;
@@ -2220,18 +2220,18 @@ void MixerPanel::mouseDrag (const juce::MouseEvent& e)
         repaint(); return;
     }
 
-    DysektProcessor::Command cmd;
-    cmd.type = DysektProcessor::CmdSetSliceParam;
+    AvixProcessor::Command cmd;
+    cmd.type = AvixProcessor::CmdSetSliceParam;
 
     switch (drag.col)
     {
         case ColGain:
             newVal = juce::jlimit (-100.f, 24.f, drag.startVal + dy * 0.5f * fineMult);
-            cmd.intParam1 = DysektProcessor::FieldVolume;
+            cmd.intParam1 = AvixProcessor::FieldVolume;
             break;
         case ColPan:
             newVal = juce::jlimit (-1.f, 1.f, drag.startVal + dx * 0.01f * fineMult);
-            cmd.intParam1 = DysektProcessor::FieldPan;
+            cmd.intParam1 = AvixProcessor::FieldPan;
             break;
         case ColFcut:
         {
@@ -2239,12 +2239,12 @@ void MixerPanel::mouseDrag (const juce::MouseEvent& e)
             float normStart = toNormFcut (drag.startVal);
             float normNew   = juce::jlimit (0.f, 1.f, normStart + dy * 0.005f * fineMult);
             newVal = fromNormFcut (normNew);
-            cmd.intParam1 = DysektProcessor::FieldFilterCutoff;
+            cmd.intParam1 = AvixProcessor::FieldFilterCutoff;
             break;
         }
         case ColPres:
             newVal = juce::jlimit (0.f, 1.f, drag.startVal + dy * 0.005f * fineMult);
-            cmd.intParam1 = DysektProcessor::FieldFilterRes;
+            cmd.intParam1 = AvixProcessor::FieldFilterRes;
             break;
         default: return;
     }
@@ -2277,15 +2277,15 @@ void MixerPanel::mouseDoubleClick (const juce::MouseEvent& e)
             const juce::Rectangle<int> nameArea (3, ry + 2, kNameColW - 6, kRowH - 4);
 
             // Select the row first
-            DysektProcessor::Command sel;
-            sel.type = DysektProcessor::CmdSelectSlice;
+            AvixProcessor::Command sel;
+            sel.type = AvixProcessor::CmdSelectSlice;
             sel.intParam1 = c.row;
             processor.pushCommand (sel);
 
             textEditor = std::make_unique<juce::TextEditor>();
             addAndMakeVisible (*textEditor);
             textEditor->setBounds (nameArea);
-            textEditor->setFont (DysektLookAndFeel::makeFont (11.0f));
+            textEditor->setFont (AvixLookAndFeel::makeFont (11.0f));
             textEditor->setColour (juce::TextEditor::backgroundColourId, theme.darkBar.brighter (0.15f));
             textEditor->setColour (juce::TextEditor::textColourId,       theme.foreground);
             textEditor->setColour (juce::TextEditor::outlineColourId,    theme.accent);
@@ -2300,8 +2300,8 @@ void MixerPanel::mouseDoubleClick (const juce::MouseEvent& e)
                 if (! textEditor) return;
                 juce::String newName = textEditor->getText().trim();
                 textEditor.reset();
-                DysektProcessor::Command cmd;
-                cmd.type        = DysektProcessor::CmdSetSliceName;
+                AvixProcessor::Command cmd;
+                cmd.type        = AvixProcessor::CmdSetSliceName;
                 cmd.intParam1   = rowIdx;
                 cmd.stringParam = newName;
                 processor.pushCommand (cmd);
@@ -2384,7 +2384,7 @@ void MixerPanel::mouseDoubleClick (const juce::MouseEvent& e)
     textEditor->setBounds (cellBounds.getX() + kKnobR * 2 + 12,
                            cellBounds.getY() + cellBounds.getHeight() / 2 - 8,
                            cellBounds.getWidth() - kKnobR * 2 - 16, 16);
-    textEditor->setFont (DysektLookAndFeel::makeFont (11.0f));
+    textEditor->setFont (AvixLookAndFeel::makeFont (11.0f));
     const auto& theme = getTheme();
     textEditor->setColour (juce::TextEditor::backgroundColourId, theme.darkBar.brighter (0.15f));
     textEditor->setColour (juce::TextEditor::textColourId,       theme.foreground);
@@ -2439,26 +2439,26 @@ void MixerPanel::mouseDoubleClick (const juce::MouseEvent& e)
 
         if (isSfz2Ch)
         {
-            DysektProcessor::Command sel;
-            sel.type          = DysektProcessor::CmdSelectSlice;
+            AvixProcessor::Command sel;
+            sel.type          = AvixProcessor::CmdSelectSlice;
             sel.intParam1     = sfz2ZoneIdx;
             sel.targetEngine2 = true;
             processor.pushCommand (sel);
 
             // zoneWide=true — same zone-row propagation as the drag-commit
             // path above (see Command::zoneWide).
-            DysektProcessor::Command cmd2;
-            cmd2.type          = DysektProcessor::CmdSetSliceParam;
+            AvixProcessor::Command cmd2;
+            cmd2.type          = AvixProcessor::CmdSetSliceParam;
             cmd2.targetEngine2 = true;
             cmd2.zoneWide      = true;
             if (col == ColGain)
             {
-                cmd2.intParam1   = DysektProcessor::FieldVolume;
+                cmd2.intParam1   = AvixProcessor::FieldVolume;
                 cmd2.floatParam1 = juce::jlimit (-100.f, 24.f, v);
             }
             else if (col == ColPan)
             {
-                cmd2.intParam1   = DysektProcessor::FieldPan;
+                cmd2.intParam1   = AvixProcessor::FieldPan;
                 cmd2.floatParam1 = juce::jlimit (-1.f, 1.f, v);
             }
             else { repaint(); return; }
@@ -2482,19 +2482,19 @@ void MixerPanel::mouseDoubleClick (const juce::MouseEvent& e)
         }
 
         // Select row first
-        DysektProcessor::Command sel;
-        sel.type = DysektProcessor::CmdSelectSlice;
+        AvixProcessor::Command sel;
+        sel.type = AvixProcessor::CmdSelectSlice;
         sel.intParam1 = rowIdx;
         processor.pushCommand (sel);
 
-        DysektProcessor::Command cmd;
-        cmd.type = DysektProcessor::CmdSetSliceParam;
+        AvixProcessor::Command cmd;
+        cmd.type = AvixProcessor::CmdSetSliceParam;
         switch (col)
         {
-            case ColGain: cmd.intParam1 = DysektProcessor::FieldVolume;       cmd.floatParam1 = juce::jlimit (-100.f, 24.f, v);    break;
-            case ColPan:  cmd.intParam1 = DysektProcessor::FieldPan;          cmd.floatParam1 = juce::jlimit (-1.f, 1.f, v);       break;
-            case ColFcut: cmd.intParam1 = DysektProcessor::FieldFilterCutoff; cmd.floatParam1 = juce::jlimit (20.f, 20000.f, v);   break;
-            case ColPres: cmd.intParam1 = DysektProcessor::FieldFilterRes;    cmd.floatParam1 = juce::jlimit (0.f, 1.f, v / 100.f); break;
+            case ColGain: cmd.intParam1 = AvixProcessor::FieldVolume;       cmd.floatParam1 = juce::jlimit (-100.f, 24.f, v);    break;
+            case ColPan:  cmd.intParam1 = AvixProcessor::FieldPan;          cmd.floatParam1 = juce::jlimit (-1.f, 1.f, v);       break;
+            case ColFcut: cmd.intParam1 = AvixProcessor::FieldFilterCutoff; cmd.floatParam1 = juce::jlimit (20.f, 20000.f, v);   break;
+            case ColPres: cmd.intParam1 = AvixProcessor::FieldFilterRes;    cmd.floatParam1 = juce::jlimit (0.f, 1.f, v / 100.f); break;
             default: repaint(); return;
         }
         processor.pushCommand (cmd);

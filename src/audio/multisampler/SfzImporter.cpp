@@ -19,8 +19,8 @@ namespace
             "direction",
             "eq1_freq", "eq1_gain", "eq1_bw", "eq2_freq", "eq2_gain", "eq2_bw",
             "eq3_freq", "eq3_gain", "eq3_bw",
-            "dysekt_zone_color", "dysekt_output_bus", "dysekt_show_in_mixer",
-            "dysekt_drum_kit"
+            "avix_zone_color", "avix_output_bus", "avix_show_in_mixer",
+            "avix_drum_kit"
         };
         return s;
     }
@@ -133,6 +133,14 @@ namespace
 
         outKey       = word.substring (0, i).toLowerCase();
         outValueTail = word.substring (i + 1);
+
+        // SFZ files saved before the rebrand carry the old private-opcode
+        // prefix ("dysekt_zone_color", ...). Read them as the current
+        // "avix_" opcodes so existing instruments keep their colours, output
+        // buses and drum-kit flag. Everything written from now on uses "avix_".
+        if (outKey.startsWith ("dysekt_"))
+            outKey = "avix_" + outKey.substring (7);
+
         return true;
     }
 
@@ -454,7 +462,7 @@ namespace
         z.filterResonance = juce::jlimit (0.0f, 1.0f, floatOpcode (resolved, "resonance", 0.0f) / 40.0f);
 
         // Per-zone 3-band EQ — see SampleZone::eq1Freq's doc comment for why
-        // these are the real sfz opcodes rather than dysekt_-prefixed ones.
+        // these are the real sfz opcodes rather than avix_-prefixed ones.
         z.eq1Freq = floatOpcode (resolved, "eq1_freq", 100.0f);
         z.eq1Gain = floatOpcode (resolved, "eq1_gain", 0.0f);
         z.eq1Bw   = floatOpcode (resolved, "eq1_bw",   1.0f);
@@ -467,11 +475,11 @@ namespace
 
         // Custom colour override — see SfzExporter for the write side.
         // Opcode keys are already lowercased by the tokenizer (see the
-        // `resolved` build-up above), so "dysekt_zone_color" always matches
+        // `resolved` build-up above), so "avix_zone_color" always matches
         // regardless of the source file's original casing.
-        if (resolved.count ("dysekt_zone_color"))
+        if (resolved.count ("avix_zone_color"))
         {
-            const auto c = juce::Colour::fromString (resolved.at ("dysekt_zone_color"));
+            const auto c = juce::Colour::fromString (resolved.at ("avix_zone_color"));
             z.hasCustomColour  = true;
             // Rebuild the packed ARGB from component accessors rather than
             // relying on a getARGB()-style internal accessor, which JUCE
@@ -483,12 +491,12 @@ namespace
         }
 
         // Output-bus override — see SfzExporter for the write side. Same
-        // lowercased-key guarantee as dysekt_zone_color above.
-        z.outputBus = juce::jlimit (0, 15, intOpcode (resolved, "dysekt_output_bus", 0));
+        // lowercased-key guarantee as avix_zone_color above.
+        z.outputBus = juce::jlimit (0, 15, intOpcode (resolved, "avix_output_bus", 0));
 
         // Manual mixer-pin override — see SfzExporter for the write side
         // and SampleZone::showInMixer for the round-trip rationale.
-        z.showInMixer = resolved.count ("dysekt_show_in_mixer") != 0;
+        z.showInMixer = resolved.count ("avix_show_in_mixer") != 0;
 
         z.group           = intOpcode (resolved, "group", 0);
         z.offBy           = intOpcode (resolved, "off_by", 0);
@@ -658,11 +666,11 @@ SfzImporter::Result SfzImporter::importText (const juce::String& sfzText, const 
         }
 
         // Token::Type::opcode
-        // dysekt_drum_kit is instrument-level (see MultisamplerInstrument::
+        // avix_drum_kit is instrument-level (see MultisamplerInstrument::
         // drumKit), so it's honoured wherever it appears -- <global>,
         // <control>, or a bare top-of-file opcode -- and never reaches a
         // zone's opcode maps.
-        if (t.opcodeKey == "dysekt_drum_kit")
+        if (t.opcodeKey == "avix_drum_kit")
         {
             result.instrument.drumKit = t.opcodeValue.getIntValue() != 0;
             continue;

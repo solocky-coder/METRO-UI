@@ -109,13 +109,13 @@ bool ArchiveIntegration::isValidArchiveUrl (const juce::String& url)
 juce::File ArchiveIntegration::getCacheDir()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("DYSEKT-SF/archive_cache");
+               .getChildFile ("AVIX/archive_cache");
 }
 
 juce::File ArchiveIntegration::getTempDir()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-               .getChildFile ("DYSEKT-SF/archive_temp");
+               .getChildFile ("AVIX/archive_temp");
 }
 
 void ArchiveIntegration::clearTemp()
@@ -155,7 +155,7 @@ void ArchiveIntegration::downloadTemp (const juce::String& downloadUrl,
         auto stream = juce::URL (downloadUrl).createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
                 .withConnectionTimeoutMs (30000)
-                .withExtraHeaders ("User-Agent: DYSEKT-SF/1.0"));
+                .withExtraHeaders ("User-Agent: AVIX/1.0"));
 
         if (stream == nullptr)
         {
@@ -221,7 +221,7 @@ void ArchiveIntegration::streamPreview (const juce::String& downloadUrl,
         auto netStream = juce::URL (downloadUrl).createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
                 .withConnectionTimeoutMs (10000)
-                .withExtraHeaders ("User-Agent: DYSEKT-SF/1.0")
+                .withExtraHeaders ("User-Agent: AVIX/1.0")
                 .withNumRedirectsToFollow (3));
 
         if (netStream == nullptr)
@@ -269,7 +269,7 @@ void ArchiveIntegration::fetchItem (const juce::String& url,
         auto stream = metaUrl.createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
                 .withConnectionTimeoutMs (10000)
-                .withExtraHeaders ("User-Agent: DYSEKT-SF/1.0"));
+                .withExtraHeaders ("User-Agent: AVIX/1.0"));
 
         if (stream == nullptr)
         {
@@ -358,7 +358,7 @@ void ArchiveIntegration::fetchCollection (const juce::String& collectionId,
         auto stream = juce::URL (apiUrl).createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
                 .withConnectionTimeoutMs (15000)
-                .withExtraHeaders ("User-Agent: DYSEKT-SF/1.0"));
+                .withExtraHeaders ("User-Agent: AVIX/1.0"));
 
         if (stream == nullptr)
         {
@@ -425,7 +425,7 @@ void ArchiveIntegration::downloadFile (const juce::String& downloadUrl,
         auto stream = juce::URL (downloadUrl).createInputStream (
             juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
                 .withConnectionTimeoutMs (30000)
-                .withExtraHeaders ("User-Agent: DYSEKT-SF/1.0"));
+                .withExtraHeaders ("User-Agent: AVIX/1.0"));
 
         if (stream == nullptr)
         {

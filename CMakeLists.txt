@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Dysekt VERSION 1.0.0)
+project(Avix VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,13 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/JUCE JUCE)
 
 # --- AOO / SonoBus network audio ---
-# Network audio is a DYSEKT standalone feature. The plugin target must remain
+# Network audio is a AVIX standalone feature. The plugin target must remain
 # free of AOO/SonoBus transport and network-audio sources.
-option(DYSEKT_ENABLE_AOO "Enable AOO/SonoBus network audio in DYSEKT standalone" ON)
-if (DYSEKT_ENABLE_AOO)
+option(AVIX_ENABLE_AOO "Enable AOO/SonoBus network audio in AVIX standalone" ON)
+if (AVIX_ENABLE_AOO)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MetroAoo.cmake)
 else()
-    set(DYSEKT_HAS_AOO FALSE)
+    set(AVIX_HAS_AOO FALSE)
 endif()
 
 # --- chowdsp_utils (SVF EQ filters — used by VoicePool per-slice EQ) ---
@@ -30,17 +30,17 @@ FetchContent_MakeAvailable(chowdsp_utils)
 # --- tracktion_engine REMOVED ---
 # tracktion_engine does not compile against JUCE 8.0.12
 # (tracktion_PluginWindowState.cpp references juce::Displays::Display::userBounds
-# which was removed in JUCE 7+). SequencerEngine.cpp now uses DYSEKT-SF's own
+# which was removed in JUCE 7+). SequencerEngine.cpp now uses AVIX's own
 # tick scheduler exclusively. MidiClip.cpp keeps the te::MidiList* hook as a
 # forward-declared pointer but all midiList calls are no-ops until tracktion
 # is re-enabled against a compatible JUCE version.
 
 # --- Ableton Link (tempo sync across apps on LAN/WiFi) ---
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/link/include/ableton/Link.hpp")
-    set(DYSEKT_HAS_LINK TRUE)
+    set(AVIX_HAS_LINK TRUE)
     message(STATUS "Ableton Link SDK found — Link sync enabled")
 else()
-    set(DYSEKT_HAS_LINK FALSE)
+    set(AVIX_HAS_LINK FALSE)
     message(STATUS "Ableton Link SDK NOT found — Link sync disabled.")
     message(STATUS "  To enable: git submodule add https://github.com/Ableton/link.git link")
 endif()
@@ -56,16 +56,16 @@ if(TRUE)
     set(SFIZZ_TESTS      OFF CACHE BOOL "" FORCE)
     set(SFIZZ_RENDER     OFF CACHE BOOL "" FORCE)
     add_subdirectory(sfizz EXCLUDE_FROM_ALL)
-    set(DYSEKT_HAS_SFIZZ TRUE)
+    set(AVIX_HAS_SFIZZ TRUE)
     message(STATUS "sfizz found — SF2/SFZ slice-render support enabled")
 else()
-    set(DYSEKT_HAS_SFIZZ FALSE)
+    set(AVIX_HAS_SFIZZ FALSE)
 endif()
 
 # --- FluidSynth ---
 find_package(FluidSynth CONFIG QUIET)
 if(FluidSynth_FOUND)
-    set(DYSEKT_HAS_FLUIDSYNTH TRUE)
+    set(AVIX_HAS_FLUIDSYNTH TRUE)
 else()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fluidsynth/CMakeLists.txt")
         set(FLUIDSYNTH_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -78,22 +78,22 @@ else()
         set(enable-portaudio OFF CACHE BOOL "" FORCE)
         set(enable-openmp OFF CACHE BOOL "" FORCE)
         add_subdirectory(fluidsynth EXCLUDE_FROM_ALL)
-        set(DYSEKT_HAS_FLUIDSYNTH TRUE)
+        set(AVIX_HAS_FLUIDSYNTH TRUE)
     else()
-        set(DYSEKT_HAS_FLUIDSYNTH FALSE)
+        set(AVIX_HAS_FLUIDSYNTH FALSE)
     endif()
 endif()
 
-option(DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+option(AVIX_SF2_EXPERIMENTAL_MULTI_GROUP
        "EXPERIMENTAL: FluidSynth audio-groups=16 multi-channel render test"
        OFF)
 
-if(DYSEKT_HAS_FLUIDSYNTH)
+if(AVIX_HAS_FLUIDSYNTH)
     add_executable(audio_groups_repro diagnostics/audio_groups_repro.c)
     target_link_libraries(audio_groups_repro PRIVATE FluidSynth::libfluidsynth)
 endif()
 
-if(DYSEKT_HAS_SFIZZ)
+if(AVIX_HAS_SFIZZ)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sfizz/src/sfizz.h")
         set(SFIZZ_C_API_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/sfizz/src")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sfizz/src/sfizz/sfizz.h")
@@ -103,12 +103,17 @@ if(DYSEKT_HAS_SFIZZ)
     endif()
 endif()
 
-juce_add_plugin(Dysekt
+juce_add_plugin(Avix
     COMPANY_NAME "DunSoft"
     PLUGIN_MANUFACTURER_CODE Dnst
+    # PLUGIN_CODE is an internal 4-char ID, never shown to users. It is
+    # deliberately unchanged from the pre-rebrand build: changing it changes
+    # the plugin's identity for DAWs, so existing sessions would no longer
+    # find it. Change it (any 4 chars, at least one uppercase) only if you
+    # want a clean break from the old identity.
     PLUGIN_CODE Dysk
     FORMATS VST3
-    PRODUCT_NAME "DYSEKT-SF"
+    PRODUCT_NAME "AVIX"
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
@@ -117,16 +122,15 @@ juce_add_plugin(Dysekt
 )
 
 if(MSVC)
-    target_compile_options(Dysekt PRIVATE /utf-8)
+    target_compile_options(Avix PRIVATE /utf-8)
 endif()
 
-juce_add_binary_data(DysektFonts SOURCES
-    docs/DYSEKT_User_Manual.pdf
+juce_add_binary_data(AvixFonts SOURCES
+    docs/AVIX_User_Manual.pdf
     src/ui/fonts/BarlowCondensed-Regular.ttf
     src/ui/fonts/BarlowCondensed-SemiBold.ttf
     src/ui/fonts/JetBrainsMono-Regular.ttf
     src/ui/fonts/JetBrainsMono-Bold.ttf
-    src/ui/assets/dysekt_logo.svg
     src/ui/assets/Empty.wav
     src/ui/assets/icons/icon_mute.svg
     src/ui/assets/icons/icon_solo.svg
@@ -141,20 +145,11 @@ juce_add_binary_data(DysektFonts SOURCES
     src/ui/assets/knobs/knob_pointer.svg
     src/ui/assets/knobs/knob_sprite_64x64_64frames.svg
     src/ui/assets/knobs/knob_sprite_64x64_64frames.png
-    src/ui/assets/logos/DYSEKT-SF_logo_cr8.png
-    src/ui/assets/logos/DYSEKT-SF_logo_dark.png
-    src/ui/assets/logos/DYSEKT-SF_logo_dysekt.png
-    src/ui/assets/logos/DYSEKT-SF_logo_ghost.png
-    src/ui/assets/logos/DYSEKT-SF_logo_hack.png
-    src/ui/assets/logos/DYSEKT-SF_logo_lazy.png
-    src/ui/assets/logos/DYSEKT-SF_logo_midnight.png
-    src/ui/assets/logos/DYSEKT-SF_logo_opendaw.png
-    src/ui/assets/logos/DYSEKT-SF_logo_pigments.png
-    src/ui/assets/logos/DYSEKT-SF_logo_shell.png
-    src/ui/assets/logos/DYSEKT-SF_logo_snow.png
+    src/ui/assets/logos/AVIX_logo.png
+    src/ui/assets/logos/AVIX_icon.png
 )
 
-target_sources(Dysekt PRIVATE
+target_sources(Avix PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/audio/SampleData.cpp
@@ -165,7 +160,7 @@ target_sources(Dysekt PRIVATE
     src/audio/SoundFontLoader.cpp
     src/audio/SfzPlayer.cpp
     src/params/ParamLayout.cpp
-    src/ui/DysektLookAndFeel.cpp
+    src/ui/AvixLookAndFeel.cpp
     src/ui/IconManager.cpp
     src/metro/MetroTheme.cpp
     src/metro/MetroLookAndFeel.cpp
@@ -209,42 +204,42 @@ target_sources(Dysekt PRIVATE
     src/sequencer/MidiClip.cpp
 )
 
-target_include_directories(Dysekt PRIVATE
+target_include_directories(Avix PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
-    $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
+    $<$<BOOL:${AVIX_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
+    $<$<BOOL:${AVIX_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
-    $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>
+    $<$<BOOL:${AVIX_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>
 )
 
-target_compile_definitions(Dysekt PUBLIC
+target_compile_definitions(Avix PUBLIC
     JUCE_USE_CURL=0
     JUCE_USE_MP3AUDIOFORMAT=1
-    DYSEKT_HAS_AOO=0
-    DYSEKT_HAS_LINK=0
+    AVIX_HAS_AOO=0
+    AVIX_HAS_LINK=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_WEB_BROWSER=0
-    DYSEKT_HAS_SFIZZ=$<BOOL:${DYSEKT_HAS_SFIZZ}>
-    DYSEKT_HAS_FLUIDSYNTH=$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>
-    DYSEKT_STANDALONE=0
-    $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Windows>>:LINK_PLATFORM_WINDOWS=1>
-    $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Darwin>>:LINK_PLATFORM_MACOSX=1>
-    $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Linux>>:LINK_PLATFORM_LINUX=1>
+    AVIX_HAS_SFIZZ=$<BOOL:${AVIX_HAS_SFIZZ}>
+    AVIX_HAS_FLUIDSYNTH=$<BOOL:${AVIX_HAS_FLUIDSYNTH}>
+    AVIX_STANDALONE=0
+    $<$<AND:$<BOOL:${AVIX_HAS_LINK}>,$<PLATFORM_ID:Windows>>:LINK_PLATFORM_WINDOWS=1>
+    $<$<AND:$<BOOL:${AVIX_HAS_LINK}>,$<PLATFORM_ID:Darwin>>:LINK_PLATFORM_MACOSX=1>
+    $<$<AND:$<BOOL:${AVIX_HAS_LINK}>,$<PLATFORM_ID:Linux>>:LINK_PLATFORM_LINUX=1>
 )
 
-if (DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP)
-    target_compile_definitions(Dysekt PUBLIC DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=1)
+if (AVIX_SF2_EXPERIMENTAL_MULTI_GROUP)
+    target_compile_definitions(Avix PUBLIC AVIX_SF2_EXPERIMENTAL_MULTI_GROUP=1)
 endif()
 
-target_link_libraries(Dysekt
+target_link_libraries(Avix
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
-        DysektFonts
-        $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
-        $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
+        AvixFonts
+        $<$<BOOL:${AVIX_HAS_SFIZZ}>:sfizz::sfizz>
+        $<$<BOOL:${AVIX_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
         $<$<PLATFORM_ID:Linux>:asound>
         chowdsp::chowdsp_filters
     PUBLIC
@@ -253,15 +248,15 @@ target_link_libraries(Dysekt
         juce::juce_recommended_warning_flags
 )
 
-juce_add_gui_app(DysektStandalone
-    PRODUCT_NAME "DYSEKT-SF"
-    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/DYSEKT-SF.png"
-    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/assets/DYSEKT-SF.png"
+juce_add_gui_app(AvixStandalone
+    PRODUCT_NAME "AVIX"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/AVIX.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/assets/AVIX.png"
 )
 
 if(MSVC)
-    target_compile_options(DysektStandalone PRIVATE /utf-8)
-    # DysektStandalone itself no longer needs to run elevated: Apple USB
+    target_compile_options(AvixStandalone PRIVATE /utf-8)
+    # AvixStandalone itself no longer needs to run elevated: Apple USB
     # Share's driver/PnP work now lives entirely in the separate
     # iPhoneUsbShare.exe helper (see AppleUsbShareLauncher and
     # docs/APPLE_USB_SHARE_STANDALONE_MIGRATION.md), which requests
@@ -270,7 +265,7 @@ if(MSVC)
     # feature is what this migration removes.
 endif()
 
-target_sources(DysektStandalone PRIVATE
+target_sources(AvixStandalone PRIVATE
     src/PluginProcessor.cpp
     src/PluginEditor.cpp
     src/audio/SampleData.cpp
@@ -281,7 +276,7 @@ target_sources(DysektStandalone PRIVATE
     src/audio/SoundFontLoader.cpp
     src/audio/SfzPlayer.cpp
     src/params/ParamLayout.cpp
-    src/ui/DysektLookAndFeel.cpp
+    src/ui/AvixLookAndFeel.cpp
     src/ui/IconManager.cpp
     src/metro/MetroTheme.cpp
     src/metro/MetroLookAndFeel.cpp
@@ -330,50 +325,50 @@ target_sources(DysektStandalone PRIVATE
     src/standalone/network/AppleUsbNetworkTransport.cpp
     src/standalone/network/AppleUsbShareLauncher.cpp
     src/network/RtpMidiSession.cpp
-    $<$<BOOL:${DYSEKT_HAS_AOO}>:src/network/MetroNetworkAudio.cpp>
+    $<$<BOOL:${AVIX_HAS_AOO}>:src/network/MetroNetworkAudio.cpp>
 )
 
-target_include_directories(DysektStandalone PRIVATE
+target_include_directories(AvixStandalone PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
-    $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
-    $<$<BOOL:${DYSEKT_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
+    $<$<BOOL:${AVIX_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/include>
+    $<$<BOOL:${AVIX_HAS_LINK}>:${CMAKE_CURRENT_SOURCE_DIR}/link/modules/asio-standalone/asio/include>
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-stretch
     ${CMAKE_CURRENT_SOURCE_DIR}/signalsmith-linear
-    $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>
+    $<$<BOOL:${AVIX_HAS_SFIZZ}>:${SFIZZ_C_API_INCLUDE}>
     $<$<PLATFORM_ID:Windows>:${CMAKE_CURRENT_SOURCE_DIR}/asiosdk/common>
 )
 
-target_compile_definitions(DysektStandalone PUBLIC
+target_compile_definitions(AvixStandalone PUBLIC
     JUCE_USE_CURL=0
     JUCE_USE_MP3AUDIOFORMAT=1
-    DYSEKT_HAS_AOO=$<BOOL:${DYSEKT_HAS_AOO}>
-    DYSEKT_HAS_LINK=$<BOOL:${DYSEKT_HAS_LINK}>
+    AVIX_HAS_AOO=$<BOOL:${AVIX_HAS_AOO}>
+    AVIX_HAS_LINK=$<BOOL:${AVIX_HAS_LINK}>
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_WEB_BROWSER=0
-    DYSEKT_HAS_SFIZZ=$<BOOL:${DYSEKT_HAS_SFIZZ}>
-    DYSEKT_HAS_FLUIDSYNTH=$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>
-    DYSEKT_STANDALONE=1
+    AVIX_HAS_SFIZZ=$<BOOL:${AVIX_HAS_SFIZZ}>
+    AVIX_HAS_FLUIDSYNTH=$<BOOL:${AVIX_HAS_FLUIDSYNTH}>
+    AVIX_STANDALONE=1
     $<$<PLATFORM_ID:Windows>:JUCE_ASIO=1>
-    $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Windows>>:LINK_PLATFORM_WINDOWS=1>
-    $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Darwin>>:LINK_PLATFORM_MACOSX=1>
-    $<$<AND:$<BOOL:${DYSEKT_HAS_LINK}>,$<PLATFORM_ID:Linux>>:LINK_PLATFORM_LINUX=1>
+    $<$<AND:$<BOOL:${AVIX_HAS_LINK}>,$<PLATFORM_ID:Windows>>:LINK_PLATFORM_WINDOWS=1>
+    $<$<AND:$<BOOL:${AVIX_HAS_LINK}>,$<PLATFORM_ID:Darwin>>:LINK_PLATFORM_MACOSX=1>
+    $<$<AND:$<BOOL:${AVIX_HAS_LINK}>,$<PLATFORM_ID:Linux>>:LINK_PLATFORM_LINUX=1>
     $<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0A00>
     $<$<PLATFORM_ID:Windows>:WINVER=0x0A00>
 )
 
-if (DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP)
-    target_compile_definitions(DysektStandalone PUBLIC DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=1)
+if (AVIX_SF2_EXPERIMENTAL_MULTI_GROUP)
+    target_compile_definitions(AvixStandalone PUBLIC AVIX_SF2_EXPERIMENTAL_MULTI_GROUP=1)
 endif()
 
-target_link_libraries(DysektStandalone
+target_link_libraries(AvixStandalone
     PRIVATE
         juce::juce_audio_utils
         juce::juce_audio_devices
         juce::juce_dsp
-        DysektFonts
-        $<$<BOOL:${DYSEKT_HAS_AOO}>:MetroAoo>
-        $<$<BOOL:${DYSEKT_HAS_SFIZZ}>:sfizz::sfizz>
-        $<$<BOOL:${DYSEKT_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
+        AvixFonts
+        $<$<BOOL:${AVIX_HAS_AOO}>:MetroAoo>
+        $<$<BOOL:${AVIX_HAS_SFIZZ}>:sfizz::sfizz>
+        $<$<BOOL:${AVIX_HAS_FLUIDSYNTH}>:FluidSynth::libfluidsynth>
         $<$<PLATFORM_ID:Linux>:asound>
         chowdsp::chowdsp_filters
     PUBLIC
@@ -387,23 +382,23 @@ if(WIN32)
     # publish (~150+ MB) — far too large to compile into a BinaryData
     # C-array (and, separately, too large for a plain git push; see
     # AppleUsbShareLauncher.h). It ships as a loose file next to
-    # DysektStandalone.exe instead: AppleUsbShareLauncher locates it via
+    # AvixStandalone.exe instead: AppleUsbShareLauncher locates it via
     # juce::File::currentApplicationFile, which only resolves correctly
     # for the Standalone target, not a VST3 hosted inside a DAW — hence
-    # this whole block being WIN32-and-DysektStandalone-only.
-    set(DYSEKT_APPLE_USB_HELPER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/standalone/network/AppleUsbShareDriver/iPhoneUsbShare.exe")
-    if(EXISTS "${DYSEKT_APPLE_USB_HELPER_SRC}")
-        add_custom_command(TARGET DysektStandalone POST_BUILD
+    # this whole block being WIN32-and-AvixStandalone-only.
+    set(AVIX_APPLE_USB_HELPER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/standalone/network/AppleUsbShareDriver/iPhoneUsbShare.exe")
+    if(EXISTS "${AVIX_APPLE_USB_HELPER_SRC}")
+        add_custom_command(TARGET AvixStandalone POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory
-                "$<TARGET_FILE_DIR:DysektStandalone>/AppleUsbShareDriver"
+                "$<TARGET_FILE_DIR:AvixStandalone>/AppleUsbShareDriver"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${DYSEKT_APPLE_USB_HELPER_SRC}"
-                "$<TARGET_FILE_DIR:DysektStandalone>/AppleUsbShareDriver/iPhoneUsbShare.exe"
-            COMMENT "Copying iPhoneUsbShare.exe next to DysektStandalone"
+                "${AVIX_APPLE_USB_HELPER_SRC}"
+                "$<TARGET_FILE_DIR:AvixStandalone>/AppleUsbShareDriver/iPhoneUsbShare.exe"
+            COMMENT "Copying iPhoneUsbShare.exe next to AvixStandalone"
         )
     else()
         message(WARNING
-            "Apple USB Share helper not found at ${DYSEKT_APPLE_USB_HELPER_SRC} — "
+            "Apple USB Share helper not found at ${AVIX_APPLE_USB_HELPER_SRC} — "
             "publish iPhoneUsbShare (dotnet publish -c Release -r win-x64 "
             "--self-contained true -p:PublishSingleFile=true) and place the "
             "resulting exe there. AppleUsbShareLauncher::start() will fail at "

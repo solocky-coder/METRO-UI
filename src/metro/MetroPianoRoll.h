@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
     Metro UI
 
     MetroPianoRoll.h
@@ -31,7 +31,7 @@
 #include "../sequencer/SequencerEngine.h"
 #include "MetroStepSequencer.h" // shares StepResolution — piano roll's snap grid uses the same resolutions as the step grid
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /** Metro-skinned continuous-pitch clip editor. */
 class MetroPianoRoll final : public juce::Component,
@@ -198,4 +198,4 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MetroPianoRoll)
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

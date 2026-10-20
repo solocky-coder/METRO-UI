@@ -16,14 +16,14 @@
 #include "MessageOverlay.h"
 #include "SfzFileBrowser.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 class SfzModulePanel : public juce::Component,
                        public juce::Timer,
                        public juce::FileDragAndDropTarget
 {
 public:
-    explicit SfzModulePanel (DysektProcessor& p);
+    explicit SfzModulePanel (AvixProcessor& p);
     ~SfzModulePanel() override;
 
     void paint   (juce::Graphics&) override;
@@ -152,7 +152,7 @@ private:
                                                               int targetPreset = 0);
     void reloadZones (const juce::File& f);
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SfzModulePanel)
 };

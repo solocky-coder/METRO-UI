@@ -3,7 +3,7 @@
 #include "../sequencer/SequencerEngine.h"
 #include "../metro/MetroColours.h"
 #include "TransportIconButton.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 //==============================================================================
 //  MiniTransportBar
@@ -21,7 +21,7 @@ class MiniTransportBar final : public juce::Component,
 public:
     explicit MiniTransportBar (SequencerEngine& seq) : engine (seq)
     {
-        namespace M = dysekt::metro;
+        namespace M = avix::metro;
 
         stopButton  .configure (TransportIcons::Kind::Stop,   M::Accent::Orange,    "Stop");
         playButton  .configure (TransportIcons::Kind::Play,   M::Transport::Play,   "Play");

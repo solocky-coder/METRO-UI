@@ -1,10 +1,10 @@
 #include "PluginEditor.h"
-#include "ui/DysektLookAndFeel.h"
+#include "ui/AvixLookAndFeel.h"
 #include "ui/PluginEditorConstants.h"
 #include "ui/LogoIcon.h"
 #include "ui/UIHelpers.h"
 
-#if JUCE_WINDOWS && ! DYSEKT_STANDALONE
+#if JUCE_WINDOWS && ! AVIX_STANDALONE
  #ifndef NOMINMAX
   #define NOMINMAX
  #endif
@@ -18,13 +18,13 @@
 static juce::File getSettingsDir()
 {
  return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
- .getChildFile ("DYSEKT-SF");
+ .getChildFile ("AVIX");
 }
 static juce::File getUserSettingsFile() { return getSettingsDir().getChildFile ("settings.yaml"); }
 static juce::File getThemesDir() { return getSettingsDir().getChildFile ("themes"); }
 
 // ========================= CLASS CONSTRUCTOR ==========================
-DysektEditor::DysektEditor (DysektProcessor& p)
+AvixEditor::AvixEditor (AvixProcessor& p)
  : AudioProcessorEditor (p),
  processor (p),
  logoBar (p),
@@ -48,19 +48,19 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  juce::LookAndFeel::setDefaultLookAndFeel (&lnf);
  setLookAndFeel (&lnf);
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  // Standalone only: MainWindow constructs a single NetworkAudioProcessor
- // and passes it in as our DysektProcessor&. Reuse that same instance here
+ // and passes it in as our AvixProcessor&. Reuse that same instance here
  // rather than creating a second one (see ArrangeView::setNetworkAudioProcessor).
  arrangeView.setNetworkAudioProcessor (dynamic_cast<NetworkAudioProcessor*> (&p));
 #endif
 
  addAndMakeVisible (logoBar);
- logoBar.getProperties().set ("dysektThemeKey", "header");
+ logoBar.getProperties().set ("avixThemeKey", "header");
  addAndMakeVisible (headerBar);
- headerBar.getProperties().set ("dysektThemeKey", "header");
+ headerBar.getProperties().set ("avixThemeKey", "header");
  for (auto* btn : { &headerBar.undoBtn, &headerBar.redoBtn, &headerBar.panicBtn, &headerBar.shortcutsBtn })
- btn->getProperties().set ("dysektThemeKey", "button");
+ btn->getProperties().set ("avixThemeKey", "button");
 
  addAndMakeVisible (sliceLcd);
  sliceLcd.onMultisamplerZoneFieldEdited = [this] (int zoneIndex, int field, float value)
@@ -92,22 +92,22 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  // headerBar must stack above it (the frame was added after headerBar).
  headerBar.toFront (false);
  addAndMakeVisible (transportBar);
- transportBar.getProperties().set ("dysektThemeKey", "header");
+ transportBar.getProperties().set ("avixThemeKey", "header");
 
  addAndMakeVisible (sliceLane);
- sliceLane.getProperties().set ("dysektThemeKey", "darkBar");
+ sliceLane.getProperties().set ("avixThemeKey", "darkBar");
  addAndMakeVisible (waveformView);
- waveformView.getProperties().set ("dysektThemeKey", "waveformBg");
+ waveformView.getProperties().set ("avixThemeKey", "waveformBg");
  addAndMakeVisible (waveformOverview);
  addAndMakeVisible (sliceControlBar);
- sliceControlBar.getProperties().set ("dysektThemeKey", "darkBar");
+ sliceControlBar.getProperties().set ("avixThemeKey", "darkBar");
   browserPanel.setVisible (false);
  addChildComponent (browserPanel);
- browserPanel.getProperties().set ("dysektThemeKey", "waveformBg");
- #if ! DYSEKT_STANDALONE
+ browserPanel.getProperties().set ("avixThemeKey", "waveformBg");
+ #if ! AVIX_STANDALONE
  mixerPanel.setVisible (false);
  addChildComponent (mixerPanel);
- mixerPanel.getProperties().set ("dysektThemeKey", "waveformBg");
+ mixerPanel.getProperties().set ("avixThemeKey", "waveformBg");
  eqPanel.setVisible (false);
  addChildComponent (eqPanel);
 #endif
@@ -117,7 +117,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
 
  sfzPlayerDropdown.setVisible (false);
  addChildComponent (sfzPlayerDropdown);
- sfzPlayerDropdown.keysPanel.getProperties().set ("dysektThemeKey", "accent");
+ sfzPlayerDropdown.keysPanel.getProperties().set ("avixThemeKey", "accent");
  sfzPlayerDropdown.onFileLoaded = [this] (const juce::File&)
  {
      sfzPlayer2PanelRestored = false;
@@ -135,7 +135,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
 // to multisamplerEditor.applySliceControlBarFieldEdit as before.
 
  addChildComponent (multisamplerEditor); // hidden until the MULTISAMPLER tab (uiMode == 1) is active
- multisamplerEditor.getProperties().set ("dysektThemeKey", "accent");
+ multisamplerEditor.getProperties().set ("avixThemeKey", "accent");
  // IMPORT SFZ button: importFromFile() has already opened a detected kit in
  // PADS; this just adds the Assign/Skip output-bus prompt, same as a load
  // from the file browser gets.
@@ -153,7 +153,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      const auto keyzones = MultisamplerEditor::toKeyzones (multisamplerEditor.getInstrument());
      sfzPlayerDropdown.keysPanel.setKeyzones (keyzones);
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
      // The MULTISAMPLER instrument's Arranger track (the same singleton
      // .sfz-instrument track a browser/drop load creates via
      // pianoRollPanel.addSfzInstrumentTrack() below — see
@@ -309,7 +309,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      sfzPanelRestored = false;
  };
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  // SFZ loaded → add one sequencer track automatically (channel 15, 0-based).
  // SF2 loaded → fires once preset list is ready; no tracks yet — user assigns
  // per-preset channels by right-clicking preset rows in the program grid.
@@ -329,7 +329,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
      mixerPanel.setActiveChannels (sfzDropdown.getProgramGrid().getPresets(),
                                    sfzDropdown.getProgramGrid().getPresetChannels());
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
      // Pick a colour based on the preset number (bank*128 + program).
      static const juce::Colour kPalette[] = {
          juce::Colour (0xFF4060A0), juce::Colour (0xFF60A040),
@@ -341,7 +341,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
 #endif
  };
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  // Track-header right-click on an SF track → change MIDI channel.
  pianoRollPanel.onSfTrackChannelChanged = [this] (int trackIndex, int midiChannel1Based)
  {
@@ -368,7 +368,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
 #endif
  shortcutsPanel.setVisible (false);
  addChildComponent (shortcutsPanel);
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
     // Both windows are genuine top-level windows. Arrange clips open the
     // piano roll independently rather than overlaying the main editor.
     arrangeView.onClipDoubleClicked = [this] (int trackIndex, int clipIndex)
@@ -422,7 +422,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
                                                int midiChannel1Based, int presetBank, int presetProgram)
     {
         if (activeSlot != SlotContent::Seq) return;
-        using Mode = DysektProcessor::MidiRouteMode;
+        using Mode = AvixProcessor::MidiRouteMode;
         processor.setMidiRouteMode (
             (hasSelection && type != TrackType::SfPlayer)
                 ? Mode::Slicer
@@ -465,7 +465,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
     // mirroring the Arranger behaviour above.
     mixerPanel.onTrackSelected = [this] (int mode) { setUiMode (mode); };
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
     // Keep SFZ zone selection synchronized in both directions. ArrangeView is
     // only part of the standalone build, so these callbacks must be guarded too.
     mixerPanel.onSfzZoneSelected = [this] (int loKey, int hiKey)
@@ -478,7 +478,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
     };
 #endif
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
     // Clicking an SF2 channel strip also focuses the matching arranger
     // track, and toggling its mute badge mirrors onto that track's own
     // mute (M button) — the two mute states would otherwise silently
@@ -632,7 +632,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  headerBar.onWaveToggle = [this] { toggleSoftWave(); };
  headerBar.onMidiFollowToggle = [this] { toggleMidiFollow(); };
  headerBar.onShortcutsToggle = [this] { toggleShortcutsPanel(); };
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
     headerBar.onSeqToggle   = [this] { toggleSeqPanel(); };
 #else
     headerBar.onSeqToggle   = nullptr;   // sequencer not present in VST3
@@ -680,7 +680,7 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  auto snap = processor.sampleData.getSnapshot();
  const bool hasReal = snap != nullptr
  && snap->buffer.getNumSamples() > 0
- && ! snap->filePath.containsIgnoreCase ("DYSEKT_default.wav");
+ && ! snap->filePath.containsIgnoreCase ("AVIX_default.wav");
  if (! hasReal)
  {
  initBrowserOpen = true;
@@ -741,13 +741,13 @@ DysektEditor::DysektEditor (DysektProcessor& p)
  startTimerHz (30);
 }
 
-DysektEditor::~DysektEditor()
+AvixEditor::~AvixEditor()
 {
  juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
  setLookAndFeel (nullptr);
 }
 
-void DysektEditor::visibilityChanged()
+void AvixEditor::visibilityChanged()
 {
  // applyWindowIcon() requires a peer (see LogoIcon.h) — the editor doesn't
  // have one yet during construction, so set the icon here once it's
@@ -757,7 +757,7 @@ void DysektEditor::visibilityChanged()
 }
 
 // ── MIDI route mode helper ────────────────────────────────────────────────────
-void DysektEditor::syncMultisamplerDisplay()
+void AvixEditor::syncMultisamplerDisplay()
 {
     const bool multiActive = isMultisamplerTabActive();
     const MultisamplerInstrument* instr = multiActive ? &multisamplerEditor.getInstrument() : nullptr;
@@ -819,9 +819,9 @@ void DysektEditor::syncMultisamplerDisplay()
         multisamplerWaveformLcd.clearSource();
 }
 
-void DysektEditor::syncMidiRouteMode()
+void AvixEditor::syncMidiRouteMode()
 {
-    using Mode = DysektProcessor::MidiRouteMode;
+    using Mode = AvixProcessor::MidiRouteMode;
     const Mode mode = (activeSlot == SlotContent::Seq) ? Mode::Sequencer
                     : (uiMode == 1)                    ? Mode::SfzPlayer2
                     : (uiMode == 2)                    ? Mode::SfPlayer
@@ -829,7 +829,7 @@ void DysektEditor::syncMidiRouteMode()
     processor.setMidiRouteMode (mode);
 }
 
-void DysektEditor::syncBrowserMode()
+void AvixEditor::syncBrowserMode()
 {
     // Filter browser files to match the active tab:
     // Slicer → audio files only, SFZ-PLAYER → .sfz only, SF2-PLAYER → .sf2 only
@@ -839,7 +839,7 @@ void DysektEditor::syncBrowserMode()
 }
 
 // ── Interface mode switch ─────────────────────────────────────────────────────
-void DysektEditor::setUiMode (int mode)
+void AvixEditor::setUiMode (int mode)
 {
  if (uiMode == mode) return;
  uiMode = mode;
@@ -933,7 +933,7 @@ void DysektEditor::setUiMode (int mode)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-void DysektEditor::toggleBrowserPanel()
+void AvixEditor::toggleBrowserPanel()
 {
     // If the init browser is open, the first browser-button press simply
     // closes it — exactly like a normal close — so the view behind
@@ -959,7 +959,7 @@ void DysektEditor::toggleBrowserPanel()
         if (activeSlot == SlotContent::Mixer)
         {
             activeSlot = SlotContent::None;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
             slotWindow.closeWindow();
 #else
             mixerPanel.setVisible (false);
@@ -968,7 +968,7 @@ void DysektEditor::toggleBrowserPanel()
         }
         else if (activeSlot == SlotContent::Eq)
         {
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
             slotWindow.closeWindow();
 #else
             eqPanel.setVisible (false);
@@ -977,7 +977,7 @@ void DysektEditor::toggleBrowserPanel()
         }
         else if (activeSlot == SlotContent::Seq)
         {
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
             pianoRollPanel.closeWindow();
             slotWindow.closeWindow();
 #endif
@@ -996,7 +996,7 @@ void DysektEditor::toggleBrowserPanel()
     repaint();
 }
 
-void DysektEditor::showTrimDialog (const juce::File& file, bool isRelink)
+void AvixEditor::showTrimDialog (const juce::File& file, bool isRelink)
 {
  // A new load (or relink) supersedes any previous pending trim session.
  // Without this, starting a second load before the first one's async decode
@@ -1022,13 +1022,13 @@ void DysektEditor::showTrimDialog (const juce::File& file, bool isRelink)
  if (ext == ".sf2" || ext == ".sfz")
      return;
  const int pref = processor.trimPreference.load (std::memory_order_relaxed);
- if (pref == DysektProcessor::TrimPrefNever) {
+ if (pref == AvixProcessor::TrimPrefNever) {
  processor.loadFileAsync (file);
  processor.zoom.store (1.0f);
  processor.scroll.store (0.0f);
  return;
  }
- if (pref == DysektProcessor::TrimPrefAsk) {
+ if (pref == AvixProcessor::TrimPrefAsk) {
  juce::AudioFormatManager fm;
  fm.registerBasicFormats();
  std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (file));
@@ -1069,7 +1069,7 @@ void DysektEditor::showTrimDialog (const juce::File& file, bool isRelink)
  showTrimMode (file);
 }
 
-void DysektEditor::showTrimMode (const juce::File& file)
+void AvixEditor::showTrimMode (const juce::File& file)
 {
  trimSession = std::make_unique<TrimSession>();
  trimSession->file = file;
@@ -1080,7 +1080,7 @@ void DysektEditor::showTrimMode (const juce::File& file)
  processor.scroll.store (0.0f);
 }
 
-void DysektEditor::toggleSoftWave()
+void AvixEditor::toggleSoftWave()
 {
  waveformMode = (waveformMode + 1) % 8;
  waveformView.setWaveformMode (waveformMode);
@@ -1093,14 +1093,14 @@ void DysektEditor::toggleSoftWave()
  saveUserSettings (getTheme().name);
 }
 
-void DysektEditor::toggleMidiFollow()
+void AvixEditor::toggleMidiFollow()
 {
  const bool newVal = ! processor.midiSelectsSlice.load();
  processor.midiSelectsSlice.store (newVal);
  headerBar.setMidiFollowActive (newVal);
 }
 
-void DysektEditor::toggleShortcutsPanel()
+void AvixEditor::toggleShortcutsPanel()
 {
  const bool show = ! shortcutsPanel.isVisible();
  // Sync the current mode into the panel before showing it
@@ -1113,12 +1113,12 @@ void DysektEditor::toggleShortcutsPanel()
  }
 }
 
-void DysektEditor::toggleSeqPanel()
+void AvixEditor::toggleSeqPanel()
 {
     if (activeSlot == SlotContent::Seq)
     {
         activeSlot = SlotContent::None;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         pianoRollPanel.closeWindow();
         slotWindow.closeWindow();
         processor.sequencer.setSelectedTrack (-1);
@@ -1135,7 +1135,7 @@ void DysektEditor::toggleSeqPanel()
             browserPanel.setVisible (false);
             headerBar.setBrowserActive (false);
         }
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         else if (activeSlot == SlotContent::Mixer)
         {
             slotWindow.closeWindow();
@@ -1159,7 +1159,7 @@ void DysektEditor::toggleSeqPanel()
         }
 #endif
         activeSlot = SlotContent::Seq;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         slotWindow.showArrange();
         arrangeView.notifyCurrentTrack();
 #endif
@@ -1170,7 +1170,7 @@ void DysektEditor::toggleSeqPanel()
     repaint();
 }
 
-juce::String DysektEditor::resolveThemeKeyAt (juce::Component* hit, juce::Point<int> posInEditor)
+juce::String AvixEditor::resolveThemeKeyAt (juce::Component* hit, juce::Point<int> posInEditor)
 {
     if (hit == nullptr || hit == this)
         return "background";
@@ -1195,15 +1195,15 @@ juce::String DysektEditor::resolveThemeKeyAt (juce::Component* hit, juce::Point<
 
     for (auto* c = hit; c != nullptr && c != this; c = c->getParentComponent())
     {
-        const auto& key = c->getProperties()["dysektThemeKey"];
+        const auto& key = c->getProperties()["avixThemeKey"];
         if (! key.isVoid())
             return key.toString();
     }
     return {};
 }
 
-#if DYSEKT_STANDALONE
-void DysektEditor::setSlotWindowPickModeActive (bool active)
+#if AVIX_STANDALONE
+void AvixEditor::setSlotWindowPickModeActive (bool active)
 {
     slotWindow.getContent().setPickModeActive (active, [this] (const juce::String& key)
     {
@@ -1213,14 +1213,14 @@ void DysektEditor::setSlotWindowPickModeActive (bool active)
 }
 #endif
 
-void DysektEditor::toggleThemeEditor()
+void AvixEditor::toggleThemeEditor()
 {
  if (themeEditorPanel != nullptr)
  {
  themeEditorPanel.reset();
  if (pickOverlay != nullptr)
  pickOverlay->setVisible (false);
- #if DYSEKT_STANDALONE
+ #if AVIX_STANDALONE
  setSlotWindowPickModeActive (false);
  #endif
  repaint();
@@ -1267,7 +1267,7 @@ void DysektEditor::toggleThemeEditor()
  pickOverlay->setVisible (active);
  if (active) pickOverlay->toFront (false);
 
- #if DYSEKT_STANDALONE
+ #if AVIX_STANDALONE
  setSlotWindowPickModeActive (active);
  #endif
  };
@@ -1276,7 +1276,7 @@ void DysektEditor::toggleThemeEditor()
 }
 
 // ── Waveform frame rect helper ────────────────────────────────────────────────
-static juce::Rectangle<float> waveformFrameRect (const DysektEditor& ed,
+static juce::Rectangle<float> waveformFrameRect (const AvixEditor& ed,
                                                   const juce::Rectangle<int>& wvBounds,
                                                   bool hasTrimDialog)
 {
@@ -1292,7 +1292,7 @@ static juce::Rectangle<float> waveformFrameRect (const DysektEditor& ed,
  (float) (wvBounds.getHeight() + trimExtra + kFrameInset * 2) };
 }
 
-void DysektEditor::paint (juce::Graphics& g)
+void AvixEditor::paint (juce::Graphics& g)
 {
  g.fillAll (getTheme().background);
 
@@ -1329,7 +1329,7 @@ void DysektEditor::paint (juce::Graphics& g)
  }
 }
 
-void DysektEditor::paintOverChildren (juce::Graphics& g)
+void AvixEditor::paintOverChildren (juce::Graphics& g)
 {
  const bool modalActive = (midiLearnBackdrop != nullptr)
  || shortcutsPanel.isVisible()
@@ -1424,7 +1424,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
 
  if (browserPanel.isVisible() && browserPanel.getHeight() > 0)
  { slotBounds = browserPanel.getBounds(); slotPanelVisible = true; }
-#if ! DYSEKT_STANDALONE
+#if ! AVIX_STANDALONE
  else if (mixerPanel.isVisible() && mixerPanel.getHeight() > 0)
  { slotBounds = mixerPanel.getBounds(); slotPanelVisible = true; }
  else if (eqPanel.isVisible() && eqPanel.getHeight() > 0)
@@ -1460,27 +1460,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  }
  }
 
- // Logo frame border
- if (logoBar.isVisible() && logoBar.getHeight() > 0)
- {
- const auto ac = getTheme().accent;
- const juce::Rectangle<float> logoF (logoBar.getBounds().toFloat()
- .withTrimmedTop (4.0f * sf));
- if (getTheme().name == "metro")
- {
-     g.setColour (getTheme().separator);
-     g.drawRoundedRectangle (logoF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
- }
- else
- {
- g.setColour (ac.withAlpha (0.18f));
- g.drawRoundedRectangle(logoF.expanded (1.0f * sf), 0.0f, 1.0f * sf);
- g.setColour (ac.withAlpha (0.72f));
- g.drawRoundedRectangle(logoF.reduced (0.5f * sf), 0.0f, 1.5f * sf);
- g.setColour (ac.withAlpha (0.18f));
- g.drawRoundedRectangle(logoF.reduced (2.0f * sf), 0.0f, 1.0f * sf);
- }
- }
+ // (The AVIX logo is drawn unframed — no border around the logo area.)
 
  // Full-window accent frame
  {
@@ -1501,7 +1481,7 @@ void DysektEditor::paintOverChildren (juce::Graphics& g)
  }
 }
 
-void DysektEditor::resized()
+void AvixEditor::resized()
 {
  // Re-clamp the live resize ceiling to whichever monitor we're currently
  // on. setResizeLimits() in the constructor set a flat, screen-agnostic
@@ -1553,7 +1533,7 @@ void DysektEditor::resized()
  auto si = [sf](int v) -> int { return juce::roundToInt ((float) v * sf); };
 
  // Keep popup menu item heights in sync with the window scale.
- DysektLookAndFeel::setMenuScale (sf);
+ AvixLookAndFeel::setMenuScale (sf);
 
  auto area = designArea;
 
@@ -1615,9 +1595,12 @@ void DysektEditor::resized()
  // UNDO/REDO/PANIC/cog sit in the strip at the bottom of the control frame,
  // just under the GLOBAL PITCH / EQ / VOL knobs.
  headerBar.setBounds (cf->getX(), cf->getBottom() - si (kBtnBarH) - si (2), cf->getWidth(), si (kBtnBarH));
- // Centre logo: equal margin above and below between plugin top (y=0) and CF top
- const int logoY = (cfY - si (kLogoH)) / 2;
- logoBar.setBounds (logoRow.getX(), logoY, logoRow.getWidth(), si (kLogoH));
+ // Centre logo: the AVIX mark is portrait (ring + wordmark), so it gets the
+ // whole gap between the plugin top and the control frame rather than just
+ // a kLogoH-tall strip. LogoBar fits the image inside and never enlarges it.
+ const int logoTop = si (3);
+ const int logoH   = juce::jmax (1, cfY - logoTop - si (2));
+ logoBar.setBounds (logoRow.getX(), logoTop, logoRow.getWidth(), logoH);
  }
  else
  {
@@ -1650,7 +1633,7 @@ void DysektEditor::resized()
  // initBrowserOpen uses the waveform frame area instead — no slot needed.
  // At scale > 1.0 (host inflates bounds) we clamp to avoid overlap: the
  // scaled slot must never exceed what the remaining height can accommodate.
- #if DYSEKT_STANDALONE
+ #if AVIX_STANDALONE
  const bool hasActiveSlot = (activeSlot == SlotContent::Browser && ! initBrowserOpen);
 #else
  const bool hasActiveSlot = (activeSlot != SlotContent::None && ! initBrowserOpen);
@@ -1661,7 +1644,7 @@ void DysektEditor::resized()
  if (hasActiveSlot) area.removeFromBottom (si (kMargin));
 
  if (activeSlot == SlotContent::Mixer) {
-#if ! DYSEKT_STANDALONE
+#if ! AVIX_STANDALONE
  // Expand mixer to fill ALL available area (waveformView space + slot).
  const int mixTop = actionArea.getY();
  const int mixBot = slot.getBottom();
@@ -1669,7 +1652,7 @@ void DysektEditor::resized()
  mixerPanel.setVisible (true);
  browserPanel.setBounds ({});
  eqPanel.setBounds ({});
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  pianoRollPanel.setBounds ({});
  arrangeView.setBounds ({});
 #endif
@@ -1682,36 +1665,36 @@ void DysektEditor::resized()
  browserPanel.setBounds (kFX, browserTop, kFW, browserBot - browserTop);
  mixerPanel.setBounds ({});
  eqPanel.setBounds ({});
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  pianoRollPanel.setBounds ({});
  arrangeView.setBounds ({});
 #endif
  }
  else if (activeSlot == SlotContent::Eq) {
-#if ! DYSEKT_STANDALONE
+#if ! AVIX_STANDALONE
      const int eqTop = actionArea.getY();
      const int eqBot = slot.getBottom();
      eqPanel.setBounds (kFX, eqTop, kFW, eqBot - eqTop);
      mixerPanel.setBounds ({});
      browserPanel.setBounds ({});
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
      pianoRollPanel.setBounds ({});
      arrangeView.setBounds ({});
 #endif
 #endif
  }
  else if (activeSlot == SlotContent::Seq) {
-#if ! DYSEKT_STANDALONE
+#if ! AVIX_STANDALONE
      const int seqTop = actionArea.getY();
      const int seqBot = slot.getBottom();
      const int seqH   = seqBot - seqTop;
 
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
      arrangeView.setBounds (kFX, seqTop, kFW, seqH);
 #endif
 
      // PianoRollPanel floats as overlay on top of ArrangeView when visible
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
      if (pianoRollPanel.isVisible())
      {
          const int overlayH = juce::jmax (250, seqH * 3 / 4);
@@ -1729,10 +1712,10 @@ void DysektEditor::resized()
      eqPanel.setBounds ({});
 #endif
  } else {
-#if ! DYSEKT_STANDALONE
+#if ! AVIX_STANDALONE
  mixerPanel.setBounds ({});
  eqPanel.setBounds ({});
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  pianoRollPanel.setBounds ({});
  arrangeView.setBounds ({});
 #endif
@@ -1758,10 +1741,10 @@ void DysektEditor::resized()
  auto sampleSnap = processor.sampleData.getSnapshot();
  const bool hasRealSample = (hasSampleLoaded
        && sampleSnap != nullptr
-       && ! sampleSnap->filePath.containsIgnoreCase ("DYSEKT_default.wav"));
+       && ! sampleSnap->filePath.containsIgnoreCase ("AVIX_default.wav"));
 
  const bool normalBrowserOpen = (activeSlot == SlotContent::Browser && ! initBrowserOpen);
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  const bool inlineMixerOpen = false;
 #else
  const bool inlineMixerOpen = (activeSlot == SlotContent::Mixer);
@@ -1828,7 +1811,7 @@ void DysektEditor::resized()
  int trimH = (trimDialog != nullptr) ? si (kTrimBarH) : 0;
  int h = juce::jmax (si (80), screenBot - trimH - y);
 
- #if DYSEKT_STANDALONE
+ #if AVIX_STANDALONE
  const bool slotCoveringFrame = normalBrowserOpen;
 #else
  const bool slotCoveringFrame = (activeSlot != SlotContent::None && ! initBrowserOpen);
@@ -1946,12 +1929,12 @@ void DysektEditor::resized()
  pickOverlay->setBounds (getLocalBounds());
 }
 
-void DysektEditor::toggleMixerPanel()
+void AvixEditor::toggleMixerPanel()
 {
     if (activeSlot == SlotContent::Mixer)
     {
         activeSlot = SlotContent::None;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         slotWindow.closeWindow();
 #else
         mixerPanel.setVisible (false);
@@ -1965,7 +1948,7 @@ void DysektEditor::toggleMixerPanel()
             browserPanel.setVisible (false);
             headerBar.setBrowserActive (false);
         }
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         else if (activeSlot == SlotContent::Seq)
         {
             slotWindow.closeWindow();
@@ -1988,7 +1971,7 @@ void DysektEditor::toggleMixerPanel()
         }
 #endif
         activeSlot = SlotContent::Mixer;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         slotWindow.showMixer();
 #else
         mixerPanel.setVisible (true);
@@ -2000,12 +1983,12 @@ void DysektEditor::toggleMixerPanel()
     repaint();
 }
 
-void DysektEditor::toggleEqPanel()
+void AvixEditor::toggleEqPanel()
 {
     if (activeSlot == SlotContent::Eq)
     {
         activeSlot = SlotContent::None;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         slotWindow.closeWindow();
 #else
         eqPanel.setVisible (false);
@@ -2019,7 +2002,7 @@ void DysektEditor::toggleEqPanel()
             browserPanel.setVisible (false);
             headerBar.setBrowserActive (false);
         }
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         else if (activeSlot == SlotContent::Seq)
         {
             slotWindow.closeWindow();
@@ -2042,7 +2025,7 @@ void DysektEditor::toggleEqPanel()
         }
 #endif
         activeSlot = SlotContent::Eq;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
         slotWindow.showEq();
 #else
         eqPanel.setVisible (true);
@@ -2055,15 +2038,15 @@ void DysektEditor::toggleEqPanel()
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
-bool DysektEditor::keyPressed (const juce::KeyPress& key)
+bool AvixEditor::keyPressed (const juce::KeyPress& key)
 {
  auto mods = key.getModifiers();
  int code = key.getKeyCode();
 
  if (code == 'Z' && mods.isCommandDown() && mods.isShiftDown())
- { DysektProcessor::Command c; c.type = DysektProcessor::CmdRedo; processor.pushCommand (c); return true; }
+ { AvixProcessor::Command c; c.type = AvixProcessor::CmdRedo; processor.pushCommand (c); return true; }
  if (code == 'Z' && mods.isCommandDown())
- { DysektProcessor::Command c; c.type = DysektProcessor::CmdUndo; processor.pushCommand (c); return true; }
+ { AvixProcessor::Command c; c.type = AvixProcessor::CmdUndo; processor.pushCommand (c); return true; }
 
  if (mods.isCommandDown()) return false;
 
@@ -2080,7 +2063,7 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
  { toggleShortcutsPanel(); return true; }
 
  // Esc dismisses the PianoRoll overlay, returning to ArrangeView-only
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
  if (code == juce::KeyPress::escapeKey &&
      activeSlot == SlotContent::Seq &&
      pianoRollPanel.isVisible())
@@ -2133,16 +2116,16 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
 
  if (code == 'L' && uiMode == 0)
  {
- DysektProcessor::Command c;
- c.type = processor.lazyChop.isActive() ? DysektProcessor::CmdLazyChopStop
- : DysektProcessor::CmdLazyChopStart;
+ AvixProcessor::Command c;
+ c.type = processor.lazyChop.isActive() ? AvixProcessor::CmdLazyChopStop
+ : AvixProcessor::CmdLazyChopStart;
  processor.pushCommand (c); repaint(); return true;
  }
  if (code == juce::KeyPress::deleteKey)
  {
  const auto& ui = processor.getUiSliceSnapshot();
  if (ui.selectedSlice >= 0)
- { DysektProcessor::Command c; c.type = DysektProcessor::CmdDeleteSlice; c.intParam1 = ui.selectedSlice; processor.pushCommand (c); }
+ { AvixProcessor::Command c; c.type = AvixProcessor::CmdDeleteSlice; c.intParam1 = ui.selectedSlice; processor.pushCommand (c); }
  return true;
  }
  if (code == 'F') { toggleMidiFollow(); return true; }
@@ -2151,21 +2134,21 @@ bool DysektEditor::keyPressed (const juce::KeyPress& key)
  {
  const auto& ui = processor.getUiSliceSnapshot();
  if (ui.numSlices > 0)
- { DysektProcessor::Command c; c.type = DysektProcessor::CmdSelectSlice; c.intParam1 = juce::jlimit (0, ui.numSlices-1, ui.selectedSlice+1); processor.pushCommand (c); repaint(); }
+ { AvixProcessor::Command c; c.type = AvixProcessor::CmdSelectSlice; c.intParam1 = juce::jlimit (0, ui.numSlices-1, ui.selectedSlice+1); processor.pushCommand (c); repaint(); }
  return true;
  }
  if (code == juce::KeyPress::leftKey)
  {
  const auto& ui = processor.getUiSliceSnapshot();
  if (ui.numSlices > 0)
- { DysektProcessor::Command c; c.type = DysektProcessor::CmdSelectSlice; c.intParam1 = juce::jlimit (0, ui.numSlices-1, ui.selectedSlice-1); processor.pushCommand (c); repaint(); }
+ { AvixProcessor::Command c; c.type = AvixProcessor::CmdSelectSlice; c.intParam1 = juce::jlimit (0, ui.numSlices-1, ui.selectedSlice-1); processor.pushCommand (c); repaint(); }
  return true;
  }
 
  return false;
 }
 
-void DysektEditor::timerCallback()
+void AvixEditor::timerCallback()
 {
  bool uiChanged = false, viewportChanged = false;
  const bool previewActive = waveformView.hasActiveSlicePreview();
@@ -2336,7 +2319,7 @@ void DysektEditor::timerCallback()
  }
  // Only show the overview / zoom bar for a real user sample, not the default placeholder.
  const bool hasRealSampleNow = hasSample && timerSnap != nullptr
- && ! timerSnap->filePath.containsIgnoreCase ("DYSEKT_default.wav");
+ && ! timerSnap->filePath.containsIgnoreCase ("AVIX_default.wav");
 
  // Auto-close the init browser once the user has loaded a real sample.
  if (initBrowserOpen && hasRealSampleNow)
@@ -2368,7 +2351,7 @@ if (activeSlot == SlotContent::Mixer)
                                   sfzDropdown.getProgramGrid().getPresetChannels());
     mixerPanel.updateFromSnapshot();
 }
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
 if (activeSlot == SlotContent::Seq)   pianoRollPanel.syncSnap();
 #endif
 
@@ -2387,14 +2370,14 @@ if (activeSlot == SlotContent::Seq)   pianoRollPanel.syncSnap();
                 // Use the model's actual slice name so Mixer renames
                 // flow through to an existing chromatic Arranger track.
                 const juce::String sliceName = sl.name;
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
                 pianoRollPanel.onSliceChromaticToggled (
                     i, true, sl.chromaticChannel, sliceName, sl.colour);
 #endif
             }
             else
             {
-#if DYSEKT_STANDALONE
+#if AVIX_STANDALONE
                 pianoRollPanel.onSliceChromaticToggled (
                     i, false, 0, {}, juce::Colours::transparentBlack);
 #endif
@@ -2402,7 +2385,7 @@ if (activeSlot == SlotContent::Seq)   pianoRollPanel.syncSnap();
         }
     }
 
-#if JUCE_WINDOWS && ! DYSEKT_STANDALONE
+#if JUCE_WINDOWS && ! AVIX_STANDALONE
     // ── Host editor-window resize desync watchdog ───────────────────────────
     // Reproduces the bug where reopening the plugin (or restoring a session)
     // after the floating editor window was previously maximised/fullscreen
@@ -2451,7 +2434,7 @@ if (activeSlot == SlotContent::Seq)   pianoRollPanel.syncSnap();
 #endif
 }
 
-void DysektEditor::showSliceRenameOverlay (int sliceIdx, const juce::String& currentName,
+void AvixEditor::showSliceRenameOverlay (int sliceIdx, const juce::String& currentName,
                                            bool targetEngine2)
 {
     if (sliceIdx < 0)
@@ -2468,8 +2451,8 @@ void DysektEditor::showSliceRenameOverlay (int sliceIdx, const juce::String& cur
         if (cancelled)
             return;
 
-        DysektProcessor::Command cmd;
-        cmd.type = DysektProcessor::CmdSetSliceName;
+        AvixProcessor::Command cmd;
+        cmd.type = AvixProcessor::CmdSetSliceName;
         cmd.intParam1 = sliceIdx;
         cmd.stringParam = newName;
         cmd.targetEngine2 = targetEngine2;
@@ -2477,7 +2460,7 @@ void DysektEditor::showSliceRenameOverlay (int sliceIdx, const juce::String& cur
     };
 }
 
-void DysektEditor::ensureDefaultThemes()
+void AvixEditor::ensureDefaultThemes()
 {
  auto dir = getThemesDir(); dir.createDirectory();
  auto write = [&] (const juce::String& name, const ThemeData& t)
@@ -2491,9 +2474,11 @@ void DysektEditor::ensureDefaultThemes()
  // don't linger in the picker after an update.
  write ("metro", ThemeData::metroTheme());
 
+ // "dysekt" is the pre-rebrand name of the built-in now called "avix";
+ // installs that predate the rename still have a dysekt.dsk to clean up.
  static const char* kRetiredBuiltIns[] = {
      "dark", "shell", "lazy", "snow", "ghost", "hack",
-     "midnight", "pigments", "cr8", "dysekt", "serum", "opendaw", "glass"
+     "midnight", "pigments", "cr8", "avix", "dysekt", "serum", "opendaw", "glass"
  };
  for (auto* name : kRetiredBuiltIns)
  {
@@ -2502,7 +2487,7 @@ void DysektEditor::ensureDefaultThemes()
  }
 }
 
-juce::StringArray DysektEditor::getAvailableThemes()
+juce::StringArray AvixEditor::getAvailableThemes()
 {
  juce::StringArray names;
  for (auto& f : getThemesDir().findChildFiles (juce::File::findFiles, false, "*.dsk"))
@@ -2514,7 +2499,7 @@ juce::StringArray DysektEditor::getAvailableThemes()
  return names;
 }
 
-void DysektEditor::applyTheme (const juce::String& themeName)
+void AvixEditor::applyTheme (const juce::String& themeName)
 {
  for (auto& f : getThemesDir().findChildFiles (juce::File::findFiles, false, "*.dsk"))
  {
@@ -2541,7 +2526,7 @@ void DysektEditor::applyTheme (const juce::String& themeName)
 }
 
 
-void DysektEditor::saveUserSettings (const juce::String& themeName)
+void AvixEditor::saveUserSettings (const juce::String& themeName)
 {
  auto file = getUserSettingsFile();
  file.getParentDirectory().createDirectory();
@@ -2551,7 +2536,7 @@ void DysektEditor::saveUserSettings (const juce::String& themeName)
  + "\nuiMode: " + juce::String (uiMode) + "\n");
 }
 
-void DysektEditor::loadUserSettings()
+void AvixEditor::loadUserSettings()
 {
  juce::String themeName = "metro";
  auto file = getUserSettingsFile();
@@ -2592,7 +2577,7 @@ void DysektEditor::loadUserSettings()
 }
 
 
-bool DysektEditor::isInterestedInFileDrag (const juce::StringArray& files)
+bool AvixEditor::isInterestedInFileDrag (const juce::StringArray& files)
 {
  for (auto& f : files)
  {
@@ -2605,7 +2590,7 @@ bool DysektEditor::isInterestedInFileDrag (const juce::StringArray& files)
  return false;
 }
 
-void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
+void AvixEditor::filesDropped (const juce::StringArray& files, int, int)
 {
  if (files.isEmpty()) return;
  juce::File f (files[0]);
@@ -2653,7 +2638,7 @@ void DysektEditor::filesDropped (const juce::StringArray& files, int, int)
 // filesDropped() -> loadSoundFontAsync(SfzPlayer2) call, but that
 // component isn't instantiated anywhere in the editor, so it's dead code
 // and not a live drop path -- nothing to wire there.
-void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
+void AvixEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
 {
     const auto zones = SfzPlayerDropdownPanel::parseSfzZones (sfzFile);
     const auto classification = SfzLayoutClassifier::classify (zones);
@@ -2661,7 +2646,7 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
     // isn't worth a prompt even if the heuristic fires.
     if (! classification.isPercussive || classification.numZones < 3)
         return;   // not a kit: setInstrument() already opened the ZONES view (or the
-                  // file's own dysekt_drum_kit flag opened PADS)
+                  // file's own avix_drum_kit flag opened PADS)
 
     // A detected kit opens in the DRUM PADS view as part of the load -- before
     // the Assign/Skip prompt below, which then appears over the pads. Not
@@ -2692,11 +2677,11 @@ void DysektEditor::offerDrumKitAutoRouting (const juce::File& sfzFile)
 }
 
 // See declaration comment (PluginEditor.h) — plan §5.5/§5.8.
-void DysektEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArrangerTrack)
+void AvixEditor::loadSfzIntoMultisampler (const juce::File& f, bool createArrangerTrack)
 {
     auto doImport = [this, f, createArrangerTrack]
     {
-       #if DYSEKT_STANDALONE
+       #if AVIX_STANDALONE
         if (createArrangerTrack)
         {
             static const juce::Colour kSfzTrackColour (0xFF9060D0);

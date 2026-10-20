@@ -8,7 +8,7 @@
 
 // Standalone-only network transport layer.
 //
-// This is deliberately outside src/network so the DYSEKT plugin target cannot
+// This is deliberately outside src/network so the AVIX plugin target cannot
 // acquire USB device networking or SonoBus transport responsibilities.
 class DeviceNetworkTransport
 {

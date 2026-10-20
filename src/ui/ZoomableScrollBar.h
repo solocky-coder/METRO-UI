@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
 
     ZoomableScrollBar.h
 

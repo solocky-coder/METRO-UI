@@ -39,7 +39,7 @@ public:
 
         /** True only for the transient playback-preview file (see
             MultisamplerEditor::performEngineSync). Reverse is then written as
-            the private opcode dysekt_reverse=1 instead of the standard
+            the private opcode avix_reverse=1 instead of the standard
             direction=reverse: sfizz ignores unknown opcodes, and
             SoundFontLoader reverses each rendered note itself, so REV no
             longer depends on sfizz's direction handling. Real exports (EXPORT

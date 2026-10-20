@@ -9,7 +9,7 @@
 // just the standard JUCE widgets a LookAndFeel subclass can reach).
 struct ThemeData;
 
-// Windows Metro / Fluent palette — DYSEKT-SF Metro UI Developer Specification
+// Windows Metro / Fluent palette — AVIX Metro UI Developer Specification
 // (Technical) v2, THEME section, plus the fuller palette from v1's COLOR
 // PALETTE section (Success/Warning/Danger, secondary text, slice colours).
 namespace MetroTheme

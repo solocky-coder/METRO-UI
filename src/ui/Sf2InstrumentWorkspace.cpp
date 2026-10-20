@@ -7,7 +7,7 @@
 //  deliberate compatibility deviation; it has no separate control in the SVG.
 // =============================================================================
 #include "Sf2InstrumentWorkspace.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
 #include <algorithm>
@@ -86,11 +86,11 @@ public:
         auto textArea = row.reduced (12, 0);
         auto badgeArea = textArea.removeFromRight (48);
 
-        g.setFont (DysektLookAndFeel::makeFont (17.f, isCurrent));
+        g.setFont (AvixLookAndFeel::makeFont (17.f, isCurrent));
         g.setColour (assigned ? presetColour : theme.foreground);
         g.drawText (info.name, textArea, juce::Justification::centredLeft, true);
 
-        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (14.f, true));
         g.setColour (assigned ? presetColour.withAlpha (0.82f)
                               : theme.foreground.withAlpha (0.55f));
         juce::String badge = juce::String (info.preset).paddedLeft ('0', 3);
@@ -363,7 +363,7 @@ private:
 //  Constructor / destructor
 // =============================================================================
 
-Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
+Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (AvixProcessor& p)
     : channelFxPanel (p), processor (p)
 {
     // The grid is retained purely as the shared data model (channel
@@ -379,7 +379,7 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     // ── Column 1 — search box + preset list ───────────────────────────────────
     searchBox.setTextToShowWhenEmpty ("Search presets", getTheme().foreground.withAlpha (0.45f));
     searchBox.setMultiLine (false);
-    searchBox.setFont (DysektLookAndFeel::makeFont (16.f));
+    searchBox.setFont (AvixLookAndFeel::makeFont (16.f));
     searchBox.setColour (juce::TextEditor::backgroundColourId, getTheme().darkBar.darker (0.2f));
     searchBox.setColour (juce::TextEditor::textColourId, getTheme().foreground);
     searchBox.onTextChange = [this]
@@ -416,7 +416,7 @@ Sf2InstrumentWorkspace::Sf2InstrumentWorkspace (DysektProcessor& p)
     };
     addAndMakeVisible (browseButton);
 
-#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+#if AVIX_SF2_EXPERIMENTAL_MULTI_GROUP
     // Reflect whatever the engine's current state is (default OFF) rather
     // than assuming — keeps this in sync if some other path ever flips it.
     experimentalMultiGroupToggle.setToggleState (
@@ -529,7 +529,7 @@ void Sf2InstrumentWorkspace::handlePresetRightClicked (int idx, juce::Point<int>
                       ! blocked);
     }
 
-    const float ms = DysektLookAndFeel::getMenuScale();
+    const float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
@@ -696,7 +696,7 @@ void Sf2InstrumentWorkspace::layoutWide (juce::Rectangle<int> bounds)
 {
     topBarZone = bounds.removeFromTop (kTopBarH);
     loadedPillZone = topBarZone.removeFromRight (170).reduced (4);
-#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+#if AVIX_SF2_EXPERIMENTAL_MULTI_GROUP
     // Debug-only toggle, docked to the left of the loaded pill so it
     // never competes with the caption text for space.
     experimentalToggleZone = topBarZone.removeFromRight (150).reduced (4);
@@ -859,7 +859,7 @@ void Sf2InstrumentWorkspace::layoutNarrow (juce::Rectangle<int> bounds)
     // performance/FX + keyboard at the bottom — each gets roughly a third.
     topBarZone = bounds.removeFromTop (kTopBarH);
     loadedPillZone = topBarZone.removeFromRight (170).reduced (4);
-#if DYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP
+#if AVIX_SF2_EXPERIMENTAL_MULTI_GROUP
     // Debug-only toggle, docked to the left of the loaded pill so it
     // never competes with the caption text for space.
     experimentalToggleZone = topBarZone.removeFromRight (150).reduced (4);
@@ -975,7 +975,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     g.setColour (juce::Colour::fromString ("FF10191e"));
     g.fillRect (topBarZone);
     g.setColour (theme.foreground.withAlpha (0.8f));
-    g.setFont (DysektLookAndFeel::makeFont (18.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (18.f, true));
     g.drawText ("SF2 INSTRUMENT PANEL", topBarZone.withTrimmedLeft (16),
                 juce::Justification::centredLeft);
 
@@ -987,7 +987,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         g.setColour (loaded ? juce::Colour::fromString ("FF83d96b") : theme.foreground.withAlpha (0.3f));
         g.fillEllipse (loadedPillZone.getX() + 10.f, loadedPillZone.getCentreY() - 4.f, 8.f, 8.f);
         g.setColour (juce::Colour::fromString ("FFc9efd0"));
-        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (14.f, true));
         g.drawText (loaded ? "SOUNDFONT LOADED" : "NO SOUNDFONT",
                     loadedPillZone.withTrimmedLeft (24), juce::Justification::centredLeft);
     }
@@ -1003,7 +1003,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         g.drawHorizontalLine (col1Zone.getBottom(), 0.f, (float) getWidth());
 
     // ── Column 1 footer ─────────────────────────────────────────────────────
-    g.setFont (DysektLookAndFeel::makeFont (16.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (16.f, true));
     g.setColour (theme.foreground.withAlpha (0.6f));
     g.drawText ("BANK 000  |  GENERAL MIDI", bankFooterZone, juce::Justification::centredLeft);
 
@@ -1039,7 +1039,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
             { "RATE", "PITCH", "VOL", "CUT", "RATE", "DEPTH", "LEVEL", "TIME", "FDBK", "MIX", "DRIVE" };
         static const char* const kGroupNames[4] = { "MOD LFO", "CHORUS", "DELAY", "DRIVE" };
 
-        g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (13.f, true));
         for (int gi = 0; gi < 4; ++gi)
         {
             g.setColour (theme.accent.withAlpha (0.85f));
@@ -1107,7 +1107,7 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         // which is exactly the bug that made this text vanish after ~1 second
         // of runtime in the first build.
         auto header = activePresetHeaderZone;
-        g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (14.f, true));
         g.setColour (theme.foreground.withAlpha (0.6f));
         g.drawText ("ACTIVE PRESET", header.removeFromTop (16),
                     juce::Justification::centredLeft);
@@ -1118,10 +1118,10 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
         auto metaRow = nameRow.removeFromRight (metaWidth);
         nameRow.removeFromRight (kPad);
 
-        g.setFont (DysektLookAndFeel::makeFont (24.f, true));
+        g.setFont (AvixLookAndFeel::makeFont (24.f, true));
         g.setColour (nameColour);
         g.drawFittedText (name, nameRow, juce::Justification::centredLeft, 1, 0.7f);
-        g.setFont (DysektLookAndFeel::makeFont (14.f));
+        g.setFont (AvixLookAndFeel::makeFont (14.f));
         g.setColour (hasCh ? nameColour.withAlpha (0.85f) : theme.foreground.withAlpha (0.6f));
         g.drawFittedText (meta, metaRow, juce::Justification::centredRight, 1, 0.7f);
     }
@@ -1131,18 +1131,18 @@ void Sf2InstrumentWorkspace::paint (juce::Graphics& g)
     // preset's global controls" (Sections A/B above) to "every assigned
     // channel's mixer strip" (Sf2ChannelFxPanel, painted separately as a
     // child component immediately below this label).
-    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (13.f, true));
     g.setColour (theme.foreground.withAlpha (0.55f));
     g.drawText ("CHANNEL MIXER", mixerLabelZone, juce::Justification::centredLeft);
 
     // ── Section C — note activity meter (always visible, above keyboard) ───
-    g.setFont (DysektLookAndFeel::makeFont (13.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (13.f, true));
     g.setColour (theme.foreground.withAlpha (0.55f));
     g.drawText ("NOTE ACTIVITY", noteActivityLabelZone, juce::Justification::centredLeft);
     drawNoteMeter (g, noteMeterZone);
 
     // ── Keyboard label ──────────────────────────────────────────────────────
-    g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (14.f, true));
     g.setColour (theme.foreground.withAlpha (0.6f));
     g.drawText ("KEYBOARD  |  " + (compactKeyboard != nullptr ? compactKeyboard->getRangeLabel() : "C3-C5"),
                 keyboardZone.withHeight (16).translated (0, -18),
@@ -1187,12 +1187,12 @@ void Sf2InstrumentWorkspace::drawKnob (juce::Graphics& g, juce::Rectangle<int> b
     const float py = cy - radius * 0.6f * std::cos (fillAngle);
     g.drawLine (cx, cy, px, py, 1.5f);
 
-    g.setFont (DysektLookAndFeel::makeFont (14.f));
+    g.setFont (AvixLookAndFeel::makeFont (14.f));
     g.setColour (theme.foreground.withAlpha (0.65f));
     g.drawText (label, labelRow, juce::Justification::centred);
 
     g.setColour (theme.foreground);
-    g.setFont (DysektLookAndFeel::makeFont (16.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (16.f, true));
     g.drawText (valueStr, valueRow, juce::Justification::centred);
 }
 
@@ -1203,12 +1203,12 @@ void Sf2InstrumentWorkspace::drawSlider (juce::Graphics& g, juce::Rectangle<int>
     if (bounds.isEmpty()) return;
     const auto& theme = getTheme();
 
-    g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (14.f, true));
     g.setColour (theme.foreground.withAlpha (0.65f));
     auto labelRow = bounds.removeFromTop (16);
     g.drawText (label, labelRow, juce::Justification::centredLeft);
     g.setColour (theme.foreground);
-    g.setFont (DysektLookAndFeel::makeFont (14.f, true));
+    g.setFont (AvixLookAndFeel::makeFont (14.f, true));
     g.drawText (valueStr, labelRow, juce::Justification::centredRight);
 
     auto track = juce::Rectangle<int> (bounds.getX(), bounds.getY() + 4, bounds.getWidth(), 12);
@@ -1272,7 +1272,7 @@ void Sf2InstrumentWorkspace::timerCallback()
 
     // ── MIDI channel range (keeps program-grid assignment state current) ───────
     {
-        const uint32_t mask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & DysektProcessor::kSf2AllowedMidiChannelMask;
+        const uint32_t mask = processor.sfPlayerChannelMask.load (std::memory_order_relaxed) & AvixProcessor::kSf2AllowedMidiChannelMask;
         cachedChLow  = 0;
         cachedChHigh = 0;
         if (mask != 0)
@@ -1499,7 +1499,7 @@ void Sf2InstrumentWorkspace::showMidiLearnMenu (int fieldId, juce::Point<int> sc
     if (mapped)
         menu.addItem (2, "Clear (" + processor.midiLearn.getLabelText (fieldId) + ")");
 
-    float ms = DysektLookAndFeel::getMenuScale();
+    float ms = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (
         juce::PopupMenu::Options()
             .withTargetScreenArea (juce::Rectangle<int> (screenPos.x, screenPos.y, 1, 1))
@@ -1523,7 +1523,7 @@ void Sf2InstrumentWorkspace::mouseDown (const juce::MouseEvent& e)
     // ── Right-click — MIDI Learn menu on a knob/slider ────────────────────────
     if (e.mods.isRightButtonDown())
     {
-        using F = DysektProcessor::SliceParamField;
+        using F = AvixProcessor::SliceParamField;
         struct { juce::Rectangle<int>& zone; int fieldId; } fields[] =
         {
             { levelZone,       F::FieldSfzVol         },

@@ -168,7 +168,7 @@ private:
         // filenames + default_path convention, and confirm the importer
         // finds them there instead of reporting them missing.
         auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
-                        .getNonexistentChildFile ("dysekt_default_path_test", "", false);
+                        .getNonexistentChildFile ("avix_default_path_test", "", false);
         root.createDirectory();
         auto samplesDir = root.getChildFile ("Kit Samples");
         samplesDir.createDirectory();
@@ -601,27 +601,27 @@ private:
             expect (r.success && r.instrument.drumKit);
         }
 
-        beginTest ("drumKit flag survives SFZ export -> import via dysekt_drum_kit, and leaks nowhere else");
+        beginTest ("drumKit flag survives SFZ export -> import via avix_drum_kit, and leaks nowhere else");
         {
             MultisamplerInstrument inst;
             inst.addZone (padZone (36, 36, 36));
             inst.drumKit = true;
             const auto text = SfzExporter::render (inst, juce::File());
-            expect (text.contains ("dysekt_drum_kit=1"));
+            expect (text.contains ("avix_drum_kit=1"));
             const auto r = SfzImporter::importText (text, juce::File::getSpecialLocation (juce::File::tempDirectory));
             expect (r.success && r.instrument.drumKit);
             for (const auto& z : r.instrument.zones)
                 for (const auto& kv : z.extraOpcodes)
-                    expect (! kv.first.contains ("dysekt_drum_kit"));
+                    expect (! kv.first.contains ("avix_drum_kit"));
 
             inst.drumKit = false;
-            expect (! SfzExporter::render (inst, juce::File()).contains ("dysekt_drum_kit"));
+            expect (! SfzExporter::render (inst, juce::File()).contains ("avix_drum_kit"));
         }
     }
 
     void testPreviewReverseOpcode()
     {
-        beginTest ("REV: real export keeps direction=reverse; preview file uses private dysekt_reverse=1");
+        beginTest ("REV: real export keeps direction=reverse; preview file uses private avix_reverse=1");
         MultisamplerInstrument inst;
         auto z = padZone (36, 36, 36);
         z.reverse = true;
@@ -629,16 +629,16 @@ private:
 
         const auto real = SfzExporter::render (inst, juce::File());
         expect (real.contains ("direction=reverse"));
-        expect (! real.contains ("dysekt_reverse"));
+        expect (! real.contains ("avix_reverse"));
 
         SfzExporter::Options preview;
         preview.previewForSliceRender = true;
         const auto prev = SfzExporter::render (inst, juce::File(), preview);
-        expect (prev.contains ("dysekt_reverse=1"));
+        expect (prev.contains ("avix_reverse=1"));
         expect (! prev.contains ("direction=reverse"));   // would double-reverse if sfizz honoured it too
 
         inst.zones[0].reverse = false;
-        expect (! SfzExporter::render (inst, juce::File(), preview).contains ("dysekt_reverse"));
+        expect (! SfzExporter::render (inst, juce::File(), preview).contains ("avix_reverse"));
     }
 
     void testOneShotIsNotALoop()

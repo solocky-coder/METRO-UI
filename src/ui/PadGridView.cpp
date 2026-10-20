@@ -1,12 +1,12 @@
 #include "PadGridView.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
 #include "../params/ParamIds.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
 //==============================================================================
-PadGridView::PadGridView (DysektProcessor& proc)
+PadGridView::PadGridView (AvixProcessor& proc)
     : processor (proc)
 {
     setRepaintsOnMouseActivity (false);
@@ -49,7 +49,7 @@ void PadGridView::drawBankBar (juce::Graphics& g) const
         g.setColour (active ? th.background : th.separator);
         g.drawRoundedRectangle(r.toFloat().reduced (0.5f), 0.0f, 1.0f);
 
-        g.setFont (DysektLookAndFeel::makeFont (11.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (11.0f, true));
         g.setColour (active ? th.background : th.foreground.withAlpha (0.70f));
         g.drawText (label, r, juce::Justification::centred);
     };
@@ -185,7 +185,7 @@ void PadGridView::drawPad (juce::Graphics& g,
 
     // ── MIDI note name ────────────────────────────────────────────────────────
     {
-        g.setFont (DysektLookAndFeel::makeMonoFont (7.5f));
+        g.setFont (AvixLookAndFeel::makeMonoFont (7.5f));
         g.setColour (sliceCol.brighter (0.55f).withAlpha (0.90f));
         g.drawText (midiNoteName (slice.midiNote),
                     topRow.withWidth (28),
@@ -197,7 +197,7 @@ void PadGridView::drawPad (juce::Graphics& g,
         const juce::String displayName = slice.name.isNotEmpty()
             ? slice.name
             : ("Slice " + juce::String (absIndex + 1));
-        g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (8.5f, true));
         g.setColour (juce::Colours::white.withAlpha (sel ? 1.0f : 0.88f));
         g.drawText (displayName, topRow, juce::Justification::centred, true);
     }
@@ -503,8 +503,8 @@ void PadGridView::mouseDown (const juce::MouseEvent& e)
     // ── Right-click: context menu ─────────────────────────────────────────────
     if (e.mods.isRightButtonDown())
     {
-        DysektProcessor::Command selCmd;
-        selCmd.type      = DysektProcessor::CmdSelectSlice;
+        AvixProcessor::Command selCmd;
+        selCmd.type      = AvixProcessor::CmdSelectSlice;
         selCmd.intParam1 = idx;
         processor.pushCommand (selCmd);
         repaint();
@@ -514,8 +514,8 @@ void PadGridView::mouseDown (const juce::MouseEvent& e)
     }
 
     // ── Left-click: select + play ─────────────────────────────────────────────
-    DysektProcessor::Command cmd;
-    cmd.type      = DysektProcessor::CmdSelectSlice;
+    AvixProcessor::Command cmd;
+    cmd.type      = AvixProcessor::CmdSelectSlice;
     cmd.intParam1 = idx;
     processor.pushCommand (cmd);
 
@@ -619,12 +619,12 @@ public:
         g.setColour (th.separator.withAlpha (0.5f));
         g.drawRoundedRectangle(b, 0.0f, 0.8f);
 
-        g.setFont (DysektLookAndFeel::makeFont (10.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (10.5f, true));
         g.setColour (th.foreground.withAlpha (0.80f));
         g.drawText (label, b.reduced (7.f, 0.f).withWidth (60.f),
                     juce::Justification::centredLeft);
 
-        g.setFont (DysektLookAndFeel::makeFont (10.5f, false));
+        g.setFont (AvixLookAndFeel::makeFont (10.5f, false));
         g.setColour (th.foreground);
         g.drawText (formatValue (value), b.reduced (7.f, 0.f),
                     juce::Justification::centredRight);
@@ -666,7 +666,7 @@ void PadGridView::showPadContextMenu (int idx, juce::Point<int> screenPos)
     if (idx < 0 || idx >= snap.numSlices) return;
     const auto& slice = snap.slices[(size_t) idx];
 
-    float ms     = DysektLookAndFeel::getMenuScale();
+    float ms     = AvixLookAndFeel::getMenuScale();
     int   itemH  = (int) (24 * ms);
     int   sliderH = (int) (36 * ms);
     auto* topLvl = getTopLevelComponent();
@@ -690,9 +690,9 @@ void PadGridView::showPadContextMenu (int idx, juce::Point<int> screenPos)
         "VOL", effVolume, -100.f, 24.f, 0.f, makeVolLabel,
         [this] (float v)
         {
-            DysektProcessor::Command cmd;
-            cmd.type      = DysektProcessor::CmdSetSliceParam;
-            cmd.intParam1 = DysektProcessor::FieldVolume;
+            AvixProcessor::Command cmd;
+            cmd.type      = AvixProcessor::CmdSetSliceParam;
+            cmd.intParam1 = AvixProcessor::FieldVolume;
             cmd.intParam2 = 0;
             cmd.floatParam1 = v;
             processor.pushCommand (cmd);
@@ -706,9 +706,9 @@ void PadGridView::showPadContextMenu (int idx, juce::Point<int> screenPos)
         "PITCH", effPitch, -48.f, 48.f, 0.f, makePitchLabel,
         [this] (float v)
         {
-            DysektProcessor::Command cmd;
-            cmd.type      = DysektProcessor::CmdSetSliceParam;
-            cmd.intParam1 = DysektProcessor::FieldPitch;
+            AvixProcessor::Command cmd;
+            cmd.type      = AvixProcessor::CmdSetSliceParam;
+            cmd.intParam1 = AvixProcessor::FieldPitch;
             cmd.intParam2 = 0;
             cmd.floatParam1 = v;
             processor.pushCommand (cmd);
@@ -724,9 +724,9 @@ void PadGridView::showPadContextMenu (int idx, juce::Point<int> screenPos)
         "PAN", effPan, -1.f, 1.f, 0.f, makePanLabel,
         [this] (float v)
         {
-            DysektProcessor::Command cmd;
-            cmd.type      = DysektProcessor::CmdSetSliceParam;
-            cmd.intParam1 = DysektProcessor::FieldPan;
+            AvixProcessor::Command cmd;
+            cmd.type      = AvixProcessor::CmdSetSliceParam;
+            cmd.intParam1 = AvixProcessor::FieldPan;
             cmd.intParam2 = 0;
             cmd.floatParam1 = v;
             processor.pushCommand (cmd);
@@ -787,8 +787,8 @@ void PadGridView::showPadContextMenu (int idx, juce::Point<int> screenPos)
 
             if (result == 2)
             {
-                DysektProcessor::Command cmd;
-                cmd.type      = DysektProcessor::CmdDeleteSlice;
+                AvixProcessor::Command cmd;
+                cmd.type      = AvixProcessor::CmdDeleteSlice;
                 cmd.intParam1 = idx;
                 processor.pushCommand (cmd);
                 repaint();
@@ -803,9 +803,9 @@ void PadGridView::showPadContextMenu (int idx, juce::Point<int> screenPos)
 
             if (result >= 400 && result < 500)
             {
-                DysektProcessor::Command cmd;
-                cmd.type        = DysektProcessor::CmdSetSliceParam;
-                cmd.intParam1   = DysektProcessor::FieldMuteGroup;
+                AvixProcessor::Command cmd;
+                cmd.type        = AvixProcessor::CmdSetSliceParam;
+                cmd.intParam1   = AvixProcessor::FieldMuteGroup;
                 cmd.intParam2   = 0;
                 cmd.floatParam1 = (float) (result - 400);
                 processor.pushCommand (cmd);
@@ -814,9 +814,9 @@ void PadGridView::showPadContextMenu (int idx, juce::Point<int> screenPos)
 
             if (result >= 500 && result < 600)
             {
-                DysektProcessor::Command cmd;
-                cmd.type        = DysektProcessor::CmdSetSliceParam;
-                cmd.intParam1   = DysektProcessor::FieldOutputBus;
+                AvixProcessor::Command cmd;
+                cmd.type        = AvixProcessor::CmdSetSliceParam;
+                cmd.intParam1   = AvixProcessor::FieldOutputBus;
                 cmd.intParam2   = 0;
                 cmd.floatParam1 = (float) (result - 500);
                 processor.pushCommand (cmd);
@@ -858,15 +858,15 @@ void PadGridView::launchColorPicker (int idx, juce::Rectangle<int> padScreenBoun
 
     struct ColourListener : public juce::ChangeListener
     {
-        DysektProcessor& proc;
+        AvixProcessor& proc;
         int sliceIdx;
-        ColourListener (DysektProcessor& p, int i) : proc (p), sliceIdx (i) {}
+        ColourListener (AvixProcessor& p, int i) : proc (p), sliceIdx (i) {}
         void changeListenerCallback (juce::ChangeBroadcaster* src) override
         {
             if (auto* cs = dynamic_cast<juce::ColourSelector*> (src))
             {
-                DysektProcessor::Command cmd;
-                cmd.type      = DysektProcessor::CmdSetSliceColour;
+                AvixProcessor::Command cmd;
+                cmd.type      = AvixProcessor::CmdSetSliceColour;
                 cmd.intParam1 = sliceIdx;
                 cmd.intParam2 = (int)(unsigned) cs->getCurrentColour().withAlpha (1.0f).getARGB();
                 proc.pushCommand (cmd);

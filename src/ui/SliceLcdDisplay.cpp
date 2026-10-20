@@ -1,5 +1,5 @@
 #include "SliceLcdDisplay.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "LcdColours.h"
 #include "UIHelpers.h"
 #include "SliceControlBar.h"
@@ -84,7 +84,7 @@ juce::String SliceLcdDisplay::formatPan (float pan)
 
 // ── Constructor ────────────────────────────────────────────────────────────────
 
-SliceLcdDisplay::SliceLcdDisplay (DysektProcessor& p)
+SliceLcdDisplay::SliceLcdDisplay (AvixProcessor& p)
     : processor (p)
 {
     setOpaque (true);
@@ -313,8 +313,8 @@ void SliceLcdDisplay::drawRow (juce::Graphics& g, int row, const juce::String& l
     // Skip rows fully outside the visible screen area
     if (y + rowH <= b.getY() + 4 || y >= b.getBottom() - 4) return;
 
-    const juce::Font labelFont = DysektLookAndFeel::makeFont (24.0f * sf, true);
-    const juce::Font valueFont = DysektLookAndFeel::makeFont (26.0f * sf);
+    const juce::Font labelFont = AvixLookAndFeel::makeFont (24.0f * sf, true);
+    const juce::Font valueFont = AvixLookAndFeel::makeFont (26.0f * sf);
 
     if (highlight)
     {
@@ -350,7 +350,7 @@ void SliceLcdDisplay::drawRowPair (juce::Graphics& g, int row,
     const int rowH  = effectiveRowH();
     const int lPad  = juce::roundToInt (kLeftPad * sf);
     const int y       = b.getY() + 4 + row * rowH;
-    const juce::Font  f = DysektLookAndFeel::makeFont (23.0f * sf);
+    const juce::Font  f = AvixLookAndFeel::makeFont (23.0f * sf);
 
     // Skip rows fully outside the visible screen area
     if (y + rowH <= b.getY() + 4 || y >= b.getBottom() - 4) return;
@@ -424,7 +424,7 @@ void SliceLcdDisplay::drawFlagsRow (juce::Graphics& g, int /*row*/)
     auto screen = getLocalBounds().reduced (4);
 
     const float sf      = (float) getHeight() / (float) kPreferredHeight;
-    const juce::Font flagFont = DysektLookAndFeel::makeFont (16.0f * sf, true);
+    const juce::Font flagFont = AvixLookAndFeel::makeFont (16.0f * sf, true);
     const int flagH   = juce::roundToInt (22 * sf);
     const int flagGap = juce::roundToInt (4  * sf);
     const int pad     = juce::roundToInt (3  * sf);
@@ -435,9 +435,9 @@ void SliceLcdDisplay::drawFlagsRow (juce::Graphics& g, int /*row*/)
     const bool sfzModeFlags = isSfzPlayer2Mode();
 
     std::vector<Flag> flags = {
-        { "REV",  data.reverse,        DysektProcessor::FieldReverse,        false },
-        { loopStr, data.loopMode > 0,  DysektProcessor::FieldLoop,           true  },
-        { "1SH",  data.oneShot,        DysektProcessor::FieldOneShot,        false },
+        { "REV",  data.reverse,        AvixProcessor::FieldReverse,        false },
+        { loopStr, data.loopMode > 0,  AvixProcessor::FieldLoop,           true  },
+        { "1SH",  data.oneShot,        AvixProcessor::FieldOneShot,        false },
     };
     // FieldGlobalMono is a true global APVTS param for the whole Slicer
     // engine with no SFZ-PLAYER equivalent (processMidi2 never reads it) —
@@ -445,7 +445,7 @@ void SliceLcdDisplay::drawFlagsRow (juce::Graphics& g, int /*row*/)
     // entirely here so the remaining flags redistribute across the strip.
     if (! sfzModeFlags)
         flags.push_back ({ data.globalMono ? "MONO" : "POLY",
-                            data.globalMono, DysektProcessor::FieldGlobalMono, false });
+                            data.globalMono, AvixProcessor::FieldGlobalMono, false });
     // STR (time-stretch) and TAIL (release-tail head/tail split) are both
     // Slicer/SFZ-PLAYER-only concepts with no SampleZone equivalent — a
     // MULTISAMPLER zone has neither a stretch engine nor a head/tail split,
@@ -454,8 +454,8 @@ void SliceLcdDisplay::drawFlagsRow (juce::Graphics& g, int /*row*/)
     // as the MONO/POLY omission above, rather than draw them disabled.
     if (! multisamplerActive)
     {
-        flags.push_back ({ "STR",  data.stretchEnabled, DysektProcessor::FieldStretchEnabled, false });
-        flags.push_back ({ "TAIL", data.releaseTail,    DysektProcessor::FieldReleaseTail,    false });
+        flags.push_back ({ "STR",  data.stretchEnabled, AvixProcessor::FieldStretchEnabled, false });
+        flags.push_back ({ "TAIL", data.releaseTail,    AvixProcessor::FieldReleaseTail,    false });
     }
 
     const int numFlags  = (int) flags.size();
@@ -488,7 +488,7 @@ void SliceLcdDisplay::drawNoSliceScreen (juce::Graphics& g)
     const auto pal = LcdColours::fromTheme();
     auto b = getLocalBounds().reduced (4);
     const float sf = (float) getHeight() / (float) kPreferredHeight;
-    g.setFont (DysektLookAndFeel::makeFont (20.0f * sf));
+    g.setFont (AvixLookAndFeel::makeFont (20.0f * sf));
     g.setColour (pal.noDataCol);
 
     if (data.hasSample && data.sampleName.isNotEmpty())
@@ -499,13 +499,13 @@ void SliceLcdDisplay::drawNoSliceScreen (juce::Graphics& g)
         g.setColour (pal.noDataCol);
     }
 
-    g.setFont (DysektLookAndFeel::makeFont (22.0f * sf));
+    g.setFont (AvixLookAndFeel::makeFont (22.0f * sf));
     g.drawText (multisamplerActive ? "-- NO ZONE SELECTED --" : "-- NO SLICE SELECTED --",
                 b, juce::Justification::centred);
 
     if (data.numSlices > 0)
     {
-        g.setFont (DysektLookAndFeel::makeFont (18.0f * sf));
+        g.setFont (AvixLookAndFeel::makeFont (18.0f * sf));
         g.setColour (pal.dim);
         g.drawText (multisamplerActive
                         ? juce::String (data.numSlices) + " ZONES  |  SELECT ONE IN THE MAP"
@@ -519,12 +519,12 @@ void SliceLcdDisplay::drawNoSampleScreen (juce::Graphics& g)
     const auto pal = LcdColours::fromTheme();
     auto b = getLocalBounds().reduced (4);
     const float sf = (float) getHeight() / (float) kPreferredHeight;
-    g.setFont (DysektLookAndFeel::makeFont (22.0f * sf));
+    g.setFont (AvixLookAndFeel::makeFont (22.0f * sf));
     g.setColour (pal.noDataCol);
     g.drawText (multisamplerActive ? "-- NO ZONES --" : "-- NO SAMPLE LOADED --",
                 b, juce::Justification::centred);
 
-    g.setFont (DysektLookAndFeel::makeFont (18.0f * sf));
+    g.setFont (AvixLookAndFeel::makeFont (18.0f * sf));
     g.setColour (pal.dim);
     g.drawText (multisamplerActive ? "IMPORT AN SFZ OR ADD A ZONE"
                                     : "DROP A FILE OR USE THE BROWSER",
@@ -563,7 +563,7 @@ void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
             if (! hit.bounds.contains (pos)) continue;
             if (onMultisamplerZoneFieldEdited == nullptr) return;
 
-            using F = DysektProcessor;
+            using F = AvixProcessor;
             int scbField = 0;
             float newValue = 0.0f;
 
@@ -610,7 +610,7 @@ void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
         // Position editor over the right half of row 1
         auto edBounds = nameRowHitRect.reduced (2, 4);
         nameTextEditor->setBounds (edBounds);
-        nameTextEditor->setFont (DysektLookAndFeel::makeFont (14.0f));
+        nameTextEditor->setFont (AvixLookAndFeel::makeFont (14.0f));
         nameTextEditor->setColour (juce::TextEditor::backgroundColourId,
                                    getTheme().darkBar.brighter (0.2f));
         nameTextEditor->setColour (juce::TextEditor::textColourId,    pal.phosphor);
@@ -629,8 +629,8 @@ void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
             if (! nameTextEditor) return;
             juce::String newName = nameTextEditor->getText().trim();
             nameTextEditor.reset();
-            DysektProcessor::Command cmd;
-            cmd.type          = DysektProcessor::CmdSetSliceName;
+            AvixProcessor::Command cmd;
+            cmd.type          = AvixProcessor::CmdSetSliceName;
             cmd.intParam1     = sliceIdx;
             cmd.stringParam   = newName;
             cmd.targetEngine2 = isSfzPlayer2Mode();
@@ -651,7 +651,7 @@ void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
     {
         if (! hit.bounds.contains (pos)) continue;
 
-        using F = DysektProcessor;
+        using F = AvixProcessor;
         const bool sfzMode = isSfzPlayer2Mode();
 
         // FieldGlobalMono is a true global APVTS param (shared polyphony mode
@@ -661,7 +661,7 @@ void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
         if (sfzMode && hit.fieldId == F::FieldGlobalMono)
             return;
 
-        DysektProcessor::Command cmd;
+        AvixProcessor::Command cmd;
         cmd.type          = F::CmdSetSliceParam;
         cmd.intParam1     = hit.fieldId;
         cmd.targetEngine2 = sfzMode;
@@ -680,7 +680,7 @@ void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
                 // LOO and 1SH are mutually exclusive — enabling loop clears one-shot
                 if (newMode > 0 && data.oneShot)
                 {
-                    DysektProcessor::Command clr;
+                    AvixProcessor::Command clr;
                     clr.type       = F::CmdSetSliceParam;
                     clr.intParam1  = F::FieldOneShot;
                     clr.floatParam1 = 0.0f;
@@ -698,7 +698,7 @@ void SliceLcdDisplay::mouseDown (const juce::MouseEvent& e)
                 // 1SH and LOO are mutually exclusive — enabling one-shot clears loop
                 if (newVal > 0.0f && data.loopMode > 0)
                 {
-                    DysektProcessor::Command clr;
+                    AvixProcessor::Command clr;
                     clr.type       = F::CmdSetSliceParam;
                     clr.intParam1  = F::FieldLoop;
                     clr.floatParam1 = 0.0f;
@@ -773,8 +773,8 @@ void SliceLcdDisplay::paint (juce::Graphics& g)
                          : data.sliceColour.withAlpha (0.28f));
         g.fillRect (screen.getX(), y, screen.getWidth(), rowH - 1);
 
-        const juce::Font lblF = DysektLookAndFeel::makeFont (24.0f * sf, true);
-        const juce::Font valF = DysektLookAndFeel::makeFont (26.0f * sf);
+        const juce::Font lblF = AvixLookAndFeel::makeFont (24.0f * sf, true);
+        const juce::Font valF = AvixLookAndFeel::makeFont (26.0f * sf);
         const int lblW = juce::GlyphArrangement::getStringWidthInt(lblF, sliceStr);
         const int gap  = 8;
         const int valW = juce::GlyphArrangement::getStringWidthInt(valF, nameStr);
@@ -794,7 +794,7 @@ void SliceLcdDisplay::paint (juce::Graphics& g)
         // Lock badge: small pill on the far right when slice is locked
         if (data.sliceLocked)
         {
-            const juce::Font lkF = DysektLookAndFeel::makeFont (16.0f * sf, true);
+            const juce::Font lkF = AvixLookAndFeel::makeFont (16.0f * sf, true);
             const juce::String lkStr = "LOCK";
             const int lkW = juce::GlyphArrangement::getStringWidthInt(lkF, lkStr) + 6;
             const int lkX = screen.getRight() - lkW - 6;

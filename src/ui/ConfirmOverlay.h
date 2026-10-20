@@ -1,7 +1,7 @@
 #pragma once
 #include "UIHelpers.h"
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 class ConfirmOverlay : public juce::Component
 {
@@ -73,7 +73,7 @@ public:
         UIHelpers::drawPopupBox (g, box, T);
 
         const int padX = 18;
-        g.setFont (DysektLookAndFeel::makeFont (15.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (15.0f, true));
         g.setColour (T.accent);
         g.drawText (titleText,
                     box.getX() + padX, box.getY() + 14,
@@ -128,7 +128,7 @@ private:
     juce::String titleText, messageText;
     juce::TextButton yesBtn, noBtn;
 
-    static juce::Font bodyFont() { return DysektLookAndFeel::makeFont (12.0f); }
+    static juce::Font bodyFont() { return AvixLookAndFeel::makeFont (12.0f); }
 
     // Wrapped text height at the box's actual text width — shared by
     // dialogBox() (to size the box) and paint() (to size the draw area),

@@ -43,7 +43,7 @@ struct MultisamplerInstrument
         the 128-pad DRUM PADS view instead of the zone map. Set automatically
         by the kit classifier on load (PluginEditor::offerDrumKitAutoRouting),
         or manually via "Treat as drum kit". Persisted by InstrumentSerializer
-        ("drumKit") and, for plain SFZ, by the dysekt_drum_kit opcode. */
+        ("drumKit") and, for plain SFZ, by the avix_drum_kit opcode. */
     bool drumKit = false;
 
     float masterGainDb        = 0.0f;

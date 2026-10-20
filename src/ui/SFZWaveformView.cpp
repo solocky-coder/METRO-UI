@@ -1,13 +1,13 @@
 #include "SFZWaveformView.h"
 #include "UIHelpers.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 
 // =============================================================================
 //  Constructor
 // =============================================================================
 
-SFZWaveformView::SFZWaveformView (DysektProcessor& p)
+SFZWaveformView::SFZWaveformView (AvixProcessor& p)
     : processor (p)
 {
     setOpaque (false);
@@ -23,7 +23,7 @@ void SFZWaveformView::resized()
 }
 
 // =============================================================================
-//  Timer tick  (call at ~30 Hz from DysektEditor::timerCallback)
+//  Timer tick  (call at ~30 Hz from AvixEditor::timerCallback)
 // =============================================================================
 
 void SFZWaveformView::timerTick()
@@ -228,7 +228,7 @@ void SFZWaveformView::drawLoopOverlay (juce::Graphics& g)
 
     // Loop label centred in the region
     const float labelCx = ((float) x0 + (float) x1) * 0.5f;
-    g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (9.0f, true));
     g.setColour (loopCol.withAlpha (0.65f));
     g.drawText ("LOOP",
                 juce::Rectangle<float> (labelCx - 22.0f, 4.0f, 44.0f, 12.0f),
@@ -262,7 +262,7 @@ void SFZWaveformView::drawPlaybackCursors (juce::Graphics& g)
 void SFZWaveformView::drawPlaceholder (juce::Graphics& g)
 {
     g.setColour (getTheme().foreground.withAlpha (0.25f));
-    g.setFont (DysektLookAndFeel::makeFont (22.0f));
+    g.setFont (AvixLookAndFeel::makeFont (22.0f));
     g.drawText ("DROP SFZ / SF2 FILE", getLocalBounds(), juce::Justification::centred);
 }
 

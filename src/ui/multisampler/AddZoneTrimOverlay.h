@@ -8,7 +8,7 @@
 //  frame range that becomes the new zone's SampleZone::sampleStart/sampleEnd.
 //
 //  Deliberately self-contained: this component owns only its own preview
-//  buffer and trim state. It never touches DysektProcessor, sliceManager2,
+//  buffer and trim state. It never touches AvixProcessor, sliceManager2,
 //  or any live sample/slice state — see the class-level rationale in the
 //  METRO-UI Multisampler Add Zone Trim implementation notes for why this
 //  must not reuse WaveformView's trim fields (processor.trimRegionStart/End,
@@ -39,7 +39,7 @@
 #include <vector>
 #include <memory>
 #include <atomic>
-#include "../DysektLookAndFeel.h"
+#include "../AvixLookAndFeel.h"
 #include "../../audio/SampleData.h"
 
 class AddZoneTrimOverlay : public juce::Component
@@ -56,7 +56,7 @@ public:
      *                           picker — this class never shows its own
      *                           file chooser.
      *  @param decodePool        background pool the preview decode job runs
-     *                           on. Pass DysektProcessor::fileLoadPool; this
+     *                           on. Pass AvixProcessor::fileLoadPool; this
      *                           class only ever uses it as a plain
      *                           juce::ThreadPool and never reaches back into
      *                           the processor otherwise.
@@ -120,7 +120,7 @@ public:
      *  over the waveform. Called by MultisamplerEditor at ~30 Hz while this
      *  overlay is open, polling PluginProcessor::trimAuditionPlayheadFrame —
      *  this class never reads that atomic (or anything else on
-     *  DysektProcessor) directly, same separation as the rest of this
+     *  AvixProcessor) directly, same separation as the rest of this
      *  class's callback-based design (see class comment). No-op (just
      *  stores + repaints if changed) while decoding/failed, same as every
      *  other display update here. */

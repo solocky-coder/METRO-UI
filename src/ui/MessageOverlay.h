@@ -1,11 +1,11 @@
 #pragma once
 #include "UIHelpers.h"
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 // Themed, single-button replacement for juce::AlertWindow::showMessageBoxAsync /
 // juce::AlertWindow::showAsync. The stock AlertWindow only picks up the plugin's
-// colours (see DysektLookAndFeel::drawAlertBox); its box shape, title strip, and
+// colours (see AvixLookAndFeel::drawAlertBox); its box shape, title strip, and
 // button row are still the generic JUCE dialog layout. MessageOverlay reuses the
 // exact chrome ConfirmOverlay/RenameOverlay already use (UIHelpers::drawPopupBackdrop
 // / drawPopupBox / stylePrimaryPopupButton) so a plain info/warning popup looks
@@ -55,7 +55,7 @@ public:
                                 : T.accent;
 
         const int padX = 18;
-        g.setFont (DysektLookAndFeel::makeFont (15.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (15.0f, true));
         g.setColour (titleColour);
         g.drawText (titleText,
                     box.getX() + padX, box.getY() + 14,
@@ -121,7 +121,7 @@ private:
         });
     }
 
-    static juce::Font bodyFont() { return DysektLookAndFeel::makeFont (12.5f); }
+    static juce::Font bodyFont() { return AvixLookAndFeel::makeFont (12.5f); }
 
     juce::Rectangle<int> dialogBox() const
     {

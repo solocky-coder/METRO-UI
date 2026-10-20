@@ -7,7 +7,7 @@
 class SequencerEngine;
 class AbletonLink;
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /** Standalone transport controls bound to the shared sequencer engine.
     `link` is optional (defaults to nullptr, matching FloatingTransportBar and
@@ -48,4 +48,4 @@ private:
     juce::TextButton floatButton { "Float" };
     juce::Label tempo;
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

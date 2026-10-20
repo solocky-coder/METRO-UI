@@ -1,7 +1,7 @@
 #pragma once
 #include "UIHelpers.h"
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 // =============================================================================
 //  ArchiveMessageOverlay — themed single-button info/error dialog
@@ -35,7 +35,7 @@ public:
         UIHelpers::drawPopupBox (g, box, T);
 
         const int padX = 18;
-        g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f, true));
         g.setColour (T.accent);
         g.drawText (titleText, box.getX() + padX, box.getY() + 14,
                     box.getWidth() - padX * 2, 20,
@@ -80,7 +80,7 @@ private:
         }
     }
 
-    static juce::Font bodyFont() { return DysektLookAndFeel::makeFont (11.5f); }
+    static juce::Font bodyFont() { return AvixLookAndFeel::makeFont (11.5f); }
 
     juce::Rectangle<int> dialogBox() const
     {
@@ -122,7 +122,7 @@ public:
         editor.setColour (juce::TextEditor::textColourId,           T.foreground);
         editor.setColour (juce::TextEditor::outlineColourId,        T.accent.withAlpha (0.5f));
         editor.setColour (juce::TextEditor::focusedOutlineColourId, T.accent);
-        editor.setFont (DysektLookAndFeel::makeFont (12.5f));
+        editor.setFont (AvixLookAndFeel::makeFont (12.5f));
         editor.onReturnKey = [this] { commit(); };
         editor.onEscapeKey = [this] { cancel(); };
         addAndMakeVisible (editor);
@@ -161,14 +161,14 @@ public:
 
         const int padX = 18;
 
-        g.setFont (DysektLookAndFeel::makeFont (14.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (14.0f, true));
         g.setColour (T.accent);
         g.drawText ("ADD INTERNET ARCHIVE URL",
                     box.getX() + padX, box.getY() + 14,
                     box.getWidth() - padX * 2, 20,
                     juce::Justification::centredLeft, false);
 
-        g.setFont (DysektLookAndFeel::makeFont (11.0f));
+        g.setFont (AvixLookAndFeel::makeFont (11.0f));
         g.setColour (T.foreground.withAlpha (0.65f));
         g.drawText ("Paste an archive.org URL or bare identifier:",
                     box.getX() + padX, box.getY() + 46,

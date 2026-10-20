@@ -1,6 +1,6 @@
 #pragma once
 
-namespace dysekt::metro
+namespace avix::metro
 {
 enum class MetroContent
 {
@@ -9,4 +9,4 @@ enum class MetroContent
     browser,
     mixer
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

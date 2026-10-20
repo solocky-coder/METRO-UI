@@ -1,7 +1,7 @@
-# DYSEKT-SF User Manual
+# AVIX User Manual
 
 ## Overview
-DYSEKT-SF is a powerful tool designed for [describe the purpose of DYSEKT and its core functionalities].
+AVIX is a powerful tool designed for [describe the purpose of AVIX and its core functionalities].
 
 ## Features
 - **Feature 1:** [description]

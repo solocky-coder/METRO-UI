@@ -40,11 +40,11 @@ public:
         autoTrackToggle.onClick = [this] { NetworkAudioAutoTrack::setEnabled (autoTrackToggle.getToggleState()); };
         addAndMakeVisible (autoTrackToggle);
 
-#if ! DYSEKT_HAS_AOO
+#if ! AVIX_HAS_AOO
         createTrackButton.setEnabled (false);
 #endif
 
-        // The base component owns the visible service ON/OFF button. DYSEKT's
+        // The base component owns the visible service ON/OFF button. AVIX's
         // integrated Apple USB/NCM service is controlled by the same switch.
         // The switch is deliberately initialized OFF every time this settings
         // view is created; opening the page must never start USB setup.
@@ -196,7 +196,7 @@ private:
                          isActive ? juce::Colour (0xff2d8fd6) : juce::Colour (0xff2a2a30));
             b.setColour (juce::TextButton::textColourOffId,
                          isActive ? juce::Colours::white : juce::Colours::lightgrey);
-            // DysektLookAndFeel ignores buttonColourId for normal buttons; a
+            // AvixLookAndFeel ignores buttonColourId for normal buttons; a
             // toggled button is what it fills with the theme accent, so use
             // the toggle state to make the active tab visibly highlighted.
             b.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
@@ -216,7 +216,7 @@ private:
 
     void showCreateNetworkTrackMenu()
     {
-#if DYSEKT_HAS_AOO
+#if AVIX_HAS_AOO
         if (networkAudio == nullptr)
         {
             juce::AlertWindow::showMessageBoxAsync (

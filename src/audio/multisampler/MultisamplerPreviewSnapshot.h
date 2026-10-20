@@ -84,7 +84,7 @@ namespace MultisamplerPreviewSnapshot
         not one per zone. When several enabled zones cover the same note
         (velocity layers, round-robins, stacked zones), it keeps only the
         LAST <region> in file order for that note and stamps only that
-        region's dysekt_show_in_mixer flag on the slice. SfzExporter writes
+        region's avix_show_in_mixer flag on the slice. SfzExporter writes
         enabled zones in list order, so the winner for a note is the last
         enabled zone whose [lowKey, highKey] covers it. A zone with MIX
         shown that is shadowed by a later overlapping zone therefore never

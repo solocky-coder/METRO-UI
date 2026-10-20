@@ -22,7 +22,7 @@
 #include "KeysPanel.h"
 #include "../audio/SfzPlayer.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 // =============================================================================
 #include "Sf2ProgramGrid.h"
@@ -35,7 +35,7 @@ class SfzDropdownPanel : public juce::Component,
                          public juce::FileDragAndDropTarget
 {
 public:
-    explicit SfzDropdownPanel (DysektProcessor& p);
+    explicit SfzDropdownPanel (AvixProcessor& p);
     ~SfzDropdownPanel() override;
 
     // ── Core overrides ────────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ private:
     void mouseWheelMove   (const juce::MouseEvent&,
                            const juce::MouseWheelDetails&) override;
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SfzDropdownPanel)
 };

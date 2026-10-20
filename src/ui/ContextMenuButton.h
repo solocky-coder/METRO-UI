@@ -11,7 +11,7 @@
 //
 //  Deliberately header-only and dependency-free (just juce_gui_basics) so it
 //  can be shared between src/ui and src/metro without either pulling in the
-//  other's heavier UI helpers (ThemeData, DysektLookAndFeel, etc).
+//  other's heavier UI helpers (ThemeData, AvixLookAndFeel, etc).
 //
 //  Usage:
 //    ContextMenuButton linkBtn { "LINK" };

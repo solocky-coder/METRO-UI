@@ -1,12 +1,12 @@
 //==============================================================================
-//  DYSEKT-SF Standalone — Main.cpp
+//  AVIX Standalone — Main.cpp
 //
-//  JUCE application entry point.  Only compiled into the DYSEKT-SF_Standalone
-//  target (guarded by DYSEKT_STANDALONE define in CMakeLists.txt).
+//  JUCE application entry point.  Only compiled into the AvixStandalone
+//  target (guarded by AVIX_STANDALONE define in CMakeLists.txt).
 //
 //  Responsibilities:
 //    - Create the AudioDeviceManager
-//    - Instantiate DysektProcessor and DysektEditor
+//    - Instantiate AvixProcessor and AvixEditor
 //    - Create and show MainWindow
 //    - Handle system quit / re-open on macOS
 //==============================================================================
@@ -16,14 +16,15 @@
 #include "NetworkAudioSettingsShim.h"
 #include "MainWindow.h"
 #include "network/AppleUsbShareLauncher.h"
+#include "../LegacyDataMigration.h"
 
 //==============================================================================
-class DysektApplication : public juce::JUCEApplication
+class AvixApplication : public juce::JUCEApplication
 {
 public:
-    DysektApplication() = default;
+    AvixApplication() = default;
 
-    const juce::String getApplicationName()    override { return "DYSEKT-SF"; }
+    const juce::String getApplicationName()    override { return "AVIX"; }
     const juce::String getApplicationVersion() override { return "1.0.0";  }
     bool moreThanOneInstanceAllowed()          override { return true;      }
 
@@ -32,7 +33,7 @@ public:
     {
 #if JUCE_WINDOWS
         // One-time elevated bootstrap for Apple USB Direct Network's Task
-        // Scheduler registration. DYSEKT relaunches itself with just this
+        // Scheduler registration. AVIX relaunches itself with just this
         // flag via ShellExecuteExW("runas", ...) when it needs to register
         // the iPhoneUsbShare task (see relaunchSelfElevatedToRegister() in
         // AppleUsbShareLauncher.cpp for why that step needs to be elevated).
@@ -44,6 +45,10 @@ public:
             return;
         }
 #endif
+
+        // Carry per-user data (audio/MIDI settings, bookmarks, themes) over from
+        // the pre-rebrand folder before any settings store reads it.
+        migrateLegacyUserData();
 
         // Apply OS-level DPI awareness before creating any windows
         juce::Desktop::getInstance().setGlobalScaleFactor (1.0f);
@@ -101,4 +106,4 @@ private:
 };
 
 //==============================================================================
-START_JUCE_APPLICATION (DysektApplication)
+START_JUCE_APPLICATION (AvixApplication)

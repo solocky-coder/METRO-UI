@@ -1,5 +1,5 @@
 /*
-    DYSEKT 2
+    AVIX 2
     Metro UI
 
     MetroArrangeWorkspace.h
@@ -37,7 +37,7 @@
 
 class SequencerEngine;
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /** Which clip-editor mode is showing in the lower half of the workspace. */
 enum class MetroEditorMode { steps, pianoRoll };
@@ -118,4 +118,4 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MetroArrangeWorkspace)
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

@@ -29,7 +29,7 @@ namespace
             // sample= is always emitted alone on its own line, so a path
             // containing spaces is unambiguous without quoting. A previous
             // regression wrapped paths containing a space in `"..."` via a
-            // quoteIfNeeded() helper -- DYSEKT's own importer (SfzImporter.cpp)
+            // quoteIfNeeded() helper -- AVIX's own importer (SfzImporter.cpp)
             // happily parses that back out, masking the bug in-app, but
             // sfizz treats the quote characters as literal filename bytes,
             // fails to resolve the sample, and drops the region entirely
@@ -67,7 +67,7 @@ namespace
         // SampleZone::reverse's doc comment). Omitted for forward (the
         // default) so a plain zone doesn't clutter the file.
         if (z.reverse)
-            out << (opts.previewForSliceRender ? "dysekt_reverse=1\n" : "direction=reverse\n");
+            out << (opts.previewForSliceRender ? "avix_reverse=1\n" : "direction=reverse\n");
 
         out << "loop_mode=" << loopModeToOpcodeValue (z.loopMode) << "\n";
         if (z.loopMode != LoopMode::noLoop && z.loopStart >= 0 && z.loopEnd >= 0)
@@ -107,24 +107,24 @@ namespace
             out << "seq_position=" << z.sequencePosition << " seq_length=" << z.sequenceLength << "\n";
 
         // Custom colour override — written as juce::Colour::toString()
-        // (an 8-digit ARGB hex string) via the dysekt_zone_color custom
+        // (an 8-digit ARGB hex string) via the avix_zone_color custom
         // opcode; see SfzImporter for the read side. Omitted entirely when unset
         // so a zone with no override doesn't pick up a colour on reload
         // that the user never actually chose.
         if (z.hasCustomColour)
-            out << "dysekt_zone_color=" << juce::Colour (z.customColourArgb).toString() << "\n";
+            out << "avix_zone_color=" << juce::Colour (z.customColourArgb).toString() << "\n";
 
         // Output-bus override — see SfzImporter for the read side. Omitted
         // for bus 0 (Main) so unrouted zones don't clutter the file, same
         // reasoning as the colour override above.
         if (z.outputBus != 0)
-            out << "dysekt_output_bus=" << z.outputBus << "\n";
+            out << "avix_output_bus=" << z.outputBus << "\n";
 
         // Manual mixer-pin override — see SampleZone::showInMixer's doc
         // comment. Omitted when false so a plain Main-bus zone doesn't pick
         // up a mixer row it never asked for on reload.
         if (z.showInMixer)
-            out << "dysekt_show_in_mixer=1\n";
+            out << "avix_show_in_mixer=1\n";
 
         for (const auto& [k, v] : z.extraOpcodes)
             out << k << "=" << v << "\n";
@@ -152,12 +152,12 @@ juce::String SfzExporter::render (const MultisamplerInstrument& instrument,
         << "// re-export after editing " << instrument.name << " instead.\n\n";
 
     // Drum-kit flag — see MultisamplerInstrument::drumKit. Carried as a custom
-    // opcode (same pattern as dysekt_output_bus / dysekt_zone_color) in a
+    // opcode (same pattern as avix_output_bus / avix_zone_color) in a
     // leading <global> block so it reads back as instrument-level state.
     // sfizz ignores unknown opcodes, and the cache-SFZ scanners only look at
     // <region> chunks, so this is inert for playback.
     if (instrument.drumKit)
-        out << "<global>\ndysekt_drum_kit=1\n\n";
+        out << "<global>\navix_drum_kit=1\n\n";
 
     for (const auto& z : instrument.zones)
         if (z.enabled)

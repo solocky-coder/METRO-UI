@@ -5,10 +5,10 @@
 #include "../metro/MetroTypography.h"
 #include "../sequencer/SequencerEngine.h"
 #include "../sequencer/MidiClip.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 
-using namespace dysekt::metro; // MetroColours' Base/Text/Accent/Transport + MetroMetrics/MetroTypography —
+using namespace avix::metro; // MetroColours' Base/Text/Accent/Transport + MetroMetrics/MetroTypography —
  // kept as this panel's own chrome palette, independent of whichever
  // main-window theme is active. See ArrangeView::showFloatingTransport().
 namespace
@@ -16,12 +16,12 @@ namespace
     constexpr float transportTextSize = 26.0f; // Match the musical-position readouts.
 
  // Mirrors PluginEditor.cpp's getSettingsDir() convention (same app-data
- // folder, "DYSEKT-SF") without pulling in that file — this panel's
+ // folder, "AVIX") without pulling in that file — this panel's
  // position is its own small piece of state, not part of settings.yaml.
     juce::File getSettingsDir()
     {
  return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("DYSEKT-SF");
+                   .getChildFile ("AVIX");
     }
 
 
@@ -32,7 +32,7 @@ namespace
         b.setColour (juce::TextButton::buttonColourId, Base::Elevated);
         b.setColour (juce::TextButton::textColourOffId, Text::Secondary);
         b.setColour (juce::TextButton::textColourOnId, Base::White);
-        // Without this, DysektLookAndFeel::drawButtonBackground's default
+        // Without this, AvixLookAndFeel::drawButtonBackground's default
         // fill path (this panel never calls setLookAndFeel(), so it's
         // subject to that LookAndFeel like everything else in the app —
         // see PluginEditor.cpp's setDefaultLookAndFeel()) ignores
@@ -100,7 +100,7 @@ addAndMakeVisible (*b);
  // ── Tempo (BPM) — lives in the far-right BPM/GRID/LINK row ─────────────
     tempoLabel.setEditable (true, true, false);
     tempoLabel.setJustificationType (juce::Justification::centred);
-    tempoLabel.setFont (DysektLookAndFeel::makeMonoFont (transportTextSize, true));
+    tempoLabel.setFont (AvixLookAndFeel::makeMonoFont (transportTextSize, true));
     tempoLabel.setColour (juce::Label::backgroundColourId, Base::Background);
     tempoLabel.setColour (juce::Label::textColourId, Transport::Tempo);
     tempoLabel.setTooltip ("Tempo in beats per minute (20-999)");
@@ -124,7 +124,7 @@ addAndMakeVisible (*b);
 
  // ── Musical position ─────────────────────────────────────────────────
     positionLabel.setJustificationType (juce::Justification::centred);
-    positionLabel.setFont (DysektLookAndFeel::makeMonoFont (26.0f, true));
+    positionLabel.setFont (AvixLookAndFeel::makeMonoFont (26.0f, true));
     positionLabel.setColour (juce::Label::backgroundColourId, Base::Background);
     positionLabel.setColour (juce::Label::textColourId, Accent::Orange);
     positionLabel.setTooltip ("Playhead position - scroll over a segment to nudge it");
@@ -186,7 +186,7 @@ addAndMakeVisible (*b);
     {
         field->setEditable (true, true, false);
         field->setJustificationType (juce::Justification::centred);
-        field->setFont (DysektLookAndFeel::makeMonoFont (26.0f, true)); // matches positionLabel's size/weight
+        field->setFont (AvixLookAndFeel::makeMonoFont (26.0f, true)); // matches positionLabel's size/weight
         field->setColour (juce::Label::backgroundColourId, Base::Background);
         field->setColour (juce::Label::textColourId, Text::Primary);
         field->setTooltip ("Cycle locator - click to type bars.beats.ticks, "
@@ -742,7 +742,7 @@ void FloatingTransportBar::paint (juce::Graphics& g)
  // matching size keeps every caption on this row reading at the same
  // weight instead of L/R looking like an afterthought next to it.
     g.setColour (Text::Muted);
-    g.setFont (DysektLookAndFeel::makeFont (transportTextSize));
+    g.setFont (AvixLookAndFeel::makeFont (transportTextSize));
  const auto captionWidth = MetroMetrics::grid * 2;
  const auto leftCaption  = leftLocatorLabel.getBounds().withWidth (captionWidth)
                                                 .translated (-captionWidth, 0);
@@ -757,7 +757,7 @@ void FloatingTransportBar::paint (juce::Graphics& g)
  // (shows its own name) already are — everything else reads fine without
  // a caption, which is what let row 1 shrink down to just the readouts.
     g.setColour (Text::Muted);
-    g.setFont (DysektLookAndFeel::makeFont (transportTextSize));
+    g.setFont (AvixLookAndFeel::makeFont (transportTextSize));
     g.drawText ("BPM", L.tempoCaption, juce::Justification::centredLeft);
 
 

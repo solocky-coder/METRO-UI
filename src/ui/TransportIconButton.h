@@ -45,7 +45,7 @@ public:
 private:
     void paintButton (juce::Graphics& g, bool isMouseOverButton, bool isButtonDown) override
     {
-        using namespace dysekt::metro;
+        using namespace avix::metro;
 
         const auto b = getLocalBounds().toFloat();
         const bool on = getToggleState();

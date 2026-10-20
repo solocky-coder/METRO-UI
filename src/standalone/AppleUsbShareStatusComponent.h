@@ -24,7 +24,7 @@
 #include <vector>
 #include <array>
 
-// Embedded iPhoneUsbShare application surface. This is a child of the DYSEKT
+// Embedded iPhoneUsbShare application surface. This is a child of the AVIX
 // Network Audio panel: no second process and no second top-level window.
 class AppleUsbShareStatusComponent final : public juce::Component,
                                            private juce::Timer
@@ -80,7 +80,7 @@ public:
         diagnosticsButton.setButtonText ("Diagnostics");
         stopButton.setEnabled (false);
 
-        // DysektLookAndFeel draws a disabled button exactly like an enabled
+        // AvixLookAndFeel draws a disabled button exactly like an enabled
         // one and ignores buttonColourId unless "flatFill" is set. Opt these
         // two in and colour them ourselves (see updateActionButtons()) so it
         // is obvious at a glance which of Start / Stop can be pressed.

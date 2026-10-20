@@ -102,7 +102,7 @@ public:
 
     /** Scales every font size this component draws with, so its text keeps
         pace with the rest of the app's host-window-driven scaling (see
-        DysektEditor::resized()'s `sf`/`si()`). 1.0 = the design-time sizes
+        AvixEditor::resized()'s `sf`/`si()`). 1.0 = the design-time sizes
         this file was authored with. MultisamplerEditor forwards its own
         scale here — see MultisamplerEditor::setUiScale(). */
     void setUiScale (float newScale) { uiScale = newScale; repaint(); }

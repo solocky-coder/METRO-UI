@@ -3,7 +3,7 @@
 #include "MetroMetrics.h"
 #include "MetroTypography.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 namespace
 {
@@ -1084,4 +1084,4 @@ void MetroPianoRoll::timerCallback()
     updatePlayheadAndFollow();
 }
 
-} // namespace dysekt::metro
+} // namespace avix::metro

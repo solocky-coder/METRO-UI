@@ -1,12 +1,12 @@
 #include "HeaderBar.h"
 #include "UIHelpers.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "../PluginProcessor.h"
 #include "../PluginEditor.h"
 #include "../audio/GrainEngine.h"
 #include "BinaryData.h"
 
-HeaderBar::HeaderBar (DysektProcessor& p)
+HeaderBar::HeaderBar (AvixProcessor& p)
  : processor (p),
    controlFrame (p)
 {
@@ -28,22 +28,22 @@ HeaderBar::HeaderBar (DysektProcessor& p)
 
     panicBtn.setTooltip ("Panic: kill all sound");
     panicBtn.onClick = [this] {
-        DysektProcessor::Command cmd;
-        cmd.type = DysektProcessor::CmdPanic;
+        AvixProcessor::Command cmd;
+        cmd.type = AvixProcessor::CmdPanic;
         processor.pushCommand (cmd);
     };
 
     undoBtn.setTooltip ("Undo (Ctrl+Z)");
     undoBtn.onClick = [this] {
-        DysektProcessor::Command cmd;
-        cmd.type = DysektProcessor::CmdUndo;
+        AvixProcessor::Command cmd;
+        cmd.type = AvixProcessor::CmdUndo;
         processor.pushCommand (cmd);
     };
 
     redoBtn.setTooltip ("Redo (Ctrl+Shift+Z)");
     redoBtn.onClick = [this] {
-        DysektProcessor::Command cmd;
-        cmd.type = DysektProcessor::CmdRedo;
+        AvixProcessor::Command cmd;
+        cmd.type = AvixProcessor::CmdRedo;
         processor.pushCommand (cmd);
     };
 
@@ -132,7 +132,7 @@ void HeaderBar::mouseDoubleClick (const juce::MouseEvent& /*e*/) {}
 
 void HeaderBar::showThemePopup()
 {
-    auto* editor = dynamic_cast<DysektEditor*> (getParentComponent());
+    auto* editor = dynamic_cast<AvixEditor*> (getParentComponent());
     if (editor == nullptr) return;
 
     auto themes      = editor->getAvailableThemes();
@@ -144,7 +144,7 @@ void HeaderBar::showThemePopup()
         menu.addItem (i + 1, themes[i], true, themes[i] == currentName);
 
     auto* topLevel = getTopLevelComponent();
-    float ms2 = DysektLookAndFeel::getMenuScale();
+    float ms2 = AvixLookAndFeel::getMenuScale();
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&shortcutsBtn)
                                                   .withParentComponent (topLevel)
                                                   .withStandardItemHeight ((int) (24 * ms2)),

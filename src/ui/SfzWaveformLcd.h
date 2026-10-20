@@ -1,7 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
-class DysektProcessor;
+class AvixProcessor;
 
 /**  Right LCD panel shown when uiMode == 1 (SF-Player).
  *
@@ -19,7 +19,7 @@ class DysektProcessor;
 class SfzWaveformLcd : public juce::Component
 {
 public:
-    explicit SfzWaveformLcd (DysektProcessor& p);
+    explicit SfzWaveformLcd (AvixProcessor& p);
 
     void paint     (juce::Graphics& g) override;
     void resized   () override;
@@ -76,7 +76,7 @@ private:
 
     NodeRole hitTest (juce::Point<float> pos) const;
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     // ── Waveform backdrop (zoom/scroll-aware) ────────────────────────────────
     static constexpr int kPeaks = 512;

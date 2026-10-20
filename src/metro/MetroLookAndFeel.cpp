@@ -69,7 +69,7 @@ void MetroLookAndFeel::drawLinearSlider (juce::Graphics& g, int /*x*/, int /*y*/
 
 // ── Knobs ────────────────────────────────────────────────────────────────────
 // Circular Metro knobs with a simple indicator line. No metallic textures.
-// (Only reached if a real rotary juce::Slider is instantiated — DYSEKT's
+// (Only reached if a real rotary juce::Slider is instantiated — AVIX's
 // visible knob strips are hand-painted cells in SliceControlBar, themed
 // separately via getTheme() there.)
 void MetroLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,

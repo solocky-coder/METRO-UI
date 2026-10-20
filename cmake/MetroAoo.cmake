@@ -5,7 +5,7 @@
 set(METRO_AOO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/aoo")
 
 if(NOT EXISTS "${METRO_AOO_ROOT}/lib/src/client.cpp")
-    set(DYSEKT_HAS_AOO FALSE)
+    set(AVIX_HAS_AOO FALSE)
     message(STATUS "AOO submodule not populated — network audio disabled")
     return()
 endif()
@@ -103,5 +103,5 @@ target_link_libraries(MetroAoo PUBLIC
     $<$<PLATFORM_ID:Windows>:ws2_32>
 )
 
-set(DYSEKT_HAS_AOO TRUE)
+set(AVIX_HAS_AOO TRUE)
 message(STATUS "AOO/SonoBus network audio enabled (vendored AOO + Opus)")

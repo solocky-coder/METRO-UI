@@ -22,14 +22,14 @@
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/DrumPadModel.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 class DrumPadView : public juce::Component,
                     public juce::FileDragAndDropTarget,
                     private juce::Timer
 {
 public:
-    DrumPadView (DysektProcessor&, MultisamplerInstrument&);
+    DrumPadView (AvixProcessor&, MultisamplerInstrument&);
     ~DrumPadView() override;
 
     /** Recompute the pad model after any zone change. Keeps the bank the user
@@ -99,7 +99,7 @@ private:
     juce::Colour padColour (const DrumPadModel::PadInfo&) const;
     int  velocityForClick (int padIndexInBank, juce::Point<int>) const;
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     MultisamplerInstrument& instrument;
 
     DrumPadModel::Model pads {};

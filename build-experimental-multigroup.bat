@@ -5,7 +5,7 @@ set "BUILD_DIR=build-experimental-multigroup"
 set "TOOLCHAIN="
 
 echo ============================================
-echo  DYSEKT-SF - Experimental Multi-Group Build
+echo  AVIX - Experimental Multi-Group Build
 echo ============================================
 echo.
 echo WARNING: Debug test build only. Do not ship it.
@@ -28,7 +28,7 @@ if errorlevel 1 goto :error
 echo [2/3] Configuring Debug with experimental multi-group enabled...
 cmake -B "%BUILD_DIR%" -S . ^
     -DCMAKE_BUILD_TYPE=Debug ^
-    -DDYSEKT_SF2_EXPERIMENTAL_MULTI_GROUP=ON ^
+    -DAVIX_SF2_EXPERIMENTAL_MULTI_GROUP=ON ^
     %TOOLCHAIN%
 if errorlevel 1 goto :error
 

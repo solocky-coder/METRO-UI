@@ -2,7 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../MidiLearnManager.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 /**  HALion-style full-sample minimap overview strip.
  *
@@ -26,7 +26,7 @@ class DysektProcessor;
 class WaveformOverview : public juce::Component
 {
 public:
-    explicit WaveformOverview (DysektProcessor& p);
+    explicit WaveformOverview (AvixProcessor& p);
 
     void paint           (juce::Graphics& g) override;
     void mouseDown       (const juce::MouseEvent& e) override;
@@ -44,7 +44,7 @@ public:
     void repaintOverview();
 
 private:
-    DysektProcessor& processor;
+    AvixProcessor& processor;
 
     int waveformMode { 0 };   // 0=Hard 1=Soft 2=Outline 3=Rect 4=Mirrored 5=Bars 6=RMS 7=Stepped
 

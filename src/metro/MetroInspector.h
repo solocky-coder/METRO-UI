@@ -3,7 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "MetroSelection.h"
 
-namespace dysekt::metro
+namespace avix::metro
 {
 /** Bottom context area reserved for the selected Metro workspace item. */
 class MetroInspector final : public juce::Component
@@ -33,4 +33,4 @@ private:
     juce::String contextMessage;
     MetroSelection selection;
 };
-} // namespace dysekt::metro
+} // namespace avix::metro

@@ -124,8 +124,8 @@ private:
             return;
         socket.joinMulticast ("224.0.0.251");
 
-        const juce::String serviceInstance = "DYSEKT-SF._apple-midi._udp.local";
-        const juce::String hostName = "dysekt-sf.local";
+        const juce::String serviceInstance = "AVIX._apple-midi._udp.local";
+        const juce::String hostName = "avix.local";
 
         while (! threadShouldExit())
         {

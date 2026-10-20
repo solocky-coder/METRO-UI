@@ -106,7 +106,7 @@ struct SampleZone
         (eq3). Round-tripped through the real sfz `eq1_freq`/`eq1_gain`/
         `eq1_bw` opcodes (and `eq2_*`/`eq3_*`) — sfizz understands these
         natively, same reasoning as SampleZone::reverse's `direction` opcode,
-        so no dysekt_-prefixed custom opcode is needed. `Bw` is bandwidth in
+        so no avix_-prefixed custom opcode is needed. `Bw` is bandwidth in
         octaves (sfz's own unit for this opcode). Edited via
         MultisamplerZoneField::eq1Freq/eq1Gain/eq1Bw (and eq2/eq3) —
         MultisamplerZoneLcd's EQ1/EQ2/EQ3 row — see
@@ -128,8 +128,8 @@ struct SampleZone
     int sequenceLength    = 0;   ///< sfz `seq_length` — 0/1 means "no round robin"
 
     /** Output routing for this zone: 0 = Main, 1-15 = Aux N. Round-tripped
-        through the `dysekt_output_bus` custom opcode (same pattern as
-        `dysekt_zone_color` — see SfzImporter/SfzExporter) so it survives
+        through the `avix_output_bus` custom opcode (same pattern as
+        `avix_zone_color` — see SfzImporter/SfzExporter) so it survives
         save/reload and MultisamplerEditor::performEngineSync()'s
         export/reimport cycle instead of only ever living on the derived
         sliceManager2 copy. Edited via MultisamplerZoneField::outputBus
@@ -143,8 +143,8 @@ struct SampleZone
         but a zone left on Main has no way to get a row of its own without
         this — e.g. wanting to automate/monitor one drum-kit voice's gain
         without actually splitting it onto an Aux bus. Round-tripped through
-        the `dysekt_show_in_mixer` custom opcode (same pattern as
-        `dysekt_output_bus` — see SfzImporter/SfzExporter) and, on reimport,
+        the `avix_show_in_mixer` custom opcode (same pattern as
+        `avix_output_bus` — see SfzImporter/SfzExporter) and, on reimport,
         OR'd with the outputBus!=0 auto-pin rather than replacing it, so
         turning this off never hides a zone that's routed off Main. Edited
         via MultisamplerZoneField::showInMixer (MultisamplerZoneLcd's MIX
@@ -154,7 +154,7 @@ struct SampleZone
 
     /** Reverse playback. Round-tripped through the real sfz `direction`
         opcode (value `reverse`; the forward default is simply omitted from
-        the exported region — see SfzExporter) rather than a `dysekt_`
+        the exported region — see SfzExporter) rather than a `avix_`
         custom one, since sfizz already understands `direction=reverse`
         natively and needs no METRO-UI-side playback handling to honour it.
         Edited via SliceControlBar::ZoneReverse (SliceLcdDisplay's REV flag
@@ -164,7 +164,7 @@ struct SampleZone
     bool enabled = true;   ///< editor-only mute; excluded from SFZ export when false
 
     /** User-picked colour override, round-tripped through the same
-        `dysekt_zone_color` custom opcode (see SfzImporter's opcode table
+        `avix_zone_color` custom opcode (see SfzImporter's opcode table
         and SfzExporter). When false, the zone's colour is purely derived from its
         palette index (SfzZoneColours::zoneColour) — see ZoneMapView::
         rebuildLayout() and MultisamplerEditor::toKeyzones(), which both

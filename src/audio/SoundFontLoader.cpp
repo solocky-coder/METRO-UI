@@ -5,12 +5,12 @@
 #include "../PluginProcessor.h"
 #include "FluidSynthGlobalLock.h"
 
-#if DYSEKT_HAS_SFIZZ
+#if AVIX_HAS_SFIZZ
   // Include sfizz C API via path relative to the project root.
   // This avoids relying on target_include_directories propagation.
   #include "../../sfizz/src/sfizz.h"
 #endif
-#if DYSEKT_HAS_FLUIDSYNTH
+#if AVIX_HAS_FLUIDSYNTH
   // SfPlayer-target previews of .sf2 files render through FluidSynth (see
   // runJobFluidSynth() below) so the waveform matches what SfzPlayer.cpp
   // actually plays live, rather than through sfizz's SF2 support.
@@ -19,7 +19,7 @@
 #include <cmath>
 #include <algorithm>
 
-#if DYSEKT_HAS_SFIZZ
+#if AVIX_HAS_SFIZZ
 
 // =============================================================================
 //  Constants
@@ -259,16 +259,16 @@ struct SfzRegionKeyRange
     // to clear a previous one-shot (see PluginProcessor's snapshot restore).
     int oneShot = -1;
 
-    // dysekt_reverse=1 (the MULTISAMPLER preview file's private REV flag --
+    // avix_reverse=1 (the MULTISAMPLER preview file's private REV flag --
     // see SfzExporter::Options::previewForSliceRender). Raw user SFZs that use
     // the standard direction=reverse are NOT touched here: sfizz plays those.
     bool reverse = false;
 
-    // dysekt_output_bus=N, if present (see SfzSliceDescriptor::outputBus's
+    // avix_output_bus=N, if present (see SfzSliceDescriptor::outputBus's
     // doc comment for the -1-means-unset convention this carries through to).
     int outputBus = -1;
 
-    // dysekt_show_in_mixer=1, if present (see SfzSliceDescriptor::showInMixer).
+    // avix_show_in_mixer=1, if present (see SfzSliceDescriptor::showInMixer).
     bool showInMixer = false;
 };
 
@@ -349,17 +349,23 @@ static std::vector<SfzRegionKeyRange> parseSfzAllRegionKeyRanges (const juce::Fi
                                                rk.hiKey = hikey >= 0 ? hikey : 127; }
         else                                  { rk.loKey = 0;     rk.hiKey = 127; }
 
-        // dysekt_output_bus — same custom-opcode scan as key/lokey/hikey
+        // avix_output_bus — same custom-opcode scan as key/lokey/hikey
         // above; left at -1 ("unset") when absent, matching bus 0 (Main)
         // being omitted from the exported .sfz (see SfzExporter).
-        const int outputBus = scanIntOpcode (chunk, "dysekt_output_bus");
+        //
+        // The "dysekt_" spellings are what SFZ files saved before the rebrand
+        // contain; they are still read so existing instruments keep their
+        // routing. Everything written from now on uses "avix_".
+        const int outputBus = juce::jmax (scanIntOpcode (chunk, "avix_output_bus"),
+                                          scanIntOpcode (chunk, "dysekt_output_bus"));
         if (outputBus >= 0)
             rk.outputBus = juce::jlimit (0, 15, outputBus);
 
-        // dysekt_show_in_mixer — presence (not value) is what matters, same
+        // avix_show_in_mixer — presence (not value) is what matters, same
         // as SfzImporter's read side; SfzExporter only ever writes "=1".
-        rk.showInMixer = chunk.containsIgnoreCase ("dysekt_show_in_mixer=");
-        rk.reverse     = scanIntOpcode (chunk, "dysekt_reverse") == 1;
+        rk.showInMixer = chunk.containsIgnoreCase ("avix_show_in_mixer=")
+                      || chunk.containsIgnoreCase ("dysekt_show_in_mixer=");
+        rk.reverse     = scanIntOpcode (chunk, "avix_reverse") == 1;
 
         {
             const int lm = chunk.indexOfIgnoreCase ("loop_mode=");
@@ -505,7 +511,7 @@ static std::pair<int,int> parseSf2LoopPoints (const juce::File& sf2File)
 class SoundFontLoader::LoadJob final : public juce::ThreadPoolJob
 {
 public:
-    LoadJob (juce::File f, double sr, int tok, DysektProcessor& proc, SoundFontLoadTarget tgt,
+    LoadJob (juce::File f, double sr, int tok, AvixProcessor& proc, SoundFontLoadTarget tgt,
              int presetBankIn = -1, int presetProgramIn = -1)
         : juce::ThreadPoolJob ("SfzLoadJob"),
           file (std::move (f)),
@@ -520,7 +526,7 @@ public:
     // ── Main entry point ──────────────────────────────────────────────────────
     JobStatus runJob() override
     {
-#if DYSEKT_HAS_FLUIDSYNTH
+#if AVIX_HAS_FLUIDSYNTH
         // SfPlayer previews of .sf2 files render via FluidSynth instead of
         // sfizz, so the waveform shown matches what SfzPlayer.cpp actually
         // plays live for SF2 (SfzPlayer routes .sfz through sfizz and .sf2
@@ -672,7 +678,7 @@ private:
 
         std::vector<float> blockL (kBlockSize), blockR (kBlockSize);
 
-        // Regions flagged dysekt_reverse=1 get their rendered note reversed
+        // Regions flagged avix_reverse=1 get their rendered note reversed
         // below. Last matching region wins -- same rule as the zone-colour /
         // output-bus stamping in finishAndPost().
         const auto reverseRegions = parseSfzAllRegionKeyRanges (file);
@@ -735,7 +741,7 @@ private:
         return finishAndPost (std::move (renders), (int) activeNotes.size());
     }
 
-#if DYSEKT_HAS_FLUIDSYNTH
+#if AVIX_HAS_FLUIDSYNTH
     // ── FluidSynth backend (SfPlayer target, .sf2 files only) ────────────────
     // Mirrors runJobSfizz() step-for-step, but drives a throwaway FluidSynth
     // instance instead of sfizz — matching the engine SfzPlayer.cpp actually
@@ -894,7 +900,7 @@ private:
 
         return finishAndPost (std::move (renders), (int) activeNotes.size());
     }
-#endif // DYSEKT_HAS_FLUIDSYNTH
+#endif // AVIX_HAS_FLUIDSYNTH
 
     // ── Shared tail: concatenate note renders and post to the target's
     //    completedLoadData*/pendingPreviewZones*/pendingSfzSlices atomics.
@@ -1199,7 +1205,7 @@ private:
                     desc.zoneLoKey      = rk.loKey;
                     desc.zoneHiKey      = rk.hiKey;
                     desc.zoneRegionIdx  = i;
-                    desc.outputBus      = rk.outputBus;   // -1 if the region had no dysekt_output_bus opcode
+                    desc.outputBus      = rk.outputBus;   // -1 if the region had no avix_output_bus opcode
                     desc.showInMixer    = rk.showInMixer;
                     desc.oneShot        = rk.oneShot;
                     break;   // last matching region wins (see comment above)
@@ -1221,12 +1227,12 @@ private:
             SampleData::SnapshotPtr ready = std::move (decoded);
             processor.exchangeCompletedLoadData (std::move (ready));
 
-            processor.latestLoadKind.store ((int) DysektProcessor::LoadKindReplace,
+            processor.latestLoadKind.store ((int) AvixProcessor::LoadKindReplace,
                                             std::memory_order_release);
         }
         else if (target == SoundFontLoadTarget::SfzPlayer2)
         {
-            // DYSEKT-addzone-nomidi (part 2): SfzPlayer2-target loads are
+            // AVIX-addzone-nomidi (part 2): SfzPlayer2-target loads are
             // dispatched as ThreadPoolJobs and can finish out of order. If a
             // newer preview load has been requested since THIS job started
             // (e.g. two Add Zone confirms in quick succession, or an Add
@@ -1270,7 +1276,7 @@ private:
         }
         else // SoundFontLoadTarget::SfPlayer
         {
-            // Same guard as the SfzPlayer2 branch above (DYSEKT-addzone-nomidi
+            // Same guard as the SfzPlayer2 branch above (AVIX-addzone-nomidi
             // part 3): SfPlayer-target loads are dispatched as ThreadPoolJobs
             // too and can finish out of order — e.g. clicking two preset rows
             // in Sf2InstrumentWorkspace in quick succession, or a click
@@ -1413,7 +1419,7 @@ private:
         return found;
     }
 
-#if DYSEKT_HAS_FLUIDSYNTH
+#if AVIX_HAS_FLUIDSYNTH
     // FluidSynth counterpart of renderPhase(). fluid_synth_process()
     // ACCUMULATES into its output buffers, so they must be zeroed before
     // every call (see the same note in SfzPlayer.cpp's live process()).
@@ -1461,7 +1467,7 @@ private:
         }
         return found;
     }
-#endif // DYSEKT_HAS_FLUIDSYNTH
+#endif // AVIX_HAS_FLUIDSYNTH
 
     // Posts an empty (zero-frame, zero-slice) SfzPlayer2 result through the
     // normal completedLoadData2/pendingPreviewZones2 pipeline, so
@@ -1557,9 +1563,9 @@ private:
         if (target != SoundFontLoadTarget::Slicer)
             return;
 
-        auto* payload = new DysektProcessor::FailedLoadResult();
+        auto* payload = new AvixProcessor::FailedLoadResult();
         payload->token = token;
-        payload->kind  = DysektProcessor::LoadKindReplace;
+        payload->kind  = AvixProcessor::LoadKindReplace;
         payload->file  = file;
         auto* old = processor.completedLoadFailure.exchange (payload,
                                                              std::memory_order_acq_rel);
@@ -1569,7 +1575,7 @@ private:
     juce::File          file;
     double              sampleRate;
     int                 token;
-    DysektProcessor&    processor;
+    AvixProcessor&    processor;
     SoundFontLoadTarget target;
     int                 presetBank;
     int                 presetProgram;
@@ -1590,7 +1596,7 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
     {
         token = processor.nextLoadToken.fetch_add (1, std::memory_order_relaxed) + 1;
         processor.latestLoadToken.store (token, std::memory_order_release);
-        processor.latestLoadKind.store  ((int) DysektProcessor::LoadKindReplace,
+        processor.latestLoadKind.store  ((int) AvixProcessor::LoadKindReplace,
                                          std::memory_order_release);
 
         // Discard any pending payload from a previous Slicer-target load
@@ -1609,7 +1615,7 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         // Own token sequence, independent of the Slicer's nextLoadToken --
         // see nextPreviewToken2/latestPreviewToken2's declaration in
         // PluginProcessor.h and the staleness check in finishAndPost() for
-        // why this pipeline needs one too (DYSEKT-addzone-nomidi part 2).
+        // why this pipeline needs one too (AVIX-addzone-nomidi part 2).
         token = processor.nextPreviewToken2.fetch_add (1, std::memory_order_relaxed) + 1;
         processor.latestPreviewToken2.store (token, std::memory_order_release);
 
@@ -1655,7 +1661,7 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
         new LoadJob (file, sr, token, processor, target, presetBank, presetProgram), true);
 }
 
-#else  // DYSEKT_HAS_SFIZZ not defined
+#else  // AVIX_HAS_SFIZZ not defined
 
 void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
                              int /*presetBank*/, int /*presetProgram*/)
@@ -1666,7 +1672,7 @@ void SoundFontLoader::load (const juce::File& file, SoundFontLoadTarget target,
     // this fallback only makes sense for the Slicer target; for the preview
     // target there is nothing to route the failure to, so just ignore it.)
     if (target == SoundFontLoadTarget::Slicer)
-        processor.requestSampleLoad (file, DysektProcessor::LoadKindReplace);
+        processor.requestSampleLoad (file, AvixProcessor::LoadKindReplace);
 }
 
-#endif // DYSEKT_HAS_SFIZZ
+#endif // AVIX_HAS_SFIZZ

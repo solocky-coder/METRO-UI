@@ -2,7 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <cmath>
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 
 // ============================================================
 //  ThemeEditorPanel
@@ -43,7 +43,7 @@ public:
 
         // ── Title bar ────────────────────────────────────────────────────
         titleLabel.setText ("THEME EDITOR", juce::dontSendNotification);
-        titleLabel.setFont (DysektLookAndFeel::makeFont (17.0f, true));
+        titleLabel.setFont (AvixLookAndFeel::makeFont (17.0f, true));
         titleLabel.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (titleLabel);
 
@@ -53,7 +53,7 @@ public:
 
         // ── Base theme selector ───────────────────────────────────────────
         baseLabel.setText ("BASE THEME:", juce::dontSendNotification);
-        baseLabel.setFont (DysektLookAndFeel::makeFont (13.0f));
+        baseLabel.setFont (AvixLookAndFeel::makeFont (13.0f));
         addAndMakeVisible (baseLabel);
 
         baseCombo.addItem ("(current)",  1);
@@ -64,12 +64,12 @@ public:
 
         // ── Theme name input ──────────────────────────────────────────────
         nameLabel.setText ("NAME:", juce::dontSendNotification);
-        nameLabel.setFont (DysektLookAndFeel::makeFont (13.0f));
+        nameLabel.setFont (AvixLookAndFeel::makeFont (13.0f));
         addAndMakeVisible (nameLabel);
 
         nameEditor.setMultiLine (false);
         nameEditor.setReturnKeyStartsNewLine (false);
-        nameEditor.setFont (DysektLookAndFeel::makeFont (13.0f));
+        nameEditor.setFont (AvixLookAndFeel::makeFont (13.0f));
         nameEditor.setText ("my-theme");
         nameEditor.onReturnKey = [this] { liveApply(); };
         nameEditor.onFocusLost = [this] { liveApply(); };
@@ -101,7 +101,7 @@ public:
 
         // ── Preview strip ─────────────────────────────────────────────────
         previewLabel.setText ("PREVIEW", juce::dontSendNotification);
-        previewLabel.setFont (DysektLookAndFeel::makeFont (13.0f));
+        previewLabel.setFont (AvixLookAndFeel::makeFont (13.0f));
         addAndMakeVisible (previewLabel);
 
         // ── Action buttons ────────────────────────────────────────────────
@@ -377,7 +377,7 @@ private:
             : key (fieldKey)
         {
             label.setText (displayName, juce::dontSendNotification);
-            label.setFont (DysektLookAndFeel::makeFont (13.0f));
+            label.setFont (AvixLookAndFeel::makeFont (13.0f));
             label.setInterceptsMouseClicks (false, false);
             addAndMakeVisible (label);
 
@@ -387,7 +387,7 @@ private:
 
             hexEditor.setMultiLine (false);
             hexEditor.setInputRestrictions (7, "#0123456789abcdefABCDEF");
-            hexEditor.setFont (DysektLookAndFeel::makeFont (13.0f));
+            hexEditor.setFont (AvixLookAndFeel::makeFont (13.0f));
             hexEditor.onReturnKey = [this] { commitHex(); };
             hexEditor.onFocusLost = [this] { commitHex(); };
             addAndMakeVisible (hexEditor);
@@ -769,7 +769,7 @@ private:
         g.setColour (working.lockActive);
         g.drawRect (button, 1);
         g.setColour (working.foreground);
-        g.setFont (DysektLookAndFeel::makeFont (8.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (8.0f, true));
         g.drawText ("LOCK", button, juce::Justification::centred, false);
 
         // Two 16-pad banks: slices 01–16 above 17–32.

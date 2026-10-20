@@ -1,5 +1,5 @@
 #include "KeysPanel.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "UIHelpers.h"
 #include "../PluginProcessor.h"
 #include <map>
@@ -137,13 +137,13 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
             g.fillRoundedRectangle (btnRect.toFloat(), 0.0f);
             g.setColour (theme.accent);
             g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), 0.0f, 0.8f);
-            g.setFont (DysektLookAndFeel::makeFont (9.5f, true));
+            g.setFont (AvixLookAndFeel::makeFont (9.5f, true));
             g.setColour (theme.accent);
             g.drawText ("+ ZONE", btnRect, juce::Justification::centred, false);
         }
         else
         {
-            g.setFont (DysektLookAndFeel::makeFont (11.0f));
+            g.setFont (AvixLookAndFeel::makeFont (11.0f));
             g.setColour (theme.foreground.withAlpha (0.18f));
             g.drawText ("No zones loaded", 0, 0, w, h, juce::Justification::centred, false);
         }
@@ -156,7 +156,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
         // Column header
         g.setColour (theme.darkBar.darker (0.25f));
         g.fillRect (0, 0, w, kHeaderH);
-        g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (9.0f, true));
         g.setColour (theme.foreground.withAlpha (0.30f));
         g.drawText ("BANK / PRESET  -  right-click row to assign MIDI channel",
                     10, 0, w - 20, kHeaderH,
@@ -165,7 +165,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
         g.drawHorizontalLine (kHeaderH - 1, 0.f, (float) w);
 
         constexpr int kStripeW = 4;
-        const juce::Font fMain = DysektLookAndFeel::makeFont (13.0f);
+        const juce::Font fMain = AvixLookAndFeel::makeFont (13.0f);
 
         for (int i = 0; i < (int) rows.size(); ++i)
         {
@@ -196,7 +196,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
             if (assignedCh >= 1 && assignedCh <= 16)
             {
                 const juce::String chLabel    = "CH " + juce::String (assignedCh);
-                const juce::Font   badgeFont  = DysektLookAndFeel::makeFont (9.0f, true);
+                const juce::Font   badgeFont  = AvixLookAndFeel::makeFont (9.0f, true);
                 const int          badgeW     = 34;
                 const int          badgeH     = 17;
                 const int          badgeX     = w - badgeW - 6;
@@ -228,7 +228,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
 
         if (rows.empty())
         {
-            g.setFont (DysektLookAndFeel::makeFont (11.0f));
+            g.setFont (AvixLookAndFeel::makeFont (11.0f));
             g.setColour (theme.foreground.withAlpha (0.18f));
             g.drawText ("No presets loaded", 0, kHeaderH, w, h - kHeaderH,
                         juce::Justification::centred, false);
@@ -242,7 +242,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white.withAlpha (0.02f));
     g.fillRect (0, 0, kNameColW, kHeaderH);
 
-    g.setFont (DysektLookAndFeel::makeFont (9.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (9.0f, true));
     g.setColour (theme.foreground.withAlpha (0.30f));
 
     auto hdr = [&] (const char* txt, int x, int cw,
@@ -264,7 +264,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
     // SFZ: draw up-down drag hint on editable numeric columns
     if (sfzEditable)
     {
-        g.setFont (DysektLookAndFeel::makeFont (8.5f));
+        g.setFont (AvixLookAndFeel::makeFont (8.5f));
         g.setColour (theme.accent.withAlpha (0.40f));
         for (int cx : { kLoKeyX + kLoKeyW - 10,
                         kHiKeyX + kHiKeyW - 10,
@@ -310,7 +310,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
         g.setColour (theme.accent.withAlpha (0.65f));
         g.drawRoundedRectangle (btnRect.toFloat().reduced (0.5f), 0.0f, 0.75f);
 
-        g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (8.5f, true));
         g.setColour (theme.accent.brighter (0.5f));
         g.drawText ("+ ZONE", btnRect, juce::Justification::centred, false);
 
@@ -322,7 +322,7 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
             const int nextHi = juce::jmin (lastHi + 12, 127);
             const juce::String hint = UIHelpers::midiNoteToName (nextLo) + " - "
                                      + UIHelpers::midiNoteToName (nextHi);
-            g.setFont (DysektLookAndFeel::makeFont (9.0f));
+            g.setFont (AvixLookAndFeel::makeFont (9.0f));
             g.setColour (theme.foreground.withAlpha (0.30f));
             g.drawText (hint, bx + kBtnW + 6, btnRowY, 80, kRowH,
                         juce::Justification::centredLeft, false);
@@ -358,9 +358,9 @@ void KeysPanel::ZoneMatrixContent::paint (juce::Graphics& g)
     auto noteName = [] (int note) -> juce::String { return UIHelpers::midiNoteToName (note); };
 
     // ── Rows ──────────────────────────────────────────────────────────────────
-    const juce::Font fMain  = DysektLookAndFeel::makeFont (13.0f);
-    const juce::Font fSmall = DysektLookAndFeel::makeFont (11.0f);
-    const juce::Font fTiny  = DysektLookAndFeel::makeFont (9.5f);
+    const juce::Font fMain  = AvixLookAndFeel::makeFont (13.0f);
+    const juce::Font fSmall = AvixLookAndFeel::makeFont (11.0f);
+    const juce::Font fTiny  = AvixLookAndFeel::makeFont (9.5f);
 
     for (int i = 0; i < (int) rows.size(); ++i)
     {
@@ -854,7 +854,7 @@ std::atomic<uint64_t>* KeysPanel::activeNotesAtomics() const
 // KeysPanel
 // =============================================================================
 
-KeysPanel::KeysPanel (DysektProcessor& p) : processor (p)
+KeysPanel::KeysPanel (AvixProcessor& p) : processor (p)
 {
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
     setMouseClickGrabsKeyboardFocus (false);
@@ -1225,7 +1225,7 @@ void KeysPanel::drawKey (juce::Graphics& g, const KeyRect& kr,
             // effectively unreadable. Bumped up considerably, made bold and
             // pure black, and given more vertical room so it's actually
             // legible at a glance against the light key surface.
-            g.setFont   (DysektLookAndFeel::makeFont (16.0f, true));
+            g.setFont   (AvixLookAndFeel::makeFont (16.0f, true));
             g.setColour (juce::Colours::black);
             g.drawText  (juce::MidiMessage::getMidiNoteName (kr.note, true, true, 3),
                          kr.bounds.getX(), kr.bounds.getBottom() - 22,

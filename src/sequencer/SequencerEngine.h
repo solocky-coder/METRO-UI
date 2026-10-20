@@ -167,7 +167,7 @@ public:
     void setRecordingTrack(int trackIndex) noexcept; int getRecordingTrackIndex() const noexcept; void drainRecordedEvents();
     static constexpr int kActivityFlagCount = 64; bool getMidiActivityAndClear(int trackIndex) noexcept;
 
-    /** Zone-highlight feed. The SFZ-PLAYER / MULTISAMPLER note path (DysektProcessor::processMidi2)
+    /** Zone-highlight feed. The SFZ-PLAYER / MULTISAMPLER note path (AvixProcessor::processMidi2)
         reports every note it receives so the Arranger can light up the SFZ layer (keyzone) child
         track whose note range contains the played key. Audio thread safe (lock-free atomics). */
     void notifySfzNoteOn (int note) noexcept; void notifySfzNoteOff (int note) noexcept; void notifySfzAllNotesOff() noexcept;

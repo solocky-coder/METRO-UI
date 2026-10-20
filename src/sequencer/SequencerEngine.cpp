@@ -1,6 +1,6 @@
 // SequencerEngine.cpp
 // tracktion Engine/Edit/Transport layer has been removed.
-// All note scheduling is done by DYSEKT-SF's own tick scheduler in processBlock().
+// All note scheduling is done by AVIX's own tick scheduler in processBlock().
 // MidiClip.cpp retains its tracktion hook (attachMidiList) for future use.
 //
 // Threading model (audio-thread hot path):
@@ -144,7 +144,7 @@ struct SequencerEngine::Impl
     //==========================================================================
     //  Recorded-note FIFO  (audio thread writes, message thread drains)
     //
-    //  Same shape as DysektProcessor's commandFifo, just flowing the other
+    //  Same shape as AvixProcessor's commandFifo, just flowing the other
     //  direction: audio thread -> message thread instead of message thread ->
     //  audio thread. Each entry carries an absolute (global) tick — the
     //  audio thread no longer needs a target clip to exist at all, since

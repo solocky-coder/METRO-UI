@@ -1,5 +1,5 @@
 #include "MultisamplerWaveformLcd.h"
-#include "DysektLookAndFeel.h"
+#include "AvixLookAndFeel.h"
 #include "SliceControlBar.h"
 #include "ZoneEnvelopeRanges.h"
 #include "../PluginProcessor.h"
@@ -19,7 +19,7 @@ static const juce::Colour kColRelease { 0xFFFF6B00 }; // Molten Orange
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-MultisamplerWaveformLcd::MultisamplerWaveformLcd (DysektProcessor& p)
+MultisamplerWaveformLcd::MultisamplerWaveformLcd (AvixProcessor& p)
     : processor (p)
 {
     setOpaque (false);
@@ -510,7 +510,7 @@ void MultisamplerWaveformLcd::buildWaveformPeaks()
     {
         const float t   = (float) i / (float) kPeaks;
         const int   pos = startF + (int) (t * (float) (endF - startF));
-        peaks.set (i, DysektProcessor::getWaveformPeakAtIn (zoneSampleData, pos));
+        peaks.set (i, AvixProcessor::getWaveformPeakAtIn (zoneSampleData, pos));
     }
 }
 
@@ -759,7 +759,7 @@ void MultisamplerWaveformLcd::drawLoopOverlay (juce::Graphics& g, const juce::Re
 
     const float labelX = (x0 + x1) * 0.5f - 18.0f;
     const float labelY = area.getY() + 3.0f;
-    g.setFont (DysektLookAndFeel::makeFont (7.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (7.0f, true));
     g.setColour (loopColour.withAlpha (0.55f));
     g.drawText ("LOOP", juce::Rectangle<float> (labelX, labelY, 36.0f, 10.0f),
                 juce::Justification::centred, false);
@@ -837,7 +837,7 @@ void MultisamplerWaveformLcd::drawSegmentLabel (juce::Graphics& g,
 {
     const float mx = area.getX() + ((x0 + x1) * 0.5f) * area.getWidth();
     const float my = area.getY() + ((y0 + y1) * 0.5f) * area.getHeight() - 9.0f;
-    g.setFont (DysektLookAndFeel::makeFont (8.0f));
+    g.setFont (AvixLookAndFeel::makeFont (8.0f));
     g.setColour (col.withAlpha (0.40f));
     g.drawText (juce::String (text),
                 juce::Rectangle<float> (mx - 30.0f, my - 6.0f, 60.0f, 12.0f),
@@ -850,14 +850,14 @@ void MultisamplerWaveformLcd::drawHeader (juce::Graphics& g,
     const float headerH = 18.0f;
     const auto  headerR = area.withHeight (headerH);
 
-    g.setFont (DysektLookAndFeel::makeFont (8.5f, true));
+    g.setFont (AvixLookAndFeel::makeFont (8.5f, true));
     g.setColour (msLcdPhosphor().withAlpha (0.55f));
     g.drawText ("MULTISAMPLER", headerR.withRight (headerR.getX() + 96.0f),
                 juce::Justification::centredLeft, false);
 
     if (data.sampleName.isNotEmpty())
     {
-        g.setFont (DysektLookAndFeel::makeFont (8.0f));
+        g.setFont (AvixLookAndFeel::makeFont (8.0f));
         g.setColour (msLcdPhosphor().withAlpha (0.38f));
         g.drawText (data.sampleName, headerR, juce::Justification::centredRight, true);
     }
@@ -951,7 +951,7 @@ void MultisamplerWaveformLcd::drawNodes (juce::Graphics& g,
         g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.80f));
         g.fillEllipse (cx - dr, cy - dr, dr * 2.0f, dr * 2.0f);
 
-        g.setFont (DysektLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
+        g.setFont (AvixLookAndFeel::makeFont (hov ? 11.0f : 9.5f, true));
         g.setColour (node.colour.withAlpha (hov ? 1.0f : 0.70f));
         g.drawText (juce::String (node.label),
                     juce::Rectangle<float> (cx - 14.0f, cy + r + 2.0f, 28.0f, 12.0f),
@@ -965,11 +965,11 @@ void MultisamplerWaveformLcd::drawNoData (juce::Graphics& g)
 
     if (! data.hasInstrument || ! data.hasZones)
     {
-        g.setFont (DysektLookAndFeel::makeFont (18.0f, true));
+        g.setFont (AvixLookAndFeel::makeFont (18.0f, true));
         g.setColour (msLcdPhosphor().withAlpha (0.18f));
         g.drawText ("EMPTY", b, juce::Justification::centred);
 
-        g.setFont (DysektLookAndFeel::makeFont (7.5f));
+        g.setFont (AvixLookAndFeel::makeFont (7.5f));
         g.setColour (msLcdDim().brighter (0.5f));
         auto b2 = b;
         g.drawText ("import an sfz or add a zone",
@@ -979,7 +979,7 @@ void MultisamplerWaveformLcd::drawNoData (juce::Graphics& g)
 
     if (! data.hasSelection)
     {
-        g.setFont (DysektLookAndFeel::makeFont (10.0f));
+        g.setFont (AvixLookAndFeel::makeFont (10.0f));
         g.setColour (msLcdDim().brighter (0.4f));
         g.drawText ("-- SELECT A ZONE --", b, juce::Justification::centred);
         return;
@@ -987,11 +987,11 @@ void MultisamplerWaveformLcd::drawNoData (juce::Graphics& g)
 
     // hasSelection but missingSample (missing file / failed decode /
     // zero-length range) — show the missing/default treatment, no editing.
-    g.setFont (DysektLookAndFeel::makeFont (18.0f, true));
+    g.setFont (AvixLookAndFeel::makeFont (18.0f, true));
     g.setColour (msLcdPhosphor().withAlpha (0.18f));
     g.drawText ("EMPTY", b, juce::Justification::centred);
 
-    g.setFont (DysektLookAndFeel::makeFont (7.5f));
+    g.setFont (AvixLookAndFeel::makeFont (7.5f));
     g.setColour (msLcdDim().brighter (0.5f));
     auto b3 = b;
     g.drawText ("missing or invalid sample",

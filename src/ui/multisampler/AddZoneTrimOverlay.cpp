@@ -149,12 +149,12 @@ AddZoneTrimOverlay::AddZoneTrimOverlay (const juce::File& sampleFile, juce::Thre
     const auto& T = getTheme();
 
     titleLabel.setText ("TRIM  -  " + sampleFile.getFileName().toUpperCase(), juce::dontSendNotification);
-    titleLabel.setFont (DysektLookAndFeel::makeFont (16.0f, true));
+    titleLabel.setFont (AvixLookAndFeel::makeFont (16.0f, true));
     titleLabel.setColour (juce::Label::textColourId, T.accent);
     titleLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (titleLabel);
 
-    readoutLabel.setFont (DysektLookAndFeel::makeFont (11.5f));
+    readoutLabel.setFont (AvixLookAndFeel::makeFont (11.5f));
     readoutLabel.setColour (juce::Label::textColourId, T.foreground.withAlpha (0.75f));
     readoutLabel.setJustificationType (juce::Justification::centred);
     readoutLabel.setInterceptsMouseClicks (false, false);
@@ -343,7 +343,7 @@ void AddZoneTrimOverlay::paint (juce::Graphics& g)
 
     if (decoding)
     {
-        g.setFont (DysektLookAndFeel::makeFont (13.0f));
+        g.setFont (AvixLookAndFeel::makeFont (13.0f));
         g.setColour (T.foreground.withAlpha (0.6f));
         g.drawText ("Decoding preview...", wave, juce::Justification::centred, false);
         return;
@@ -351,7 +351,7 @@ void AddZoneTrimOverlay::paint (juce::Graphics& g)
 
     if (decodeFailed)
     {
-        g.setFont (DysektLookAndFeel::makeFont (13.0f));
+        g.setFont (AvixLookAndFeel::makeFont (13.0f));
         g.setColour (juce::Colour (0xFFCC4444));
         g.drawText (errorMessage, wave, juce::Justification::centred, false);
         return;

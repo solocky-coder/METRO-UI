@@ -1,7 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 
-class DysektProcessor;
+class AvixProcessor;
 
 /** Second LCD panel: renders the selected slice waveform with an interactive
  * ADSR envelope overlay. Each envelope node is a draggable handle; moving
@@ -24,7 +24,7 @@ class DysektProcessor;
 class SliceWaveformLcd : public juce::Component
 {
 public:
-    explicit SliceWaveformLcd (DysektProcessor& p);
+    explicit SliceWaveformLcd (AvixProcessor& p);
 
     void paint   (juce::Graphics& g) override;
     void resized () override;
@@ -112,7 +112,7 @@ private:
 
     NodeRole hitTest (juce::Point<float> pos) const;
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     DisplayData      data;
 
     // ── Envelope state ────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ private:
     juce::Rectangle<float> screenArea;
 
     // Waveform display style — set via setWaveformMode(), driven by the WAVE
-    // icon toggle in DualLcdControlFrame (see DysektEditor::toggleSoftWave()).
+    // icon toggle in DualLcdControlFrame (see AvixEditor::toggleSoftWave()).
     int waveformMode = 0;   // 0=Hard 1=Soft 2=Outline 3=Rectified 4=Mirrored 5=Bars 6=RMS 7=Stepped
 
     static constexpr int   kScanlineAlpha = 18;

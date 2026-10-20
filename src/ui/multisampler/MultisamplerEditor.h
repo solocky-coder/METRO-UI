@@ -34,19 +34,19 @@
 #include "../../audio/multisampler/MultisamplerInstrument.h"
 #include "../../audio/multisampler/SfzImporter.h"
 
-class DysektProcessor;
+class AvixProcessor;
 
 class MultisamplerEditor : public juce::Component,
                             private juce::Timer
 {
 public:
-    explicit MultisamplerEditor (DysektProcessor& processorToUse);
+    explicit MultisamplerEditor (AvixProcessor& processorToUse);
     ~MultisamplerEditor() override;
 
     void paint   (juce::Graphics&) override;
     void resized() override;
 
-    /** Forwards the app's current host-window scale factor (DysektEditor::
+    /** Forwards the app's current host-window scale factor (AvixEditor::
         resized()'s `sf`) down to zoneLcd and zoneMapView, so their text
         keeps pace with the rest of the UI instead of staying pinned at
         design-time pixel sizes — see ZoneMapView::setUiScale() and
@@ -359,7 +359,7 @@ private:
         currently null (see trimAuditionPlayheadPoller's doc comment below
         for when that can happen). Defined in the .cpp rather than inline in
         trimAuditionPlayheadPoller::timerCallback() below because that would
-        need DysektProcessor's complete type (to reach
+        need AvixProcessor's complete type (to reach
         trimAuditionPlayheadFrame through `processor`) right here in the
         header, where it's only forward-declared — same reason
         pollMidiLearnCc() above is a declared-here/defined-in-.cpp method
@@ -405,7 +405,7 @@ private:
     // the model (import/New/discard) — sliceManager2 should wipe every slice
     // clean, same as any other fresh file load. false (the debounced-timer
     // path) means this is a genuine in-place zone edit and per-slice
-    // DYSEKT-only fields (custom ADSR/EQ/filter/mute group/etc.) should
+    // AVIX-only fields (custom ADSR/EQ/filter/mute group/etc.) should
     // survive the rebuild instead — see zoneBuilderReloadPending's
     // declaration in PluginProcessor.h and performEngineSync()'s own comment.
     void performEngineSync (bool isFreshLoad);
@@ -492,7 +492,7 @@ private:
         so it always tracks the current selection, the same way zoneLcd does. */
     void refreshEditLayerCombo();
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     MultisamplerInstrument instrument;
     bool dirty = false;
     juce::File lastSavedFile;   // last file imported from or exported/saved to; File() if none yet
@@ -590,7 +590,7 @@ private:
     int toolbarDividerX = -4;
 
     // x-centre, in this component's own coordinate space, of the
-    // DualLcdControlFrame (the DYSEKT-SF logo/tab panel between the two
+    // DualLcdControlFrame (the AVIX logo/tab panel between the two
     // side LCDs) one row up — supplied by PluginEditor::resized() every
     // layout pass via setControlFrameCentreX() below, since this panel has
     // no way to know that frame's position on its own (it's a sibling, not
@@ -605,7 +605,7 @@ private:
     // zoneBadgeLabel (the title text/badge that used to live inside
     // MultisamplerZoneLcd's own title row) alongside titleLabel and the
     // toolbar buttons, and those buttons now render with the LookAndFeel's
-    // taller font tier (see DysektLookAndFeel::drawButtonText's h<34
+    // taller font tier (see AvixLookAndFeel::drawButtonText's h<34
     // bracket) — both need the extra height to read comfortably.
     static constexpr int kHeaderH    = 40;
 

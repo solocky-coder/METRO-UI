@@ -64,7 +64,7 @@ namespace
         o->setProperty ("reverse", z.reverse);
 
         // Custom colour override — stored as the same 8-digit ARGB hex
-        // juce::Colour::toString() produces (and dysekt_zone_color carries
+        // juce::Colour::toString() produces (and avix_zone_color carries
         // in exported SFZ), so a .metrokit round-trip and an SFZ round-trip
         // agree on a zone's colour. Omitted (hasCustomColour left absent /
         // false on load) means "derive from palette index", same default

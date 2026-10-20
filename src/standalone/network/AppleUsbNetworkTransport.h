@@ -3,7 +3,7 @@
 #include "DeviceNetworkTransport.h"
 #include "AppleUsbShareLauncher.h"
 
-// Thin DYSEKT transport adapter around the separate, elevated iPhoneUsbShare
+// Thin AVIX transport adapter around the separate, elevated iPhoneUsbShare
 // helper process. AppleUsbShareLauncher only launches/monitors that helper;
 // Network Audio consumes the resulting Windows Ethernet interface the same
 // way it always did, via enumerate() below.

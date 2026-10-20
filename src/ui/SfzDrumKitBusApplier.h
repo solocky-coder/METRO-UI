@@ -28,7 +28,7 @@
 class SfzDrumKitBusApplier : private juce::Timer
 {
 public:
-    SfzDrumKitBusApplier (DysektProcessor& p, int expectedZoneCount)
+    SfzDrumKitBusApplier (AvixProcessor& p, int expectedZoneCount)
         : processor (p), expected (expectedZoneCount)
     {
         startTimer (100);
@@ -55,16 +55,16 @@ private:
 
         for (int i = 0; i < expected; ++i)
         {
-            DysektProcessor::Command sel;
-            sel.type          = DysektProcessor::CmdSelectSlice;
+            AvixProcessor::Command sel;
+            sel.type          = AvixProcessor::CmdSelectSlice;
             sel.targetEngine2 = true;
             sel.intParam1     = i;
             processor.pushCommand (sel);
 
-            DysektProcessor::Command set;
-            set.type          = DysektProcessor::CmdSetSliceParam;
+            AvixProcessor::Command set;
+            set.type          = AvixProcessor::CmdSetSliceParam;
             set.targetEngine2 = true;
-            set.intParam1     = DysektProcessor::FieldOutputBus;
+            set.intParam1     = AvixProcessor::FieldOutputBus;
             // Buses 1-15 (bus 0 = Main is left alone; FieldOutputBus's handler
             // clamps to 0-15 anyway, so this is always in range). Wraps if
             // there are more than 15 zones -- no UI currently exists to pick
@@ -79,7 +79,7 @@ private:
         delete this;
     }
 
-    DysektProcessor& processor;
+    AvixProcessor& processor;
     int expected;
     int attempts { 0 };
     static constexpr int kMaxAttempts = 30;   // 30 * 100ms = 3s
