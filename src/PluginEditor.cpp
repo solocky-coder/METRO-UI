@@ -1327,6 +1327,24 @@ void AvixEditor::paint (juce::Graphics& g)
  g.fillRoundedRectangle(screenF, 0.0f);
  }
  }
+
+ // Logo panel backdrop — brushed-metal chassis fill, same family as the
+ // control frame / waveform frame, so the logo sits in a framed panel.
+ if (logoBar.isVisible() && logoBar.getHeight() > 0)
+ {
+ const float sf = (float) designArea.getHeight() / (float) kTotalH;
+ const auto logoF = logoBar.getBounds().toFloat().reduced (1.0f * sf);
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().waveformBg);
+     g.fillRoundedRectangle (logoF, 0.0f);
+ }
+ else
+ {
+     UIHelpers::drawTexturedPanel (g, logoF, getTheme().darkBar,
+                                    UIHelpers::PanelZone::Chassis, 0.0f);
+ }
+ }
 }
 
 void AvixEditor::paintOverChildren (juce::Graphics& g)
@@ -1460,7 +1478,26 @@ void AvixEditor::paintOverChildren (juce::Graphics& g)
  }
  }
 
- // (The AVIX logo is drawn unframed — no border around the logo area.)
+ // Logo frame border — same recipe and widths as the waveform / SFZ / slot frames.
+ if (logoBar.isVisible() && logoBar.getHeight() > 0)
+ {
+ const auto outerF = logoBar.getBounds().toFloat().reduced (1.0f * sf);
+ const auto ac = getTheme().accent;
+
+ if (getTheme().name == "metro")
+ {
+     g.setColour (getTheme().separator);
+     g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 0.0f, 1.0f * sf);
+ }
+ else
+ {
+ g.setColour (ac.withAlpha (0.60f));
+ g.drawRoundedRectangle (outerF.reduced (0.5f * sf), 0.0f, 1.5f * sf);
+
+ g.setColour (ac.withAlpha (0.30f));
+ g.drawRoundedRectangle (outerF.reduced (4.0f * sf), 0.0f, 1.0f * sf);
+ }
+ }
 
  // Full-window accent frame
  {
