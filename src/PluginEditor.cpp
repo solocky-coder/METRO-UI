@@ -1594,7 +1594,7 @@ void AvixEditor::resized()
  cf->setBounds (centreCol.getX(), cfY, centreCol.getWidth(), ctrlFrmH);
  // UNDO/REDO/PANIC/cog sit in the strip at the bottom of the control frame,
  // just under the GLOBAL PITCH / EQ / VOL knobs.
- headerBar.setBounds (cf->getX(), cf->getBottom() - si (kBtnBarH) - si (2), cf->getWidth(), si (kBtnBarH));
+ headerBar.setBounds (cf->getX(), cf->getBottom() - si (DualLcdControlFrame::kButtonStripH) - si (2), cf->getWidth(), si (DualLcdControlFrame::kButtonStripH));
  // Centre logo: the AVIX mark is portrait (ring + wordmark), so it gets the
  // whole gap between the plugin top and the control frame rather than just
  // a kLogoH-tall strip. LogoBar fits the image inside and never enlarges it.

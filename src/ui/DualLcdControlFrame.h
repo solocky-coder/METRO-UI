@@ -14,6 +14,12 @@ class AvixProcessor;
 class DualLcdControlFrame : public juce::Component
 {
 public:
+    /** Height (design units, before window scaling) of the UNDO/REDO/PANIC/cog
+     *  strip that HeaderBar places along the bottom edge of this frame.
+     *  paint() reserves this much space so the knob row never runs under it,
+     *  and PluginEditor::resized() uses it to size/position the HeaderBar. */
+    static constexpr int kButtonStripH = 46;
+
     explicit DualLcdControlFrame (AvixProcessor& p);
 
     void paint        (juce::Graphics& g) override;

@@ -76,7 +76,7 @@ void HeaderBar::resized()
     const int w   = getWidth();
     const int h   = getHeight();
     // Scale inset/gap relative to design-time height (kBtnBarH = 38px).
-    static constexpr float kBaseH = 38.0f;
+    static constexpr float kBaseH = (float) DualLcdControlFrame::kButtonStripH;
     const float sf    = (float) h / kBaseH;
     const int   pad   = juce::roundToInt (3 * sf);  // inset from the rounded frame border
     const int   gap   = juce::roundToInt (2 * sf);
@@ -90,6 +90,15 @@ void HeaderBar::resized()
     redoBtn     .setBounds (pad + btnW,        pad, btnW - gap, h - pad * 2);
     panicBtn    .setBounds (pad + btnW * 2,    pad, btnW - gap, h - pad * 2);
     shortcutsBtn.setBounds (pad + btnW * 3,    pad, w - pad - btnW * 3 - gap, h - pad * 2);
+
+    // AvixLookAndFeel::drawButtonText steps its font through fixed sizes (max 13),
+    // so the labels stay small however big the window/frame is.  Feed it an
+    // explicit size that grows with the button (capped so "PANIC" always fits).
+    const float btnH     = (float) (h - pad * 2);
+    const float textSize = juce::jmin (btnH * 0.40f, (float) (btnW - gap) * 0.32f);
+    for (auto* btn : { &undoBtn, &redoBtn, &panicBtn })
+        btn->getProperties().set ("transportFontSize", (double) textSize);
+    shortcutsBtn.getProperties().set ("transportFontSize", (double) (textSize * 1.25f));  // cog glyph
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────────

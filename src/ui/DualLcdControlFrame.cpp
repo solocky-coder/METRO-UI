@@ -58,6 +58,14 @@ void DualLcdControlFrame::drawIcon (juce::Graphics& g, juce::Rectangle<float> b,
     auto  col = active ? accent : fg.withAlpha (0.85f);
     g.setColour (col);
 
+    // The glyph art below is authored in absolute pixels (about +/-9px around
+    // the centre).  Scale it with the button so a larger button gets a
+    // proportionally larger glyph instead of a small icon floating in a big
+    // tile.  ~20px of glyph art fills 70% of the button.
+    const float glyphScale = juce::jmax (0.5f, juce::jmin (b.getWidth(), b.getHeight()) * 0.70f / 20.0f);
+    juce::Graphics::ScopedSaveState glyphState (g);
+    g.addTransform (juce::AffineTransform::scale (glyphScale, glyphScale, cx, cy2));
+
     if (type == 0) // Folder / Browser
     {
         g.fillRoundedRectangle(cx - 8, cy2 - 3, 7, 3, 0.0f);
@@ -395,7 +403,6 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
     const auto  fg     = getTheme().foreground;
     const int   w      = getWidth();
     const int   h      = getHeight();
-    const int   half   = h / 2;
     const float sf     = (float) w / 200.0f;   // scale relative to kCtrlFrameW=200
     auto si = [sf](float v) -> int { return juce::roundToInt (v * sf); };
     auto sf1 = [sf](float v) -> float { return v * sf; };
@@ -421,18 +428,41 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced (0.5f), 0.0f, 1.5f);
     }
 
+    // ── Vertical layout ───────────────────────────────────────────────────────
+    // Everything is sized from the frame's real free space: icons, tab strip
+    // and knob block are made as large as the width allows, and the leftover
+    // height is shared evenly between the four gaps (top, icons|tabs,
+    // tabs|knobs, knobs|button strip).  The UNDO/REDO/PANIC/cog strip owned by
+    // HeaderBar occupies the bottom kButtonStripH units.
+#if AVIX_STANDALONE
+    constexpr int kIconCount = 5;
+#else
+    constexpr int kIconCount = 4;
+#endif
+    const int   iconGapMin  = si (5);
+    const int   btnSz       = juce::jmin (si (38), (w - iconGapMin * (kIconCount + 1)) / kIconCount);
+    const int   tabH        = si (28);
+    const int   kr          = si (26);                    // knob radius
+    const int   knobLabelH  = si (12);
+    const int   knobValueH  = si (13);
+    const int   knobBlockH  = kr * 2 + si (3) + knobLabelH + knobValueH;
+    const int   stripH      = si (kButtonStripH + 2);
+    const int   contentH    = h - stripH;
+    const int   vGap        = juce::jmax (0, (contentH - btnSz - tabH - knobBlockH) / 4);
+    const int   iconY       = vGap;
+    const int   tabY        = iconY + btnSz + vGap;
+    const int   knobTop     = tabY + tabH + vGap;
+
     // ── Divider ───────────────────────────────────────────────────────────────
     g.setColour (accent.withAlpha (0.25f));
-    g.drawHorizontalLine (half, 6.0f, (float) w - 6.0f);
+    g.drawHorizontalLine (tabY + tabH / 2, 6.0f, (float) w - 6.0f);
 
     // ── EDIT | PAD mode tab strip (centred on divider) ────────────────────────
     {
-        const int tabH    = si (17);
-        const int tabW    = si (50);
-        const int tabGap  = si (3);
+        const int tabGap  = si (2);
+        const int tabW    = (w - si (10) - tabGap * 2) / 3;     // fill the frame width
         const int totalTW = tabW * 3 + tabGap * 2;
         const int tabX    = (w - totalTW) / 2;
-        const int tabY    = half - tabH / 2;
 
         editTabArea      = { tabX,                          tabY, tabW, tabH };
         padTabArea       = { tabX + tabW + tabGap,           tabY, tabW, tabH };
@@ -478,7 +508,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             g.drawRoundedRectangle (rf, r2, 1.0f);
 
             g.setColour (active ? accent : fg.withAlpha (0.85f));
-            g.setFont (AvixLookAndFeel::makeFont (sf1 (8.5f), true));
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (10.0f), true));
             g.drawText (label, r, juce::Justification::centred);
         };
 
@@ -494,8 +524,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
 
     // ── Top row: five icons evenly spread across full width ─────────────────
     {
-        const int btnSz  = si (26);
-        const int btnY   = (half - btnSz) / 2;
+        const int btnY   = iconY;
 #if AVIX_STANDALONE
         const int gap    = (w - 5 * btnSz) / 6;
         filIconArea        = { gap,                       btnY, btnSz, btnSz };
@@ -529,9 +558,9 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             const juce::Rectangle<int>* areas[] = { &filIconArea, &waIconArea,
                                                      &midiFollowIconArea, &bodeIconArea, &seqIconArea };
             const auto& area = *areas[hoveredIcon];
-            const int labelH  = si (9);
-            const int labelY  = area.getY() - labelH - 2;
-            g.setFont (AvixLookAndFeel::makeFont (sf1 (7.0f)));
+            const int labelH  = si (11);
+            const int labelY  = juce::jmax (0, area.getY() - labelH - 1);
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (9.0f)));
             g.setColour (getTheme().accent.withAlpha (0.80f));
             g.drawText (kLabels[hoveredIcon], area.getX() - si(20), labelY, area.getWidth() + si(40), labelH,
                         juce::Justification::centred);
@@ -547,15 +576,16 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
         juce::String volStr   = (gVol   >= 0.0f ? "+" : "") + juce::String (gVol, 1);
 
         // ── Shared vertical geometry ─────────────────────────────────────────
-        int rowTop = half + si (4);
-        int rowBot = h   - si (20);   // leave room for label + value below
-
-        // Three equally-spaced centres: 1/4, 1/2, 3/4
-        const int k1cx = w / 4;
+        // Three centres at 1/6, 1/2, 5/6 of the width: wide enough apart that
+        // the larger knobs and their labels never touch.
+        const int k1cx = w / 6;
         const int kcx  = w / 2;
-        const int k2cx = w - w / 4;
-        const int kcy  = rowTop + (rowBot - rowTop) / 2;
-        const int kr   = si (12);
+        const int k2cx = w - w / 6;
+        const int kcy  = knobTop + kr;
+        const int lblW = si (64);
+        const int valW = si (44);
+        const int lblY = kcy + kr + si (3);
+        const int valY = lblY + knobLabelH;
 
         // ── GLOBAL PITCH knob (left quarter) ────────────────────────────────
         {
@@ -572,28 +602,28 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             juce::Path track;
             track.addCentredArc ((float)k1cx,(float)kcy,(float)kr,(float)kr,0.f,arcStart,arcEnd,true);
             g.setColour (getTheme().darkBar.brighter (0.3f));
-            g.strokePath (track, juce::PathStrokeType (sf1 (1.5f)));
+            g.strokePath (track, juce::PathStrokeType (sf1 (2.6f)));
 
             juce::Path arc;
             arc.addCentredArc ((float)k1cx,(float)kcy,(float)kr,(float)kr,0.f,arcStart,arcAngle,true);
             g.setColour (accent);
-            g.strokePath (arc, juce::PathStrokeType (sf1 (2.2f)));
+            g.strokePath (arc, juce::PathStrokeType (sf1 (3.6f)));
 
-            float lr = (float) kr - 2.0f;
+            float lr = (float) kr - (float) si (4);
             g.setColour (accent.brighter (0.3f));
             g.drawLine ((float)k1cx, (float)kcy,
                         (float)k1cx + lr * std::cos (angle),
-                        (float)kcy  + lr * std::sin (angle), sf1 (1.3f));
+                        (float)kcy  + lr * std::sin (angle), sf1 (2.2f));
 
-            g.setFont (AvixLookAndFeel::makeFont (sf1 (7.5f), true));
-            g.setColour (fg.withAlpha (0.45f));
-            g.drawText ("GLOBAL PITCH", k1cx - si(28), kcy + kr + si(2), si(56), si(9), juce::Justification::centred);
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (10.0f), true));
+            g.setColour (fg.withAlpha (0.55f));
+            g.drawText ("GLOBAL PITCH", k1cx - lblW / 2, lblY, lblW, knobLabelH, juce::Justification::centred);
 
-            g.setFont (AvixLookAndFeel::makeFont (sf1 (8.0f)));
-            g.setColour (accent.withAlpha (0.80f));
-            g.drawText (pitchStr, k1cx - si(18), kcy + kr + si(11), si(36), si(9), juce::Justification::centred);
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (11.5f)));
+            g.setColour (accent.withAlpha (0.90f));
+            g.drawText (pitchStr, k1cx - valW / 2, valY, valW, knobValueH, juce::Justification::centred);
 
-            pitchKnobArea = { k1cx - kr - 5, kcy - kr - 3, (kr + 5) * 2, (kr + 5) * 2 };
+            pitchKnobArea = { k1cx - kr - si (6), kcy - kr - si (6), (kr + si (6)) * 2, (kr + si (6)) * 2 };
         }
 
         // ── GLOBAL EQ button (centre) ────────────────────────────────────────
@@ -603,9 +633,9 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             eqIconArea = { kcx - kr, kcy - kr, eqSz, eqSz };
             drawIcon (g, eqIconArea.toFloat(), 5, eqActive);
 
-            g.setFont (AvixLookAndFeel::makeFont (sf1 (7.5f), true));
-            g.setColour (fg.withAlpha (0.45f));
-            g.drawText ("GLOBAL EQ", kcx - si(28), kcy + kr + si(2), si(56), si(9), juce::Justification::centred);
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (10.0f), true));
+            g.setColour (fg.withAlpha (0.55f));
+            g.drawText ("GLOBAL EQ", kcx - lblW / 2, lblY, lblW, knobLabelH, juce::Justification::centred);
         }
 
         // ── GLOBAL VOL knob (right quarter) — 0dB-centred logic ─────────────
@@ -627,7 +657,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             track.addCentredArc ((float)k2cx, (float)kcy, (float)kr, (float)kr,
                                   0.f, arcStart, arcEnd, true);
             g.setColour (getTheme().darkBar.brighter (0.3f));
-            g.strokePath (track, juce::PathStrokeType (sf1 (1.5f)));
+            g.strokePath (track, juce::PathStrokeType (sf1 (2.6f)));
 
             // Fill — bidirectional from 12 o'clock (0 dB = norm 0.5)
             constexpr float zeroNorm  = 0.5f;
@@ -644,7 +674,7 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
                     fill.addCentredArc ((float)k2cx, (float)kcy, (float)kr, (float)kr,
                                          0.f, normAngle, zeroAngle, true);
                 g.setColour (accent);
-                g.strokePath (fill, juce::PathStrokeType (sf1 (2.2f)));
+                g.strokePath (fill, juce::PathStrokeType (sf1 (3.6f)));
             }
 
             // 0 dB tick marker. zeroAngle is in the JUCE-shifted (arcStart-based)
@@ -653,29 +683,29 @@ void DualLcdControlFrame::paint (juce::Graphics& g)
             // so subtract back out the halfPi shift.
             const float zeroAngleM = zeroAngle - halfPi;
             g.setColour (fg.withAlpha (0.35f));
-            g.drawLine ((float)k2cx + (float)(kr - 3) * std::cos (zeroAngleM),
-                        (float)kcy  + (float)(kr - 3) * std::sin (zeroAngleM),
+            g.drawLine ((float)k2cx + (float)(kr - si (5)) * std::cos (zeroAngleM),
+                        (float)kcy  + (float)(kr - si (5)) * std::sin (zeroAngleM),
                         (float)k2cx + (float)kr * std::cos (zeroAngleM),
-                        (float)kcy  + (float)kr * std::sin (zeroAngleM), 1.0f);
+                        (float)kcy  + (float)kr * std::sin (zeroAngleM), sf1 (1.6f));
 
             // Pointer line
             float angle = kStart + volN * arcLen;
-            float lr = (float)kr - 2.0f;
+            float lr = (float)kr - (float) si (4);
             g.setColour (accent.brighter (0.3f));
             g.drawLine ((float)k2cx, (float)kcy,
                         (float)k2cx + lr * std::cos (angle),
-                        (float)kcy  + lr * std::sin (angle), sf1 (1.3f));
+                        (float)kcy  + lr * std::sin (angle), sf1 (2.2f));
 
             // Labels
-            g.setFont (AvixLookAndFeel::makeFont (sf1 (7.5f), true));
-            g.setColour (fg.withAlpha (0.45f));
-            g.drawText ("GLOBAL VOL", k2cx - si (28), kcy + kr + si (2), si (56), si (9), juce::Justification::centred);
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (10.0f), true));
+            g.setColour (fg.withAlpha (0.55f));
+            g.drawText ("GLOBAL VOL", k2cx - lblW / 2, lblY, lblW, knobLabelH, juce::Justification::centred);
 
-            g.setFont (AvixLookAndFeel::makeFont (sf1 (8.0f)));
-            g.setColour (accent.withAlpha (0.80f));
-            g.drawText (volStr, k2cx - si (18), kcy + kr + si (11), si (36), si (9), juce::Justification::centred);
+            g.setFont (AvixLookAndFeel::makeFont (sf1 (11.5f)));
+            g.setColour (accent.withAlpha (0.90f));
+            g.drawText (volStr, k2cx - valW / 2, valY, valW, knobValueH, juce::Justification::centred);
 
-            volKnobArea = { k2cx - kr - 5, kcy - kr - 3, (kr + 5) * 2, (kr + 5) * 2 };
+            volKnobArea = { k2cx - kr - si (6), kcy - kr - si (6), (kr + si (6)) * 2, (kr + si (6)) * 2 };
         }
     }
 }
