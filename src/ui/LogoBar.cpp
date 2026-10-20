@@ -58,35 +58,4 @@ void LogoBar::paint (juce::Graphics& g)
 
     g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
     g.drawImage (scaledLogo, dest, juce::RectanglePlacement::stretchToFit);
-
-    // ── Enlarged waveform ─────────────────────────────────────────────────
-    // The waveform baked into the PNG is tiny and faint. Draw a larger,
-    // brighter one across the full frame width, centred on the PNG's own
-    // waveform row (76/205 of the image height), in front of the X.
-    {
-        const auto cyan   = juce::Colour (0xFF6FE3EC);
-        const float cy    = dest.getY() + dest.getHeight() * (76.0f / 205.0f);
-        const float x0    = (float) getLocalBounds().getX() + padX;
-        const float x1    = (float) getLocalBounds().getRight() - padX;
-        const float halfW = (x1 - x0) * 0.5f;
-        const float cx    = (x0 + x1) * 0.5f;
-        const float maxA  = dest.getHeight() * 0.27f;      // peak half-height
-
-        g.setColour (cyan.withAlpha (0.55f));
-        g.drawLine (x0, cy, x1, cy, 1.0f);
-
-        const float step = 2.0f;
-        for (float x = x0; x <= x1; x += step)
-        {
-            const float t    = (x - cx) / halfW;                       // -1..1
-            const float env  = std::exp (-t * t * 3.2f);               // bell envelope
-            const int   k    = (int) ((x - x0) / step);
-            const juce::uint32 h = (juce::uint32) (k * 2654435761u) ^ 0x9E3779B9u;
-            const float rnd  = 0.25f + 0.75f * (float) ((h >> 8) & 0xFF) / 255.0f;
-            const float amp  = maxA * env * rnd;
-            if (amp < 0.6f) continue;
-            g.setColour (cyan.withAlpha (0.45f + 0.5f * env));
-            g.drawLine (x, cy - amp, x, cy + amp, 1.2f);
-        }
-    }
 }
