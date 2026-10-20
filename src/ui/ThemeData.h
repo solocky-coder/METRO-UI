@@ -636,3 +636,22 @@ struct ThemeData
         return s;
     }
 };
+
+
+// Shared active theme for hand-painted components. C++17 inline-function
+// local static storage ensures one theme instance across translation units.
+inline ThemeData& mutableThemeData()
+{
+    static ThemeData activeTheme = ThemeData::darkTheme();
+    return activeTheme;
+}
+
+inline const ThemeData& getTheme()
+{
+    return mutableThemeData();
+}
+
+inline void setTheme (const ThemeData& theme)
+{
+    mutableThemeData() = theme;
+}

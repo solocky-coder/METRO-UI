@@ -65,7 +65,12 @@ public:
     juce::Font getAlertWindowMessageFont() override;
     int        getAlertWindowButtonHeight() override;
 
-    juce::Font makeFont (float height, bool bold = false) const;
+    // Static helpers for components that do not own a LookAndFeel instance.
+    static juce::Font makeFont (float height, bool bold = false);
+    static juce::Font makeMonoFont (float height, bool bold = false);
+
+    // Instance typography preserves the selected FontFace for LookAndFeel callbacks.
+    juce::Font makeFaceFont (float height, bool bold = false) const;
 
     //==========================================================================
     //  Buttons / toggles

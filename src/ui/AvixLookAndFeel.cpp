@@ -277,7 +277,31 @@ return t;
 //==============================================================================
 //  Typography
 //==============================================================================
-juce::Font AvixLookAndFeel::makeFont (float height, bool bold) const
+namespace
+{
+    juce::Typeface::Ptr sharedMonoTypeface (bool bold)
+    {
+        static auto regular = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::JetBrainsMonoRegular_ttf, BinaryData::JetBrainsMonoRegular_ttfSize);
+        static auto boldFace = juce::Typeface::createSystemTypefaceFor (
+            BinaryData::JetBrainsMonoBold_ttf, BinaryData::JetBrainsMonoBold_ttfSize);
+        return bold ? boldFace : regular;
+    }
+}
+
+juce::Font AvixLookAndFeel::makeFont (float height, bool bold)
+{
+    return juce::Font (juce::FontOptions().withHeight (height)
+                                           .withTypeface (sharedMonoTypeface (bold)));
+}
+
+juce::Font AvixLookAndFeel::makeMonoFont (float height, bool bold)
+{
+    return juce::Font (juce::FontOptions().withHeight (height)
+                                           .withTypeface (sharedMonoTypeface (bold)));
+}
+
+juce::Font AvixLookAndFeel::makeFaceFont (float height, bool bold) const
 {
 auto tf = bold ? boldTypeface : regularTypeface;
 auto opts = juce::FontOptions().withHeight (height);
@@ -295,20 +319,20 @@ return tf != nullptr ? tf : juce::LookAndFeel_V4::getTypefaceForFont (f);
 juce::Font AvixLookAndFeel::getLabelFont (juce::Label& label)
 {
 const auto f = label.getFont();
-return makeFont (f.getHeight(), f.isBold());
+return makeFaceFont (f.getHeight(), f.isBold());
 }
 juce::Font AvixLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
 {
-return makeFont (juce::jmin (16.0f, (float) buttonHeight * 0.6f));
+return makeFaceFont (juce::jmin (16.0f, (float) buttonHeight * 0.6f));
 }
 juce::Font AvixLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 {
 const auto requested = (double) box.getProperties().getWithDefault ("transportFontSize", 0.0);
-return makeFont (requested > 0.0 ? (float) requested : 14.0f * menuScale());
+return makeFaceFont (requested > 0.0 ? (float) requested : 14.0f * menuScale());
 }
-juce::Font AvixLookAndFeel::getPopupMenuFont()          { return makeFont (14.0f * menuScale()); }
-juce::Font AvixLookAndFeel::getAlertWindowTitleFont()   { return makeFont (16.0f * menuScale(), true); }
-juce::Font AvixLookAndFeel::getAlertWindowMessageFont() { return makeFont (14.0f * menuScale()); }
+juce::Font AvixLookAndFeel::getPopupMenuFont()          { return makeFaceFont (14.0f * menuScale()); }
+juce::Font AvixLookAndFeel::getAlertWindowTitleFont()   { return makeFaceFont (16.0f * menuScale(), true); }
+juce::Font AvixLookAndFeel::getAlertWindowMessageFont() { return makeFaceFont (14.0f * menuScale()); }
 int        AvixLookAndFeel::getAlertWindowButtonHeight(){ return juce::roundToInt (28.0f * menuScale()); }
 //==============================================================================
 //  Buttons
@@ -407,7 +431,7 @@ float fontSize = isSymbol ? (h < 22 ? 14.0f : 17.0f) : buttonFontSize (h);
 const auto requested = (double) props.getWithDefault ("transportFontSize", 0.0);
 if (requested > 0.0)
 fontSize = (float) requested;
-g.setFont (makeFont (fontSize));
+g.setFont (makeFaceFont (fontSize));
 g.drawFittedText (txt, button.getLocalBounds().reduced (2, 0),
 juce::Justification::centred, 1, 0.6f);
 }
@@ -437,7 +461,7 @@ drawTickBox (g, button, 4.0f, ((float) button.getHeight() - tickWidth) * 0.5f, t
 button.getToggleState(), button.isEnabled(), isHighlighted, isDown);
 g.setColour (button.findColour (juce::ToggleButton::textColourId)
 .withMultipliedAlpha (button.isEnabled() ? 1.0f : 0.5f));
-g.setFont (makeFont (fontSize));
+g.setFont (makeFaceFont (fontSize));
 g.drawFittedText (button.getButtonText(),
 button.getLocalBounds().withTrimmedLeft (juce::roundToInt (tickWidth) + 10).withTrimmedRight (2),
 juce::Justification::centredLeft, 1, 0.6f);
@@ -682,7 +706,7 @@ g.drawFittedText (text, textArea, juce::Justification::centredLeft, 1, 0.7f);
 if (shortcutKeyText.isNotEmpty())
 {
 g.setColour (T::textMuted);
-g.setFont (makeFont (12.0f * ms));
+g.setFont (makeFaceFont (12.0f * ms));
 g.drawText (shortcutKeyText, textArea, juce::Justification::centredRight);
 }
 if (hasSubMenu)
@@ -700,7 +724,7 @@ void AvixLookAndFeel::drawPopupMenuSectionHeader (juce::Graphics& g, const juce:
 const juce::String& sectionName)
 {
 const float ms = 1.0f;
-g.setFont (makeFont (12.0f * ms, true));
+g.setFont (makeFaceFont (12.0f * ms, true));
 g.setColour (T::textMuted);
 g.drawFittedText (sectionName.toUpperCase(),
 area.getX() + (int) (12 * ms), area.getY(),
@@ -764,13 +788,13 @@ fillPlate (g, p, b, T::panelDark);
 g.setColour (T::elementBorder);
 g.strokePath (p, juce::PathStrokeType (1.0f));
 g.setColour (T::textMain);
-g.setFont (makeFont (13.0f));
+g.setFont (makeFaceFont (13.0f));
 g.drawFittedText (text, 6, 0, width - 12, height, juce::Justification::centredLeft, 1, 0.7f);
 }
 juce::Rectangle AvixLookAndFeel::getTooltipBounds (const juce::String& text, juce::Point screenPos,
 juce::Rectangle parentArea)
 {
-const int w = (int) juce::GlyphArrangement::getStringWidth (makeFont (14.0f), text) + 14;
+const int w = (int) juce::GlyphArrangement::getStringWidth (makeFaceFont (14.0f), text) + 14;
 const int h = 24;
 int x = screenPos.x, y = screenPos.y + 18;
 if (x + w > parentArea.getRight())  x = parentArea.getRight() - w;
@@ -810,7 +834,7 @@ g.fillRect (0, h - 1, w, 1);
 g.setColour (T::accentGreen.withAlpha (0.55f));
 g.fillRect (0, h - 1, juce::jmin (48, w), 1);
 g.setColour (T::textMain);
-g.setFont (makeFont (13.0f));
+g.setFont (makeFaceFont (13.0f));
 g.drawFittedText (window.getName(), titleSpaceX + 4, 0, titleSpaceW - 8, h,
 juce::Justification::centredLeft, 1, 0.7f);
 }
