@@ -328,12 +328,12 @@ return makeFaceFont (juce::jmin (16.0f, (float) buttonHeight * 0.6f));
 juce::Font AvixLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 {
 const auto requested = (double) box.getProperties().getWithDefault ("transportFontSize", 0.0);
-return makeFaceFont (requested > 0.0 ? (float) requested : 14.0f * menuScale());
+return makeFaceFont (requested > 0.0 ? (float) requested : 14.0f * getMenuScale ());
 }
-juce::Font AvixLookAndFeel::getPopupMenuFont()          { return makeFaceFont (14.0f * menuScale()); }
-juce::Font AvixLookAndFeel::getAlertWindowTitleFont()   { return makeFaceFont (16.0f * menuScale(), true); }
-juce::Font AvixLookAndFeel::getAlertWindowMessageFont() { return makeFaceFont (14.0f * menuScale()); }
-int        AvixLookAndFeel::getAlertWindowButtonHeight(){ return juce::roundToInt (28.0f * menuScale()); }
+juce::Font AvixLookAndFeel::getPopupMenuFont()          { return makeFaceFont (14.0f * getMenuScale ()); }
+juce::Font AvixLookAndFeel::getAlertWindowTitleFont()   { return makeFaceFont (16.0f * getMenuScale (), true); }
+juce::Font AvixLookAndFeel::getAlertWindowMessageFont() { return makeFaceFont (14.0f * getMenuScale ()); }
+int        AvixLookAndFeel::getAlertWindowButtonHeight(){ return juce::roundToInt (28.0f * getMenuScale ()); }
 //==============================================================================
 //  Buttons
 //==============================================================================
