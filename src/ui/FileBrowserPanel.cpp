@@ -739,6 +739,7 @@ void FileBrowserPanel::hideLoadProgress()
 void FileBrowserPanel::beginInstrumentLoadPoll (int generation, const juce::String& displayName)
 {
     instrumentLoadGeneration = generation;
+    instrumentLoadStartMs    = juce::Time::getMillisecondCounter();
 
     showLoadProgress ("Loading instrument: " + displayName, -1.0f);   // indeterminate
 
@@ -750,18 +751,40 @@ void FileBrowserPanel::beginInstrumentLoadPoll (int generation, const juce::Stri
 
 void FileBrowserPanel::pollInstrumentLoad()
 {
-    // Superseded by a newer preview/stream/download/load since this poll began.
-    if (streamGeneration.load() != instrumentLoadGeneration)
-    {
-        instrumentLoadPollTimer.stopTimer();
-        return;
-    }
+    const bool inFlight = processor.mainLoadInFlight.load (std::memory_order_acquire);
 
-    if (! processor.mainLoadInFlight.load (std::memory_order_relaxed))
+    // Safety ceiling: if the in-flight flag is never cleared (a load path that
+    // bails out without clearing it, audio thread not running processBlock, ...)
+    // the popup would otherwise sit there forever while the UI behind it works.
+    constexpr juce::uint32 kMaxPopupMs = 90000;
+    if (juce::Time::getMillisecondCounter() - instrumentLoadStartMs > kMaxPopupMs)
     {
         instrumentLoadPollTimer.stopTimer();
         hideLoadProgress();
         return;
+    }
+
+    // A bare stopPreview()/preview click bumps streamGeneration without touching
+    // this popup. Previously the poll just stopped here and left the overlay
+    // orphaned on screen forever. If the instrument is still decoding, adopt the
+    // new generation and keep polling; if it is done, take the popup down.
+    if (streamGeneration.load() != instrumentLoadGeneration)
+    {
+        if (inFlight)
+        {
+            instrumentLoadGeneration = streamGeneration.load();
+            return;
+        }
+
+        instrumentLoadPollTimer.stopTimer();
+        hideLoadProgress();
+        return;
+    }
+
+    if (! inFlight)
+    {
+        instrumentLoadPollTimer.stopTimer();
+        hideLoadProgress();
     }
 }
 

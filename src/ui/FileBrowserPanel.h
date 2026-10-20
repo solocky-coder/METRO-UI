@@ -377,6 +377,7 @@ private:
     };
     InstrumentLoadPollTimer        instrumentLoadPollTimer;
     int                            instrumentLoadGeneration = -1;   // compared against streamGeneration
+    juce::uint32                   instrumentLoadStartMs    = 0;    // safety ceiling for the popup
 
     IconButton                     playStopBtn;
     juce::Slider                   volumeSlider;

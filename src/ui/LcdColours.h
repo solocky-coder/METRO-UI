@@ -24,7 +24,14 @@ namespace LcdColours
     static const juce::Colour kOutline  { 0xFF1C3A12 };
 
     // ── Metro helpers ─────────────────────────────────────────────────────
-    static inline bool currentThemeIsMetro() { return getTheme().name == "metro"; }
+    // True for every flat Metro-family theme. XIVA is built on top of Metro (see
+    // XivaTheme.cpp) but has its own theme name, so checking == "metro" alone sent
+    // XIVA down the legacy green-phosphor path (green-tinted screen + bezel).
+    static inline bool currentThemeIsMetro()
+    {
+        const auto& n = getTheme().name;
+        return n == "metro" || n == "xiva";
+    }
     static inline juce::Colour metroWaveformBg() { return getTheme().waveformBg; }
     static inline juce::Colour metroSeparator()  { return getTheme().separator; }
 
@@ -38,12 +45,14 @@ namespace LcdColours
     static inline Palette fromTheme()
     {
         // Kept the name fromTheme() to minimise churn at call sites.
-        const auto bg = kBgMid;
+        const bool flat = currentThemeIsMetro();
+        const auto bg = flat ? metroWaveformBg() : kBgMid;     // theme-neutral screen, not green-tinted
+        const auto edge = flat ? metroSeparator() : kOutline;
         const auto ac = getTheme().accent;                    // ink / "phosphor" colour
 
         Palette p;
         p.background = bg;
-        p.bezel      = kOutline;
+        p.bezel      = edge;
         p.phosphor   = ac;
         p.dim        = ac.withAlpha (0.55f).overlaidWith (bg);
         p.highlight  = ac.brighter (0.35f);                   // slightly brighter ink for emphasis rows
@@ -53,7 +62,7 @@ namespace LcdColours
         p.scanline   = juce::Colours::black;
         p.cursor     = ac;
         p.noDataCol  = ac.withAlpha (0.40f).overlaidWith (bg);
-        p.border     = kOutline;
+        p.border     = edge;
         p.flagOn     = ac;
         p.flagOff    = ac.withAlpha (0.55f).overlaidWith (bg);
         p.flagBg     = bg.brighter (0.15f);           // visible pill outline against screen bg
